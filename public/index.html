@@ -116,12 +116,16 @@
         <div class="sectionHeader">
           <div>
             <h2>Player Data</h2>
-            <p>Search by username or user ID, then read and edit the configured player DataStore entry.</p>
+            <p>Select a DataStore, then search by username or user ID.</p>
           </div>
           <div class="sectionActions">
+            <button class="button secondary compact" id="refreshDataStoresButton" type="button">Show DataStores</button>
             <button class="button secondary compact" id="loadPlayerDataButton" type="button">Load</button>
           </div>
         </div>
+
+        <p class="status" id="dataStoresStatus">Select an experience, then show DataStores.</p>
+        <div class="dataStoreList" id="dataStoreList"></div>
 
         <div class="dataToolGrid">
           <div class="fieldGroup">

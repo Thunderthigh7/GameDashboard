@@ -19,9 +19,6 @@ const ROBLOX_OAUTH_CLIENT_SECRET = getRequiredEnv("ROBLOX_OAUTH_CLIENT_SECRET");
 const ROBLOX_API_KEY = getRequiredEnv("ROBLOX_API_KEY");
 const SESSION_SECRET = getRequiredEnv("SESSION_SECRET");
 const PRESENCE_SECRET = getRequiredEnv("PRESENCE_SECRET");
-const PLAYER_DATASTORE_NAME = cleanString(process.env.PLAYER_DATASTORE_NAME, 128);
-const PLAYER_DATASTORE_SCOPE = cleanString(process.env.PLAYER_DATASTORE_SCOPE, 128) || "global";
-const PLAYER_DATA_KEY_PREFIX = cleanString(process.env.PLAYER_DATA_KEY_PREFIX, 128);
 const PRESENCE_STALE_MS = 75_000;
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_COMMAND_BODY_BYTES = 16 * 1024;
@@ -30,6 +27,7 @@ const MAX_PLAYERS_PER_SERVER = 100;
 const MAX_CHAT_LOGS_PER_PAYLOAD = 200;
 const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_COMMANDS_PER_HEARTBEAT = 20;
+const PLAYER_DATA_SAMPLE_LIMIT = 3;
 const DASHBOARD_COMMAND_TOPIC_PREFIX = "dashboard-command-";
 const KICK_COMMAND_TOPIC = "kick";
 const OAUTH_STATE_COOKIE = "oauth_state";
@@ -280,7 +278,7 @@ async function handlePlayerDataRead(req, res) {
     return sendJson(res, 400, { error: error.message });
   }
 
-  const result = await readDataStoreEntry(requestInfo);
+  const result = await readPlayerDataEntry(requestInfo);
   return sendJson(res, result.ok ? 200 : result.status || 500, result);
 }
 
@@ -307,7 +305,9 @@ async function handlePlayerDataWrite(req, res) {
     return sendJson(res, 400, { error: "Missing value" });
   }
 
-  const result = await writeDataStoreEntry(requestInfo, body.value);
+  const result = requestInfo.entryKey
+    ? await writeDataStoreEntry(requestInfo, body.value)
+    : await writePlayerDataEntry(requestInfo, body.value);
   return sendJson(res, result.ok ? 200 : result.status || 500, result);
 }
 
@@ -354,7 +354,7 @@ async function listDataStoreEntries(options) {
   const url = new URL(`https://apis.roblox.com/datastores/v1/universes/${encodeURIComponent(options.universeId)}/standard-datastores/datastore/entries`);
   url.searchParams.set("datastoreName", options.datastoreName);
   url.searchParams.set("scope", options.scope);
-  url.searchParams.set("limit", "100");
+  url.searchParams.set("limit", String(Math.max(1, Math.min(cleanInteger(options.limit) || 100, 100))));
   if (options.prefix) url.searchParams.set("prefix", options.prefix);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
 
@@ -436,26 +436,47 @@ async function normalizeDataStoreRequest(body) {
 
 async function normalizePlayerDataRequest(body) {
   const universeId = cleanInteger(body?.universeId);
+  const datastoreName = cleanString(body?.datastoreName, 128);
+  const scope = cleanString(body?.scope, 128) || "global";
   const target = cleanString(body?.target, 256);
+  const entryKey = cleanString(body?.entryKey, 256);
 
   if (universeId <= 0) throw new Error("Select an experience first");
-  if (!PLAYER_DATASTORE_NAME) throw new Error("Set PLAYER_DATASTORE_NAME in the dashboard server environment");
+  if (!datastoreName) throw new Error("Select a DataStore first");
   if (!target) throw new Error("Enter a player username or user ID");
 
-  const resolvedKey = await resolveDataStoreEntryKey({
-    target,
-    keyPrefix: PLAYER_DATA_KEY_PREFIX,
-    exactKey: false,
-  });
+  const resolvedUser = await resolvePlayerTarget(target);
 
   return {
     universeId,
-    datastoreName: PLAYER_DATASTORE_NAME,
-    scope: PLAYER_DATASTORE_SCOPE,
+    datastoreName,
+    scope,
     target,
-    keyPrefix: PLAYER_DATA_KEY_PREFIX,
-    exactKey: false,
-    ...resolvedKey,
+    keyPrefix: "",
+    exactKey: Boolean(entryKey),
+    entryKey,
+    resolvedUser,
+  };
+}
+
+async function resolvePlayerTarget(target) {
+  const targetUserId = cleanInteger(target);
+  if (targetUserId > 0) {
+    return {
+      userId: targetUserId,
+    };
+  }
+
+  const resolvedTargets = await resolveUserTargets(target);
+  const match = resolvedTargets.resolved[0];
+  if (!match?.userId) {
+    throw new Error(`Could not resolve Roblox username: ${target}`);
+  }
+
+  return {
+    userId: match.userId,
+    username: match.username || match.input,
+    displayName: match.displayName || "",
   };
 }
 
@@ -524,6 +545,42 @@ async function readDataStoreEntry(options) {
   };
 }
 
+async function readPlayerDataEntry(options) {
+  const candidates = await getPlayerDataEntryCandidates(options);
+  let lastResult = null;
+
+  for (const candidate of candidates) {
+    const result = await readDataStoreEntry({
+      ...options,
+      keyPrefix: candidate.prefix,
+      entryKey: candidate.entryKey,
+    });
+
+    if (result.ok) {
+      return {
+        ...result,
+        inferred: {
+          keyPrefix: candidate.prefix,
+          candidatesTried: candidates.map((item) => item.entryKey),
+          sampleKeys: candidate.sampleKeys,
+        },
+      };
+    }
+
+    lastResult = result;
+    if (result.status && result.status !== 404) {
+      return result;
+    }
+  }
+
+  return lastResult || {
+    ok: false,
+    status: 404,
+    error: "No player data entry found for that user",
+    request: getSafeDataStoreRequest(options),
+  };
+}
+
 async function writeDataStoreEntry(options, value) {
   const response = await fetch(getDataStoreEntryUrl(options), {
     method: "POST",
@@ -555,12 +612,60 @@ async function writeDataStoreEntry(options, value) {
   };
 }
 
+async function writePlayerDataEntry(options, value) {
+  const existing = await readPlayerDataEntry(options);
+  if (!existing.ok) return existing;
+
+  return writeDataStoreEntry(existing.request, value);
+}
+
 function getDataStoreEntryUrl(options) {
   const url = new URL(`https://apis.roblox.com/datastores/v1/universes/${encodeURIComponent(options.universeId)}/standard-datastores/datastore/entries/entry`);
   url.searchParams.set("datastoreName", options.datastoreName);
   url.searchParams.set("entryKey", options.entryKey);
   url.searchParams.set("scope", options.scope);
   return url;
+}
+
+async function getPlayerDataEntryCandidates(options) {
+  const userId = options.resolvedUser?.userId;
+  if (!userId) return [];
+
+  const samples = await listDataStoreEntries({
+    universeId: options.universeId,
+    datastoreName: options.datastoreName,
+    scope: options.scope,
+    limit: PLAYER_DATA_SAMPLE_LIMIT,
+  });
+
+  const sampleKeys = samples.ok
+    ? samples.entries.map((entry) => entry.key).filter(Boolean)
+    : [];
+  const prefixes = inferPlayerDataKeyPrefixes(sampleKeys);
+
+  prefixes.unshift("", "Player_");
+
+  return [...new Set(prefixes)].map((prefix) => ({
+    prefix,
+    entryKey: `${prefix}${userId}`,
+    sampleKeys,
+  }));
+}
+
+function inferPlayerDataKeyPrefixes(keys) {
+  const prefixes = [];
+
+  for (const key of keys) {
+    const match = String(key).match(/^(.*?)(\d+)$/);
+    if (!match) continue;
+
+    const prefix = match[1] || "";
+    if (!prefixes.includes(prefix)) {
+      prefixes.push(prefix);
+    }
+  }
+
+  return prefixes;
 }
 
 function getSafeDataStoreRequest(options) {

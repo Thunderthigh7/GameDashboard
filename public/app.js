@@ -32,6 +32,9 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const playerDataPanel = document.querySelector("#playerDataPanel");
 const dataTarget = document.querySelector("#dataTarget");
+const refreshDataStoresButton = document.querySelector("#refreshDataStoresButton");
+const dataStoresStatus = document.querySelector("#dataStoresStatus");
+const dataStoreList = document.querySelector("#dataStoreList");
 const loadPlayerDataButton = document.querySelector("#loadPlayerDataButton");
 const savePlayerDataButton = document.querySelector("#savePlayerDataButton");
 const formatPlayerDataButton = document.querySelector("#formatPlayerDataButton");
@@ -46,6 +49,7 @@ let selectedUniverseId = "";
 let selectedPlayerIds = new Set();
 let targetPlayer = null;
 let loadedDataRequest = null;
+let selectedDataStoreName = "";
 
 init();
 
@@ -82,6 +86,7 @@ logoutButton.addEventListener("click", async () => {
 refreshExperiencesButton.addEventListener("click", loadExperiences);
 refreshServersButton.addEventListener("click", loadServers);
 refreshChatLogsButton.addEventListener("click", loadChatLogs);
+refreshDataStoresButton.addEventListener("click", loadDataStores);
 loadPlayerDataButton.addEventListener("click", loadPlayerData);
 savePlayerDataButton.addEventListener("click", savePlayerData);
 formatPlayerDataButton.addEventListener("click", formatPlayerData);
@@ -97,6 +102,18 @@ experienceGrid.addEventListener("click", (event) => {
   updateSelectedExperience();
   loadServers();
   loadChatLogs();
+  selectedDataStoreName = "";
+  dataStoreList.innerHTML = "";
+  updateSelectedDataStore();
+  loadDataStores();
+});
+dataStoreList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-datastore-name]");
+  if (!button) return;
+
+  selectedDataStoreName = button.dataset.datastoreName || "";
+  updateSelectedDataStore();
+  playerDataStatus.textContent = `Selected DataStore ${selectedDataStoreName}. Enter a player username or user ID.`;
 });
 serverList.addEventListener("change", (event) => {
   const checkbox = event.target.closest("[data-select-player]");
@@ -156,6 +173,7 @@ async function loadExperiences() {
     }
     updateSelectedExperience();
     await loadServers();
+    await loadDataStores();
   } catch (error) {
     experiencesStatus.textContent = error.message;
   }
@@ -226,6 +244,40 @@ async function loadChatLogs() {
   }
 }
 
+async function loadDataStores() {
+  if (!selectedUniverseId) {
+    dataStoresStatus.textContent = "Select an experience first.";
+    dataStoreList.innerHTML = "";
+    return;
+  }
+
+  refreshDataStoresButton.disabled = true;
+  dataStoresStatus.textContent = "Loading DataStores...";
+
+  try {
+    const data = await request(`/api/datastores?universeId=${encodeURIComponent(selectedUniverseId)}`);
+    if (!data.datastores.length) {
+      dataStoresStatus.textContent = "No DataStores found for this experience.";
+      dataStoreList.innerHTML = "";
+      selectedDataStoreName = "";
+      return;
+    }
+
+    dataStoresStatus.textContent = `${data.datastores.length} DataStore${data.datastores.length === 1 ? "" : "s"} found. Pick one, then search a player.`;
+    dataStoreList.innerHTML = data.datastores.map(renderDataStore).join("");
+    if (!selectedDataStoreName && data.datastores.length === 1) {
+      selectedDataStoreName = data.datastores[0].name;
+    }
+    updateSelectedDataStore();
+  } catch (error) {
+    dataStoresStatus.textContent = formatDataStoreError(error);
+    dataStoreList.innerHTML = "";
+    selectedDataStoreName = "";
+  } finally {
+    refreshDataStoresButton.disabled = false;
+  }
+}
+
 async function loadPlayerData() {
   const requestBody = getPlayerDataRequestBody();
   if (!requestBody) return;
@@ -245,7 +297,9 @@ async function loadPlayerData() {
     playerDataEditor.value = JSON.stringify(payload.value, null, 2);
     dataEntrySummary.textContent = `${payload.request.datastoreName} / ${payload.request.entryKey}`;
     dataMetaSummary.textContent = payload.version ? `Version ${payload.version}` : "";
-    playerDataStatus.textContent = "Loaded. Edit the JSON and save when ready.";
+    playerDataStatus.textContent = payload.inferred
+      ? `Loaded using key ${payload.request.entryKey}. Tried ${payload.inferred.candidatesTried.length} candidate key${payload.inferred.candidatesTried.length === 1 ? "" : "s"}.`
+      : "Loaded. Edit the JSON and save when ready.";
     savePlayerDataButton.disabled = false;
   } catch (error) {
     loadedDataRequest = null;
@@ -262,7 +316,9 @@ async function savePlayerData() {
   const requestBody = loadedDataRequest
     ? {
         universeId: loadedDataRequest.universeId,
+        datastoreName: loadedDataRequest.datastoreName,
         target: String(loadedDataRequest.resolvedUser?.userId || loadedDataRequest.target || ""),
+        entryKey: loadedDataRequest.entryKey,
       }
     : getPlayerDataRequestBody();
   if (!requestBody) return;
@@ -318,8 +374,14 @@ function getPlayerDataRequestBody() {
 
   const body = {
     universeId: Number(selectedUniverseId),
+    datastoreName: selectedDataStoreName,
     target: dataTarget.value.trim(),
   };
+
+  if (!body.datastoreName) {
+    playerDataStatus.textContent = "Select a DataStore first.";
+    return null;
+  }
 
   if (!body.target) {
     playerDataStatus.textContent = "Enter a player username or user ID.";
@@ -466,6 +528,21 @@ function updateSelectedExperience() {
     const button = card.querySelector(".selectExperienceButton");
     if (button) button.textContent = isSelected ? "Showing servers" : "Show servers";
   }
+}
+
+function updateSelectedDataStore() {
+  for (const button of dataStoreList.querySelectorAll("[data-datastore-name]")) {
+    button.classList.toggle("active", button.dataset.datastoreName === selectedDataStoreName);
+  }
+}
+
+function renderDataStore(datastore) {
+  return `
+    <button class="dataStoreButton" type="button" data-datastore-name="${escapeHtml(datastore.name)}">
+      <strong>${escapeHtml(datastore.name)}</strong>
+      ${datastore.createdTime ? `<span>Created ${escapeHtml(datastore.createdTime)}</span>` : ""}
+    </button>
+  `;
 }
 
 function renderServer(server) {
