@@ -115,6 +115,32 @@
             </div>
             <button class="button secondary compact" id="announcementButton" type="button">Send message</button>
           </section>
+
+          <section class="moderationCard announcementCard">
+            <h3>Server Message</h3>
+            <div class="fieldGroup">
+              <label for="serverAnnouncementTarget">JobId or player</label>
+              <input id="serverAnnouncementTarget" type="text" placeholder="JobId, username, or user ID">
+            </div>
+            <div class="fieldGroup">
+              <label for="serverAnnouncementMessage">Message</label>
+              <textarea id="serverAnnouncementMessage" rows="3" maxlength="240" placeholder="This server is restarting soon."></textarea>
+            </div>
+            <button class="button secondary compact" id="serverAnnouncementButton" type="button">Send to server</button>
+          </section>
+
+          <section class="moderationCard announcementCard">
+            <h3>Player Message</h3>
+            <div class="fieldGroup">
+              <label for="playerAnnouncementTargets">Player usernames or IDs</label>
+              <input id="playerAnnouncementTargets" type="text" placeholder="Leave blank to use selected players">
+            </div>
+            <div class="fieldGroup">
+              <label for="playerAnnouncementMessage">Message</label>
+              <textarea id="playerAnnouncementMessage" rows="3" maxlength="240" placeholder="Please rejoin after this round."></textarea>
+            </div>
+            <button class="button secondary compact" id="playerAnnouncementButton" type="button">Send to player</button>
+          </section>
         </div>
         <p class="status" id="commandStatus"></p>
         <p class="status" id="serversStatus">Waiting for Roblox heartbeats...</p>

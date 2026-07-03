@@ -28,6 +28,12 @@ const banButton = document.querySelector("#banButton");
 const unbanButton = document.querySelector("#unbanButton");
 const announcementMessage = document.querySelector("#announcementMessage");
 const announcementButton = document.querySelector("#announcementButton");
+const serverAnnouncementTarget = document.querySelector("#serverAnnouncementTarget");
+const serverAnnouncementMessage = document.querySelector("#serverAnnouncementMessage");
+const serverAnnouncementButton = document.querySelector("#serverAnnouncementButton");
+const playerAnnouncementTargets = document.querySelector("#playerAnnouncementTargets");
+const playerAnnouncementMessage = document.querySelector("#playerAnnouncementMessage");
+const playerAnnouncementButton = document.querySelector("#playerAnnouncementButton");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const chatLogCount = document.querySelector("#chatLogCount");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
@@ -50,6 +56,7 @@ let chatRefreshTimer;
 let selectedUniverseId = "";
 let selectedPlayerIds = new Set();
 let targetPlayer = null;
+let liveServers = [];
 let loadedDataRequest = null;
 let selectedDataStoreName = "";
 
@@ -97,6 +104,8 @@ kickButton.addEventListener("click", () => sendModerationCommand("kick"));
 banButton.addEventListener("click", () => sendModerationCommand("ban"));
 unbanButton.addEventListener("click", () => sendModerationCommand("unban"));
 announcementButton.addEventListener("click", sendGlobalAnnouncement);
+serverAnnouncementButton.addEventListener("click", sendServerAnnouncement);
+playerAnnouncementButton.addEventListener("click", sendPlayerAnnouncement);
 experienceGrid.addEventListener("click", (event) => {
   const button = event.target.closest("[data-universe-id]");
   if (!button) return;
@@ -202,10 +211,11 @@ async function loadServers() {
   try {
     const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
     const data = await request(`/api/servers${query}`);
+    liveServers = data.servers || [];
     serverCount.textContent = String(data.serverCount || 0);
     playerCount.textContent = String(data.playerCount || 0);
 
-    if (!data.servers.length) {
+    if (!liveServers.length) {
       serversStatus.textContent = selectedUniverseId
         ? `Waiting for Roblox heartbeats from universe ${selectedUniverseId}...`
         : "Select an experience or wait for Roblox heartbeats...";
@@ -217,7 +227,7 @@ async function loadServers() {
     serversStatus.textContent = selectedUniverseId
       ? `Showing universe ${selectedUniverseId} servers seen in the last ${data.staleAfterSeconds}s.`
       : `Showing all servers seen in the last ${data.staleAfterSeconds}s.`;
-    serverList.innerHTML = data.servers.map(renderServer).join("");
+    serverList.innerHTML = liveServers.map(renderServer).join("");
     updateCommandBar();
   } catch (error) {
     serversStatus.textContent = error.message;
@@ -514,6 +524,94 @@ async function sendGlobalAnnouncement() {
     commandStatus.textContent = error.message;
   } finally {
     announcementButton.disabled = false;
+  }
+}
+
+async function sendServerAnnouncement() {
+  const message = serverAnnouncementMessage.value.trim();
+  const target = serverAnnouncementTarget.value.trim();
+  const matchingServer = target
+    ? liveServers.find((server) => server.jobId === target || shortJobId(server.jobId) === target)
+    : null;
+
+  if (!message) {
+    commandStatus.textContent = "Enter a server message first.";
+    return;
+  }
+
+  if (!target && !targetPlayer) {
+    commandStatus.textContent = "Enter a live JobId, enter a player, or target a player in the server list first.";
+    return;
+  }
+
+  serverAnnouncementButton.disabled = true;
+  commandStatus.textContent = "Sending server message...";
+
+  try {
+    const payload = await request("/api/commands/announcement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scope: "server",
+        message,
+        jobId: matchingServer?.jobId || "",
+        targetUserId: !target && targetPlayer ? Number(targetPlayer.userId) : 0,
+        serverTarget: matchingServer ? "" : target,
+      }),
+    });
+
+    commandStatus.textContent = payload.delivery === "heartbeat-fallback"
+      ? `Server message queued for ${shortJobId(payload.jobId)} heartbeat fallback.`
+      : `Server message sent to ${shortJobId(payload.jobId)}.`;
+    serverAnnouncementMessage.value = "";
+  } catch (error) {
+    commandStatus.textContent = error.message;
+  } finally {
+    serverAnnouncementButton.disabled = false;
+  }
+}
+
+async function sendPlayerAnnouncement() {
+  const message = playerAnnouncementMessage.value.trim();
+  const manualTargets = playerAnnouncementTargets.value.trim();
+  const playerUserIds = [...selectedPlayerIds].map(Number);
+
+  if (!message) {
+    commandStatus.textContent = "Enter a player message first.";
+    return;
+  }
+
+  if (!manualTargets && !playerUserIds.length) {
+    commandStatus.textContent = "Select players or enter usernames/user IDs first.";
+    return;
+  }
+
+  playerAnnouncementButton.disabled = true;
+  commandStatus.textContent = "Sending player message...";
+
+  try {
+    const payload = await request("/api/commands/announcement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scope: "player",
+        message,
+        playerUserIds,
+        manualTargets,
+      }),
+    });
+
+    const deliveryCount = Number(payload.deliveries?.length || 0);
+    const playerCount = Number(payload.sentPlayerCount || 0);
+    commandStatus.textContent = `Player message sent to ${playerCount} player${playerCount === 1 ? "" : "s"} across ${deliveryCount} server${deliveryCount === 1 ? "" : "s"}.`;
+    if (payload.unresolvedTargets?.length) {
+      commandStatus.textContent += ` Could not resolve: ${payload.unresolvedTargets.join(", ")}.`;
+    }
+    playerAnnouncementMessage.value = "";
+  } catch (error) {
+    commandStatus.textContent = error.message;
+  } finally {
+    playerAnnouncementButton.disabled = false;
   }
 }
 

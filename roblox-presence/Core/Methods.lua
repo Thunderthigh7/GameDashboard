@@ -178,8 +178,20 @@ local function processAnnouncementCommand(command)
 
 	local duration = getAnnouncementDuration(command)
 	local shownCount = 0
+	local targetUserIds = {}
+
+	for _, userId in command.playerUserIds or {} do
+		local numericUserId = tonumber(userId)
+		if numericUserId then
+			targetUserIds[numericUserId] = true
+		end
+	end
 
 	for _, player in Players:GetPlayers() do
+		if next(targetUserIds) ~= nil and not targetUserIds[player.UserId] then
+			continue
+		end
+
 		showAnnouncement(player, filteredMessage, duration, command.id)
 		shownCount += 1
 	end
