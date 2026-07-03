@@ -51,3 +51,5 @@ ServerScriptService
 ```
 
 `Start` is a server Script that requires `PresenceService.API` and calls `Start()`.
+
+The Studio heatmap plugin lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps.

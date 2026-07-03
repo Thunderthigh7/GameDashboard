@@ -88,6 +88,10 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
+    if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
+      return sendJson(res, 200, getRobloxHeatmap(url.searchParams.get("universeId")));
+    }
+
     if (url.pathname === "/api/datastores" && req.method === "GET") {
       return handleDataStoresList(req, res, url);
     }
