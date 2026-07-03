@@ -29,6 +29,8 @@ const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
+const MAX_ROBLOX_HEATMAP_POINTS = 700;
+const ROBLOX_HEATMAP_BIN_SIZE = 8;
 const MAX_COMMANDS_PER_HEARTBEAT = 20;
 const PLAYER_DATA_SAMPLE_LIMIT = 3;
 const DASHBOARD_COMMAND_TOPIC_PREFIX = "dashboard-command-";
@@ -183,6 +185,7 @@ async function handlePresenceHeartbeat(req, res) {
     liveServers: getLiveServers().servers.length,
     savedChatCount,
     savedMovementCount,
+    heatmap: getRobloxHeatmap(presence.value.universeId),
     commands,
   });
 }
@@ -1397,6 +1400,41 @@ function getMovementHeatmap(filters = {}) {
     returnedCount: limitedSamples.length,
     maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
     samples: limitedSamples,
+  };
+}
+
+function getRobloxHeatmap(universeId) {
+  const samples = movementSamplesByUniverseId.get(String(cleanInteger(universeId))) || [];
+  const bins = new Map();
+
+  for (const sample of samples) {
+    const x = Math.round(sample.x / ROBLOX_HEATMAP_BIN_SIZE) * ROBLOX_HEATMAP_BIN_SIZE;
+    const y = Math.round(sample.y / ROBLOX_HEATMAP_BIN_SIZE) * ROBLOX_HEATMAP_BIN_SIZE;
+    const z = Math.round(sample.z / ROBLOX_HEATMAP_BIN_SIZE) * ROBLOX_HEATMAP_BIN_SIZE;
+    const key = `${x}:${y}:${z}`;
+    const existing = bins.get(key);
+
+    if (existing) {
+      existing.count += 1;
+    } else {
+      bins.set(key, { x, y, z, count: 1 });
+    }
+  }
+
+  const points = [...bins.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, MAX_ROBLOX_HEATMAP_POINTS);
+  const maxCount = points.reduce((max, point) => Math.max(max, point.count), 1);
+
+  return {
+    binSize: ROBLOX_HEATMAP_BIN_SIZE,
+    sampleCount: samples.length,
+    pointCount: points.length,
+    maxCount,
+    points: points.map((point) => ({
+      ...point,
+      intensity: point.count / maxCount,
+    })),
   };
 }
 

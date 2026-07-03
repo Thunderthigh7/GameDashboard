@@ -3,6 +3,7 @@ local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local TextService = game:GetService("TextService")
+local Workspace = game:GetService("Workspace")
 
 local Settings = require(script.Parent.Parent.Config.Settings)
 
@@ -29,6 +30,81 @@ local function debugWarn(...)
 	if Settings.Debug then
 		warn("[PresenceService]", ...)
 	end
+end
+
+local function getHeatmapFolder()
+	local folderName = Settings.HeatmapFolderName or "DashboardMovementHeatmap"
+	local folder = Workspace:FindFirstChild(folderName)
+	if folder then
+		return folder
+	end
+
+	folder = Instance.new("Folder")
+	folder.Name = folderName
+	folder.Parent = Workspace
+	return folder
+end
+
+local function getHeatmapColor(intensity)
+	local alpha = math.clamp(tonumber(intensity) or 0, 0, 1)
+	local cold = Color3.fromRGB(34, 132, 255)
+	local warm = Color3.fromRGB(255, 231, 76)
+	local hot = Color3.fromRGB(255, 65, 54)
+
+	if alpha < 0.5 then
+		return cold:Lerp(warm, alpha / 0.5)
+	end
+
+	return warm:Lerp(hot, (alpha - 0.5) / 0.5)
+end
+
+local function renderHeatmap(heatmap)
+	if not Settings.RenderHeatmapInRoblox then
+		return
+	end
+
+	if typeof(heatmap) ~= "table" then
+		return
+	end
+
+	local points = heatmap.points
+	if typeof(points) ~= "table" then
+		return
+	end
+
+	local folder = getHeatmapFolder()
+	folder:ClearAllChildren()
+
+	local maxPoints = Settings.MaxRenderedHeatmapPoints or 700
+	local baseSize = Settings.HeatmapPointSize or 4
+
+	for index = 1, math.min(#points, maxPoints) do
+		local point = points[index]
+		local x = tonumber(point.x)
+		local y = tonumber(point.y)
+		local z = tonumber(point.z)
+
+		if x and y and z then
+			local intensity = math.clamp(tonumber(point.intensity) or 0, 0, 1)
+			local marker = Instance.new("Part")
+			marker.Name = "HeatPoint_" .. tostring(index)
+			marker.Shape = Enum.PartType.Ball
+			marker.Anchored = true
+			marker.CanCollide = false
+			marker.CanTouch = false
+			marker.CanQuery = false
+			marker.Material = Enum.Material.Neon
+			marker.Color = getHeatmapColor(intensity)
+			marker.Transparency = 0.15
+			marker.Size = Vector3.new(1, 1, 1) * (baseSize + intensity * baseSize * 2)
+			marker.Position = Vector3.new(x, y, z)
+			marker:SetAttribute("SampleCount", tonumber(point.count) or 0)
+			marker:SetAttribute("Intensity", intensity)
+			marker.Parent = folder
+		end
+	end
+
+	debugWarn("Rendered heatmap points:", #folder:GetChildren(), "samples", heatmap.sampleCount or 0)
 end
 
 local function getPlayerSummary()
@@ -465,6 +541,8 @@ local function processHeartbeatResponse(response)
 
 	local commands = payload.commands or {}
 	debugWarn("Heartbeat response:", "liveServers", payload.liveServers or "?", "commands", #commands)
+
+	renderHeatmap(payload.heatmap)
 
 	for _, command in commands do
 		processCommand(command)
