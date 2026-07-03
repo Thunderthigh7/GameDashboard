@@ -15,7 +15,10 @@ const serversStatus = document.querySelector("#serversStatus");
 const serverList = document.querySelector("#serverList");
 const selectionSummary = document.querySelector("#selectionSummary");
 const targetSummary = document.querySelector("#targetSummary");
+const teleportTargets = document.querySelector("#teleportTargets");
+const teleportDestination = document.querySelector("#teleportDestination");
 const teleportButton = document.querySelector("#teleportButton");
+const teleportStatus = document.querySelector("#teleportStatus");
 const commandStatus = document.querySelector("#commandStatus");
 const kickTargets = document.querySelector("#kickTargets");
 const kickReason = document.querySelector("#kickReason");
@@ -405,34 +408,51 @@ function getPlayerDataRequestBody() {
 }
 
 async function queueTeleport() {
-  if (!targetPlayer || !selectedPlayerIds.size) {
+  const manualTargets = teleportTargets.value.trim();
+  const manualTargetPlayer = teleportDestination.value.trim();
+  const selectedIds = [...selectedPlayerIds].map(Number);
+
+  if (!manualTargets && !selectedIds.length) {
+    teleportStatus.textContent = "Enter users to teleport or select players from Live Servers.";
+    updateCommandBar();
+    return;
+  }
+
+  if (!manualTargetPlayer && !targetPlayer) {
+    teleportStatus.textContent = "Enter a target player or target a player from Live Servers.";
     updateCommandBar();
     return;
   }
 
   teleportButton.disabled = true;
-  commandStatus.textContent = "Queueing teleport command...";
+  teleportStatus.textContent = "Queueing teleport command...";
 
   try {
     const payload = await request("/api/commands/teleport", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        targetUserId: Number(targetPlayer.userId),
-        playerUserIds: [...selectedPlayerIds].map(Number),
+        targetUserId: manualTargetPlayer ? 0 : Number(targetPlayer.userId),
+        target: manualTargetPlayer,
+        playerUserIds: selectedIds,
+        manualTargets,
       }),
     });
 
     const movedCount = payload.queuedCommands.reduce((total, command) => total + command.playerUserIds.length, 0);
     const fallbackCount = movedCount - Number(payload.immediateCount || 0);
-    commandStatus.textContent = fallbackCount > 0
+    teleportStatus.textContent = fallbackCount > 0
       ? `Sent ${payload.immediateCount || 0} immediately; ${fallbackCount} queued for heartbeat fallback.`
       : `Sent ${movedCount} teleport command${movedCount === 1 ? "" : "s"} to ${payload.target.username}'s server.`;
+    if (payload.unresolvedTargets?.length) {
+      teleportStatus.textContent += ` Could not resolve: ${payload.unresolvedTargets.join(", ")}.`;
+    }
     selectedPlayerIds.clear();
+    teleportTargets.value = "";
     updateCommandBar();
     await loadServers();
   } catch (error) {
-    commandStatus.textContent = error.message;
+    teleportStatus.textContent = error.message;
     updateCommandBar();
   }
 }
@@ -655,7 +675,7 @@ function updateCommandBar() {
     ? `Target: ${targetPlayer.username}'s server`
     : "No target server selected";
 
-  teleportButton.disabled = !selectedCount || !targetPlayer;
+  teleportButton.disabled = false;
 
   for (const checkbox of serverList.querySelectorAll("[data-select-player]")) {
     checkbox.checked = selectedPlayerIds.has(checkbox.dataset.userId);

@@ -723,17 +723,23 @@ async function handleTeleportCommand(req, res) {
     return sendJson(res, 400, { error: error.message });
   }
 
-  const targetUserId = cleanInteger(body.targetUserId);
-  const playerUserIds = Array.isArray(body.playerUserIds)
+  const selectedTargetUserId = cleanInteger(body.targetUserId);
+  const resolvedTarget = await resolveUserTargets(body.target ?? body.targetUser ?? body.targetPlayer);
+  const targetUserId = selectedTargetUserId > 0
+    ? selectedTargetUserId
+    : resolvedTarget.userIds[0] || 0;
+  const selectedPlayerUserIds = Array.isArray(body.playerUserIds)
     ? [...new Set(body.playerUserIds.map(cleanInteger).filter((userId) => userId > 0))]
     : [];
+  const resolvedPlayers = await resolveUserTargets(body.manualTargets ?? body.manualUserIds);
+  const playerUserIds = [...new Set([...selectedPlayerUserIds, ...resolvedPlayers.userIds])];
 
   if (targetUserId <= 0) {
-    return sendJson(res, 400, { error: "Missing targetUserId" });
+    return sendJson(res, 400, { error: "Enter a valid target player username or user ID" });
   }
 
   if (!playerUserIds.length) {
-    return sendJson(res, 400, { error: "Select at least one player to teleport" });
+    return sendJson(res, 400, { error: "Enter or select at least one player to teleport" });
   }
 
   const target = findLivePlayer(targetUserId);
@@ -800,6 +806,8 @@ async function handleTeleportCommand(req, res) {
     queuedCommands,
     immediateCount,
     missingCount,
+    resolvedTargets: resolvedPlayers.resolved,
+    unresolvedTargets: [...resolvedTarget.unresolved, ...resolvedPlayers.unresolved],
   });
 }
 

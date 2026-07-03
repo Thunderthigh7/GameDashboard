@@ -194,6 +194,33 @@
         <div class="chatLogList" id="chatLogList"></div>
       </section>
 
+      <section class="panel teleportation">
+        <div class="sectionHeader">
+          <div>
+            <h2>Teleportation</h2>
+            <p>Move users into the server that contains the target player.</p>
+          </div>
+        </div>
+        <div class="dataToolGrid">
+          <div class="fieldGroup">
+            <label for="teleportTargets">Users to teleport</label>
+            <input id="teleportTargets" type="text" placeholder="Usernames or user IDs">
+          </div>
+          <div class="fieldGroup">
+            <label for="teleportDestination">Target player</label>
+            <input id="teleportDestination" type="text" placeholder="Username or user ID">
+          </div>
+        </div>
+        <div class="commandBar">
+          <div>
+            <strong id="selectionSummary">No players selected</strong>
+            <span id="targetSummary">No target server selected</span>
+          </div>
+          <button class="button compact" id="teleportButton" type="button">Teleport players</button>
+        </div>
+        <p class="status" id="teleportStatus"></p>
+      </section>
+
       <section class="panel servers">
         <div class="sectionHeader">
           <div>
@@ -205,13 +232,6 @@
         <div class="metricRow">
           <div><strong id="serverCount">0</strong><span>servers</span></div>
           <div><strong id="playerCount">0</strong><span>players</span></div>
-        </div>
-        <div class="commandBar">
-          <div>
-            <strong id="selectionSummary">No players selected</strong>
-            <span id="targetSummary">No target server selected</span>
-          </div>
-          <button class="button compact" id="teleportButton" type="button" disabled>Teleport selected</button>
         </div>
         <p class="status" id="serversStatus">Waiting for Roblox heartbeats...</p>
         <div class="serverList" id="serverList"></div>
