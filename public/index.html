@@ -116,38 +116,19 @@
         <div class="sectionHeader">
           <div>
             <h2>Player Data</h2>
-            <p>Read and edit standard DataStore entries through your Roblox Open Cloud API key.</p>
+            <p>Search by username or user ID, then read and edit the configured player DataStore entry.</p>
           </div>
           <div class="sectionActions">
-            <button class="button secondary compact" id="refreshDataStoresButton" type="button">Show DataStores</button>
             <button class="button secondary compact" id="loadPlayerDataButton" type="button">Load</button>
           </div>
         </div>
 
-        <p class="status" id="dataStoresStatus">Select an experience, then show DataStores.</p>
-        <div class="dataStoreList" id="dataStoreList"></div>
-        <p class="status" id="dataEntriesStatus">Select a DataStore to show entries.</p>
-        <div class="dataStoreList" id="dataEntryList"></div>
-
         <div class="dataToolGrid">
           <div class="fieldGroup">
-            <label for="dataStoreScope">Scope</label>
-            <input id="dataStoreScope" type="text" value="global">
-          </div>
-          <div class="fieldGroup">
-            <label for="dataKeyPrefix">Player key prefix</label>
-            <input id="dataKeyPrefix" type="text" value="Player_" placeholder="Player_">
-          </div>
-          <div class="fieldGroup">
-            <label for="dataTarget">Player username, user ID, or exact key</label>
+            <label for="dataTarget">Player username or user ID</label>
             <input id="dataTarget" type="text" placeholder="Thunder_thigh7">
           </div>
         </div>
-
-        <label class="checkboxRow">
-          <input id="dataExactKey" type="checkbox">
-          <span>Use target as exact entry key</span>
-        </label>
 
         <div class="dataEditorHeader">
           <div>
@@ -159,8 +140,8 @@
             <button class="button compact" id="savePlayerDataButton" type="button" disabled>Save</button>
           </div>
         </div>
-        <textarea id="playerDataEditor" class="jsonEditor" spellcheck="false" placeholder="Load a DataStore entry to edit JSON here."></textarea>
-        <p class="status" id="playerDataStatus">Select a DataStore, then load a player or entry.</p>
+        <textarea id="playerDataEditor" class="jsonEditor" spellcheck="false" placeholder="Load a player to edit JSON here."></textarea>
+        <p class="status" id="playerDataStatus">Select an experience, then search a player.</p>
       </section>
 
       <section class="panel chatLogs">

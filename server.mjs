@@ -19,6 +19,9 @@ const ROBLOX_OAUTH_CLIENT_SECRET = getRequiredEnv("ROBLOX_OAUTH_CLIENT_SECRET");
 const ROBLOX_API_KEY = getRequiredEnv("ROBLOX_API_KEY");
 const SESSION_SECRET = getRequiredEnv("SESSION_SECRET");
 const PRESENCE_SECRET = getRequiredEnv("PRESENCE_SECRET");
+const PLAYER_DATASTORE_NAME = cleanString(process.env.PLAYER_DATASTORE_NAME, 128);
+const PLAYER_DATASTORE_SCOPE = cleanString(process.env.PLAYER_DATASTORE_SCOPE, 128) || "global";
+const PLAYER_DATA_KEY_PREFIX = cleanString(process.env.PLAYER_DATA_KEY_PREFIX, 128);
 const PRESENCE_STALE_MS = 75_000;
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_COMMAND_BODY_BYTES = 16 * 1024;
@@ -87,6 +90,14 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/datastore/write" && req.method === "POST") {
       return handleDataStoreWrite(req, res);
+    }
+
+    if (url.pathname === "/api/player-data/read" && req.method === "POST") {
+      return handlePlayerDataRead(req, res);
+    }
+
+    if (url.pathname === "/api/player-data/write" && req.method === "POST") {
+      return handlePlayerDataWrite(req, res);
     }
 
     if (url.pathname === "/api/roblox/presence" && req.method === "POST") {
@@ -250,6 +261,56 @@ async function handleDataStoreWrite(req, res) {
   return sendJson(res, result.ok ? 200 : result.status || 500, result);
 }
 
+async function handlePlayerDataRead(req, res) {
+  if (!getCurrentAccount(req)) {
+    return sendJson(res, 401, { error: "Sign in before reading player data" });
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_DATASTORE_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  let requestInfo;
+  try {
+    requestInfo = await normalizePlayerDataRequest(body);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const result = await readDataStoreEntry(requestInfo);
+  return sendJson(res, result.ok ? 200 : result.status || 500, result);
+}
+
+async function handlePlayerDataWrite(req, res) {
+  if (!getCurrentAccount(req)) {
+    return sendJson(res, 401, { error: "Sign in before editing player data" });
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_DATASTORE_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  let requestInfo;
+  try {
+    requestInfo = await normalizePlayerDataRequest(body);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(body, "value")) {
+    return sendJson(res, 400, { error: "Missing value" });
+  }
+
+  const result = await writeDataStoreEntry(requestInfo, body.value);
+  return sendJson(res, result.ok ? 200 : result.status || 500, result);
+}
+
 async function listDataStores(options) {
   const url = new URL(`https://apis.roblox.com/datastores/v1/universes/${encodeURIComponent(options.universeId)}/standard-datastores`);
   url.searchParams.set("limit", "100");
@@ -369,6 +430,31 @@ async function normalizeDataStoreRequest(body) {
     target,
     keyPrefix,
     exactKey,
+    ...resolvedKey,
+  };
+}
+
+async function normalizePlayerDataRequest(body) {
+  const universeId = cleanInteger(body?.universeId);
+  const target = cleanString(body?.target, 256);
+
+  if (universeId <= 0) throw new Error("Select an experience first");
+  if (!PLAYER_DATASTORE_NAME) throw new Error("Set PLAYER_DATASTORE_NAME in the dashboard server environment");
+  if (!target) throw new Error("Enter a player username or user ID");
+
+  const resolvedKey = await resolveDataStoreEntryKey({
+    target,
+    keyPrefix: PLAYER_DATA_KEY_PREFIX,
+    exactKey: false,
+  });
+
+  return {
+    universeId,
+    datastoreName: PLAYER_DATASTORE_NAME,
+    scope: PLAYER_DATASTORE_SCOPE,
+    target,
+    keyPrefix: PLAYER_DATA_KEY_PREFIX,
+    exactKey: false,
     ...resolvedKey,
   };
 }
