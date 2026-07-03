@@ -29,10 +29,11 @@ const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_COMMANDS_PER_HEARTBEAT = 20;
 const DASHBOARD_COMMAND_TOPIC_PREFIX = "dashboard-command-";
 const KICK_COMMAND_TOPIC = "kick";
+const OAUTH_STATE_COOKIE = "oauth_state";
+const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
 const redirectUri = `${appBaseUrl}/auth/roblox/callback`;
 const oauthScope = "openid universe:read universe-messaging-service:publish universe.user-restriction:write";
-const oauthStates = new Map();
 const sessions = new Map();
 const serverPresence = new Map();
 const playerPresenceStartedAt = new Map();
@@ -49,7 +50,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/auth/roblox/callback") {
-      return handleRobloxCallback(res, url);
+      return handleRobloxCallback(req, res, url);
     }
 
     if (url.pathname === "/api/me" && req.method === "GET") {
@@ -1246,7 +1247,8 @@ function startRobloxAuth(req, res) {
   const codeVerifier = randomBase64Url(64);
   const codeChallenge = base64Url(crypto.createHash("sha256").update(codeVerifier).digest());
 
-  oauthStates.set(state, {
+  setOAuthStateCookie(res, {
+    state,
     nonce,
     codeVerifier,
     createdAt: Date.now(),
@@ -1266,22 +1268,24 @@ function startRobloxAuth(req, res) {
   redirect(res, authUrl.toString());
 }
 
-async function handleRobloxCallback(res, url) {
+async function handleRobloxCallback(req, res, url) {
   const error = url.searchParams.get("error");
   if (error) {
+    clearOAuthStateCookie(res);
     const description = url.searchParams.get("error_description") || error;
     return redirect(res, `/?auth_error=${encodeURIComponent(description)}`);
   }
 
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  const authState = state ? oauthStates.get(state) : null;
+  const authState = getOAuthState(req);
 
-  if (!code || !state || !authState) {
+  if (!code || !state || !authState || authState.state !== state) {
+    clearOAuthStateCookie(res);
     return redirect(res, "/?auth_error=Invalid OAuth callback state");
   }
 
-  oauthStates.delete(state);
+  clearOAuthStateCookie(res);
 
   const tokens = await exchangeCodeForTokens(code, authState.codeVerifier);
   const userInfo = await fetchUserInfo(tokens.access_token);
@@ -1479,10 +1483,10 @@ function getCurrentAccount(req) {
 }
 
 function getSessionId(req) {
-  const match = (req.headers.cookie || "").match(/(?:^|;\s*)session=([^;]+)/);
-  if (!match) return null;
+  const value = getCookieValue(req, "session");
+  if (!value) return null;
 
-  const [sessionId, signature] = decodeURIComponent(match[1]).split(".");
+  const [sessionId, signature] = value.split(".");
   if (!sessionId || !signature) return null;
 
   const expected = sign(sessionId);
@@ -1491,15 +1495,73 @@ function getSessionId(req) {
 }
 
 function setSessionCookie(res, sessionId) {
-  res.setHeader("Set-Cookie", `session=${encodeURIComponent(`${sessionId}.${sign(sessionId)}`)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=7776000`);
+  appendSetCookie(res, `session=${encodeURIComponent(`${sessionId}.${sign(sessionId)}`)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=7776000`);
 }
 
 function clearSessionCookie(res) {
-  res.setHeader("Set-Cookie", "session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  appendSetCookie(res, "session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
 }
 
 function sign(value) {
   return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("base64url");
+}
+
+function setOAuthStateCookie(res, value) {
+  const payload = Buffer.from(JSON.stringify(value)).toString("base64url");
+  const cookieValue = `${payload}.${sign(payload)}`;
+  appendSetCookie(res, `${OAUTH_STATE_COOKIE}=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/auth/roblox; Max-Age=${Math.ceil(OAUTH_STATE_MAX_AGE_MS / 1000)}`);
+}
+
+function getOAuthState(req) {
+  const value = getCookieValue(req, OAUTH_STATE_COOKIE);
+  if (!value) return null;
+
+  const [payload, signature] = value.split(".");
+  if (!payload || !signature) return null;
+
+  const expected = sign(payload);
+  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+
+  try {
+    const state = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const createdAt = Number(state?.createdAt || 0);
+    if (!state?.state || !state?.nonce || !state?.codeVerifier) return null;
+    if (!createdAt || Date.now() - createdAt > OAUTH_STATE_MAX_AGE_MS) return null;
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+function clearOAuthStateCookie(res) {
+  appendSetCookie(res, `${OAUTH_STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/auth/roblox; Max-Age=0`);
+}
+
+function getCookieValue(req, name) {
+  const cookies = String(req.headers.cookie || "").split(/;\s*/);
+  for (const cookie of cookies) {
+    const equalsIndex = cookie.indexOf("=");
+    if (equalsIndex === -1) continue;
+
+    const key = cookie.slice(0, equalsIndex);
+    if (key !== name) continue;
+
+    return decodeURIComponent(cookie.slice(equalsIndex + 1));
+  }
+
+  return "";
+}
+
+function appendSetCookie(res, cookie) {
+  const existing = res.getHeader("Set-Cookie");
+  if (!existing) {
+    res.setHeader("Set-Cookie", cookie);
+  } else if (Array.isArray(existing)) {
+    res.setHeader("Set-Cookie", [...existing, cookie]);
+  } else {
+    res.setHeader("Set-Cookie", [existing, cookie]);
+  }
 }
 
 async function serveStatic(res, relativePath) {
