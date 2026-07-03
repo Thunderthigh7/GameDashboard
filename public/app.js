@@ -63,6 +63,8 @@ let liveServers = [];
 let loadedDataRequest = null;
 let selectedDataStoreName = "";
 
+window.getSelectedUniverseId = () => selectedUniverseId;
+
 init();
 
 async function init() {
@@ -121,6 +123,9 @@ experienceGrid.addEventListener("click", (event) => {
   dataStoreList.innerHTML = "";
   updateSelectedDataStore();
   loadDataStores();
+  window.dispatchEvent(new CustomEvent("dashboard:experienceChanged", {
+    detail: { universeId: selectedUniverseId },
+  }));
 });
 dataStoreList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-datastore-name]");

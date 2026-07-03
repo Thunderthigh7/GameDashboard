@@ -10,9 +10,11 @@ local Methods = {}
 local playerJoinTimes = {}
 local playerConnections = {}
 local pendingChatLogs = {}
+local pendingMovementSamples = {}
 local processedCommandIds = {}
 local serverStartedAt = os.time()
 local chatLogCounter = 0
+local movementSampleCounter = 0
 
 local COMMAND_TOPIC_PREFIX = "dashboard-command-"
 local KICK_COMMAND_TOPIC = "kick"
@@ -45,6 +47,23 @@ end
 
 local function getMaxPendingChatLogs()
 	return Settings.MaxPendingChatLogs or 500
+end
+
+local function getMaxMovementSamplesPerPayload()
+	return Settings.MaxMovementSamplesPerPayload or 200
+end
+
+local function getMaxPendingMovementSamples()
+	return Settings.MaxPendingMovementSamples or 1000
+end
+
+local function roundPosition(value)
+	local precision = Settings.MovementPositionPrecision or 1
+	if precision <= 0 then
+		return value
+	end
+
+	return math.floor((value / precision) + 0.5) * precision
 end
 
 local function trimChatMessage(message)
@@ -242,6 +261,37 @@ local function queueChatLog(player, message)
 	end
 
 	debugWarn("Queued chat log:", player.Name, player.UserId, text)
+end
+
+local function queueMovementSample(player)
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local position = rootPart.Position
+	movementSampleCounter += 1
+	table.insert(pendingMovementSamples, {
+		id = game.JobId .. ":move:" .. tostring(movementSampleCounter),
+		userId = player.UserId,
+		username = player.Name,
+		displayName = player.DisplayName,
+		x = roundPosition(position.X),
+		y = roundPosition(position.Y),
+		z = roundPosition(position.Z),
+		sampledAt = os.time(),
+	})
+
+	while #pendingMovementSamples > getMaxPendingMovementSamples() do
+		table.remove(pendingMovementSamples, 1)
+	end
+end
+
+local function samplePlayerMovement()
+	for _, player in Players:GetPlayers() do
+		queueMovementSample(player)
+	end
 end
 
 local function trackPlayer(player)
@@ -475,9 +525,26 @@ local function getChatLogsPayload()
 	return chatLogs
 end
 
+local function getMovementSamplesPayload()
+	local movementSamples = {}
+	local maxMovementSamples = getMaxMovementSamplesPerPayload()
+
+	for index = 1, math.min(#pendingMovementSamples, maxMovementSamples) do
+		table.insert(movementSamples, pendingMovementSamples[index])
+	end
+
+	return movementSamples
+end
+
 local function clearSentChatLogs(count)
 	for _ = 1, math.min(count, #pendingChatLogs) do
 		table.remove(pendingChatLogs, 1)
+	end
+end
+
+local function clearSentMovementSamples(count)
+	for _ = 1, math.min(count, #pendingMovementSamples) do
+		table.remove(pendingMovementSamples, 1)
 	end
 end
 
@@ -491,6 +558,7 @@ local function buildPayload()
 		playerCount = #Players:GetPlayers(),
 		players = getPlayersPayload(),
 		chatLogs = getChatLogsPayload(),
+		movementSamples = getMovementSamplesPayload(),
 	}
 end
 
@@ -509,7 +577,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -538,6 +606,7 @@ function Methods.SendHeartbeat()
 	end
 
 	clearSentChatLogs(#payload.chatLogs)
+	clearSentMovementSamples(#payload.movementSamples)
 	processHeartbeatResponse(response)
 
 	debugWarn("Heartbeat sent:", response.StatusCode, response.Body or "", "remainingChatLogs", #pendingChatLogs)
@@ -564,6 +633,13 @@ function Methods.Start()
 	end
 
 	subscribeToCommandTopics()
+
+	task.spawn(function()
+		while true do
+			samplePlayerMovement()
+			task.wait(Settings.MovementSampleInterval or 2)
+		end
+	end)
 
 	task.spawn(function()
 		task.wait(3)

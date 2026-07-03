@@ -194,6 +194,23 @@
         <div class="chatLogList" id="chatLogList"></div>
       </section>
 
+      <section class="panel movementHeatmap">
+        <div class="sectionHeader">
+          <div>
+            <h2>Movement Heat Map</h2>
+            <p>Recent player movement samples rendered in 3D.</p>
+          </div>
+          <button class="button secondary compact" id="refreshMovementButton" type="button">Refresh</button>
+        </div>
+        <div class="heatmapShell">
+          <canvas id="movementHeatmapCanvas"></canvas>
+          <div class="heatmapOverlay">
+            <strong id="movementSampleCount">0 samples</strong>
+            <span id="movementHeatmapStatus">Waiting for movement samples...</span>
+          </div>
+        </div>
+      </section>
+
       <section class="panel teleportation">
         <div class="sectionHeader">
           <div>
@@ -238,5 +255,6 @@
       </section>
     </main>
     <script src="/app.js"></script>
+    <script type="module" src="/heatmap.js"></script>
   </body>
 </html>

@@ -26,6 +26,9 @@ const MAX_DATASTORE_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
 const MAX_CHAT_LOGS_PER_PAYLOAD = 200;
 const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
+const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
+const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
+const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
 const MAX_COMMANDS_PER_HEARTBEAT = 20;
 const PLAYER_DATA_SAMPLE_LIMIT = 3;
 const DASHBOARD_COMMAND_TOPIC_PREFIX = "dashboard-command-";
@@ -42,6 +45,8 @@ const playerPresenceStartedAt = new Map();
 const pendingCommandsByJobId = new Map();
 const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
+const movementSamplesByUniverseId = new Map();
+const movementSampleIdsByUniverseId = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -71,6 +76,12 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
       return sendJson(res, 200, getChatLogs({
+        universeId: url.searchParams.get("universeId"),
+      }));
+    }
+
+    if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
+      return sendJson(res, 200, getMovementHeatmap({
         universeId: url.searchParams.get("universeId"),
       }));
     }
@@ -163,6 +174,7 @@ async function handlePresenceHeartbeat(req, res) {
 
   serverPresence.set(presence.value.jobId, applyPlayerDurations(presence.value));
   const savedChatCount = saveChatLogs(presence.value);
+  const savedMovementCount = saveMovementSamples(presence.value);
   const commands = consumePendingCommands(presence.value.jobId);
 
   return sendJson(res, 200, {
@@ -170,6 +182,7 @@ async function handlePresenceHeartbeat(req, res) {
     receivedAt: presence.value.receivedAt,
     liveServers: getLiveServers().servers.length,
     savedChatCount,
+    savedMovementCount,
     commands,
   });
 }
@@ -1237,6 +1250,12 @@ function normalizePresence(body) {
     jobId,
     receivedAt,
   });
+  const movementSamples = normalizeMovementSamples(body.movementSamples, {
+    universeId: cleanInteger(body.universeId),
+    placeId: cleanInteger(body.placeId),
+    jobId,
+    receivedAt,
+  });
 
   return {
     ok: true,
@@ -1250,6 +1269,7 @@ function normalizePresence(body) {
       playerCount: Math.max(cleanInteger(body.playerCount), cleanPlayers.length),
       players: cleanPlayers,
       chatLogs,
+      movementSamples,
     },
   };
 }
@@ -1299,6 +1319,85 @@ function saveChatLogs(presence) {
   chatLogsByUniverseId.set(universeKey, logs);
   chatLogIdsByUniverseId.set(universeKey, ids);
   return savedCount;
+}
+
+function normalizeMovementSamples(value, context) {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, MAX_MOVEMENT_SAMPLES_PER_PAYLOAD).map((entry) => ({
+    id: cleanString(entry?.id, 160),
+    universeId: context.universeId,
+    placeId: context.placeId,
+    jobId: context.jobId,
+    userId: cleanInteger(entry?.userId),
+    username: cleanString(entry?.username || entry?.name, 64),
+    displayName: cleanString(entry?.displayName, 64),
+    x: cleanFiniteNumber(entry?.x),
+    y: cleanFiniteNumber(entry?.y),
+    z: cleanFiniteNumber(entry?.z),
+    sampledAt: cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+    receivedAt: context.receivedAt,
+  })).filter((entry) => (
+    entry.userId > 0
+    && entry.username
+    && Number.isFinite(entry.x)
+    && Number.isFinite(entry.y)
+    && Number.isFinite(entry.z)
+  ));
+}
+
+function saveMovementSamples(presence) {
+  if (!presence.movementSamples?.length || presence.universeId <= 0) return 0;
+
+  const universeKey = String(presence.universeId);
+  const samples = movementSamplesByUniverseId.get(universeKey) || [];
+  const ids = movementSampleIdsByUniverseId.get(universeKey) || new Set();
+  let savedCount = 0;
+
+  for (const sample of presence.movementSamples) {
+    const sampleId = sample.id || `${sample.jobId}:${sample.userId}:${sample.sampledAt}:${sample.x}:${sample.y}:${sample.z}`;
+    if (ids.has(sampleId)) continue;
+
+    ids.add(sampleId);
+    samples.push({
+      ...sample,
+      id: sampleId,
+    });
+    savedCount += 1;
+  }
+
+  while (samples.length > MAX_MOVEMENT_SAMPLES_PER_UNIVERSE) {
+    const removed = samples.shift();
+    if (removed?.id) ids.delete(removed.id);
+  }
+
+  movementSamplesByUniverseId.set(universeKey, samples);
+  movementSampleIdsByUniverseId.set(universeKey, ids);
+  return savedCount;
+}
+
+function getMovementHeatmap(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  const samples = [];
+
+  if (universeIdFilter > 0) {
+    samples.push(...(movementSamplesByUniverseId.get(String(universeIdFilter)) || []));
+  } else {
+    for (const universeSamples of movementSamplesByUniverseId.values()) {
+      samples.push(...universeSamples);
+    }
+  }
+
+  samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
+  const limitedSamples = samples.slice(0, MAX_MOVEMENT_SAMPLES_RESPONSE);
+
+  return {
+    universeId: universeIdFilter || null,
+    sampleCount: samples.length,
+    returnedCount: limitedSamples.length,
+    maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
+    samples: limitedSamples,
+  };
 }
 
 function getChatLogs(filters = {}) {
@@ -1457,6 +1556,11 @@ function cleanString(value, maxLength) {
 function cleanInteger(value) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function cleanFiniteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : NaN;
 }
 
 function cleanTimestampMs(value) {

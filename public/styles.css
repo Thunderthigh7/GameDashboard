@@ -73,7 +73,11 @@ button {
 .experiences,
 .servers,
 .playerData,
-.chatLogs {
+.chatLogs,
+.movementHeatmap,
+.teleportation,
+.messages,
+.moderation {
   margin-top: 20px;
 }
 
@@ -499,6 +503,40 @@ button {
   color: var(--text);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.heatmapShell {
+  position: relative;
+  min-height: 420px;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #090d14;
+}
+
+#movementHeatmapCanvas {
+  display: block;
+  width: 100%;
+  height: 420px;
+}
+
+.heatmapOverlay {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  display: grid;
+  gap: 4px;
+  max-width: min(420px, calc(100% - 28px));
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.82);
+  padding: 10px 12px;
+  pointer-events: none;
+}
+
+.heatmapOverlay span {
+  color: var(--muted);
 }
 
 .notice {
