@@ -945,8 +945,8 @@ async function handleAnnouncementCommand(req, res) {
     return sendJson(res, 400, { error: "Invalid announcement scope" });
   }
 
-  if (scope === "global" && universeId <= 0) {
-    return sendJson(res, 400, { error: "Select an experience before sending a global message" });
+  if (universeId <= 0) {
+    return sendJson(res, 400, { error: "Select an experience before sending a message" });
   }
 
   if (!message) {
@@ -976,25 +976,33 @@ async function handleAnnouncementCommand(req, res) {
   }
 
   if (scope === "server") {
-    const serverInfo = await resolveAnnouncementServer(body);
-    if (!serverInfo.ok) {
-      return sendJson(res, 400, { error: serverInfo.error });
+    const selectedUserId = cleanInteger(body.targetUserId);
+    const resolvedTargets = await resolveUserTargets(body.serverTarget ?? body.manualTargets);
+    const userIds = [...new Set([
+      ...(selectedUserId > 0 ? [selectedUserId] : []),
+      ...resolvedTargets.userIds,
+    ])];
+
+    if (!userIds.length) {
+      return sendJson(res, 400, { error: "Enter a player username or user ID for the server to find" });
     }
 
-    const delivery = await publishCommandToServer(session, serverInfo.server.universeId, serverInfo.server.jobId, command);
-    if (!delivery.ok) {
-      queueCommand(serverInfo.server.jobId, command);
-    }
+    const delivery = await publishAnnouncementCommand(session, universeId, {
+      ...command,
+      targetServerUserIds: userIds,
+    });
 
-    return sendJson(res, delivery.ok ? 200 : 202, {
-      ok: true,
+    return sendJson(res, delivery.ok ? 200 : 502, {
+      ok: delivery.ok,
       scope,
-      universeId: serverInfo.server.universeId,
-      jobId: serverInfo.server.jobId,
-      topic: getServerCommandTopic(serverInfo.server.jobId),
+      universeId,
+      topic: GLOBAL_ANNOUNCEMENT_TOPIC,
       commandId: command.id,
-      delivery: delivery.ok ? "published" : "heartbeat-fallback",
-      error: delivery.ok ? undefined : delivery.error,
+      userIds,
+      resolvedTargets: resolvedTargets.resolved,
+      unresolvedTargets: resolvedTargets.unresolved,
+      delivery: delivery.ok ? "published-server-lookup" : "failed",
+      ...delivery,
     });
   }
 
@@ -1007,56 +1015,22 @@ async function handleAnnouncementCommand(req, res) {
     return sendJson(res, 400, { error: "Select or enter at least one player username or user ID" });
   }
 
-  const liveTargets = userIds.map(findLivePlayer).filter(Boolean);
-  if (!liveTargets.length) {
-    return sendJson(res, 404, {
-      error: "None of those players are currently in a live server",
-      unresolvedTargets: resolvedTargets.unresolved,
-    });
-  }
+  const delivery = await publishAnnouncementCommand(session, universeId, {
+    ...command,
+    playerUserIds: userIds,
+  });
 
-  const commandsByJobId = new Map();
-  for (const player of liveTargets) {
-    const existing = commandsByJobId.get(player.jobId) || {
-      universeId: player.universeId,
-      jobId: player.jobId,
-      userIds: [],
-    };
-    existing.userIds.push(player.userId);
-    commandsByJobId.set(player.jobId, existing);
-  }
-
-  const deliveries = [];
-  for (const target of commandsByJobId.values()) {
-    const playerCommand = {
-      ...command,
-      id: randomBase64Url(12),
-      playerUserIds: [...new Set(target.userIds)],
-    };
-    const delivery = await publishCommandToServer(session, target.universeId, target.jobId, playerCommand);
-    if (!delivery.ok) {
-      queueCommand(target.jobId, playerCommand);
-    }
-
-    deliveries.push({
-      universeId: target.universeId,
-      jobId: target.jobId,
-      topic: getServerCommandTopic(target.jobId),
-      userIds: playerCommand.playerUserIds,
-      commandId: playerCommand.id,
-      delivery: delivery.ok ? "published" : "heartbeat-fallback",
-      error: delivery.ok ? undefined : delivery.error,
-    });
-  }
-
-  return sendJson(res, 200, {
-    ok: true,
+  return sendJson(res, delivery.ok ? 200 : 502, {
+    ok: delivery.ok,
     scope,
+    universeId,
+    topic: GLOBAL_ANNOUNCEMENT_TOPIC,
+    commandId: command.id,
     userIds,
     resolvedTargets: resolvedTargets.resolved,
     unresolvedTargets: resolvedTargets.unresolved,
-    sentPlayerCount: liveTargets.length,
-    deliveries,
+    delivery: delivery.ok ? "published-player-lookup" : "failed",
+    ...delivery,
   });
 }
 
@@ -1393,63 +1367,6 @@ function findLivePlayer(userId) {
   }
 
   return null;
-}
-
-function findLiveServerByJobId(jobId) {
-  const targetJobId = cleanString(jobId, 128);
-  if (!targetJobId) return null;
-
-  return getLiveServers().servers.find((serverInfo) => serverInfo.jobId === targetJobId) || null;
-}
-
-async function resolveAnnouncementServer(body) {
-  const jobId = cleanString(body.jobId, 128);
-  if (jobId) {
-    const serverInfo = findLiveServerByJobId(jobId);
-    if (!serverInfo) {
-      return { ok: false, error: "That JobId is not currently reporting as a live server" };
-    }
-
-    return { ok: true, server: serverInfo };
-  }
-
-  const selectedUserId = cleanInteger(body.targetUserId);
-  if (selectedUserId > 0) {
-    const player = findLivePlayer(selectedUserId);
-    if (!player) {
-      return { ok: false, error: "That player is not currently in a live server" };
-    }
-
-    const serverInfo = findLiveServerByJobId(player.jobId);
-    if (serverInfo) {
-      return { ok: true, server: serverInfo };
-    }
-
-    return {
-      ok: true,
-      server: {
-        universeId: player.universeId,
-        placeId: player.placeId,
-        jobId: player.jobId,
-        players: [player],
-      },
-    };
-  }
-
-  const resolvedTargets = await resolveUserTargets(body.serverTarget ?? body.manualTargets);
-  if (resolvedTargets.userIds.length) {
-    const player = findLivePlayer(resolvedTargets.userIds[0]);
-    if (!player) {
-      return { ok: false, error: "That player is not currently in a live server" };
-    }
-
-    const serverInfo = findLiveServerByJobId(player.jobId);
-    if (serverInfo) {
-      return { ok: true, server: serverInfo };
-    }
-  }
-
-  return { ok: false, error: "Enter a live JobId or target a player who is in a live server" };
 }
 
 function findFirstUserUniverseId(userIds) {

@@ -530,17 +530,19 @@ async function sendGlobalAnnouncement() {
 async function sendServerAnnouncement() {
   const message = serverAnnouncementMessage.value.trim();
   const target = serverAnnouncementTarget.value.trim();
-  const matchingServer = target
-    ? liveServers.find((server) => server.jobId === target || shortJobId(server.jobId) === target)
-    : null;
 
   if (!message) {
     commandStatus.textContent = "Enter a server message first.";
     return;
   }
 
+  if (!selectedUniverseId) {
+    commandStatus.textContent = "Select an experience before sending a server message.";
+    return;
+  }
+
   if (!target && !targetPlayer) {
-    commandStatus.textContent = "Enter a live JobId, enter a player, or target a player in the server list first.";
+    commandStatus.textContent = "Enter a player username/user ID or target a player in the server list first.";
     return;
   }
 
@@ -553,16 +555,17 @@ async function sendServerAnnouncement() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         scope: "server",
+        universeId: Number(selectedUniverseId),
         message,
-        jobId: matchingServer?.jobId || "",
         targetUserId: !target && targetPlayer ? Number(targetPlayer.userId) : 0,
-        serverTarget: matchingServer ? "" : target,
+        serverTarget: target,
       }),
     });
 
-    commandStatus.textContent = payload.delivery === "heartbeat-fallback"
-      ? `Server message queued for ${shortJobId(payload.jobId)} heartbeat fallback.`
-      : `Server message sent to ${shortJobId(payload.jobId)}.`;
+    commandStatus.textContent = `Server lookup message published for ${payload.userIds?.length || 0} player target${payload.userIds?.length === 1 ? "" : "s"}.`;
+    if (payload.unresolvedTargets?.length) {
+      commandStatus.textContent += ` Could not resolve: ${payload.unresolvedTargets.join(", ")}.`;
+    }
     serverAnnouncementMessage.value = "";
   } catch (error) {
     commandStatus.textContent = error.message;
@@ -581,6 +584,11 @@ async function sendPlayerAnnouncement() {
     return;
   }
 
+  if (!selectedUniverseId) {
+    commandStatus.textContent = "Select an experience before sending a player message.";
+    return;
+  }
+
   if (!manualTargets && !playerUserIds.length) {
     commandStatus.textContent = "Select players or enter usernames/user IDs first.";
     return;
@@ -595,15 +603,15 @@ async function sendPlayerAnnouncement() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         scope: "player",
+        universeId: Number(selectedUniverseId),
         message,
         playerUserIds,
         manualTargets,
       }),
     });
 
-    const deliveryCount = Number(payload.deliveries?.length || 0);
-    const playerCount = Number(payload.sentPlayerCount || 0);
-    commandStatus.textContent = `Player message sent to ${playerCount} player${playerCount === 1 ? "" : "s"} across ${deliveryCount} server${deliveryCount === 1 ? "" : "s"}.`;
+    const playerCount = Number(payload.userIds?.length || 0);
+    commandStatus.textContent = `Player lookup message published for ${playerCount} player${playerCount === 1 ? "" : "s"}.`;
     if (payload.unresolvedTargets?.length) {
       commandStatus.textContent += ` Could not resolve: ${payload.unresolvedTargets.join(", ")}.`;
     }
