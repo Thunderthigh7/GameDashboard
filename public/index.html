@@ -42,24 +42,12 @@
         <div class="experienceGrid" id="experienceGrid"></div>
       </section>
 
-      <section class="panel servers">
+      <section class="panel moderation">
         <div class="sectionHeader">
           <div>
-            <h2>Live Servers</h2>
-            <p>Presence heartbeats stored locally by this dashboard server.</p>
+            <h2>Moderation</h2>
+            <p>Kick, ban, or unban Roblox users.</p>
           </div>
-          <button class="button secondary compact" id="refreshServersButton" type="button">Refresh</button>
-        </div>
-        <div class="metricRow">
-          <div><strong id="serverCount">0</strong><span>servers</span></div>
-          <div><strong id="playerCount">0</strong><span>players</span></div>
-        </div>
-        <div class="commandBar">
-          <div>
-            <strong id="selectionSummary">No players selected</strong>
-            <span id="targetSummary">No target server selected</span>
-          </div>
-          <button class="button compact" id="teleportButton" type="button" disabled>Teleport selected</button>
         </div>
         <div class="moderationGrid">
           <section class="moderationCard">
@@ -75,7 +63,7 @@
             <button class="button secondary compact" id="kickButton" type="button">Kick</button>
           </section>
 
-          <section class="moderationCard dangerCard">
+          <section class="moderationCard">
             <h3>Ban</h3>
             <div class="fieldGroup">
               <label for="banTargets">User IDs or usernames</label>
@@ -95,7 +83,7 @@
               <label for="banReason">Reason</label>
               <input id="banReason" type="text" placeholder="Optional reason">
             </div>
-            <button class="button secondary compact danger" id="banButton" type="button">Ban</button>
+            <button class="button secondary compact" id="banButton" type="button">Ban</button>
           </section>
 
           <section class="moderationCard">
@@ -106,7 +94,17 @@
             </div>
             <button class="button secondary compact" id="unbanButton" type="button">Unban</button>
           </section>
+        </div>
+      </section>
 
+      <section class="panel messages">
+        <div class="sectionHeader">
+          <div>
+            <h2>Messages</h2>
+            <p>Send filtered Roblox announcements.</p>
+          </div>
+        </div>
+        <div class="moderationGrid">
           <section class="moderationCard announcementCard">
             <h3>Global Message</h3>
             <div class="fieldGroup">
@@ -143,8 +141,6 @@
           </section>
         </div>
         <p class="status" id="commandStatus"></p>
-        <p class="status" id="serversStatus">Waiting for Roblox heartbeats...</p>
-        <div class="serverList" id="serverList"></div>
       </section>
 
       <section class="panel playerData" id="playerDataPanel" hidden>
@@ -196,6 +192,29 @@
         </div>
         <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
         <div class="chatLogList" id="chatLogList"></div>
+      </section>
+
+      <section class="panel servers">
+        <div class="sectionHeader">
+          <div>
+            <h2>Live Servers</h2>
+            <p>Presence heartbeats stored locally by this dashboard server.</p>
+          </div>
+          <button class="button secondary compact" id="refreshServersButton" type="button">Refresh</button>
+        </div>
+        <div class="metricRow">
+          <div><strong id="serverCount">0</strong><span>servers</span></div>
+          <div><strong id="playerCount">0</strong><span>players</span></div>
+        </div>
+        <div class="commandBar">
+          <div>
+            <strong id="selectionSummary">No players selected</strong>
+            <span id="targetSummary">No target server selected</span>
+          </div>
+          <button class="button compact" id="teleportButton" type="button" disabled>Teleport selected</button>
+        </div>
+        <p class="status" id="serversStatus">Waiting for Roblox heartbeats...</p>
+        <div class="serverList" id="serverList"></div>
       </section>
     </main>
     <script src="/app.js"></script>
