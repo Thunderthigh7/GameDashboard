@@ -8,7 +8,7 @@ npm start
 
 Open `http://localhost:3000`.
 
-Copy `.env.example` to `.env` and fill in the Roblox OAuth and Open Cloud values before starting the server.
+Copy `.env.example` to `.env` and fill in the Roblox OAuth and Open Cloud values before starting the server. When using a Cloudflare tunnel, set `PUBLIC_BASE_URL` to the current `https://...trycloudflare.com` URL and add `PUBLIC_BASE_URL/auth/roblox/callback` to the Roblox OAuth app redirect URIs.
 
 To start the dashboard and Rojo together:
 

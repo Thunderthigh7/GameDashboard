@@ -11,7 +11,8 @@ const publicDir = path.join(__dirname, "public");
 loadLocalEnv();
 
 const port = Number(process.env.PORT || 3000);
-const appBaseUrl = `http://localhost:${port}`;
+const localBaseUrl = `http://localhost:${port}`;
+const appBaseUrl = cleanBaseUrl(process.env.PUBLIC_BASE_URL || localBaseUrl);
 
 const ROBLOX_OAUTH_CLIENT_ID = getRequiredEnv("ROBLOX_OAUTH_CLIENT_ID");
 const ROBLOX_OAUTH_CLIENT_SECRET = getRequiredEnv("ROBLOX_OAUTH_CLIENT_SECRET");
@@ -1569,4 +1570,8 @@ function getRequiredEnv(key) {
   }
 
   return value;
+}
+
+function cleanBaseUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
 }
