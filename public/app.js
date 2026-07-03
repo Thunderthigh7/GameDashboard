@@ -26,6 +26,8 @@ const unbanTargets = document.querySelector("#unbanTargets");
 const kickButton = document.querySelector("#kickButton");
 const banButton = document.querySelector("#banButton");
 const unbanButton = document.querySelector("#unbanButton");
+const announcementMessage = document.querySelector("#announcementMessage");
+const announcementButton = document.querySelector("#announcementButton");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const chatLogCount = document.querySelector("#chatLogCount");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
@@ -94,6 +96,7 @@ teleportButton.addEventListener("click", queueTeleport);
 kickButton.addEventListener("click", () => sendModerationCommand("kick"));
 banButton.addEventListener("click", () => sendModerationCommand("ban"));
 unbanButton.addEventListener("click", () => sendModerationCommand("unban"));
+announcementButton.addEventListener("click", sendGlobalAnnouncement);
 experienceGrid.addEventListener("click", (event) => {
   const button = event.target.closest("[data-universe-id]");
   if (!button) return;
@@ -474,6 +477,43 @@ async function sendModerationCommand(action) {
     await loadServers();
   } catch (error) {
     commandStatus.textContent = error.message;
+  }
+}
+
+async function sendGlobalAnnouncement() {
+  const message = announcementMessage.value.trim();
+
+  if (!selectedUniverseId) {
+    commandStatus.textContent = "Select an experience before sending a global message.";
+    return;
+  }
+
+  if (!message) {
+    commandStatus.textContent = "Enter a message first.";
+    return;
+  }
+
+  announcementButton.disabled = true;
+  commandStatus.textContent = "Sending global message...";
+
+  try {
+    const payload = await request("/api/commands/announcement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        universeId: Number(selectedUniverseId),
+        message,
+      }),
+    });
+
+    commandStatus.textContent = payload.ok
+      ? `Global message sent via topic ${payload.topic}.`
+      : payload.error || "Global message failed.";
+    announcementMessage.value = "";
+  } catch (error) {
+    commandStatus.textContent = error.message;
+  } finally {
+    announcementButton.disabled = false;
   }
 }
 

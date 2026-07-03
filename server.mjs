@@ -30,6 +30,7 @@ const MAX_COMMANDS_PER_HEARTBEAT = 20;
 const PLAYER_DATA_SAMPLE_LIMIT = 3;
 const DASHBOARD_COMMAND_TOPIC_PREFIX = "dashboard-command-";
 const KICK_COMMAND_TOPIC = "kick";
+const GLOBAL_ANNOUNCEMENT_TOPIC = "dashboard-global-announcement";
 const OAUTH_STATE_COOKIE = "oauth_state";
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -108,6 +109,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/commands/moderation" && req.method === "POST") {
       return handleModerationCommand(req, res);
+    }
+
+    if (url.pathname === "/api/commands/announcement" && req.method === "POST") {
+      return handleAnnouncementCommand(req, res);
     }
 
     if (url.pathname === "/api/logout" && req.method === "POST") {
@@ -917,12 +922,62 @@ async function handleModerationCommand(req, res) {
   });
 }
 
+async function handleAnnouncementCommand(req, res) {
+  const sessionId = getSessionId(req);
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session) {
+    return sendJson(res, 401, { error: "Sign in before sending commands" });
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_COMMAND_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body.universeId);
+  const message = cleanString(body.message, 240);
+  const durationSeconds = Math.min(Math.max(cleanInteger(body.durationSeconds) || 6, 3), 20);
+
+  if (universeId <= 0) {
+    return sendJson(res, 400, { error: "Select an experience before sending a global message" });
+  }
+
+  if (!message) {
+    return sendJson(res, 400, { error: "Enter a message first" });
+  }
+
+  const command = {
+    id: randomBase64Url(12),
+    type: "globalAnnouncement",
+    createdAt: Date.now(),
+    requestedBy: session.robloxUserId,
+    message,
+    durationSeconds,
+  };
+
+  const delivery = await publishAnnouncementCommand(session, universeId, command);
+  return sendJson(res, delivery.ok ? 200 : 502, {
+    ok: delivery.ok,
+    universeId,
+    topic: GLOBAL_ANNOUNCEMENT_TOPIC,
+    commandId: command.id,
+    delivery: delivery.ok ? "published" : "failed",
+    ...delivery,
+  });
+}
+
 async function publishCommandToServer(session, universeId, jobId, command) {
   return publishCommandToTopic(session, universeId, getServerCommandTopic(jobId), command);
 }
 
 async function publishKickCommand(session, universeId, command) {
   return publishCommandToTopic(session, universeId, KICK_COMMAND_TOPIC, command);
+}
+
+async function publishAnnouncementCommand(session, universeId, command) {
+  return publishCommandToTopic(session, universeId, GLOBAL_ANNOUNCEMENT_TOPIC, command);
 }
 
 async function publishCommandToTopic(session, universeId, topic, command) {

@@ -1,7 +1,7 @@
 # Roblox Presence Service
 
 Reference Luau files for the Roblox-side presence heartbeat and dashboard command receiver.
-Teleport and kick commands still run through MessagingService because they need a live server.
+Teleport, kick, and global message commands still run through MessagingService because they need a live server.
 Ban and unban commands are handled directly by the website through Roblox Open Cloud User Restrictions.
 
 Paste this exact tree into Roblox:
@@ -30,6 +30,7 @@ With `Settings.Debug = true`, startup should print:
 [PresenceService] Settings: endpoint ... interval ... maxPlayers ... debug true
 [PresenceService] Players at start: ...
 [PresenceService] Subscribed to command topic: kick
+[PresenceService] Subscribed to command topic: dashboard-global-announcement
 [PresenceService] Heartbeat payload: endpoint ... players ...
 [PresenceService] Heartbeat response: liveServers ... commands ...
 [PresenceService] Heartbeat sent: 200 ...
