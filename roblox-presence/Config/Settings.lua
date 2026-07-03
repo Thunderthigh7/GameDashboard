@@ -1,6 +1,6 @@
 local Settings = {}
 
-Settings.Endpoint = "https://immune-controversy-assessed-lawn.trycloudflare.com/api/roblox/presence"
+Settings.Endpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/presence"
 Settings.Secret = "local-dev-presence-secret"
 
 Settings.HeartbeatInterval = 20

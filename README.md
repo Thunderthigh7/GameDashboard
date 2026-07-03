@@ -8,7 +8,7 @@ npm start
 
 Open `http://localhost:3000`.
 
-Copy `.env.example` to `.env` and fill in the Roblox OAuth and Open Cloud values before starting the server. When using a Cloudflare tunnel, set `PUBLIC_BASE_URL` to the current `https://...trycloudflare.com` URL and add `PUBLIC_BASE_URL/auth/roblox/callback` to the Roblox OAuth app redirect URIs.
+Copy `.env.example` to `.env` and fill in the Roblox OAuth and Open Cloud values before starting the server. The hosted dashboard uses `https://game-dashboard-zaya.onrender.com`, so the Roblox OAuth redirect URI should be `https://game-dashboard-zaya.onrender.com/auth/roblox/callback`.
 
 Player data lookup lists DataStores, lets you select one, then reads a specific username or user ID directly. Entry browsing is not used for lookup; the server samples a few keys from the selected DataStore to infer common prefixes such as `Player_`. DataStore entry listing returns one page of up to 100 keys when used directly.
 
@@ -24,7 +24,7 @@ Optional quick tunnel:
 npm run start:all -- --tunnel
 ```
 
-The tunnel command creates a new temporary URL, so update `roblox-presence/Config/Settings.lua` if you use it.
+The tunnel command creates a new temporary URL for local testing only. Live Roblox servers should keep `roblox-presence/Config/Settings.lua` pointed at `https://game-dashboard-zaya.onrender.com/api/roblox/presence`.
 
 ## Roblox Presence Sync
 
