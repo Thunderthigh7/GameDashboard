@@ -1,0 +1,14 @@
+local Methods = require(script.Parent.Core.Methods)
+
+local PresenceService = {}
+
+function PresenceService.SendHeartbeat()
+	return Methods.SendHeartbeat()
+end
+
+function PresenceService.Start()
+	warn("[PresenceService] API Start called:", script:GetFullName())
+	Methods.Start()
+end
+
+return PresenceService

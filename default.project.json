@@ -1,0 +1,21 @@
+{
+  "name": "DashboardPresence",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Server": {
+        "$className": "Folder",
+        "Services": {
+          "$className": "Folder",
+          "Game": {
+            "$className": "Folder",
+            "PresenceService": {
+              "$path": "roblox-presence"
+            }
+          }
+        }
+      }
+    }
+  }
+}

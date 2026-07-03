@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Dashboard</h1>
+          <p>Roblox sign-in only.</p>
+        </div>
+        <div class="account" id="accountBox">Checking...</div>
+      </header>
+
+      <section class="notice error" id="authError" hidden></section>
+
+      <section class="panel" id="signedOut">
+        <h2>Sign in</h2>
+        <p>Connect with Roblox using the <code>openid</code> scope.</p>
+        <a class="button" href="/auth/roblox/start">Sign in with Roblox</a>
+      </section>
+
+      <section class="panel" id="signedIn" hidden>
+        <h2>Signed in</h2>
+        <p id="userLine"></p>
+        <button class="button secondary" id="logoutButton" type="button">Log out</button>
+      </section>
+
+      <section class="panel experiences" id="experiencesPanel" hidden>
+        <div class="sectionHeader">
+          <div>
+            <h2>Experiences</h2>
+            <p>Authorized by Roblox OAuth.</p>
+          </div>
+          <button class="button secondary compact" id="refreshExperiencesButton" type="button">Refresh</button>
+        </div>
+        <p class="status" id="experiencesStatus">Loading...</p>
+        <div class="experienceGrid" id="experienceGrid"></div>
+      </section>
+
+      <section class="panel servers">
+        <div class="sectionHeader">
+          <div>
+            <h2>Live Servers</h2>
+            <p>Presence heartbeats stored locally by this dashboard server.</p>
+          </div>
+          <button class="button secondary compact" id="refreshServersButton" type="button">Refresh</button>
+        </div>
+        <div class="metricRow">
+          <div><strong id="serverCount">0</strong><span>servers</span></div>
+          <div><strong id="playerCount">0</strong><span>players</span></div>
+        </div>
+        <div class="commandBar">
+          <div>
+            <strong id="selectionSummary">No players selected</strong>
+            <span id="targetSummary">No target server selected</span>
+          </div>
+          <button class="button compact" id="teleportButton" type="button" disabled>Teleport selected</button>
+        </div>
+        <div class="moderationGrid">
+          <section class="moderationCard">
+            <h3>Kick</h3>
+            <div class="fieldGroup">
+              <label for="kickTargets">User IDs or usernames</label>
+              <input id="kickTargets" type="text" placeholder="Thunder_thigh7, 2776451302">
+            </div>
+            <div class="fieldGroup">
+              <label for="kickReason">Reason</label>
+              <input id="kickReason" type="text" placeholder="Optional reason">
+            </div>
+            <button class="button secondary compact" id="kickButton" type="button">Kick</button>
+          </section>
+
+          <section class="moderationCard dangerCard">
+            <h3>Ban</h3>
+            <div class="fieldGroup">
+              <label for="banTargets">User IDs or usernames</label>
+              <input id="banTargets" type="text" placeholder="Thunder_thigh7, 2776451302">
+            </div>
+            <div class="fieldGroup">
+              <label for="banDuration">Ban length</label>
+              <select id="banDuration">
+                <option value="-1">Permanent</option>
+                <option value="3600">1 hour</option>
+                <option value="86400">1 day</option>
+                <option value="604800">7 days</option>
+                <option value="2592000">30 days</option>
+              </select>
+            </div>
+            <div class="fieldGroup">
+              <label for="banReason">Reason</label>
+              <input id="banReason" type="text" placeholder="Optional reason">
+            </div>
+            <button class="button secondary compact danger" id="banButton" type="button">Ban</button>
+          </section>
+
+          <section class="moderationCard">
+            <h3>Unban</h3>
+            <div class="fieldGroup">
+              <label for="unbanTargets">User IDs or usernames</label>
+              <input id="unbanTargets" type="text" placeholder="Thunder_thigh7, 2776451302">
+            </div>
+            <button class="button secondary compact" id="unbanButton" type="button">Unban</button>
+          </section>
+        </div>
+        <p class="status" id="commandStatus"></p>
+        <p class="status" id="serversStatus">Waiting for Roblox heartbeats...</p>
+        <div class="serverList" id="serverList"></div>
+      </section>
+
+      <section class="panel playerData" id="playerDataPanel" hidden>
+        <div class="sectionHeader">
+          <div>
+            <h2>Player Data</h2>
+            <p>Read and edit standard DataStore entries through your Roblox Open Cloud API key.</p>
+          </div>
+          <div class="sectionActions">
+            <button class="button secondary compact" id="refreshDataStoresButton" type="button">Show DataStores</button>
+            <button class="button secondary compact" id="loadPlayerDataButton" type="button">Load</button>
+          </div>
+        </div>
+
+        <p class="status" id="dataStoresStatus">Select an experience, then show DataStores.</p>
+        <div class="dataStoreList" id="dataStoreList"></div>
+        <p class="status" id="dataEntriesStatus">Select a DataStore to show entries.</p>
+        <div class="dataStoreList" id="dataEntryList"></div>
+
+        <div class="dataToolGrid">
+          <div class="fieldGroup">
+            <label for="dataStoreScope">Scope</label>
+            <input id="dataStoreScope" type="text" value="global">
+          </div>
+          <div class="fieldGroup">
+            <label for="dataKeyPrefix">Player key prefix</label>
+            <input id="dataKeyPrefix" type="text" value="Player_" placeholder="Player_">
+          </div>
+          <div class="fieldGroup">
+            <label for="dataTarget">Player username, user ID, or exact key</label>
+            <input id="dataTarget" type="text" placeholder="Thunder_thigh7">
+          </div>
+        </div>
+
+        <label class="checkboxRow">
+          <input id="dataExactKey" type="checkbox">
+          <span>Use target as exact entry key</span>
+        </label>
+
+        <div class="dataEditorHeader">
+          <div>
+            <strong id="dataEntrySummary">No entry loaded</strong>
+            <span id="dataMetaSummary"></span>
+          </div>
+          <div class="dataEditorActions">
+            <button class="button secondary compact" id="formatPlayerDataButton" type="button">Format JSON</button>
+            <button class="button compact" id="savePlayerDataButton" type="button" disabled>Save</button>
+          </div>
+        </div>
+        <textarea id="playerDataEditor" class="jsonEditor" spellcheck="false" placeholder="Load a DataStore entry to edit JSON here."></textarea>
+        <p class="status" id="playerDataStatus">Select a DataStore, then load a player or entry.</p>
+      </section>
+
+      <section class="panel chatLogs">
+        <div class="sectionHeader">
+          <div>
+            <h2>Chat Logs</h2>
+            <p>Messages batched from Roblox heartbeats and stored locally in memory.</p>
+          </div>
+          <button class="button secondary compact" id="refreshChatLogsButton" type="button">Refresh</button>
+        </div>
+        <div class="metricRow">
+          <div><strong id="chatLogCount">0</strong><span>messages</span></div>
+        </div>
+        <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
+        <div class="chatLogList" id="chatLogList"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

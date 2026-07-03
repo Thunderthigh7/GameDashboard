@@ -1,0 +1,14 @@
+{
+  "name": "roblox-oauth-messaging-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "start:all": "node scripts/start-all.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
