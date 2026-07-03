@@ -2,6 +2,7 @@ local HttpService = game:GetService("HttpService")
 local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
+local TextService = game:GetService("TextService")
 
 local Settings = require(script.Parent.Parent.Config.Settings)
 
@@ -71,6 +72,26 @@ end
 local function getAnnouncementDuration(command)
 	local duration = tonumber(command.durationSeconds) or Settings.AnnouncementDuration or 6
 	return math.clamp(duration, 3, 20)
+end
+
+local function filterAnnouncementMessage(message, fromUserId)
+	local numericUserId = tonumber(fromUserId)
+	if not numericUserId or numericUserId <= 0 then
+		debugWarn("Announcement skipped because requestedBy is missing or invalid")
+		return nil
+	end
+
+	local ok, result = pcall(function()
+		local filterResult = TextService:FilterStringAsync(message, numericUserId, Enum.TextFilterContext.PublicChat)
+		return filterResult:GetNonChatStringForBroadcastAsync()
+	end)
+
+	if not ok then
+		debugWarn("Announcement skipped because filtering failed:", result)
+		return nil
+	end
+
+	return result
 end
 
 local function showAnnouncement(player, message, duration, commandId)
@@ -150,15 +171,20 @@ local function processAnnouncementCommand(command)
 		return
 	end
 
+	local filteredMessage = filterAnnouncementMessage(message, command.requestedBy)
+	if not filteredMessage or filteredMessage == "" then
+		return
+	end
+
 	local duration = getAnnouncementDuration(command)
 	local shownCount = 0
 
 	for _, player in Players:GetPlayers() do
-		showAnnouncement(player, message, duration, command.id)
+		showAnnouncement(player, filteredMessage, duration, command.id)
 		shownCount += 1
 	end
 
-	debugWarn("Global announcement shown:", shownCount, "player(s)", message)
+	debugWarn("Global announcement shown:", shownCount, "player(s)")
 end
 
 local function queueChatLog(player, message)
