@@ -5,6 +5,9 @@ local DEFAULT_BASE_URL = "https://game-dashboard-zaya.onrender.com"
 local FOLDER_NAME = "DashboardStudioHeatmap"
 local DEFAULT_POINT_SIZE = 4
 local DEFAULT_MAX_POINTS = 700
+local MAP_CHUNK_TARGET_BYTES = 100000
+local MAP_CHUNK_COOLDOWN_SECONDS = 0.45
+local MAP_MAX_PARTS_PER_CHUNK = 750
 
 local toolbar = plugin:CreateToolbar("Dashboard")
 local toggleButton = toolbar:CreateButton(
@@ -18,7 +21,7 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	false,
 	false,
 	360,
-	580,
+	680,
 	300,
 	360
 )
@@ -106,33 +109,39 @@ end
 createLabel("Dashboard URL", 1)
 local urlInput = createInput(DEFAULT_BASE_URL, "https://game-dashboard-zaya.onrender.com", 2)
 
-createLabel("Universe ID", 3)
-local universeInput = createInput(game.GameId > 0 and tostring(game.GameId) or "", "Universe ID", 4)
+createLabel("Dashboard secret", 3)
+local secretInput = createInput("", "Same value as PRESENCE_SECRET", 4)
 
-createLabel("Player filter", 5)
-local playerInput = createInput("", "Username or user ID", 6)
+createLabel("Universe ID", 5)
+local universeInput = createInput(game.GameId > 0 and tostring(game.GameId) or "", "Universe ID", 6)
 
-createLabel("From time", 7)
-local fromInput = createInput("", "ISO time, epoch, or blank", 8)
+createLabel("Player filter", 7)
+local playerInput = createInput("", "Username or user ID", 8)
 
-createLabel("To time", 9)
-local toInput = createInput("", "ISO time, epoch, or blank", 10)
+createLabel("From time", 9)
+local fromInput = createInput("", "ISO time, epoch, or blank", 10)
 
-local tenMinuteButton = createPresetButton("Last 10 minutes", 600, 11)
-local hourButton = createPresetButton("Last 1 hour", 3600, 12)
-local dayButton = createPresetButton("Last 1 day", 86400, 13)
+createLabel("To time", 11)
+local toInput = createInput("", "ISO time, epoch, or blank", 12)
 
-createLabel("Max points", 14)
-local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 15)
+local tenMinuteButton = createPresetButton("Last 10 minutes", 600, 13)
+local hourButton = createPresetButton("Last 1 hour", 3600, 14)
+local dayButton = createPresetButton("Last 1 day", 86400, 15)
 
-local fetchButton = createButton("Fetch Heatmap", 16)
-local clearButton = createButton("Clear Heatmap", 17)
+createLabel("Max points", 16)
+local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 17)
+
+local exportMapButton = createButton("Export Map To Dashboard", 18)
+exportMapButton.BackgroundColor3 = Color3.fromRGB(55, 121, 82)
+
+local fetchButton = createButton("Fetch Heatmap", 19)
+local clearButton = createButton("Clear Heatmap", 20)
 clearButton.BackgroundColor3 = Color3.fromRGB(63, 68, 78)
 
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 18,
+	LayoutOrder = 21,
 	Size = UDim2.new(1, 0, 0, 70),
 	Text = "Ready.",
 	TextColor3 = Color3.fromRGB(139, 148, 158),
@@ -252,6 +261,35 @@ local function buildHeatmapUrl()
 	return url
 end
 
+local function buildMapUploadUrl()
+	local baseUrl = urlInput.Text:gsub("%s+", "")
+	baseUrl = baseUrl:gsub("/+$", "")
+
+	if baseUrl == "" then
+		error("Enter a dashboard URL.")
+	end
+
+	return baseUrl .. "/api/roblox/map-snapshot"
+end
+
+local function getUniverseId()
+	local universeId = universeInput.Text:gsub("%s+", "")
+	if universeId == "" then
+		error("Enter a universe ID.")
+	end
+
+	return universeId
+end
+
+local function getDashboardSecret()
+	local secret = secretInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
+	if secret == "" then
+		error("Enter the dashboard secret before exporting the map.")
+	end
+
+	return secret
+end
+
 local function applyPreset(seconds)
 	local now = os.time()
 	fromInput.Text = os.date("!%Y-%m-%dT%H:%M:%SZ", now - seconds)
@@ -286,6 +324,209 @@ local function fetchHeatmap()
 	)
 end
 
+local function serializeCFrame(cframe)
+	return { cframe:GetComponents() }
+end
+
+local function serializeVector3(vector)
+	return { vector.X, vector.Y, vector.Z }
+end
+
+local function serializeColor3(color)
+	return {
+		math.floor(color.R * 255 + 0.5),
+		math.floor(color.G * 255 + 0.5),
+		math.floor(color.B * 255 + 0.5),
+	}
+end
+
+local function shouldExportPart(part)
+	local heatmapFolder = Workspace:FindFirstChild(FOLDER_NAME)
+	if heatmapFolder and part:IsDescendantOf(heatmapFolder) then
+		return false
+	end
+
+	if part.Transparency >= 1 then
+		return false
+	end
+
+	return true
+end
+
+local function serializeMapPart(part)
+	local payload = {
+		path = part:GetFullName(),
+		name = part.Name,
+		className = part.ClassName,
+		material = part.Material.Name,
+		color = serializeColor3(part.Color),
+		transparency = part.Transparency,
+		cframe = serializeCFrame(part.CFrame),
+		size = serializeVector3(part.Size),
+	}
+
+	if part:IsA("Part") then
+		payload.shape = part.Shape.Name
+	elseif part:IsA("MeshPart") then
+		payload.shape = "MeshPart"
+		payload.meshId = part.MeshId
+		payload.textureId = part.TextureID
+	else
+		payload.shape = part.ClassName
+	end
+
+	return payload
+end
+
+local function collectMapParts()
+	local parts = {}
+
+	for _, instance in Workspace:GetDescendants() do
+		if instance:IsA("BasePart") and shouldExportPart(instance) then
+			table.insert(parts, serializeMapPart(instance))
+		end
+	end
+
+	return parts
+end
+
+local function buildMapChunks(parts, universeId, uploadId, targetBytes)
+	local chunks = {}
+	local current = {}
+
+	local function makeBody(chunkParts, chunkIndex, chunkCount)
+		return {
+			uploadId = uploadId,
+			universeId = universeId,
+			placeId = game.PlaceId,
+			rootName = Workspace.Name,
+			exportedAt = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time()),
+			totalParts = #parts,
+			chunkIndex = chunkIndex,
+			chunkCount = chunkCount,
+			parts = chunkParts,
+		}
+	end
+
+	local function encodedLength(chunkParts)
+		return #HttpService:JSONEncode(makeBody(chunkParts, 1, 1))
+	end
+
+	for _, part in parts do
+		table.insert(current, part)
+
+		if #current >= MAP_MAX_PARTS_PER_CHUNK or encodedLength(current) > targetBytes then
+			local overflow = table.remove(current)
+			if #current > 0 then
+				table.insert(chunks, current)
+			end
+			current = { overflow }
+		end
+	end
+
+	if #current > 0 then
+		table.insert(chunks, current)
+	end
+
+	local bodies = {}
+	for index, chunkParts in chunks do
+		table.insert(bodies, makeBody(chunkParts, index, #chunks))
+	end
+
+	return bodies
+end
+
+local function postJson(url, body, secret)
+	local response = HttpService:RequestAsync({
+		Url = url,
+		Method = "POST",
+		Headers = {
+			["Content-Type"] = "application/json",
+			["X-Dashboard-Secret"] = secret,
+		},
+		Body = HttpService:JSONEncode(body),
+	})
+
+	if not response.Success then
+		error("HTTP " .. tostring(response.StatusCode) .. ": " .. tostring(response.Body))
+	end
+
+	if response.Body and response.Body ~= "" then
+		return HttpService:JSONDecode(response.Body)
+	end
+
+	return {}
+end
+
+local function exportMap()
+	setStatus("Scanning Workspace map parts...", false)
+
+	local ok, result = pcall(function()
+		local universeId = getUniverseId()
+		local secret = getDashboardSecret()
+		local uploadUrl = buildMapUploadUrl()
+		local parts = collectMapParts()
+
+		if #parts == 0 then
+			error("No visible BaseParts found in Workspace.")
+		end
+
+		local targetBytes = MAP_CHUNK_TARGET_BYTES
+		local lastError = nil
+
+		for attempt = 1, 5 do
+			local uploadId = HttpService:GenerateGUID(false)
+			local chunks = buildMapChunks(parts, universeId, uploadId, targetBytes)
+			local uploadedAll = true
+
+			for index, body in chunks do
+				setStatus(
+					"Uploading map chunk " .. tostring(index)
+						.. "/" .. tostring(#chunks)
+						.. " (" .. tostring(#body.parts) .. " parts, attempt " .. tostring(attempt) .. ")...",
+					false
+				)
+
+				local uploadOk, uploadResult = pcall(function()
+					return postJson(uploadUrl, body, secret)
+				end)
+
+				if not uploadOk then
+					lastError = uploadResult
+					uploadedAll = false
+					break
+				end
+
+				task.wait(MAP_CHUNK_COOLDOWN_SECONDS)
+			end
+
+			if uploadedAll then
+				return {
+					partCount = #parts,
+					chunkCount = #chunks,
+				}
+			end
+
+			targetBytes = math.max(12000, math.floor(targetBytes / 2))
+			task.wait(1)
+		end
+
+		error("Upload failed after smaller chunk retries: " .. tostring(lastError))
+	end)
+
+	if not ok then
+		setStatus("Map export failed: " .. tostring(result), true)
+		return
+	end
+
+	setStatus(
+		"Exported " .. tostring(result.partCount)
+			.. " map parts in " .. tostring(result.chunkCount)
+			.. " chunk(s). Refresh the website heatmap.",
+		false
+	)
+end
+
 tenMinuteButton.MouseButton1Click:Connect(function()
 	applyPreset(tenMinuteButton:GetAttribute("PresetSeconds"))
 	fetchHeatmap()
@@ -301,6 +542,7 @@ dayButton.MouseButton1Click:Connect(function()
 	fetchHeatmap()
 end)
 
+exportMapButton.MouseButton1Click:Connect(exportMap)
 fetchButton.MouseButton1Click:Connect(fetchHeatmap)
 clearButton.MouseButton1Click:Connect(function()
 	clearHeatmap()

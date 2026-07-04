@@ -13,6 +13,7 @@ let renderer;
 let scene;
 let camera;
 let points;
+let mapGroup;
 let grid;
 let animationFrame;
 let yaw = -0.8;
@@ -98,22 +99,40 @@ async function loadHeatmap() {
     : "Loading movement samples for all visible universes...";
 
   try {
-    const response = await fetch(`/api/movement-heatmap${query}`, {
+    const movementPromise = fetch(`/api/movement-heatmap${query}`, {
       headers: { Accept: "application/json" },
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Failed to load movement samples");
-    }
+    }).then(readJsonResponse);
 
-    renderSamples(payload.samples || []);
+    const mapPromise = universeId
+      ? fetch(`/api/map-snapshot?universeId=${encodeURIComponent(universeId)}`, {
+        headers: { Accept: "application/json" },
+      }).then(readJsonResponse).catch((error) => ({ mapError: error.message }))
+      : Promise.resolve({ snapshot: null });
+
+    const [payload, mapPayload] = await Promise.all([movementPromise, mapPromise]);
+    const mapSnapshot = mapPayload.snapshot || null;
+    renderScene(payload.samples || [], mapSnapshot);
+
+    const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
+    const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
     sampleCount.textContent = `${payload.returnedCount || 0} sample${payload.returnedCount === 1 ? "" : "s"}`;
-    statusLine.textContent = payload.returnedCount
-      ? getStatusText(payload)
-      : "No movement samples received yet.";
+    if (payload.returnedCount || mapSnapshot?.partCount) {
+      statusLine.textContent = `${getStatusText(payload)}${mapText}${mapErrorText}`;
+    } else {
+      statusLine.textContent = `No movement samples received yet.${mapErrorText}`;
+    }
   } catch (error) {
     statusLine.textContent = error.message;
   }
+}
+
+async function readJsonResponse(response) {
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Request failed");
+  }
+
+  return payload;
 }
 
 function buildHeatmapQuery(universeId) {
@@ -169,7 +188,7 @@ function getStatusText(payload) {
   return parts.join(" ");
 }
 
-function renderSamples(samples) {
+function renderScene(samples, mapSnapshot) {
   if (points) {
     scene.remove(points);
     points.geometry.dispose();
@@ -177,8 +196,35 @@ function renderSamples(samples) {
     points = null;
   }
 
-  if (!samples.length) return;
+  if (mapGroup) {
+    scene.remove(mapGroup);
+    for (const child of mapGroup.children) {
+      child.geometry?.dispose();
+      child.material?.dispose();
+    }
+    mapGroup = null;
+  }
 
+  const entries = getSampleBins(samples);
+  const center = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
+
+  if (mapSnapshot?.parts?.length) {
+    renderMapSnapshot(mapSnapshot, center);
+  }
+
+  if (entries.length) {
+    renderSamples(entries, center);
+  }
+
+  const bounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
+  if (bounds) {
+    distance = clamp(Math.max(bounds.width, bounds.height, bounds.depth) * 1.8, 160, 3000);
+    grid.scale.setScalar(clamp(Math.max(bounds.width, bounds.depth) / 500, 0.5, 8));
+    updateCamera();
+  }
+}
+
+function getSampleBins(samples) {
   const bins = new Map();
   for (const sample of samples) {
     const x = Number(sample.x);
@@ -195,7 +241,10 @@ function renderSamples(samples) {
     }
   }
 
-  const entries = [...bins.values()];
+  return [...bins.values()];
+}
+
+function renderSamples(entries, center) {
   if (!entries.length) return;
 
   const maxCount = entries.reduce((max, entry) => Math.max(max, entry.count), 1);
@@ -203,7 +252,6 @@ function renderSamples(samples) {
   const colors = new Float32Array(entries.length * 3);
   const sizes = new Float32Array(entries.length);
 
-  const center = getCenter(entries);
   entries.forEach((entry, index) => {
     const intensity = entry.count / maxCount;
     const color = new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
@@ -232,11 +280,74 @@ function renderSamples(samples) {
 
   points = new THREE.Points(geometry, material);
   scene.add(points);
+}
 
-  const bounds = getBounds(entries);
-  distance = clamp(Math.max(bounds.width, bounds.height, bounds.depth) * 1.8, 160, 1500);
-  grid.scale.setScalar(clamp(Math.max(bounds.width, bounds.depth) / 500, 0.5, 4));
-  updateCamera();
+function renderMapSnapshot(snapshot, center) {
+  mapGroup = new THREE.Group();
+  mapGroup.name = "UploadedMapSnapshot";
+
+  const parts = snapshot.parts.slice(0, 8000);
+  for (const part of parts) {
+    const mesh = createMapMesh(part, center);
+    if (mesh) mapGroup.add(mesh);
+  }
+
+  scene.add(mapGroup);
+}
+
+function createMapMesh(part, center) {
+  const size = part.size || [];
+  const cframe = part.cframe || [];
+  if (size.length < 3 || cframe.length < 12) return null;
+
+  const shape = String(part.shape || part.className || "");
+  const geometry = getMapGeometry(shape);
+  const color = Array.isArray(part.color) ? part.color : [110, 122, 140];
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(
+      clamp((Number(color[0]) || 0) / 255, 0, 1),
+      clamp((Number(color[1]) || 0) / 255, 0, 1),
+      clamp((Number(color[2]) || 0) / 255, 0, 1),
+    ),
+    transparent: true,
+    opacity: clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24),
+    roughness: 0.85,
+    metalness: 0,
+    depthWrite: false,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.matrixAutoUpdate = false;
+
+  const sx = Math.max(Number(size[0]) || 1, 0.05);
+  const sy = Math.max(Number(size[1]) || 1, 0.05);
+  const sz = Math.max(Number(size[2]) || 1, 0.05);
+  const px = (Number(cframe[0]) || 0) - center.x;
+  const py = (Number(cframe[1]) || 0) - center.y;
+  const pz = (Number(cframe[2]) || 0) - center.z;
+
+  mesh.matrix.set(
+    (Number(cframe[3]) || 1) * sx, (Number(cframe[4]) || 0) * sy, (Number(cframe[5]) || 0) * sz, px,
+    (Number(cframe[6]) || 0) * sx, (Number(cframe[7]) || 1) * sy, (Number(cframe[8]) || 0) * sz, py,
+    (Number(cframe[9]) || 0) * sx, (Number(cframe[10]) || 0) * sy, (Number(cframe[11]) || 1) * sz, pz,
+    0, 0, 0, 1,
+  );
+
+  return mesh;
+}
+
+function getMapGeometry(shape) {
+  if (shape === "Ball") {
+    return new THREE.SphereGeometry(0.5, 12, 8);
+  }
+
+  if (shape === "Cylinder") {
+    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 16);
+    geometry.rotateZ(Math.PI / 2);
+    return geometry;
+  }
+
+  return new THREE.BoxGeometry(1, 1, 1);
 }
 
 function getCenter(entries) {

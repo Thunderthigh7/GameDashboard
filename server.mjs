@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
+const mapSnapshotDir = path.join(__dirname, "data", "map-snapshots");
 
 loadLocalEnv();
 
@@ -21,6 +22,7 @@ const SESSION_SECRET = getRequiredEnv("SESSION_SECRET");
 const PRESENCE_SECRET = getRequiredEnv("PRESENCE_SECRET");
 const PRESENCE_STALE_MS = 75_000;
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
+const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_COMMAND_BODY_BYTES = 16 * 1024;
 const MAX_DATASTORE_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -30,6 +32,8 @@ const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
+const MAX_MAP_PARTS_PER_CHUNK = 1000;
+const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
 const ROBLOX_HEATMAP_BIN_SIZE = 8;
 const MAX_COMMANDS_PER_HEARTBEAT = 20;
 const PLAYER_DATA_SAMPLE_LIMIT = 3;
@@ -49,6 +53,8 @@ const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
 const movementSamplesByUniverseId = new Map();
 const movementSampleIdsByUniverseId = new Map();
+const mapSnapshotsByUniverseId = new Map();
+const mapUploadSessions = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -86,6 +92,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await getMovementHeatmapFromQuery(url.searchParams));
     }
 
+    if (url.pathname === "/api/map-snapshot" && req.method === "GET") {
+      return sendJson(res, 200, await getMapSnapshot({
+        universeId: url.searchParams.get("universeId"),
+      }));
+    }
+
     if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
       return sendJson(res, 200, await getRobloxHeatmapFromQuery(url.searchParams));
     }
@@ -116,6 +128,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/roblox/presence" && req.method === "POST") {
       return handlePresenceHeartbeat(req, res);
+    }
+
+    if (url.pathname === "/api/roblox/map-snapshot" && req.method === "POST") {
+      return handleMapSnapshotUpload(req, res);
     }
 
     if (url.pathname === "/api/commands/teleport" && req.method === "POST") {
@@ -190,6 +206,27 @@ async function handlePresenceHeartbeat(req, res) {
     heatmap: getRobloxHeatmap(presence.value.universeId),
     commands,
   });
+}
+
+async function handleMapSnapshotUpload(req, res) {
+  if (!isValidPresenceSecret(req)) {
+    return sendJson(res, 401, { error: "Invalid dashboard secret" });
+  }
+
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_MAP_SNAPSHOT_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const chunk = normalizeMapSnapshotChunk(body);
+  if (!chunk.ok) {
+    return sendJson(res, 400, { error: chunk.error });
+  }
+
+  const result = await saveMapSnapshotChunk(chunk.value);
+  return sendJson(res, result.ok === false ? 400 : 200, result);
 }
 
 async function handleDataStoresList(req, res, url) {
@@ -1381,6 +1418,243 @@ function saveMovementSamples(presence) {
   return savedCount;
 }
 
+function normalizeMapSnapshotChunk(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "Expected JSON object" };
+  }
+
+  const universeId = cleanInteger(body.universeId);
+  const uploadId = cleanString(body.uploadId, 128);
+  const chunkIndex = Number(body.chunkIndex);
+  const chunkCount = Number(body.chunkCount);
+  const rawParts = Array.isArray(body.parts) ? body.parts : [];
+
+  if (universeId <= 0) return { ok: false, error: "Missing universeId" };
+  if (!uploadId) return { ok: false, error: "Missing uploadId" };
+  if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 1) return { ok: false, error: "Invalid chunkIndex" };
+  if (!Number.isSafeInteger(chunkCount) || chunkCount < 1 || chunkCount > 500) return { ok: false, error: "Invalid chunkCount" };
+  if (chunkIndex > chunkCount) return { ok: false, error: "chunkIndex cannot exceed chunkCount" };
+  if (rawParts.length > MAX_MAP_PARTS_PER_CHUNK) return { ok: false, error: `Too many parts in chunk; max ${MAX_MAP_PARTS_PER_CHUNK}` };
+
+  const parts = rawParts.map(normalizeMapPart).filter(Boolean);
+  return {
+    ok: true,
+    value: {
+      uploadId,
+      universeId,
+      placeId: cleanInteger(body.placeId),
+      rootName: cleanString(body.rootName, 128) || "Workspace",
+      exportedAt: cleanFlexibleTimestampMs(body.exportedAt) || Date.now(),
+      totalParts: cleanInteger(body.totalParts) || parts.length,
+      chunkIndex,
+      chunkCount,
+      parts,
+    },
+  };
+}
+
+function normalizeMapPart(part) {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return null;
+
+  const cframe = cleanNumberArray(part.cframe, 12);
+  const size = cleanNumberArray(part.size, 3);
+  if (!cframe || !size) return null;
+
+  return {
+    path: cleanString(part.path, 256),
+    name: cleanString(part.name, 128),
+    className: cleanString(part.className, 64),
+    shape: cleanString(part.shape, 64),
+    material: cleanString(part.material, 64),
+    color: cleanNumberArray(part.color, 3) || [160, 168, 180],
+    transparency: clampNumber(cleanFiniteNumber(part.transparency), 0, 1, 0),
+    cframe,
+    size,
+    meshId: cleanString(part.meshId, 256),
+    textureId: cleanString(part.textureId, 256),
+  };
+}
+
+async function saveMapSnapshotChunk(chunk) {
+  const universeKey = String(chunk.universeId);
+  const sessionKey = `${universeKey}:${chunk.uploadId}`;
+
+  if (chunk.chunkCount === 1) {
+    const snapshot = buildMapSnapshot(chunk, chunk.parts);
+    mapSnapshotsByUniverseId.set(universeKey, snapshot);
+    await persistMapSnapshot(snapshot);
+    mapUploadSessions.delete(sessionKey);
+    return {
+      ok: true,
+      complete: true,
+      universeId: chunk.universeId,
+      partCount: snapshot.partCount,
+      receivedChunks: 1,
+      chunkCount: 1,
+    };
+  }
+
+  let session = mapUploadSessions.get(sessionKey);
+  if (!session) {
+    session = {
+      uploadId: chunk.uploadId,
+      universeId: chunk.universeId,
+      placeId: chunk.placeId,
+      rootName: chunk.rootName,
+      exportedAt: chunk.exportedAt,
+      totalParts: chunk.totalParts,
+      chunkCount: chunk.chunkCount,
+      chunks: new Map(),
+      startedAt: Date.now(),
+    };
+    mapUploadSessions.set(sessionKey, session);
+  }
+
+  if (session.chunkCount !== chunk.chunkCount) {
+    return { ok: false, complete: false, error: "Chunk count changed for active upload" };
+  }
+
+  session.chunks.set(chunk.chunkIndex, chunk.parts);
+
+  if (session.chunks.size < session.chunkCount) {
+    return {
+      ok: true,
+      complete: false,
+      universeId: chunk.universeId,
+      receivedChunks: session.chunks.size,
+      chunkCount: session.chunkCount,
+    };
+  }
+
+  const parts = [];
+  for (let index = 1; index <= session.chunkCount; index += 1) {
+    parts.push(...(session.chunks.get(index) || []));
+  }
+
+  const snapshot = buildMapSnapshot(session, parts);
+  mapSnapshotsByUniverseId.set(universeKey, snapshot);
+  await persistMapSnapshot(snapshot);
+  mapUploadSessions.delete(sessionKey);
+
+  return {
+    ok: true,
+    complete: true,
+    universeId: chunk.universeId,
+    partCount: snapshot.partCount,
+    receivedChunks: session.chunkCount,
+    chunkCount: session.chunkCount,
+  };
+}
+
+function buildMapSnapshot(metadata, parts) {
+  const limitedParts = parts.slice(0, MAX_MAP_PARTS_PER_UNIVERSE);
+  return {
+    version: 1,
+    uploadId: metadata.uploadId,
+    universeId: metadata.universeId,
+    placeId: metadata.placeId,
+    rootName: metadata.rootName,
+    exportedAt: metadata.exportedAt,
+    receivedAt: Date.now(),
+    partCount: limitedParts.length,
+    totalParts: metadata.totalParts,
+    maxPartsPerUniverse: MAX_MAP_PARTS_PER_UNIVERSE,
+    bounds: getMapBounds(limitedParts),
+    parts: limitedParts,
+  };
+}
+
+async function getMapSnapshot(filters = {}) {
+  const universeId = cleanInteger(filters.universeId);
+  if (universeId <= 0) {
+    return { ok: true, universeId: null, snapshot: null };
+  }
+
+  const universeKey = String(universeId);
+  const snapshot = mapSnapshotsByUniverseId.get(universeKey) || await readPersistedMapSnapshot(universeId);
+  if (snapshot) {
+    mapSnapshotsByUniverseId.set(universeKey, snapshot);
+  }
+
+  return {
+    ok: true,
+    universeId,
+    snapshot: snapshot || null,
+  };
+}
+
+async function persistMapSnapshot(snapshot) {
+  await fs.mkdir(mapSnapshotDir, { recursive: true });
+  await fs.writeFile(getMapSnapshotPath(snapshot.universeId), JSON.stringify(snapshot), "utf8");
+}
+
+async function readPersistedMapSnapshot(universeId) {
+  try {
+    const text = await fs.readFile(getMapSnapshotPath(universeId), "utf8");
+    const snapshot = JSON.parse(text);
+    if (cleanInteger(snapshot?.universeId) !== universeId || !Array.isArray(snapshot?.parts)) {
+      return null;
+    }
+
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+
+function getMapSnapshotPath(universeId) {
+  return path.join(mapSnapshotDir, `${cleanInteger(universeId)}.json`);
+}
+
+function getMapBounds(parts) {
+  if (!parts.length) return null;
+
+  const bounds = parts.reduce((box, part) => {
+    const position = getCFramePosition(part.cframe);
+    const half = {
+      x: Math.abs(part.size[0]) / 2,
+      y: Math.abs(part.size[1]) / 2,
+      z: Math.abs(part.size[2]) / 2,
+    };
+
+    return {
+      minX: Math.min(box.minX, position.x - half.x),
+      maxX: Math.max(box.maxX, position.x + half.x),
+      minY: Math.min(box.minY, position.y - half.y),
+      maxY: Math.max(box.maxY, position.y + half.y),
+      minZ: Math.min(box.minZ, position.z - half.z),
+      maxZ: Math.max(box.maxZ, position.z + half.z),
+    };
+  }, {
+    minX: Infinity,
+    maxX: -Infinity,
+    minY: Infinity,
+    maxY: -Infinity,
+    minZ: Infinity,
+    maxZ: -Infinity,
+  });
+
+  return {
+    ...bounds,
+    width: bounds.maxX - bounds.minX,
+    height: bounds.maxY - bounds.minY,
+    depth: bounds.maxZ - bounds.minZ,
+    center: {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+      z: (bounds.minZ + bounds.maxZ) / 2,
+    },
+  };
+}
+
+function getCFramePosition(cframe) {
+  return {
+    x: Number(cframe?.[0]) || 0,
+    y: Number(cframe?.[1]) || 0,
+    z: Number(cframe?.[2]) || 0,
+  };
+}
+
 async function getMovementHeatmapFromQuery(searchParams) {
   const filters = await normalizeMovementFilters({
     universeId: searchParams.get("universeId"),
@@ -1666,6 +1940,18 @@ function cleanInteger(value) {
 function cleanFiniteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : NaN;
+}
+
+function cleanNumberArray(value, length) {
+  if (!Array.isArray(value) || value.length < length) return null;
+
+  const numbers = value.slice(0, length).map((item) => cleanFiniteNumber(item));
+  return numbers.every(Number.isFinite) ? numbers : null;
+}
+
+function clampNumber(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
 }
 
 function cleanTimestampMs(value) {

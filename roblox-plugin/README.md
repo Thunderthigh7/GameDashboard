@@ -22,6 +22,13 @@ Workspace/DashboardStudioHeatmap
 
 Blue means low traffic, yellow means medium traffic, and red means high traffic.
 
+Map export:
+
+- Enter the dashboard URL, universe ID, and dashboard secret. The secret must match the server's `PRESENCE_SECRET`.
+- Click `Export Map To Dashboard` from Studio to upload the current Workspace map snapshot.
+- The export sends visible `BasePart` geometry in throttled chunks so large maps can finish over multiple HTTPS requests.
+- The website heatmap loads the latest uploaded map snapshot for the selected universe and draws translucent geometry behind the movement points.
+
 Filters:
 
 - `Player filter` accepts a Roblox username or user ID.
