@@ -9,6 +9,7 @@ const playerFilter = document.querySelector("#movementPlayerFilter");
 const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
 const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]");
+const modeButtons = document.querySelectorAll("[data-heatmap-mode]");
 
 let renderer;
 let scene;
@@ -32,6 +33,7 @@ let panTarget;
 let viewInitialized = false;
 let canvasHovered = false;
 let lastFrameTime = 0;
+let activeHeatmapMode = "movement";
 const movementKeys = new Set();
 
 if (canvas) {
@@ -47,6 +49,11 @@ if (canvas) {
     button.addEventListener("click", () => {
       applyPreset(Number(button.dataset.heatmapPresetMinutes) || 0);
       loadHeatmap();
+    });
+  }
+  for (const button of modeButtons) {
+    button.addEventListener("click", () => {
+      setHeatmapMode(button.dataset.heatmapMode || "movement");
     });
   }
   window.addEventListener("dashboard:experienceChanged", () => loadHeatmap({ resetView: true }));
@@ -143,13 +150,14 @@ function initScene() {
 async function loadHeatmap(options = {}) {
   const universeId = window.getSelectedUniverseId?.() || "";
   const query = buildHeatmapQuery(universeId);
+  const modeLabel = getModeLabel();
 
   statusLine.textContent = universeId
-    ? `Loading movement samples for universe ${universeId}...`
-    : "Loading movement samples for all visible universes...";
+    ? `Loading ${modeLabel.toLowerCase()} samples for universe ${universeId}...`
+    : `Loading ${modeLabel.toLowerCase()} samples for all visible universes...`;
 
   try {
-    const movementPromise = fetch(`/api/movement-heatmap${query}`, {
+    const samplePromise = fetch(`${getHeatmapEndpoint()}${query}`, {
       headers: { Accept: "application/json" },
     }).then(readJsonResponse);
 
@@ -159,7 +167,7 @@ async function loadHeatmap(options = {}) {
       }).then(readJsonResponse).catch((error) => ({ mapError: error.message }))
       : Promise.resolve({ snapshot: null });
 
-    const [payload, mapPayload] = await Promise.all([movementPromise, mapPromise]);
+    const [payload, mapPayload] = await Promise.all([samplePromise, mapPromise]);
     const mapSnapshot = mapPayload.snapshot || null;
     latestSamples = payload.samples || [];
     latestMapSnapshot = mapSnapshot;
@@ -169,15 +177,31 @@ async function loadHeatmap(options = {}) {
 
     const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
-    sampleCount.textContent = `${payload.returnedCount || 0} sample${payload.returnedCount === 1 ? "" : "s"}`;
+    sampleCount.textContent = `${payload.returnedCount || 0} ${modeLabel.toLowerCase()} sample${payload.returnedCount === 1 ? "" : "s"}`;
     if (payload.returnedCount || mapSnapshot?.partCount) {
       statusLine.textContent = `${getStatusText(payload)}${mapText}${mapErrorText}`;
     } else {
-      statusLine.textContent = `No movement samples received yet.${mapErrorText}`;
+      statusLine.textContent = `No ${modeLabel.toLowerCase()} samples received yet.${mapErrorText}`;
     }
   } catch (error) {
     statusLine.textContent = error.message;
   }
+}
+
+function setHeatmapMode(mode) {
+  activeHeatmapMode = mode === "deaths" ? "deaths" : "movement";
+  for (const button of modeButtons) {
+    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
+  }
+  loadHeatmap();
+}
+
+function getHeatmapEndpoint() {
+  return activeHeatmapMode === "deaths" ? "/api/death-heatmap" : "/api/movement-heatmap";
+}
+
+function getModeLabel() {
+  return activeHeatmapMode === "deaths" ? "Death" : "Movement";
 }
 
 async function readJsonResponse(response) {
@@ -318,7 +342,7 @@ function renderSamples(entries, center) {
 
   entries.forEach((entry, index) => {
     const intensity = entry.count / maxCount;
-    const color = new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
+    const color = getSampleColor(intensity);
     positions[index * 3] = entry.x - center.x;
     positions[index * 3 + 1] = entry.y - center.y;
     positions[index * 3 + 2] = entry.z - center.z;
@@ -344,6 +368,14 @@ function renderSamples(entries, center) {
 
   points = new THREE.Points(geometry, material);
   scene.add(points);
+}
+
+function getSampleColor(intensity) {
+  if (activeHeatmapMode === "deaths") {
+    return new THREE.Color().setHSL(0.02 + (1 - intensity) * 0.06, 0.98, 0.5);
+  }
+
+  return new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
 }
 
 function renderMapSnapshot(snapshot, center) {

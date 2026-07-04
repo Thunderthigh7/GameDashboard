@@ -9,12 +9,15 @@ local Settings = require(script.Parent.Parent.Config.Settings)
 local Methods = {}
 local playerJoinTimes = {}
 local playerConnections = {}
+local characterConnections = {}
 local pendingChatLogs = {}
 local pendingMovementSamples = {}
+local pendingDeathSamples = {}
 local processedCommandIds = {}
 local serverStartedAt = os.time()
 local chatLogCounter = 0
 local movementSampleCounter = 0
+local deathSampleCounter = 0
 
 local COMMAND_TOPIC_PREFIX = "dashboard-command-"
 local KICK_COMMAND_TOPIC = "kick"
@@ -55,6 +58,14 @@ end
 
 local function getMaxPendingMovementSamples()
 	return Settings.MaxPendingMovementSamples or 1000
+end
+
+local function getMaxDeathSamplesPerPayload()
+	return Settings.MaxDeathSamplesPerPayload or 100
+end
+
+local function getMaxPendingDeathSamples()
+	return Settings.MaxPendingDeathSamples or 500
 end
 
 local function roundPosition(value)
@@ -288,10 +299,73 @@ local function queueMovementSample(player)
 	end
 end
 
+local function queueDeathSample(player, character)
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local position = rootPart.Position
+	deathSampleCounter += 1
+	table.insert(pendingDeathSamples, {
+		id = game.JobId .. ":death:" .. tostring(deathSampleCounter),
+		userId = player.UserId,
+		username = player.Name,
+		displayName = player.DisplayName,
+		x = roundPosition(position.X),
+		y = roundPosition(position.Y),
+		z = roundPosition(position.Z),
+		diedAt = os.time(),
+	})
+
+	while #pendingDeathSamples > getMaxPendingDeathSamples() do
+		table.remove(pendingDeathSamples, 1)
+	end
+
+	debugWarn("Queued death sample:", player.Name, player.UserId, position)
+end
+
 local function samplePlayerMovement()
 	for _, player in Players:GetPlayers() do
 		queueMovementSample(player)
 	end
+end
+
+local function disconnectCharacterWatch(player)
+	local connections = characterConnections[player]
+	if not connections then
+		return
+	end
+
+	for _, connection in connections do
+		connection:Disconnect()
+	end
+
+	characterConnections[player] = nil
+end
+
+local function watchCharacter(player, character)
+	disconnectCharacterWatch(player)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		local connection
+		connection = character.ChildAdded:Connect(function(child)
+			if child:IsA("Humanoid") then
+				connection:Disconnect()
+				watchCharacter(player, character)
+			end
+		end)
+
+		characterConnections[player] = { connection }
+		return
+	end
+
+	local diedConnection = humanoid.Died:Connect(function()
+		queueDeathSample(player, character)
+	end)
+
+	characterConnections[player] = { diedConnection }
 end
 
 local function trackPlayer(player)
@@ -306,9 +380,19 @@ local function watchPlayer(player)
 		return
 	end
 
-	playerConnections[player] = player.Chatted:Connect(function(message)
+	local chatConnection = player.Chatted:Connect(function(message)
 		queueChatLog(player, message)
 	end)
+
+	local characterAddedConnection = player.CharacterAdded:Connect(function(character)
+		watchCharacter(player, character)
+	end)
+
+	playerConnections[player] = { chatConnection, characterAddedConnection }
+
+	if player.Character then
+		watchCharacter(player, player.Character)
+	end
 
 	debugWarn("Watching chat for player:", player.Name, player.UserId)
 end
@@ -319,9 +403,13 @@ local function untrackPlayer(player)
 
 	local connection = playerConnections[player]
 	if connection then
-		connection:Disconnect()
+		for _, item in connection do
+			item:Disconnect()
+		end
 		playerConnections[player] = nil
 	end
+
+	disconnectCharacterWatch(player)
 end
 
 local function processTeleportCommand(command)
@@ -536,6 +624,17 @@ local function getMovementSamplesPayload()
 	return movementSamples
 end
 
+local function getDeathSamplesPayload()
+	local deathSamples = {}
+	local maxDeathSamples = getMaxDeathSamplesPerPayload()
+
+	for index = 1, math.min(#pendingDeathSamples, maxDeathSamples) do
+		table.insert(deathSamples, pendingDeathSamples[index])
+	end
+
+	return deathSamples
+end
+
 local function clearSentChatLogs(count)
 	for _ = 1, math.min(count, #pendingChatLogs) do
 		table.remove(pendingChatLogs, 1)
@@ -545,6 +644,12 @@ end
 local function clearSentMovementSamples(count)
 	for _ = 1, math.min(count, #pendingMovementSamples) do
 		table.remove(pendingMovementSamples, 1)
+	end
+end
+
+local function clearSentDeathSamples(count)
+	for _ = 1, math.min(count, #pendingDeathSamples) do
+		table.remove(pendingDeathSamples, 1)
 	end
 end
 
@@ -559,6 +664,7 @@ local function buildPayload()
 		players = getPlayersPayload(),
 		chatLogs = getChatLogsPayload(),
 		movementSamples = getMovementSamplesPayload(),
+		deathSamples = getDeathSamplesPayload(),
 	}
 end
 
@@ -577,7 +683,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "deathSamples", #payload.deathSamples)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -607,6 +713,7 @@ function Methods.SendHeartbeat()
 
 	clearSentChatLogs(#payload.chatLogs)
 	clearSentMovementSamples(#payload.movementSamples)
+	clearSentDeathSamples(#payload.deathSamples)
 	processHeartbeatResponse(response)
 
 	debugWarn("Heartbeat sent:", response.StatusCode, response.Body or "", "remainingChatLogs", #pendingChatLogs)

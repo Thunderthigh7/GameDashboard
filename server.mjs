@@ -31,6 +31,9 @@ const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
+const MAX_DEATH_SAMPLES_PER_PAYLOAD = 200;
+const MAX_DEATH_SAMPLES_PER_UNIVERSE = 10_000;
+const MAX_DEATH_SAMPLES_RESPONSE = 5000;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_MAP_PARTS_PER_CHUNK = 1000;
 const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
@@ -53,6 +56,8 @@ const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
 const movementSamplesByUniverseId = new Map();
 const movementSampleIdsByUniverseId = new Map();
+const deathSamplesByUniverseId = new Map();
+const deathSampleIdsByUniverseId = new Map();
 const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 
@@ -90,6 +95,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
       return sendJson(res, 200, await getMovementHeatmapFromQuery(url.searchParams));
+    }
+
+    if (url.pathname === "/api/death-heatmap" && req.method === "GET") {
+      return sendJson(res, 200, await getDeathHeatmapFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/map-snapshot" && req.method === "GET") {
@@ -195,6 +204,7 @@ async function handlePresenceHeartbeat(req, res) {
   serverPresence.set(presence.value.jobId, applyPlayerDurations(presence.value));
   const savedChatCount = saveChatLogs(presence.value);
   const savedMovementCount = saveMovementSamples(presence.value);
+  const savedDeathCount = saveDeathSamples(presence.value);
   const commands = consumePendingCommands(presence.value.jobId);
 
   return sendJson(res, 200, {
@@ -203,6 +213,7 @@ async function handlePresenceHeartbeat(req, res) {
     liveServers: getLiveServers().servers.length,
     savedChatCount,
     savedMovementCount,
+    savedDeathCount,
     heatmap: getRobloxHeatmap(presence.value.universeId),
     commands,
   });
@@ -1298,6 +1309,12 @@ function normalizePresence(body) {
     jobId,
     receivedAt,
   });
+  const deathSamples = normalizeDeathSamples(body.deathSamples, {
+    universeId: cleanInteger(body.universeId),
+    placeId: cleanInteger(body.placeId),
+    jobId,
+    receivedAt,
+  });
 
   return {
     ok: true,
@@ -1312,6 +1329,7 @@ function normalizePresence(body) {
       players: cleanPlayers,
       chatLogs,
       movementSamples,
+      deathSamples,
     },
   };
 }
@@ -1388,6 +1406,32 @@ function normalizeMovementSamples(value, context) {
   ));
 }
 
+function normalizeDeathSamples(value, context) {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, MAX_DEATH_SAMPLES_PER_PAYLOAD).map((entry) => ({
+    id: cleanString(entry?.id, 160),
+    universeId: context.universeId,
+    placeId: context.placeId,
+    jobId: context.jobId,
+    userId: cleanInteger(entry?.userId),
+    username: cleanString(entry?.username || entry?.name, 64),
+    displayName: cleanString(entry?.displayName, 64),
+    x: cleanFiniteNumber(entry?.x),
+    y: cleanFiniteNumber(entry?.y),
+    z: cleanFiniteNumber(entry?.z),
+    diedAt: cleanTimestampMs(entry?.diedAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+    sampledAt: cleanTimestampMs(entry?.diedAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+    receivedAt: context.receivedAt,
+  })).filter((entry) => (
+    entry.userId > 0
+    && entry.username
+    && Number.isFinite(entry.x)
+    && Number.isFinite(entry.y)
+    && Number.isFinite(entry.z)
+  ));
+}
+
 function saveMovementSamples(presence) {
   if (!presence.movementSamples?.length || presence.universeId <= 0) return 0;
 
@@ -1415,6 +1459,36 @@ function saveMovementSamples(presence) {
 
   movementSamplesByUniverseId.set(universeKey, samples);
   movementSampleIdsByUniverseId.set(universeKey, ids);
+  return savedCount;
+}
+
+function saveDeathSamples(presence) {
+  if (!presence.deathSamples?.length || presence.universeId <= 0) return 0;
+
+  const universeKey = String(presence.universeId);
+  const samples = deathSamplesByUniverseId.get(universeKey) || [];
+  const ids = deathSampleIdsByUniverseId.get(universeKey) || new Set();
+  let savedCount = 0;
+
+  for (const sample of presence.deathSamples) {
+    const sampleId = sample.id || `${sample.jobId}:${sample.userId}:${sample.diedAt}:${sample.x}:${sample.y}:${sample.z}`;
+    if (ids.has(sampleId)) continue;
+
+    ids.add(sampleId);
+    samples.push({
+      ...sample,
+      id: sampleId,
+    });
+    savedCount += 1;
+  }
+
+  while (samples.length > MAX_DEATH_SAMPLES_PER_UNIVERSE) {
+    const removed = samples.shift();
+    if (removed?.id) ids.delete(removed.id);
+  }
+
+  deathSamplesByUniverseId.set(universeKey, samples);
+  deathSampleIdsByUniverseId.set(universeKey, ids);
   return savedCount;
 }
 
@@ -1666,6 +1740,17 @@ async function getMovementHeatmapFromQuery(searchParams) {
   return getMovementHeatmap(filters);
 }
 
+async function getDeathHeatmapFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+
+  return getDeathHeatmap(filters);
+}
+
 async function getRobloxHeatmapFromQuery(searchParams) {
   const filters = await normalizeMovementFilters({
     universeId: searchParams.get("universeId"),
@@ -1711,6 +1796,26 @@ function getMovementSamplesForFilters(filters = {}) {
   });
 }
 
+function getDeathSamplesForFilters(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  const samples = [];
+
+  if (universeIdFilter > 0) {
+    samples.push(...(deathSamplesByUniverseId.get(String(universeIdFilter)) || []));
+  } else {
+    for (const universeSamples of deathSamplesByUniverseId.values()) {
+      samples.push(...universeSamples);
+    }
+  }
+
+  return samples.filter((sample) => {
+    if (filters.fromMs > 0 && sample.sampledAt < filters.fromMs) return false;
+    if (filters.toMs > 0 && sample.sampledAt > filters.toMs) return false;
+    if (filters.userIds?.size && !filters.userIds.has(sample.userId)) return false;
+    return true;
+  });
+}
+
 function getMovementHeatmap(filters = {}) {
   const universeIdFilter = cleanInteger(filters.universeId);
   const samples = getMovementSamplesForFilters(filters);
@@ -1723,6 +1828,23 @@ function getMovementHeatmap(filters = {}) {
     sampleCount: samples.length,
     returnedCount: limitedSamples.length,
     maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
+    filters: getMovementFilterSummary(filters),
+    samples: limitedSamples,
+  };
+}
+
+function getDeathHeatmap(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  const samples = getDeathSamplesForFilters(filters);
+
+  samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
+  const limitedSamples = samples.slice(0, MAX_DEATH_SAMPLES_RESPONSE);
+
+  return {
+    universeId: universeIdFilter || null,
+    sampleCount: samples.length,
+    returnedCount: limitedSamples.length,
+    maxSamplesPerUniverse: MAX_DEATH_SAMPLES_PER_UNIVERSE,
     filters: getMovementFilterSummary(filters),
     samples: limitedSamples,
   };
