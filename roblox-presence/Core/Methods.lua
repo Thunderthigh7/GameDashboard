@@ -13,11 +13,13 @@ local characterConnections = {}
 local pendingChatLogs = {}
 local pendingMovementSamples = {}
 local pendingDeathSamples = {}
+local pendingLeaveSamples = {}
 local processedCommandIds = {}
 local serverStartedAt = os.time()
 local chatLogCounter = 0
 local movementSampleCounter = 0
 local deathSampleCounter = 0
+local leaveSampleCounter = 0
 
 local COMMAND_TOPIC_PREFIX = "dashboard-command-"
 local KICK_COMMAND_TOPIC = "kick"
@@ -66,6 +68,14 @@ end
 
 local function getMaxPendingDeathSamples()
 	return Settings.MaxPendingDeathSamples or 500
+end
+
+local function getMaxLeaveSamplesPerPayload()
+	return Settings.MaxLeaveSamplesPerPayload or 100
+end
+
+local function getMaxPendingLeaveSamples()
+	return Settings.MaxPendingLeaveSamples or 500
 end
 
 local function roundPosition(value)
@@ -325,6 +335,33 @@ local function queueDeathSample(player, character)
 	debugWarn("Queued death sample:", player.Name, player.UserId, position)
 end
 
+local function queueLeaveSample(player)
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local position = rootPart.Position
+	leaveSampleCounter += 1
+	table.insert(pendingLeaveSamples, {
+		id = game.JobId .. ":leave:" .. tostring(leaveSampleCounter),
+		userId = player.UserId,
+		username = player.Name,
+		displayName = player.DisplayName,
+		x = roundPosition(position.X),
+		y = roundPosition(position.Y),
+		z = roundPosition(position.Z),
+		leftAt = os.time(),
+	})
+
+	while #pendingLeaveSamples > getMaxPendingLeaveSamples() do
+		table.remove(pendingLeaveSamples, 1)
+	end
+
+	debugWarn("Queued leave sample:", player.Name, player.UserId, position)
+end
+
 local function samplePlayerMovement()
 	for _, player in Players:GetPlayers() do
 		queueMovementSample(player)
@@ -399,6 +436,7 @@ end
 
 local function untrackPlayer(player)
 	debugWarn("Untracking player:", player.Name, player.UserId)
+	queueLeaveSample(player)
 	playerJoinTimes[player.UserId] = nil
 
 	local connection = playerConnections[player]
@@ -635,6 +673,17 @@ local function getDeathSamplesPayload()
 	return deathSamples
 end
 
+local function getLeaveSamplesPayload()
+	local leaveSamples = {}
+	local maxLeaveSamples = getMaxLeaveSamplesPerPayload()
+
+	for index = 1, math.min(#pendingLeaveSamples, maxLeaveSamples) do
+		table.insert(leaveSamples, pendingLeaveSamples[index])
+	end
+
+	return leaveSamples
+end
+
 local function clearSentChatLogs(count)
 	for _ = 1, math.min(count, #pendingChatLogs) do
 		table.remove(pendingChatLogs, 1)
@@ -653,6 +702,12 @@ local function clearSentDeathSamples(count)
 	end
 end
 
+local function clearSentLeaveSamples(count)
+	for _ = 1, math.min(count, #pendingLeaveSamples) do
+		table.remove(pendingLeaveSamples, 1)
+	end
+end
+
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -665,6 +720,7 @@ local function buildPayload()
 		chatLogs = getChatLogsPayload(),
 		movementSamples = getMovementSamplesPayload(),
 		deathSamples = getDeathSamplesPayload(),
+		leaveSamples = getLeaveSamplesPayload(),
 	}
 end
 
@@ -683,7 +739,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "deathSamples", #payload.deathSamples)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -714,6 +770,7 @@ function Methods.SendHeartbeat()
 	clearSentChatLogs(#payload.chatLogs)
 	clearSentMovementSamples(#payload.movementSamples)
 	clearSentDeathSamples(#payload.deathSamples)
+	clearSentLeaveSamples(#payload.leaveSamples)
 	processHeartbeatResponse(response)
 
 	debugWarn("Heartbeat sent:", response.StatusCode, response.Body or "", "remainingChatLogs", #pendingChatLogs)

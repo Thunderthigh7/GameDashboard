@@ -189,7 +189,7 @@ async function loadHeatmap(options = {}) {
 }
 
 function setHeatmapMode(mode) {
-  activeHeatmapMode = mode === "deaths" ? "deaths" : "movement";
+  activeHeatmapMode = ["deaths", "leaves"].includes(mode) ? mode : "movement";
   for (const button of modeButtons) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
@@ -197,11 +197,15 @@ function setHeatmapMode(mode) {
 }
 
 function getHeatmapEndpoint() {
-  return activeHeatmapMode === "deaths" ? "/api/death-heatmap" : "/api/movement-heatmap";
+  if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
+  if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
+  return "/api/movement-heatmap";
 }
 
 function getModeLabel() {
-  return activeHeatmapMode === "deaths" ? "Death" : "Movement";
+  if (activeHeatmapMode === "deaths") return "Death";
+  if (activeHeatmapMode === "leaves") return "Leave";
+  return "Movement";
 }
 
 async function readJsonResponse(response) {
@@ -373,6 +377,10 @@ function renderSamples(entries, center) {
 function getSampleColor(intensity) {
   if (activeHeatmapMode === "deaths") {
     return new THREE.Color().setHSL(0.02 + (1 - intensity) * 0.06, 0.98, 0.5);
+  }
+
+  if (activeHeatmapMode === "leaves") {
+    return new THREE.Color().setHSL(0.78 - intensity * 0.08, 0.9, 0.58);
   }
 
   return new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
