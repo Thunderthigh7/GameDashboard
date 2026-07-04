@@ -43,6 +43,7 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
+const chatInsightsCountdown = document.querySelector("#chatInsightsCountdown");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const playerDataPanel = document.querySelector("#playerDataPanel");
 const dataTarget = document.querySelector("#dataTarget");
@@ -59,6 +60,8 @@ const dataMetaSummary = document.querySelector("#dataMetaSummary");
 
 let serverRefreshTimer;
 let chatRefreshTimer;
+let chatCountdownTimer;
+let nextChatAnalysisRefreshAt = 0;
 let selectedUniverseId = "";
 let selectedPlayerIds = new Set();
 let targetPlayer = null;
@@ -68,14 +71,19 @@ let selectedDataStoreName = "";
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 
+const SERVER_REFRESH_MS = 5000;
+const CHAT_ANALYSIS_REFRESH_MS = 5000;
+
 init();
 
 async function init() {
   showAuthError();
   await loadServers();
   await loadChatLogs();
-  serverRefreshTimer = window.setInterval(loadServers, 5000);
-  chatRefreshTimer = window.setInterval(loadChatLogs, 5000);
+  serverRefreshTimer = window.setInterval(loadServers, SERVER_REFRESH_MS);
+  chatRefreshTimer = window.setInterval(loadChatLogs, CHAT_ANALYSIS_REFRESH_MS);
+  chatCountdownTimer = window.setInterval(updateChatInsightsCountdown, 250);
+  scheduleNextChatAnalysisRefresh();
 
   const { account } = await request("/api/me");
 
@@ -102,7 +110,10 @@ logoutButton.addEventListener("click", async () => {
 
 refreshExperiencesButton.addEventListener("click", loadExperiences);
 refreshServersButton.addEventListener("click", loadServers);
-refreshChatLogsButton.addEventListener("click", loadChatLogs);
+refreshChatLogsButton.addEventListener("click", () => {
+  loadChatLogs();
+  scheduleNextChatAnalysisRefresh();
+});
 refreshDataStoresButton.addEventListener("click", loadDataStores);
 loadPlayerDataButton.addEventListener("click", loadPlayerData);
 savePlayerDataButton.addEventListener("click", savePlayerData);
@@ -267,6 +278,8 @@ async function loadChatLogs() {
   } catch (error) {
     chatLogsStatus.textContent = error.message;
     loadChatInsights();
+  } finally {
+    scheduleNextChatAnalysisRefresh();
   }
 }
 
@@ -290,6 +303,25 @@ async function loadChatInsights() {
     chatInsightsStatus.textContent = error.message;
     commonQuestionList.innerHTML = "";
   }
+}
+
+function scheduleNextChatAnalysisRefresh() {
+  nextChatAnalysisRefreshAt = Date.now() + CHAT_ANALYSIS_REFRESH_MS;
+  updateChatInsightsCountdown();
+}
+
+function updateChatInsightsCountdown() {
+  if (!chatInsightsCountdown) return;
+
+  if (!nextChatAnalysisRefreshAt) {
+    chatInsightsCountdown.textContent = "Updates soon";
+    return;
+  }
+
+  const remainingSeconds = Math.max(0, Math.ceil((nextChatAnalysisRefreshAt - Date.now()) / 1000));
+  chatInsightsCountdown.textContent = remainingSeconds > 0
+    ? `Updates in ${remainingSeconds}s`
+    : "Updating...";
 }
 
 async function loadDataStores() {
