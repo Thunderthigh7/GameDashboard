@@ -2,6 +2,7 @@ import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
 
 const canvas = document.querySelector("#movementHeatmapCanvas");
 const refreshButton = document.querySelector("#refreshMovementButton");
+const centerButton = document.querySelector("#centerMovementButton");
 const sampleCount = document.querySelector("#movementSampleCount");
 const statusLine = document.querySelector("#movementHeatmapStatus");
 const playerFilter = document.querySelector("#movementPlayerFilter");
@@ -20,11 +21,20 @@ let yaw = -0.8;
 let pitch = 0.72;
 let distance = 520;
 let dragging = false;
+let dragMode = "rotate";
 let lastPointer = null;
+let sceneCenter = null;
+let latestCenter = null;
+let latestBounds = null;
+let latestSamples = [];
+let latestMapSnapshot = null;
+let panTarget;
+let viewInitialized = false;
 
 if (canvas) {
   initScene();
   refreshButton?.addEventListener("click", loadHeatmap);
+  centerButton?.addEventListener("click", centerView);
   playerFilter?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") loadHeatmap();
   });
@@ -36,10 +46,10 @@ if (canvas) {
       loadHeatmap();
     });
   }
-  window.addEventListener("dashboard:experienceChanged", loadHeatmap);
+  window.addEventListener("dashboard:experienceChanged", () => loadHeatmap({ resetView: true }));
   window.addEventListener("resize", resizeScene);
   window.setInterval(loadHeatmap, 15000);
-  loadHeatmap();
+  loadHeatmap({ resetView: true });
 }
 
 function initScene() {
@@ -48,6 +58,7 @@ function initScene() {
 
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+  panTarget = new THREE.Vector3();
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.65);
   scene.add(ambient);
@@ -61,6 +72,7 @@ function initScene() {
 
   canvas.addEventListener("pointerdown", (event) => {
     dragging = true;
+    dragMode = event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "rotate";
     lastPointer = { x: event.clientX, y: event.clientY };
     canvas.setPointerCapture(event.pointerId);
   });
@@ -69,10 +81,16 @@ function initScene() {
     if (!dragging || !lastPointer) return;
     const dx = event.clientX - lastPointer.x;
     const dy = event.clientY - lastPointer.y;
-    yaw -= dx * 0.006;
-    pitch = clamp(pitch + dy * 0.004, 0.18, 1.35);
+
+    if (dragMode === "pan") {
+      panView(dx, dy);
+    } else {
+      yaw -= dx * 0.006;
+      pitch = clamp(pitch + dy * 0.004, 0.18, 1.35);
+      updateCamera();
+    }
+
     lastPointer = { x: event.clientX, y: event.clientY };
-    updateCamera();
   });
 
   canvas.addEventListener("pointerup", () => {
@@ -86,11 +104,15 @@ function initScene() {
     updateCamera();
   }, { passive: false });
 
+  canvas.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
+
   resizeScene();
   animate();
 }
 
-async function loadHeatmap() {
+async function loadHeatmap(options = {}) {
   const universeId = window.getSelectedUniverseId?.() || "";
   const query = buildHeatmapQuery(universeId);
 
@@ -111,7 +133,11 @@ async function loadHeatmap() {
 
     const [payload, mapPayload] = await Promise.all([movementPromise, mapPromise]);
     const mapSnapshot = mapPayload.snapshot || null;
-    renderScene(payload.samples || [], mapSnapshot);
+    latestSamples = payload.samples || [];
+    latestMapSnapshot = mapSnapshot;
+    renderScene(latestSamples, latestMapSnapshot, {
+      resetView: Boolean(options.resetView),
+    });
 
     const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
@@ -188,7 +214,7 @@ function getStatusText(payload) {
   return parts.join(" ");
 }
 
-function renderScene(samples, mapSnapshot) {
+function renderScene(samples, mapSnapshot, options = {}) {
   if (points) {
     scene.remove(points);
     points.geometry.dispose();
@@ -206,20 +232,30 @@ function renderScene(samples, mapSnapshot) {
   }
 
   const entries = getSampleBins(samples);
-  const center = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
+  latestBounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
+  const dataCenter = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
+  latestCenter = dataCenter;
+  const shouldResetView = Boolean(options.resetView) || (!viewInitialized && latestBounds);
+  if (!sceneCenter || shouldResetView) {
+    sceneCenter = dataCenter;
+  }
 
   if (mapSnapshot?.parts?.length) {
-    renderMapSnapshot(mapSnapshot, center);
+    renderMapSnapshot(mapSnapshot, sceneCenter);
   }
 
   if (entries.length) {
-    renderSamples(entries, center);
+    renderSamples(entries, sceneCenter);
   }
 
-  const bounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
-  if (bounds) {
-    distance = clamp(Math.max(bounds.width, bounds.height, bounds.depth) * 1.8, 160, 3000);
-    grid.scale.setScalar(clamp(Math.max(bounds.width, bounds.depth) / 500, 0.5, 8));
+  if (latestBounds) {
+    grid.scale.setScalar(clamp(Math.max(latestBounds.width, latestBounds.depth) / 500, 0.5, 8));
+  }
+
+  if (shouldResetView) {
+    fitViewToBounds();
+    viewInitialized = true;
+  } else {
     updateCamera();
   }
 }
@@ -396,12 +432,42 @@ function resizeScene() {
   updateCamera();
 }
 
+function centerView() {
+  if (latestBounds) {
+    renderScene(latestSamples, latestMapSnapshot, { resetView: true });
+    return;
+  }
+
+  fitViewToBounds();
+  viewInitialized = Boolean(latestBounds);
+}
+
+function fitViewToBounds() {
+  if (!latestBounds) return;
+  distance = clamp(Math.max(latestBounds.width, latestBounds.height, latestBounds.depth) * 1.8, 160, 3000);
+  panTarget.set(0, 0, 0);
+  updateCamera();
+}
+
+function panView(dx, dy) {
+  const panSpeed = distance * 0.0018;
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  panTarget.addScaledVector(right, -dx * panSpeed);
+  panTarget.addScaledVector(up, dy * panSpeed);
+  updateCamera();
+}
+
 function updateCamera() {
   const x = Math.cos(yaw) * Math.cos(pitch) * distance;
   const y = Math.sin(pitch) * distance;
   const z = Math.sin(yaw) * Math.cos(pitch) * distance;
-  camera.position.set(x, y, z);
-  camera.lookAt(0, 0, 0);
+  const target = panTarget || new THREE.Vector3();
+  camera.position.set(target.x + x, target.y + y, target.z + z);
+  camera.lookAt(target);
 }
 
 function animate() {
