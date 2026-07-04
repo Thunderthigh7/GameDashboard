@@ -30,6 +30,9 @@ let latestSamples = [];
 let latestMapSnapshot = null;
 let panTarget;
 let viewInitialized = false;
+let canvasHovered = false;
+let lastFrameTime = 0;
+const movementKeys = new Set();
 
 if (canvas) {
   initScene();
@@ -53,6 +56,7 @@ if (canvas) {
 }
 
 function initScene() {
+  canvas.tabIndex = 0;
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
@@ -71,6 +75,7 @@ function initScene() {
   scene.add(grid);
 
   canvas.addEventListener("pointerdown", (event) => {
+    canvas.focus();
     dragging = true;
     dragMode = event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "rotate";
     lastPointer = { x: event.clientX, y: event.clientY };
@@ -106,6 +111,29 @@ function initScene() {
 
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
+  });
+
+  canvas.addEventListener("pointerenter", () => {
+    canvasHovered = true;
+  });
+
+  canvas.addEventListener("pointerleave", () => {
+    canvasHovered = false;
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (!isMovementKey(event.code) || !shouldUseKeyboardControls()) return;
+    event.preventDefault();
+    movementKeys.add(event.code);
+  });
+
+  window.addEventListener("keyup", (event) => {
+    if (!isMovementKey(event.code)) return;
+    movementKeys.delete(event.code);
+  });
+
+  window.addEventListener("blur", () => {
+    movementKeys.clear();
   });
 
   resizeScene();
@@ -451,14 +479,68 @@ function fitViewToBounds() {
 
 function panView(dx, dy) {
   const panSpeed = distance * 0.0018;
+  movePanTarget(getCameraRight(), -dx * panSpeed);
+  movePanTarget(getCameraUp(), dy * panSpeed);
+  updateCamera();
+}
+
+function updateKeyboardMovement(deltaSeconds) {
+  if (!movementKeys.size || !shouldUseKeyboardControls()) return;
+
+  const panSpeed = distance * 1.15 * deltaSeconds;
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
+  forward.y = 0;
+  if (forward.lengthSq() <= 0.0001) {
+    forward.set(Math.cos(yaw), 0, Math.sin(yaw));
+  }
+  forward.normalize();
 
-  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
-  panTarget.addScaledVector(right, -dx * panSpeed);
-  panTarget.addScaledVector(up, dy * panSpeed);
+  const right = getCameraRight();
+  right.y = 0;
+  if (right.lengthSq() <= 0.0001) {
+    right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+  }
+  right.normalize();
+
+  if (movementKeys.has("KeyW")) movePanTarget(forward, panSpeed);
+  if (movementKeys.has("KeyS")) movePanTarget(forward, -panSpeed);
+  if (movementKeys.has("KeyD")) movePanTarget(right, panSpeed);
+  if (movementKeys.has("KeyA")) movePanTarget(right, -panSpeed);
   updateCamera();
+}
+
+function movePanTarget(direction, amount) {
+  panTarget.addScaledVector(direction, amount);
+}
+
+function getCameraRight() {
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  return new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+}
+
+function getCameraUp() {
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  const right = getCameraRight();
+  return new THREE.Vector3().crossVectors(right, forward).normalize();
+}
+
+function isMovementKey(code) {
+  return code === "KeyW" || code === "KeyA" || code === "KeyS" || code === "KeyD";
+}
+
+function shouldUseKeyboardControls() {
+  const active = document.activeElement;
+  const isTyping = active && (
+    active.tagName === "INPUT"
+    || active.tagName === "TEXTAREA"
+    || active.tagName === "SELECT"
+    || active.isContentEditable
+  );
+
+  return !isTyping && (canvasHovered || active === canvas);
 }
 
 function updateCamera() {
@@ -470,8 +552,11 @@ function updateCamera() {
   camera.lookAt(target);
 }
 
-function animate() {
+function animate(timestamp = 0) {
   animationFrame = window.requestAnimationFrame(animate);
+  const deltaSeconds = lastFrameTime ? Math.min((timestamp - lastFrameTime) / 1000, 0.05) : 0;
+  lastFrameTime = timestamp;
+  updateKeyboardMovement(deltaSeconds);
   renderer.render(scene, camera);
 }
 
