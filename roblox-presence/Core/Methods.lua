@@ -14,6 +14,8 @@ local pendingChatLogs = {}
 local pendingMovementSamples = {}
 local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
+local lastPlayerPositions = {}
+local leaveSampledUserIds = {}
 local processedCommandIds = {}
 local serverStartedAt = os.time()
 local chatLogCounter = 0
@@ -76,6 +78,10 @@ end
 
 local function getMaxPendingLeaveSamples()
 	return Settings.MaxPendingLeaveSamples or 500
+end
+
+local function getShutdownFlushTimeout()
+	return Settings.ShutdownFlushTimeout or 8
 end
 
 local function roundPosition(value)
@@ -292,6 +298,7 @@ local function queueMovementSample(player)
 	end
 
 	local position = rootPart.Position
+	lastPlayerPositions[player.UserId] = position
 	movementSampleCounter += 1
 	table.insert(pendingMovementSamples, {
 		id = game.JobId .. ":move:" .. tostring(movementSampleCounter),
@@ -316,6 +323,7 @@ local function queueDeathSample(player, character)
 	end
 
 	local position = rootPart.Position
+	lastPlayerPositions[player.UserId] = position
 	deathSampleCounter += 1
 	table.insert(pendingDeathSamples, {
 		id = game.JobId .. ":death:" .. tostring(deathSampleCounter),
@@ -338,11 +346,12 @@ end
 local function queueLeaveSample(player)
 	local character = player.Character
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then
+	local position = rootPart and rootPart.Position or lastPlayerPositions[player.UserId]
+	if not position or leaveSampledUserIds[player.UserId] then
 		return
 	end
 
-	local position = rootPart.Position
+	leaveSampledUserIds[player.UserId] = true
 	leaveSampleCounter += 1
 	table.insert(pendingLeaveSamples, {
 		id = game.JobId .. ":leave:" .. tostring(leaveSampleCounter),
@@ -407,6 +416,7 @@ end
 
 local function trackPlayer(player)
 	playerJoinTimes[player.UserId] = playerJoinTimes[player.UserId] or os.time()
+	leaveSampledUserIds[player.UserId] = nil
 	debugWarn("Tracking player:", player.Name, player.UserId, "joinedAt", playerJoinTimes[player.UserId])
 end
 
@@ -453,6 +463,7 @@ local function untrackPlayer(player)
 	end
 
 	disconnectCharacterWatch(player)
+	lastPlayerPositions[player.UserId] = nil
 end
 
 local function processTeleportCommand(command)
@@ -783,6 +794,24 @@ function Methods.SendHeartbeat()
 	return true
 end
 
+function Methods.FlushBeforeShutdown()
+	for _, player in Players:GetPlayers() do
+		queueLeaveSample(player)
+	end
+
+	local timeoutAt = os.clock() + getShutdownFlushTimeout()
+	while sending and os.clock() < timeoutAt do
+		task.wait(0.1)
+	end
+
+	if sending then
+		debugWarn("Shutdown flush skipped because heartbeat is still in flight")
+		return false
+	end
+
+	return Methods.SendHeartbeat()
+end
+
 function Methods.Start()
 	if started then
 		return
@@ -820,7 +849,7 @@ function Methods.Start()
 	end)
 
 	game:BindToClose(function()
-		Methods.SendHeartbeat()
+		Methods.FlushBeforeShutdown()
 	end)
 end
 
