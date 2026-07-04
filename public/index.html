@@ -202,6 +202,20 @@
           </div>
           <button class="button secondary compact" id="refreshMovementButton" type="button">Refresh</button>
         </div>
+        <div class="heatmapFilters">
+          <div class="fieldGroup">
+            <label for="movementPlayerFilter">Player</label>
+            <input id="movementPlayerFilter" type="text" placeholder="Username or user ID">
+          </div>
+          <div class="fieldGroup">
+            <label for="movementFromFilter">From</label>
+            <input id="movementFromFilter" type="datetime-local">
+          </div>
+          <div class="fieldGroup">
+            <label for="movementToFilter">To</label>
+            <input id="movementToFilter" type="datetime-local">
+          </div>
+        </div>
         <div class="heatmapShell">
           <canvas id="movementHeatmapCanvas"></canvas>
           <div class="heatmapOverlay">

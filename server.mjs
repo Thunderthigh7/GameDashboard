@@ -83,13 +83,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
-      return sendJson(res, 200, getMovementHeatmap({
-        universeId: url.searchParams.get("universeId"),
-      }));
+      return sendJson(res, 200, await getMovementHeatmapFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
-      return sendJson(res, 200, getRobloxHeatmap(url.searchParams.get("universeId")));
+      return sendJson(res, 200, await getRobloxHeatmapFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/datastores" && req.method === "GET") {
@@ -1383,7 +1381,43 @@ function saveMovementSamples(presence) {
   return savedCount;
 }
 
-function getMovementHeatmap(filters = {}) {
+async function getMovementHeatmapFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+
+  return getMovementHeatmap(filters);
+}
+
+async function getRobloxHeatmapFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+
+  return getRobloxHeatmap(filters.universeId, filters);
+}
+
+async function normalizeMovementFilters(rawFilters = {}) {
+  const target = cleanString(rawFilters.target, 160);
+  const resolvedTargets = target ? await resolveUserTargets(target) : { userIds: [], resolved: [], unresolved: [] };
+
+  return {
+    universeId: cleanInteger(rawFilters.universeId),
+    fromMs: cleanFlexibleTimestampMs(rawFilters.from),
+    toMs: cleanFlexibleTimestampMs(rawFilters.to),
+    userIds: new Set(resolvedTargets.userIds),
+    resolvedTargets: resolvedTargets.resolved,
+    unresolvedTargets: resolvedTargets.unresolved,
+  };
+}
+
+function getMovementSamplesForFilters(filters = {}) {
   const universeIdFilter = cleanInteger(filters.universeId);
   const samples = [];
 
@@ -1395,6 +1429,18 @@ function getMovementHeatmap(filters = {}) {
     }
   }
 
+  return samples.filter((sample) => {
+    if (filters.fromMs > 0 && sample.sampledAt < filters.fromMs) return false;
+    if (filters.toMs > 0 && sample.sampledAt > filters.toMs) return false;
+    if (filters.userIds?.size && !filters.userIds.has(sample.userId)) return false;
+    return true;
+  });
+}
+
+function getMovementHeatmap(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  const samples = getMovementSamplesForFilters(filters);
+
   samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
   const limitedSamples = samples.slice(0, MAX_MOVEMENT_SAMPLES_RESPONSE);
 
@@ -1403,12 +1449,17 @@ function getMovementHeatmap(filters = {}) {
     sampleCount: samples.length,
     returnedCount: limitedSamples.length,
     maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
+    filters: getMovementFilterSummary(filters),
     samples: limitedSamples,
   };
 }
 
-function getRobloxHeatmap(universeId) {
-  const samples = movementSamplesByUniverseId.get(String(cleanInteger(universeId))) || [];
+function getRobloxHeatmap(universeId, filters = {}) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const samples = getMovementSamplesForFilters({
+    ...filters,
+    universeId: cleanUniverseId,
+  });
   const bins = new Map();
 
   for (const sample of samples) {
@@ -1432,13 +1483,25 @@ function getRobloxHeatmap(universeId) {
 
   return {
     binSize: ROBLOX_HEATMAP_BIN_SIZE,
+    universeId: cleanUniverseId || null,
     sampleCount: samples.length,
     pointCount: points.length,
     maxCount,
+    filters: getMovementFilterSummary(filters),
     points: points.map((point) => ({
       ...point,
       intensity: point.count / maxCount,
     })),
+  };
+}
+
+function getMovementFilterSummary(filters = {}) {
+  return {
+    from: filters.fromMs || null,
+    to: filters.toMs || null,
+    userIds: filters.userIds ? [...filters.userIds] : [],
+    resolvedTargets: filters.resolvedTargets || [],
+    unresolvedTargets: filters.unresolvedTargets || [],
   };
 }
 
@@ -1610,6 +1673,20 @@ function cleanTimestampMs(value) {
   if (timestamp <= 0) return 0;
 
   return timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+}
+
+function cleanFlexibleTimestampMs(value) {
+  if (typeof value !== "string" && typeof value !== "number") return 0;
+  const text = String(value).trim();
+  if (!text) return 0;
+
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric < 10_000_000_000 ? Math.floor(numeric * 1000) : Math.floor(numeric);
+  }
+
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 async function resolveUserTargets(value) {

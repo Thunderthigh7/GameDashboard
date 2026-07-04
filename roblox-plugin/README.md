@@ -22,6 +22,12 @@ Workspace/DashboardStudioHeatmap
 
 Blue means low traffic, yellow means medium traffic, and red means high traffic.
 
+Filters:
+
+- `Player filter` accepts a Roblox username or user ID.
+- `From time` and `To time` accept ISO timestamps, epoch seconds, epoch milliseconds, or blank values.
+- `Max points` limits how many heatmap markers Studio creates.
+
 Requirements:
 
 - Studio must allow HTTP requests for the experience.

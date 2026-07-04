@@ -4,6 +4,9 @@ const canvas = document.querySelector("#movementHeatmapCanvas");
 const refreshButton = document.querySelector("#refreshMovementButton");
 const sampleCount = document.querySelector("#movementSampleCount");
 const statusLine = document.querySelector("#movementHeatmapStatus");
+const playerFilter = document.querySelector("#movementPlayerFilter");
+const fromFilter = document.querySelector("#movementFromFilter");
+const toFilter = document.querySelector("#movementToFilter");
 
 let renderer;
 let scene;
@@ -20,6 +23,11 @@ let lastPointer = null;
 if (canvas) {
   initScene();
   refreshButton?.addEventListener("click", loadHeatmap);
+  playerFilter?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loadHeatmap();
+  });
+  fromFilter?.addEventListener("change", loadHeatmap);
+  toFilter?.addEventListener("change", loadHeatmap);
   window.addEventListener("dashboard:experienceChanged", loadHeatmap);
   window.addEventListener("resize", resizeScene);
   window.setInterval(loadHeatmap, 15000);
@@ -76,7 +84,7 @@ function initScene() {
 
 async function loadHeatmap() {
   const universeId = window.getSelectedUniverseId?.() || "";
-  const query = universeId ? `?universeId=${encodeURIComponent(universeId)}` : "";
+  const query = buildHeatmapQuery(universeId);
 
   statusLine.textContent = universeId
     ? `Loading movement samples for universe ${universeId}...`
@@ -94,11 +102,51 @@ async function loadHeatmap() {
     renderSamples(payload.samples || []);
     sampleCount.textContent = `${payload.returnedCount || 0} sample${payload.returnedCount === 1 ? "" : "s"}`;
     statusLine.textContent = payload.returnedCount
-      ? "Drag to rotate. Scroll to zoom."
+      ? getStatusText(payload)
       : "No movement samples received yet.";
   } catch (error) {
     statusLine.textContent = error.message;
   }
+}
+
+function buildHeatmapQuery(universeId) {
+  const params = new URLSearchParams();
+  if (universeId) params.set("universeId", universeId);
+
+  const target = playerFilter?.value.trim();
+  if (target) params.set("target", target);
+
+  const from = getDateTimeMs(fromFilter?.value);
+  if (from) params.set("from", String(from));
+
+  const to = getDateTimeMs(toFilter?.value);
+  if (to) params.set("to", String(to));
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function getDateTimeMs(value) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getStatusText(payload) {
+  const filters = payload.filters || {};
+  const parts = ["Drag to rotate. Scroll to zoom."];
+  if (filters.userIds?.length) {
+    parts.push(`Player filter: ${filters.userIds.join(", ")}`);
+  }
+  if (filters.from || filters.to) {
+    const from = filters.from ? new Date(filters.from).toLocaleString() : "start";
+    const to = filters.to ? new Date(filters.to).toLocaleString() : "now";
+    parts.push(`${from} to ${to}`);
+  }
+  if (filters.unresolvedTargets?.length) {
+    parts.push(`Unresolved: ${filters.unresolvedTargets.join(", ")}`);
+  }
+  return parts.join(" ");
 }
 
 function renderSamples(samples) {

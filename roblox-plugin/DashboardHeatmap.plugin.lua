@@ -18,9 +18,9 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	false,
 	false,
 	360,
-	360,
+	520,
 	300,
-	260
+	360
 )
 
 local widget = plugin:CreateDockWidgetPluginGui("DashboardHeatmapWidget", widgetInfo)
@@ -102,17 +102,26 @@ local urlInput = createInput(DEFAULT_BASE_URL, "https://game-dashboard-zaya.onre
 createLabel("Universe ID", 3)
 local universeInput = createInput(game.GameId > 0 and tostring(game.GameId) or "", "Universe ID", 4)
 
-createLabel("Max points", 5)
-local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 6)
+createLabel("Player filter", 5)
+local playerInput = createInput("", "Username or user ID", 6)
 
-local fetchButton = createButton("Fetch Heatmap", 7)
-local clearButton = createButton("Clear Heatmap", 8)
+createLabel("From time", 7)
+local fromInput = createInput("", "ISO time, epoch, or blank", 8)
+
+createLabel("To time", 9)
+local toInput = createInput("", "ISO time, epoch, or blank", 10)
+
+createLabel("Max points", 11)
+local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 12)
+
+local fetchButton = createButton("Fetch Heatmap", 13)
+local clearButton = createButton("Clear Heatmap", 14)
 clearButton.BackgroundColor3 = Color3.fromRGB(63, 68, 78)
 
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 9,
+	LayoutOrder = 15,
 	Size = UDim2.new(1, 0, 0, 70),
 	Text = "Ready.",
 	TextColor3 = Color3.fromRGB(139, 148, 158),
@@ -206,6 +215,9 @@ local function buildHeatmapUrl()
 	local baseUrl = urlInput.Text:gsub("%s+", "")
 	baseUrl = baseUrl:gsub("/+$", "")
 	local universeId = universeInput.Text:gsub("%s+", "")
+	local player = playerInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
+	local from = fromInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
+	local to = toInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
 
 	if baseUrl == "" then
 		error("Enter a dashboard URL.")
@@ -215,7 +227,18 @@ local function buildHeatmapUrl()
 		error("Enter a universe ID.")
 	end
 
-	return baseUrl .. "/api/roblox/heatmap?universeId=" .. HttpService:UrlEncode(universeId)
+	local url = baseUrl .. "/api/roblox/heatmap?universeId=" .. HttpService:UrlEncode(universeId)
+	if player ~= "" then
+		url ..= "&target=" .. HttpService:UrlEncode(player)
+	end
+	if from ~= "" then
+		url ..= "&from=" .. HttpService:UrlEncode(from)
+	end
+	if to ~= "" then
+		url ..= "&to=" .. HttpService:UrlEncode(to)
+	end
+
+	return url
 end
 
 local function fetchHeatmap()
@@ -229,6 +252,7 @@ local function fetchHeatmap()
 			rendered = rendered,
 			sampleCount = tonumber(heatmap.sampleCount) or 0,
 			pointCount = tonumber(heatmap.pointCount) or 0,
+			filters = heatmap.filters,
 		}
 	end)
 

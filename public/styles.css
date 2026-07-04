@@ -505,6 +505,13 @@ button {
   white-space: pre-wrap;
 }
 
+.heatmapFilters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(180px, 220px));
+  gap: 12px;
+  margin-top: 16px;
+}
+
 .heatmapShell {
   position: relative;
   min-height: 420px;
@@ -595,7 +602,8 @@ button {
 
   .metricRow,
   .serverFacts,
-  .dataToolGrid {
+  .dataToolGrid,
+  .heatmapFilters {
     grid-template-columns: 1fr;
   }
 
