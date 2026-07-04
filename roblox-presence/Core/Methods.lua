@@ -437,6 +437,11 @@ end
 local function untrackPlayer(player)
 	debugWarn("Untracking player:", player.Name, player.UserId)
 	queueLeaveSample(player)
+
+	task.defer(function()
+		Methods.SendHeartbeat()
+	end)
+
 	playerJoinTimes[player.UserId] = nil
 
 	local connection = playerConnections[player]

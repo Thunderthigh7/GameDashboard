@@ -159,11 +159,13 @@ end
 local function getHeatmapFolder()
 	local folder = Workspace:FindFirstChild(FOLDER_NAME)
 	if folder then
+		folder.Archivable = false
 		return folder
 	end
 
 	folder = Instance.new("Folder")
 	folder.Name = FOLDER_NAME
+	folder.Archivable = false
 	folder.Parent = Workspace
 	return folder
 end
@@ -211,6 +213,7 @@ local function renderHeatmap(heatmap)
 			local intensity = math.clamp(tonumber(point.intensity) or 0, 0, 1)
 			local marker = Instance.new("Part")
 			marker.Name = "HeatPoint_" .. tostring(index)
+			marker.Archivable = false
 			marker.Shape = Enum.PartType.Ball
 			marker.Anchored = true
 			marker.CanCollide = false
