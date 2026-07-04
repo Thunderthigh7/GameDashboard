@@ -29,7 +29,7 @@ const MAX_PLAYERS_PER_SERVER = 100;
 const MAX_CHAT_LOGS_PER_PAYLOAD = 200;
 const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_CHAT_MESSAGES_FOR_INSIGHTS = 500;
-const MAX_COMMON_QUESTIONS_RESPONSE = 8;
+const MAX_COMMON_QUESTIONS_RESPONSE = 5;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -2067,6 +2067,7 @@ function getChatInsights(filters = {}) {
     const existing = groups.get(normalized.key) || {
       id: normalized.key,
       title: normalized.title,
+      titleScore: getQuestionTitleScore(log.message),
       mentions: 0,
       examples: [],
       firstSeenAt: log.sentAt,
@@ -2078,6 +2079,12 @@ function getChatInsights(filters = {}) {
     existing.firstSeenAt = Math.min(existing.firstSeenAt || log.sentAt, log.sentAt);
     existing.lastSeenAt = Math.max(existing.lastSeenAt || log.sentAt, log.sentAt);
     if (log.userId > 0) existing.players.add(log.userId);
+
+    const titleScore = getQuestionTitleScore(log.message);
+    if (titleScore > existing.titleScore) {
+      existing.title = normalized.title;
+      existing.titleScore = titleScore;
+    }
 
     if (existing.examples.length < 3 && !existing.examples.some((example) => example.message === log.message)) {
       existing.examples.push({
@@ -2166,7 +2173,7 @@ function normalizeChatQuestion(message) {
 
   return {
     key,
-    title: buildQuestionTitle(intent, uniqueKeywords, rawText),
+    title: formatQuestionTitle(rawText),
   };
 }
 
@@ -2179,27 +2186,36 @@ function normalizeQuestionToken(token) {
   return token;
 }
 
-function buildQuestionTitle(intent, keywords, fallback) {
-  const topic = titleCaseWords(keywords.join(" "));
-  if (!topic) {
-    const cleanFallback = cleanString(fallback, 80).replace(/\s+/g, " ").trim();
-    return cleanFallback.endsWith("?") ? cleanFallback : `${cleanFallback}?`;
-  }
-
-  if (intent === "where") return `Where is ${topic}?`;
-  if (intent === "how") return `How do I ${topic}?`;
-  if (intent === "what") return `What is ${topic}?`;
-  if (intent === "why") return `Why ${topic}?`;
-  if (intent === "help") return `Players need help with ${topic}`;
-  return `${topic}?`;
-}
-
-function titleCaseWords(value) {
-  return String(value || "")
+function formatQuestionTitle(message) {
+  const words = cleanString(message, 100)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[?.!]+$/g, "")
     .split(" ")
     .filter(Boolean)
-    .map((word) => word.length <= 2 ? word : `${word[0].toUpperCase()}${word.slice(1)}`)
-    .join(" ");
+    .map(formatQuestionWord);
+  const title = words.join(" ");
+  if (!title) return "Unclear question?";
+  return `${title[0].toUpperCase()}${title.slice(1)}?`;
+}
+
+function formatQuestionWord(word) {
+  const lower = word.toLowerCase();
+  const knownAcronyms = new Set(["ugc", "ui", "xp", "vip", "afk"]);
+  if (knownAcronyms.has(lower)) return lower.toUpperCase();
+  return lower;
+}
+
+function getQuestionTitleScore(message) {
+  const text = String(message || "").trim();
+  if (!text) return 0;
+
+  let score = 100;
+  if (text.includes("?")) score += 30;
+  if (/^(where|how|what|why|when|who|can|do|does|did|is|are|will|should)\b/i.test(text)) score += 20;
+  score -= Math.abs(text.length - 42);
+  score -= (text.match(/[^a-z0-9\s?.!']/gi) || []).length * 2;
+  return score;
 }
 
 function getLiveServers(filters = {}) {
