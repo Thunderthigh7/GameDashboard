@@ -28,6 +28,8 @@ const MAX_DATASTORE_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
 const MAX_CHAT_LOGS_PER_PAYLOAD = 200;
 const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
+const MAX_CHAT_MESSAGES_FOR_INSIGHTS = 500;
+const MAX_COMMON_QUESTIONS_RESPONSE = 8;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -94,6 +96,12 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
       return sendJson(res, 200, getChatLogs({
+        universeId: url.searchParams.get("universeId"),
+      }));
+    }
+
+    if (url.pathname === "/api/chat-insights" && req.method === "GET") {
+      return sendJson(res, 200, getChatInsights({
         universeId: url.searchParams.get("universeId"),
       }));
     }
@@ -2043,6 +2051,155 @@ function getChatLogs(filters = {}) {
     maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
     logs: logs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
   };
+}
+
+function getChatInsights(filters = {}) {
+  const chatPayload = getChatLogs(filters);
+  const candidateLogs = chatPayload.logs
+    .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
+    .filter((log) => isQuestionLikeMessage(log.message));
+  const groups = new Map();
+
+  for (const log of candidateLogs) {
+    const normalized = normalizeChatQuestion(log.message);
+    if (!normalized.key) continue;
+
+    const existing = groups.get(normalized.key) || {
+      id: normalized.key,
+      title: normalized.title,
+      mentions: 0,
+      examples: [],
+      firstSeenAt: log.sentAt,
+      lastSeenAt: log.sentAt,
+      players: new Set(),
+    };
+
+    existing.mentions += 1;
+    existing.firstSeenAt = Math.min(existing.firstSeenAt || log.sentAt, log.sentAt);
+    existing.lastSeenAt = Math.max(existing.lastSeenAt || log.sentAt, log.sentAt);
+    if (log.userId > 0) existing.players.add(log.userId);
+
+    if (existing.examples.length < 3 && !existing.examples.some((example) => example.message === log.message)) {
+      existing.examples.push({
+        message: log.message,
+        username: log.username,
+        sentAt: log.sentAt,
+      });
+    }
+
+    groups.set(normalized.key, existing);
+  }
+
+  const questions = [...groups.values()]
+    .sort((a, b) => b.mentions - a.mentions || b.lastSeenAt - a.lastSeenAt)
+    .slice(0, MAX_COMMON_QUESTIONS_RESPONSE)
+    .map((group) => ({
+      id: group.id,
+      title: group.title,
+      mentions: group.mentions,
+      playerCount: group.players.size,
+      examples: group.examples,
+      firstSeenAt: group.firstSeenAt,
+      lastSeenAt: group.lastSeenAt,
+    }));
+
+  return {
+    universeId: chatPayload.universeId,
+    sourceLogCount: chatPayload.logCount,
+    analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
+    questionLikeCount: candidateLogs.length,
+    maxMessagesAnalyzed: MAX_CHAT_MESSAGES_FOR_INSIGHTS,
+    generatedAt: Date.now(),
+    mode: "local",
+    questions,
+  };
+}
+
+function isQuestionLikeMessage(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (text.includes("?")) return true;
+  if (/^(where|how|what|why|when|who|can|do|does|did|is|are|will|should)\b/.test(text)) return true;
+  return /\b(help|stuck|lost|confused|cant|can't|cannot|wheres|where's|find|exit)\b/.test(text);
+}
+
+function normalizeChatQuestion(message) {
+  const rawText = String(message || "").trim();
+  const normalizedText = rawText
+    .toLowerCase()
+    .replace(/can't/g, "cant")
+    .replace(/where's/g, "where is")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalizedText) return { key: "", title: "" };
+
+  const tokens = normalizedText.split(" ").filter(Boolean);
+  const tokenSet = new Set(tokens);
+  let intent = "question";
+
+  if (tokenSet.has("where") || tokenSet.has("wheres") || tokenSet.has("find")) {
+    intent = "where";
+  } else if (tokenSet.has("how")) {
+    intent = "how";
+  } else if (tokenSet.has("what")) {
+    intent = "what";
+  } else if (tokenSet.has("why")) {
+    intent = "why";
+  } else if (["help", "stuck", "lost", "confused", "cant", "cannot", "exit"].some((word) => tokenSet.has(word))) {
+    intent = "help";
+  }
+
+  const stopWords = new Set([
+    "a", "an", "and", "are", "at", "bro", "can", "cant", "cannot", "did", "do", "does",
+    "find", "for", "get", "guys", "help", "how", "i", "in", "is", "it", "me", "my", "of",
+    "on", "please", "pls", "someone", "the", "this", "to", "u", "where", "wheres", "with",
+  ]);
+  const keywordTokens = tokens
+    .filter((token) => !stopWords.has(token))
+    .map((token) => normalizeQuestionToken(token))
+    .filter(Boolean);
+  const uniqueKeywords = [...new Set(keywordTokens)].slice(0, 6);
+  const keyText = uniqueKeywords.join(" ") || tokens.slice(0, 6).join(" ");
+  const key = `${intent}:${keyText}`;
+
+  return {
+    key,
+    title: buildQuestionTitle(intent, uniqueKeywords, rawText),
+  };
+}
+
+function normalizeQuestionToken(token) {
+  if (token === "swords") return "sword";
+  if (token === "exits") return "exit";
+  if (token === "quests") return "quest";
+  if (token === "bosses") return "boss";
+  if (token === "doors") return "door";
+  return token;
+}
+
+function buildQuestionTitle(intent, keywords, fallback) {
+  const topic = titleCaseWords(keywords.join(" "));
+  if (!topic) {
+    const cleanFallback = cleanString(fallback, 80).replace(/\s+/g, " ").trim();
+    return cleanFallback.endsWith("?") ? cleanFallback : `${cleanFallback}?`;
+  }
+
+  if (intent === "where") return `Where is ${topic}?`;
+  if (intent === "how") return `How do I ${topic}?`;
+  if (intent === "what") return `What is ${topic}?`;
+  if (intent === "why") return `Why ${topic}?`;
+  if (intent === "help") return `Players need help with ${topic}`;
+  return `${topic}?`;
+}
+
+function titleCaseWords(value) {
+  return String(value || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.length <= 2 ? word : `${word[0].toUpperCase()}${word.slice(1)}`)
+    .join(" ");
 }
 
 function getLiveServers(filters = {}) {

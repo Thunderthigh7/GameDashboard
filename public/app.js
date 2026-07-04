@@ -41,6 +41,9 @@ const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const chatLogCount = document.querySelector("#chatLogCount");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
+const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
+const chatInsightsMode = document.querySelector("#chatInsightsMode");
+const commonQuestionList = document.querySelector("#commonQuestionList");
 const playerDataPanel = document.querySelector("#playerDataPanel");
 const dataTarget = document.querySelector("#dataTarget");
 const refreshDataStoresButton = document.querySelector("#refreshDataStoresButton");
@@ -246,6 +249,7 @@ async function loadChatLogs() {
   try {
     const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
     const data = await request(`/api/chat-logs${query}`);
+    loadChatInsights();
     chatLogCount.textContent = String(data.logCount || 0);
 
     if (!data.logs.length) {
@@ -262,6 +266,29 @@ async function loadChatLogs() {
     chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
   } catch (error) {
     chatLogsStatus.textContent = error.message;
+    loadChatInsights();
+  }
+}
+
+async function loadChatInsights() {
+  try {
+    const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
+    const data = await request(`/api/chat-insights${query}`);
+    chatInsightsMode.textContent = data.mode === "local" ? "Local analysis" : "AI analysis";
+
+    if (!data.questions.length) {
+      chatInsightsStatus.textContent = data.sourceLogCount
+        ? `Analyzed ${data.analyzedCount || 0} recent messages; no repeated questions found yet.`
+        : "No chat data available for question analysis yet.";
+      commonQuestionList.innerHTML = "";
+      return;
+    }
+
+    chatInsightsStatus.textContent = `Found ${data.questions.length} question group${data.questions.length === 1 ? "" : "s"} from ${data.questionLikeCount || 0} question-like messages.`;
+    commonQuestionList.innerHTML = data.questions.map(renderCommonQuestion).join("");
+  } catch (error) {
+    chatInsightsStatus.textContent = error.message;
+    commonQuestionList.innerHTML = "";
   }
 }
 
@@ -779,6 +806,31 @@ function renderChatLog(log) {
         <code>${escapeHtml(log.userId)}</code>
       </div>
       <p>${escapeHtml(log.message)}</p>
+    </article>
+  `;
+}
+
+function renderCommonQuestion(question, index) {
+  const examples = Array.isArray(question.examples) && question.examples.length
+    ? question.examples.map((example) => `
+      <li>
+        <span>${escapeHtml(example.message)}</span>
+        <small>${escapeHtml(example.username || "Player")}</small>
+      </li>
+    `).join("")
+    : `<li><span>No examples stored.</span></li>`;
+
+  return `
+    <article class="commonQuestionItem">
+      <div class="questionRank">${escapeHtml(String(index + 1))}</div>
+      <div class="questionBody">
+        <div class="questionHeader">
+          <strong>${escapeHtml(question.title)}</strong>
+          <span>${escapeHtml(String(question.mentions || 0))} mention${question.mentions === 1 ? "" : "s"}</span>
+        </div>
+        <p>${escapeHtml(String(question.playerCount || 0))} player${question.playerCount === 1 ? "" : "s"} asked similar question-like messages.</p>
+        <ul class="questionExamples">${examples}</ul>
+      </div>
     </article>
   `;
 }
