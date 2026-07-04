@@ -7,6 +7,7 @@ const statusLine = document.querySelector("#movementHeatmapStatus");
 const playerFilter = document.querySelector("#movementPlayerFilter");
 const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
+const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]");
 
 let renderer;
 let scene;
@@ -28,6 +29,12 @@ if (canvas) {
   });
   fromFilter?.addEventListener("change", loadHeatmap);
   toFilter?.addEventListener("change", loadHeatmap);
+  for (const button of presetButtons) {
+    button.addEventListener("click", () => {
+      applyPreset(Number(button.dataset.heatmapPresetMinutes) || 0);
+      loadHeatmap();
+    });
+  }
   window.addEventListener("dashboard:experienceChanged", loadHeatmap);
   window.addEventListener("resize", resizeScene);
   window.setInterval(loadHeatmap, 15000);
@@ -130,6 +137,19 @@ function getDateTimeMs(value) {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function applyPreset(minutes) {
+  if (!minutes || !fromFilter || !toFilter) return;
+  const now = new Date();
+  const from = new Date(now.getTime() - minutes * 60 * 1000);
+  fromFilter.value = toDateTimeLocalValue(from);
+  toFilter.value = toDateTimeLocalValue(now);
+}
+
+function toDateTimeLocalValue(date) {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
 function getStatusText(payload) {

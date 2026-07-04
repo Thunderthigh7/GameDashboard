@@ -18,7 +18,7 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	false,
 	false,
 	360,
-	520,
+	580,
 	300,
 	360
 )
@@ -96,6 +96,13 @@ local function createButton(text, order)
 	}, root)
 end
 
+local function createPresetButton(text, seconds, order)
+	local button = createButton(text, order)
+	button.BackgroundColor3 = Color3.fromRGB(42, 48, 60)
+	button:SetAttribute("PresetSeconds", seconds)
+	return button
+end
+
 createLabel("Dashboard URL", 1)
 local urlInput = createInput(DEFAULT_BASE_URL, "https://game-dashboard-zaya.onrender.com", 2)
 
@@ -111,17 +118,21 @@ local fromInput = createInput("", "ISO time, epoch, or blank", 8)
 createLabel("To time", 9)
 local toInput = createInput("", "ISO time, epoch, or blank", 10)
 
-createLabel("Max points", 11)
-local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 12)
+local tenMinuteButton = createPresetButton("Last 10 minutes", 600, 11)
+local hourButton = createPresetButton("Last 1 hour", 3600, 12)
+local dayButton = createPresetButton("Last 1 day", 86400, 13)
 
-local fetchButton = createButton("Fetch Heatmap", 13)
-local clearButton = createButton("Clear Heatmap", 14)
+createLabel("Max points", 14)
+local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 15)
+
+local fetchButton = createButton("Fetch Heatmap", 16)
+local clearButton = createButton("Clear Heatmap", 17)
 clearButton.BackgroundColor3 = Color3.fromRGB(63, 68, 78)
 
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 15,
+	LayoutOrder = 18,
 	Size = UDim2.new(1, 0, 0, 70),
 	Text = "Ready.",
 	TextColor3 = Color3.fromRGB(139, 148, 158),
@@ -241,6 +252,12 @@ local function buildHeatmapUrl()
 	return url
 end
 
+local function applyPreset(seconds)
+	local now = os.time()
+	fromInput.Text = os.date("!%Y-%m-%dT%H:%M:%SZ", now - seconds)
+	toInput.Text = os.date("!%Y-%m-%dT%H:%M:%SZ", now)
+end
+
 local function fetchHeatmap()
 	setStatus("Fetching heatmap...", false)
 
@@ -268,6 +285,21 @@ local function fetchHeatmap()
 		false
 	)
 end
+
+tenMinuteButton.MouseButton1Click:Connect(function()
+	applyPreset(tenMinuteButton:GetAttribute("PresetSeconds"))
+	fetchHeatmap()
+end)
+
+hourButton.MouseButton1Click:Connect(function()
+	applyPreset(hourButton:GetAttribute("PresetSeconds"))
+	fetchHeatmap()
+end)
+
+dayButton.MouseButton1Click:Connect(function()
+	applyPreset(dayButton:GetAttribute("PresetSeconds"))
+	fetchHeatmap()
+end)
 
 fetchButton.MouseButton1Click:Connect(fetchHeatmap)
 clearButton.MouseButton1Click:Connect(function()

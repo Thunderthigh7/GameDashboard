@@ -26,6 +26,7 @@ Filters:
 
 - `Player filter` accepts a Roblox username or user ID.
 - `From time` and `To time` accept ISO timestamps, epoch seconds, epoch milliseconds, or blank values.
+- Preset buttons fill `From time` and `To time` for the last 10 minutes, 1 hour, or 1 day.
 - `Max points` limits how many heatmap markers Studio creates.
 
 Requirements:

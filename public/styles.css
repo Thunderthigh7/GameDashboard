@@ -512,6 +512,13 @@ button {
   margin-top: 16px;
 }
 
+.heatmapPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .heatmapShell {
   position: relative;
   min-height: 420px;

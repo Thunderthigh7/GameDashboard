@@ -216,6 +216,11 @@
             <input id="movementToFilter" type="datetime-local">
           </div>
         </div>
+        <div class="heatmapPresets" aria-label="Heatmap time presets">
+          <button class="miniButton" type="button" data-heatmap-preset-minutes="10">10 minutes</button>
+          <button class="miniButton" type="button" data-heatmap-preset-minutes="60">1 hour</button>
+          <button class="miniButton" type="button" data-heatmap-preset-minutes="1440">1 day</button>
+        </div>
         <div class="heatmapShell">
           <canvas id="movementHeatmapCanvas"></canvas>
           <div class="heatmapOverlay">
