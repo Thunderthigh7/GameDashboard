@@ -309,17 +309,16 @@ small,
 
 .topbarActions {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: 188px 188px max-content max-content max-content;
   align-items: flex-end;
   justify-content: flex-end;
-  column-gap: 28px;
+  column-gap: 36px;
   row-gap: 12px;
 }
 
+.topbarFilters,
 .topbarButtonGroup {
-  display: flex;
-  align-items: center;
-  gap: 24px;
+  display: contents;
 }
 
 .dateButton,
@@ -499,14 +498,11 @@ small,
 }
 
 .topbarFilters {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 26px;
   margin-top: 0;
 }
 
 .compactField {
-  width: 176px;
+  width: 188px;
   min-width: 0;
 }
 
