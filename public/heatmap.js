@@ -38,6 +38,7 @@ let canvasHovered = false;
 let lastFrameTime = 0;
 let activeHeatmapMode = "movement";
 let selectedChatLogId = "";
+let heatmapRefreshTimer = null;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -62,7 +63,19 @@ if (canvas) {
       setHeatmapMode(button.dataset.heatmapMode || "movement");
     });
   }
-  window.addEventListener("dashboard:universeChanged", () => loadHeatmap({ resetView: true }));
+  window.addEventListener("dashboard:analyticsReady", () => {
+    resizeScene();
+    startHeatmapRefresh();
+  });
+  window.addEventListener("dashboard:authChanged", (event) => {
+    if (!event.detail?.authenticated) {
+      stopHeatmapRefresh();
+    }
+  });
+  window.addEventListener("dashboard:universeChanged", () => {
+    resizeScene();
+    loadHeatmap({ resetView: true });
+  });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
     if (activeHeatmapMode !== "chat") {
@@ -73,8 +86,6 @@ if (canvas) {
     selectChatLogOnMap(id, { notifyList: false });
   });
   window.addEventListener("resize", resizeScene);
-  window.setInterval(loadHeatmap, 15000);
-  loadHeatmap({ resetView: true });
 }
 
 function initScene() {
@@ -169,6 +180,11 @@ function initScene() {
 }
 
 async function loadHeatmap(options = {}) {
+  if (window.isDashboardAuthenticated?.() === false) {
+    statusLine.textContent = "Unlock the dashboard to view heatmap samples.";
+    return;
+  }
+
   const universeId = window.getSelectedUniverseId?.() || "";
   const query = buildHeatmapQuery(universeId);
   const modeLabel = getModeLabel();
@@ -208,6 +224,17 @@ async function loadHeatmap(options = {}) {
   } catch (error) {
     statusLine.textContent = error.message;
   }
+}
+
+function startHeatmapRefresh() {
+  stopHeatmapRefresh();
+  heatmapRefreshTimer = window.setInterval(loadHeatmap, 15000);
+}
+
+function stopHeatmapRefresh() {
+  if (!heatmapRefreshTimer) return;
+  window.clearInterval(heatmapRefreshTimer);
+  heatmapRefreshTimer = null;
 }
 
 function normalizeHeatmapPayload(payload) {

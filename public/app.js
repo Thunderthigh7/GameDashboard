@@ -31,6 +31,7 @@ let knownUniverses = [];
 let authenticated = false;
 
 window.getSelectedUniverseId = () => selectedUniverseId;
+window.isDashboardAuthenticated = () => authenticated;
 
 const CHAT_REFRESH_MS = 5000;
 
@@ -131,6 +132,10 @@ function setAuthenticated(value) {
     panel.hidden = !authenticated;
   }
 
+  window.dispatchEvent(new CustomEvent("dashboard:authChanged", {
+    detail: { authenticated },
+  }));
+
   if (!authenticated) {
     stopChatRefresh();
     chatLogList.innerHTML = "";
@@ -148,6 +153,9 @@ async function loadDashboardData() {
   await loadUniverses();
   await loadChatLogs();
   startChatRefresh();
+  window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
+    detail: { universeId: selectedUniverseId },
+  }));
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
   }));
