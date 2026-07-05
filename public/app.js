@@ -8,12 +8,8 @@ const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const authError = document.querySelector("#authError");
 const themeToggleButton = document.querySelector("#themeToggleButton");
-const universesPanel = document.querySelector("#universesPanel");
 const universesStatus = document.querySelector("#universesStatus");
-const universeGrid = document.querySelector("#universeGrid");
-const universeIdInput = document.querySelector("#universeIdInput");
-const selectUniverseButton = document.querySelector("#selectUniverseButton");
-const showAllUniversesButton = document.querySelector("#showAllUniversesButton");
+const universeSelect = document.querySelector("#universeSelect");
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const chatLogCount = document.querySelector("#chatLogCount");
@@ -27,7 +23,7 @@ const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const analyticsPanels = document.querySelectorAll(".chatLogs, .chatInsights, .movementHeatmap");
 const protectedDashboardPanels = document.querySelectorAll(
-  ".sidebar, .topbar, #authControls, .summaryBand, #universesPanel, .dashboardGrid, .lowerCards"
+  ".sidebar, .topbar, #authControls, .summaryBand, .dashboardGrid, .lowerCards"
 );
 
 let chatRefreshTimer;
@@ -63,11 +59,7 @@ function bindEvents() {
   });
 
   refreshUniversesButton.addEventListener("click", loadUniverses);
-  selectUniverseButton.addEventListener("click", () => selectUniverse(universeIdInput.value.trim()));
-  showAllUniversesButton.addEventListener("click", () => selectUniverse(""));
-  universeIdInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") selectUniverse(universeIdInput.value.trim());
-  });
+  universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   themeToggleButton.addEventListener("click", toggleTheme);
@@ -93,12 +85,6 @@ function bindEvents() {
     selectChatLog(event.detail?.id || "", { scroll: true });
   });
 
-  universeGrid.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-universe-id]");
-    if (!button) return;
-
-    selectUniverse(button.dataset.universeId || "");
-  });
 }
 
 async function checkAuth() {
@@ -137,7 +123,6 @@ function setAuthenticated(value) {
   accountBox.textContent = authenticated ? "Unlocked" : "Locked";
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
-  universesPanel.hidden = !authenticated;
   runChatInsightsButton.hidden = !authenticated;
   for (const panel of protectedDashboardPanels) {
     panel.hidden = !authenticated;
@@ -156,7 +141,10 @@ function setAuthenticated(value) {
     commonQuestionList.innerHTML = "";
     chatLogCount.textContent = "0";
     universeTotalMetric.textContent = "0";
-    selectedUniverseLabel.textContent = "All stored data";
+    selectedUniverseId = "";
+    selectedUniverseLabel.textContent = "No universe selected";
+    universeSelect.innerHTML = `<option value="">Unlock dashboard</option>`;
+    universeSelect.disabled = true;
     chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
     chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
     return;
@@ -210,7 +198,6 @@ function stopChatRefresh() {
 
 async function loadUniverses() {
   universesStatus.textContent = "Loading universes...";
-  universeGrid.innerHTML = "";
 
   try {
     const data = await request("/api/universes");
@@ -218,43 +205,47 @@ async function loadUniverses() {
     universeTotalMetric.textContent = String(knownUniverses.length);
 
     if (!knownUniverses.length) {
-      universesStatus.textContent = "No universe data stored yet. Enter a universe ID manually or wait for Roblox heartbeats.";
+      selectedUniverseId = "";
+      universeSelect.disabled = true;
+      universeSelect.innerHTML = `<option value="">No universe data yet</option>`;
+      universesStatus.textContent = "No universe IDs are sending data yet.";
       updateSelectedUniverse();
       return;
     }
 
-    universesStatus.textContent = `${knownUniverses.length} universe${knownUniverses.length === 1 ? "" : "s"} with stored analytics.`;
-    universeGrid.innerHTML = knownUniverses.map(renderUniverse).join("");
+    const availableIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
+    const previousUniverseId = selectedUniverseId;
+    if (!selectedUniverseId || !availableIds.has(selectedUniverseId)) {
+      selectedUniverseId = String(knownUniverses[0].id || "");
+    }
+
+    universeSelect.disabled = false;
+    universeSelect.innerHTML = knownUniverses.map(renderUniverseOption).join("");
+    universesStatus.textContent = `${knownUniverses.length} universe${knownUniverses.length === 1 ? "" : "s"} sending data.`;
     updateSelectedUniverse();
+
+    if (previousUniverseId !== selectedUniverseId) {
+      window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
+        detail: { universeId: selectedUniverseId },
+      }));
+    }
   } catch (error) {
     universesStatus.textContent = error.message;
   }
 }
 
-function renderUniverse(universe) {
+function renderUniverseOption(universe) {
   const id = String(universe.id || "");
   const totalSamples = Number(universe.totalSamples || 0);
-  const mapText = universe.hasMapSnapshot ? "Map uploaded" : "No map";
-  const lastSeen = universe.lastSeenAt ? `Last seen ${formatDateTime(universe.lastSeenAt)}` : "No recent samples";
-
-  return `
-    <article class="universeCard" data-universe-id="${escapeHtml(id)}">
-      <dl>
-        <div><dt>Universe ID</dt><dd>${escapeHtml(id)}</dd></div>
-        <div><dt>Samples</dt><dd>${escapeHtml(String(totalSamples))}</dd></div>
-        <div><dt>Map</dt><dd>${escapeHtml(mapText)}</dd></div>
-        <div><dt>Activity</dt><dd>${escapeHtml(lastSeen)}</dd></div>
-      </dl>
-      <button class="button secondary compact selectUniverseCardButton" type="button" data-universe-id="${escapeHtml(id)}">Select</button>
-    </article>
-  `;
+  const selected = id === selectedUniverseId ? " selected" : "";
+  return `<option value="${escapeHtml(id)}"${selected}>Universe ${escapeHtml(id)} (${escapeHtml(String(totalSamples))} samples)</option>`;
 }
 
 function selectUniverse(value) {
   const cleanValue = String(value || "").trim();
-  selectedUniverseId = /^\d+$/.test(cleanValue) ? cleanValue : "";
+  const knownIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
+  selectedUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
   selectedChatLogId = "";
-  universeIdInput.value = selectedUniverseId;
   updateSelectedUniverse();
   loadChatLogs();
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
@@ -263,29 +254,27 @@ function selectUniverse(value) {
 }
 
 function updateSelectedUniverse() {
-  for (const card of universeGrid.querySelectorAll(".universeCard")) {
-    const isSelected = card.dataset.universeId === selectedUniverseId;
-    card.classList.toggle("selected", isSelected);
-
-    const button = card.querySelector(".selectUniverseCardButton");
-    if (button) button.textContent = isSelected ? "Selected" : "Select";
-  }
-
   if (selectedUniverseId) {
     selectedUniverseLabel.textContent = `Universe ${selectedUniverseId}`;
-    universesStatus.textContent = knownUniverses.length
-      ? `Showing universe ${selectedUniverseId}.`
-      : `Showing universe ${selectedUniverseId}. Data will appear if stored for this ID.`;
+    universeSelect.value = selectedUniverseId;
   } else {
-    selectedUniverseLabel.textContent = "All stored data";
+    selectedUniverseLabel.textContent = "No universe selected";
   }
 }
 
 async function loadChatLogs() {
   if (!authenticated) return;
 
+  if (!selectedUniverseId) {
+    chatLogCount.textContent = "0";
+    chatLogsStatus.textContent = "Select a universe with data to view chat logs.";
+    chatLogList.innerHTML = "";
+    loadChatInsights();
+    return;
+  }
+
   try {
-    const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
+    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
     const data = await request(`/api/chat-logs${query}`);
     loadChatInsights();
     chatLogCount.textContent = String(data.logCount || 0);
@@ -293,14 +282,14 @@ async function loadChatLogs() {
     if (!data.logs.length) {
       chatLogsStatus.textContent = selectedUniverseId
         ? `No chat logs stored for universe ${selectedUniverseId} yet.`
-        : "No chat logs stored yet.";
+        : "Select a universe with data to view chat logs.";
       chatLogList.innerHTML = "";
       return;
     }
 
     chatLogsStatus.textContent = selectedUniverseId
       ? `Showing stored chat logs for universe ${selectedUniverseId}.`
-      : "Showing stored chat logs for all universes.";
+      : "Select a universe with data to view chat logs.";
     chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
     highlightSelectedChatLog({ scroll: false });
   } catch (error) {
@@ -313,8 +302,14 @@ async function loadChatLogs() {
 async function loadChatInsights() {
   if (!authenticated) return;
 
+  if (!selectedUniverseId) {
+    chatInsightsStatus.textContent = "Select a universe with data to view chat insights.";
+    commonQuestionList.innerHTML = "";
+    return;
+  }
+
   try {
-    const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
+    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
     const data = await request(`/api/chat-insights${query}`);
     renderChatInsights(data);
   } catch (error) {
@@ -330,7 +325,13 @@ async function runChatInsightsAnalysis() {
   chatInsightsStatus.textContent = "Sending recent question-like chat to AI...";
 
   try {
-    const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
+    if (!selectedUniverseId) {
+      chatInsightsStatus.textContent = "Select a universe with data before running AI analysis.";
+      chatInsightsMode.textContent = "Not analyzed";
+      return;
+    }
+
+    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
     const data = await request(`/api/chat-insights/analyze${query}`, { method: "POST" });
     renderChatInsights(data);
   } catch (error) {

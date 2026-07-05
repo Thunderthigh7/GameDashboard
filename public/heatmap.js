@@ -194,12 +194,19 @@ async function loadHeatmap(options = {}) {
   }
 
   const universeId = window.getSelectedUniverseId?.() || "";
+  if (!universeId) {
+    latestSamples = [];
+    latestEntries = [];
+    sampleCount.textContent = "0 samples";
+    statusLine.textContent = "Select a universe with data to view heatmap samples.";
+    renderScene([], null, { resetView: Boolean(options.resetView) });
+    return;
+  }
+
   const query = buildHeatmapQuery(universeId);
   const modeLabel = getModeLabel();
 
-  statusLine.textContent = universeId
-    ? `Loading ${modeLabel.toLowerCase()} samples for universe ${universeId}...`
-    : `Loading ${modeLabel.toLowerCase()} samples for all visible universes...`;
+  statusLine.textContent = `Loading ${modeLabel.toLowerCase()} samples for universe ${universeId}...`;
 
   try {
     const samplePromise = fetch(`${getHeatmapEndpoint()}${query}`, {

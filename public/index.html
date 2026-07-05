@@ -21,7 +21,6 @@
           <a class="active" href="#overview"><span>Overview</span></a>
           <a href="#heatmaps"><span>Heatmaps</span></a>
           <a href="#chat"><span>Chat Analysis</span></a>
-          <a href="#universes"><span>Universes</span></a>
           <a class="placeholder" href="#sessions"><span>Sessions</span><em>Soon</em></a>
           <a class="placeholder" href="#funnels"><span>Funnels</span><em>Soon</em></a>
           <a class="placeholder" href="#quests"><span>Quests</span><em>Soon</em></a>
@@ -30,12 +29,18 @@
         </nav>
 
         <div class="sidebarFooter">
-          <div class="gameTile">
+          <div class="universeSelector">
             <div class="gameThumb"></div>
             <div>
               <strong>Selected Universe</strong>
               <small id="selectedUniverseLabel">All stored data</small>
             </div>
+            <label class="srOnly" for="universeSelect">Universe</label>
+            <select id="universeSelect" disabled>
+              <option value="">Loading universes...</option>
+            </select>
+            <button class="button secondary compact" id="refreshUniversesButton" type="button">Refresh</button>
+            <p class="status" id="universesStatus">Loading...</p>
           </div>
           <div class="planCard">
             <strong>Tracked Features</strong>
@@ -52,7 +57,16 @@
             <p>Roblox game analytics powered by live heartbeat data.</p>
           </div>
           <div class="topbarActions">
-            <button class="dateButton" type="button">Last 7 days</button>
+            <div class="topbarFilters" aria-label="Heatmap date range">
+              <div class="fieldGroup compactField">
+                <label for="movementFromFilter">From</label>
+                <input id="movementFromFilter" type="datetime-local">
+              </div>
+              <div class="fieldGroup compactField">
+                <label for="movementToFilter">To</label>
+                <input id="movementToFilter" type="datetime-local">
+              </div>
+            </div>
             <button class="dateButton" id="themeToggleButton" type="button">Light mode</button>
             <button class="aiButton" id="runChatInsightsButton" type="button">AI Insights</button>
             <div class="account" id="accountBox">Checking...</div>
@@ -99,26 +113,6 @@
           </div>
         </section>
 
-        <section class="panel universes" id="universesPanel" hidden>
-          <div class="sectionHeader">
-            <div>
-              <h2>Universes</h2>
-              <p>Select a detected universe or enter one manually.</p>
-            </div>
-            <button class="button secondary compact" id="refreshUniversesButton" type="button">Refresh</button>
-          </div>
-          <div class="universePicker">
-            <div class="fieldGroup">
-              <label for="universeIdInput">Universe ID</label>
-              <input id="universeIdInput" type="text" inputmode="numeric" placeholder="Enter universe ID">
-            </div>
-            <button class="button secondary compact" id="selectUniverseButton" type="button">Load universe</button>
-            <button class="button secondary compact" id="showAllUniversesButton" type="button">Show all</button>
-          </div>
-          <p class="status" id="universesStatus">Loading...</p>
-          <div class="universeGrid" id="universeGrid"></div>
-        </section>
-
         <div class="dashboardGrid" hidden>
           <section class="panel movementHeatmap mapPanel" id="heatmaps" hidden>
             <div class="sectionHeader">
@@ -147,14 +141,6 @@
               <div class="fieldGroup">
                 <label for="movementPlayerFilter">Player</label>
                 <input id="movementPlayerFilter" type="text" placeholder="Username or user ID">
-              </div>
-              <div class="fieldGroup">
-                <label for="movementFromFilter">From</label>
-                <input id="movementFromFilter" type="datetime-local">
-              </div>
-              <div class="fieldGroup">
-                <label for="movementToFilter">To</label>
-                <input id="movementToFilter" type="datetime-local">
               </div>
             </div>
             <div class="heatmapPresets" aria-label="Heatmap time presets">

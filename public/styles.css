@@ -78,6 +78,10 @@ input {
   font: inherit;
 }
 
+select {
+  font: inherit;
+}
+
 p,
 h1,
 h2 {
@@ -88,6 +92,15 @@ p,
 small,
 .status {
   color: var(--muted);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 .appShell {
@@ -205,7 +218,7 @@ small,
   border-top: 1px solid var(--line);
 }
 
-.gameTile {
+.universeSelector {
   display: grid;
   grid-template-columns: 42px 1fr;
   align-items: center;
@@ -219,10 +232,31 @@ small,
   background: linear-gradient(135deg, #3b82f6, #22c55e);
 }
 
-.gameTile strong,
+.universeSelector strong,
 .planCard strong {
   display: block;
   font-size: 13px;
+}
+
+.universeSelector select,
+.universeSelector button,
+.universeSelector .status {
+  grid-column: 1 / -1;
+}
+
+.universeSelector select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field-bg);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.universeSelector .status {
+  margin-top: 0;
+  font-size: 12px;
 }
 
 .planCard {
@@ -441,12 +475,8 @@ small,
   color: white;
 }
 
-.universes {
-  margin-bottom: 18px;
-}
-
 .authForm,
-.universePicker {
+.topbarFilters {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto;
   align-items: end;
@@ -454,8 +484,9 @@ small,
   margin-top: 16px;
 }
 
-.universePicker {
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+.topbarFilters {
+  grid-template-columns: repeat(2, minmax(160px, 180px));
+  margin-top: 0;
 }
 
 .fieldGroup {
@@ -477,47 +508,6 @@ small,
   background: var(--field-bg);
   color: var(--text);
   padding: 0 10px;
-}
-
-.universeGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.universeCard {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 14px;
-}
-
-.universeCard.selected {
-  border-color: var(--purple);
-  box-shadow: 0 0 0 2px rgba(109, 66, 232, 0.12);
-}
-
-.universeCard dl {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-}
-
-.universeCard dl div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.universeCard dt {
-  color: var(--muted);
-}
-
-.universeCard dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-weight: 750;
 }
 
 .dashboardGrid {
@@ -547,7 +537,7 @@ small,
 
 .heatmapFilters {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(180px, 220px));
+  grid-template-columns: minmax(160px, 260px);
   gap: 12px;
   margin-top: 14px;
 }
@@ -821,7 +811,7 @@ small,
   }
 
   .authForm,
-  .universePicker,
+  .topbarFilters,
   .heatmapFilters {
     grid-template-columns: 1fr;
   }
