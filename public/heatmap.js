@@ -528,10 +528,10 @@ function renderDensityHeatmap(entries, center) {
   if (!bins.length) return;
 
   const maxCount = bins.reduce((max, bin) => Math.max(max, bin.count), 1);
-  const geometry = new THREE.SphereGeometry(1, 16, 10);
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
-    opacity: 0.64,
+    opacity: 0.58,
     depthWrite: false,
     vertexColors: true,
   });
@@ -544,11 +544,14 @@ function renderDensityHeatmap(entries, center) {
   for (let index = 0; index < bins.length; index += 1) {
     const bin = bins[index];
     const normalized = bin.count / maxCount;
-    const radius = getDensityRadius(binSize, normalized);
     const color = getHeatmapRampColor(Math.pow(normalized, 0.48));
 
     transform.position.set(bin.x - center.x, bin.y - center.y, bin.z - center.z);
-    transform.scale.setScalar(radius);
+    transform.scale.set(
+      binSize * 0.92,
+      binSize * 0.92,
+      binSize * 0.92,
+    );
     transform.updateMatrix();
 
     heatmapMesh.setMatrixAt(index, transform.matrix);
@@ -569,38 +572,25 @@ function getDensityBins(entries, binSize) {
   const binsByKey = new Map();
   for (const entry of entries) {
     const weight = Math.max(1, entry.count || 1);
-    const key = [
-      Math.round(entry.x / binSize),
-      Math.round(entry.y / binSize),
-      Math.round(entry.z / binSize),
-    ].join(":");
+    const ix = Math.floor(entry.x / binSize);
+    const iy = Math.floor(entry.y / binSize);
+    const iz = Math.floor(entry.z / binSize);
+    const key = `${ix}:${iy}:${iz}`;
     const bin = binsByKey.get(key);
 
     if (bin) {
-      bin.x += entry.x * weight;
-      bin.y += entry.y * weight;
-      bin.z += entry.z * weight;
       bin.count += weight;
     } else {
       binsByKey.set(key, {
-        x: entry.x * weight,
-        y: entry.y * weight,
-        z: entry.z * weight,
+        x: (ix + 0.5) * binSize,
+        y: (iy + 0.5) * binSize,
+        z: (iz + 0.5) * binSize,
         count: weight,
       });
     }
   }
 
-  return [...binsByKey.values()].map((bin) => ({
-    x: bin.x / bin.count,
-    y: bin.y / bin.count,
-    z: bin.z / bin.count,
-    count: bin.count,
-  }));
-}
-
-function getDensityRadius(binSize, normalized) {
-  return clamp(binSize * (0.65 + normalized * 1.65), 4, 48);
+  return [...binsByKey.values()];
 }
 
 function getHeatmapRampColor(value) {
