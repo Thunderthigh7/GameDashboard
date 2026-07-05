@@ -308,7 +308,8 @@ small,
   align-items: flex-end;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 14px;
+  column-gap: 24px;
+  row-gap: 12px;
 }
 
 .dateButton,
@@ -316,6 +317,7 @@ small,
 .account {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -487,12 +489,14 @@ small,
 }
 
 .topbarFilters {
-  grid-template-columns: repeat(2, minmax(188px, 210px));
-  gap: 16px;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 22px;
   margin-top: 0;
 }
 
 .compactField {
+  width: 190px;
   min-width: 0;
 }
 
@@ -514,7 +518,7 @@ small,
   border-radius: 7px;
   background: var(--field-bg);
   color: var(--text);
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
 }
 
 .dashboardGrid {
@@ -818,6 +822,11 @@ small,
   }
 
   .topbarFilters {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .compactField {
     width: 100%;
   }
 
