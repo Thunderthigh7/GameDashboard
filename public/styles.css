@@ -816,41 +816,11 @@ small,
   white-space: nowrap;
 }
 
-.featureList {
-  display: grid;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.featureList li,
 .barList div {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-
-.featureList span {
-  border-radius: 999px;
-  background: var(--live-badge-bg);
-  color: var(--green);
-  padding: 4px 8px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.placeholderFeature .featureList span {
-  background: var(--placeholder-badge-bg);
-  color: var(--muted);
-}
-
-.lowerCards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  align-items: start;
 }
 
 .dataCard {
@@ -871,10 +841,8 @@ small,
   color: var(--red);
 }
 
-.bigPlaceholder {
-  display: block;
-  margin-top: 20px;
-  font-size: 38px;
+.placeholderFeature .barList b {
+  color: var(--muted);
 }
 
 .status {
@@ -887,8 +855,7 @@ small,
 
 @media (max-width: 1180px) {
   .summaryBand,
-  .dashboardGrid,
-  .lowerCards {
+  .dashboardGrid {
     grid-template-columns: 1fr;
   }
 }

@@ -160,44 +160,6 @@
               </div>
             </section>
 
-            <section class="lowerCards" hidden>
-              <article class="panel dataCard">
-                <h2>Top drop-off points</h2>
-                <p>Uses leave heatmap data. Name grouping is placeholder until zones are configured.</p>
-                <div class="barList">
-                  <div><span>Leave samples</span><b id="leavePlaceholderMetric">Tracked</b></div>
-                  <div><span>Death samples</span><b>Tracked</b></div>
-                  <div><span>Movement samples</span><b>Tracked</b></div>
-                </div>
-              </article>
-
-              <article class="panel dataCard chatLogs" hidden>
-                <div class="sectionHeader">
-                  <div>
-                    <h2>Chat Logs</h2>
-                    <p>Messages batched from Roblox heartbeats.</p>
-                  </div>
-                  <button class="button secondary compact" id="refreshChatLogsButton" type="button">Refresh</button>
-                </div>
-                <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
-                <div class="chatLogList" id="chatLogList"></div>
-              </article>
-
-              <article class="panel dataCard placeholderFeature">
-                <h2>Rage quit rate</h2>
-                <strong class="bigPlaceholder">--</strong>
-                <p>Placeholder until session duration and repeated reconnect logic are tracked.</p>
-              </article>
-
-              <article class="panel dataCard featureCard placeholderFeature">
-                <h2>Coming later</h2>
-                <ul class="featureList">
-                  <li><strong>Funnels</strong><span>Placeholder</span></li>
-                  <li><strong>Quests</strong><span>Placeholder</span></li>
-                  <li><strong>Economy</strong><span>Placeholder</span></li>
-                </ul>
-              </article>
-            </section>
           </div>
 
           <aside class="insightRail">
@@ -212,6 +174,38 @@
               <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
               <div class="commonQuestionList" id="commonQuestionList"></div>
             </section>
+
+            <article class="panel dataCard">
+              <h2>Top drop-off rate</h2>
+              <p>Uses leave heatmap data. Name grouping is placeholder until zones are configured.</p>
+              <div class="barList">
+                <div><span>Leave samples</span><b id="leavePlaceholderMetric">Tracked</b></div>
+                <div><span>Death samples</span><b>Tracked</b></div>
+                <div><span>Movement samples</span><b>Tracked</b></div>
+              </div>
+            </article>
+
+            <article class="panel dataCard placeholderFeature">
+              <h2>Most common death areas</h2>
+              <p>Placeholder until death area grouping is wired into the dashboard.</p>
+              <div class="barList">
+                <div><span>Area 1</span><b>Coming soon</b></div>
+                <div><span>Area 2</span><b>Coming soon</b></div>
+                <div><span>Area 3</span><b>Coming soon</b></div>
+              </div>
+            </article>
+
+            <article class="panel dataCard chatLogs" hidden>
+              <div class="sectionHeader">
+                <div>
+                  <h2>Chat Logs</h2>
+                  <p>Messages batched from Roblox heartbeats.</p>
+                </div>
+                <button class="button secondary compact" id="refreshChatLogsButton" type="button">Refresh</button>
+              </div>
+              <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
+              <div class="chatLogList" id="chatLogList"></div>
+            </article>
 
           </aside>
         </div>

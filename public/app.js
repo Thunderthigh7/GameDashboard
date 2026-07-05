@@ -24,7 +24,7 @@ const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
 const analyticsPanels = document.querySelectorAll(".chatLogs, .chatInsights, .movementHeatmap");
 const protectedDashboardPanels = document.querySelectorAll(
-  ".sidebar, .topbar, #authControls, .summaryBand, .dashboardGrid, .lowerCards"
+  ".sidebar, .topbar, #authControls, .summaryBand, .dashboardGrid"
 );
 
 let chatRefreshTimer;
