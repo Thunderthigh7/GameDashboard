@@ -99,9 +99,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
-      return sendJson(res, 200, getChatLogs({
-        universeId: url.searchParams.get("universeId"),
-      }));
+      return sendJson(res, 200, await getChatLogsFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
@@ -1867,6 +1865,17 @@ async function getLeaveHeatmapFromQuery(searchParams) {
   return getLeaveHeatmap(filters);
 }
 
+async function getChatLogsFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+
+  return getChatLogs(filters);
+}
+
 async function getRobloxHeatmapFromQuery(searchParams) {
   const filters = await normalizeMovementFilters({
     universeId: searchParams.get("universeId"),
@@ -2066,13 +2075,21 @@ function getChatLogs(filters = {}) {
     }
   }
 
-  logs.sort((a, b) => b.sentAt - a.sentAt || b.receivedAt - a.receivedAt);
+  const filteredLogs = logs.filter((log) => {
+    if (filters.fromMs > 0 && log.sentAt < filters.fromMs) return false;
+    if (filters.toMs > 0 && log.sentAt > filters.toMs) return false;
+    if (filters.userIds?.size && !filters.userIds.has(log.userId)) return false;
+    return true;
+  });
+
+  filteredLogs.sort((a, b) => b.sentAt - a.sentAt || b.receivedAt - a.receivedAt);
 
   return {
     universeId: universeIdFilter || null,
-    logCount: logs.length,
+    logCount: filteredLogs.length,
     maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
-    logs: logs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
+    filters: getMovementFilterSummary(filters),
+    logs: filteredLogs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
   };
 }
 

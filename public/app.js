@@ -66,6 +66,7 @@ let targetPlayer = null;
 let liveServers = [];
 let loadedDataRequest = null;
 let selectedDataStoreName = "";
+let selectedChatLogId = "";
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 
@@ -121,6 +122,24 @@ unbanButton.addEventListener("click", () => sendModerationCommand("unban"));
 announcementButton.addEventListener("click", sendGlobalAnnouncement);
 serverAnnouncementButton.addEventListener("click", sendServerAnnouncement);
 playerAnnouncementButton.addEventListener("click", sendPlayerAnnouncement);
+chatLogList.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-chat-log-id]");
+  if (!item) return;
+
+  selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
+});
+chatLogList.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+
+  const item = event.target.closest("[data-chat-log-id]");
+  if (!item) return;
+
+  event.preventDefault();
+  selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
+});
+window.addEventListener("dashboard:chatPointSelected", (event) => {
+  selectChatLog(event.detail?.id || "", { scroll: true });
+});
 experienceGrid.addEventListener("click", (event) => {
   const button = event.target.closest("[data-universe-id]");
   if (!button) return;
@@ -271,6 +290,7 @@ async function loadChatLogs() {
       ? `Showing stored chat logs for universe ${selectedUniverseId}.`
       : "Showing stored chat logs for all universes.";
     chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
+    highlightSelectedChatLog({ scroll: false });
   } catch (error) {
     chatLogsStatus.textContent = error.message;
     loadChatInsights();
@@ -827,9 +847,10 @@ function renderChatLog(log) {
     : "";
   const locationText = formatChatLocation(log);
   const locationMeta = locationText ? ` | ${locationText}` : "";
+  const isSelected = selectedChatLogId && log.id === selectedChatLogId ? " selected" : "";
 
   return `
-    <article class="chatLogItem">
+    <article class="chatLogItem${isSelected}" data-chat-log-id="${escapeHtml(log.id)}" tabindex="0">
       <div class="chatLogHeader">
         <div>
           <strong>${escapeHtml(log.username)}</strong>${displayName}
@@ -840,6 +861,28 @@ function renderChatLog(log) {
       <p>${escapeHtml(log.message)}</p>
     </article>
   `;
+}
+
+function selectChatLog(id, options = {}) {
+  selectedChatLogId = id;
+  highlightSelectedChatLog({ scroll: Boolean(options.scroll) });
+
+  if (options.notifyMap && id) {
+    window.dispatchEvent(new CustomEvent("dashboard:chatLogSelected", {
+      detail: { id },
+    }));
+  }
+}
+
+function highlightSelectedChatLog(options = {}) {
+  for (const item of chatLogList.querySelectorAll("[data-chat-log-id]")) {
+    const selected = selectedChatLogId && item.dataset.chatLogId === selectedChatLogId;
+    item.classList.toggle("selected", Boolean(selected));
+
+    if (selected && options.scroll) {
+      item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
 }
 
 function renderCommonQuestion(question, index) {

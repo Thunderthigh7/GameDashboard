@@ -475,6 +475,20 @@ button {
   border-radius: 8px;
   background: #151922;
   padding: 14px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.chatLogItem:hover,
+.chatLogItem:focus-visible {
+  border-color: rgba(88, 166, 255, 0.65);
+  outline: none;
+}
+
+.chatLogItem.selected {
+  border-color: rgba(245, 158, 11, 0.92);
+  background: #181d25;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.22);
 }
 
 .chatLogHeader {

@@ -15,6 +15,7 @@ let renderer;
 let scene;
 let camera;
 let points;
+let selectedMarker;
 let mapGroup;
 let grid;
 let animationFrame;
@@ -24,17 +25,22 @@ let distance = 520;
 let dragging = false;
 let dragMode = "rotate";
 let lastPointer = null;
+let pointerDownPosition = null;
 let sceneCenter = null;
 let latestCenter = null;
 let latestBounds = null;
 let latestSamples = [];
+let latestEntries = [];
 let latestMapSnapshot = null;
 let panTarget;
 let viewInitialized = false;
 let canvasHovered = false;
 let lastFrameTime = 0;
 let activeHeatmapMode = "movement";
+let selectedChatLogId = "";
 const movementKeys = new Set();
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
 
 if (canvas) {
   initScene();
@@ -57,6 +63,15 @@ if (canvas) {
     });
   }
   window.addEventListener("dashboard:experienceChanged", () => loadHeatmap({ resetView: true }));
+  window.addEventListener("dashboard:chatLogSelected", (event) => {
+    const id = event.detail?.id || "";
+    if (activeHeatmapMode !== "chat") {
+      setHeatmapMode("chat", { selectedChatLogId: id });
+      return;
+    }
+
+    selectChatLogOnMap(id, { notifyList: false });
+  });
   window.addEventListener("resize", resizeScene);
   window.setInterval(loadHeatmap, 15000);
   loadHeatmap({ resetView: true });
@@ -86,6 +101,7 @@ function initScene() {
     dragging = true;
     dragMode = event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "rotate";
     lastPointer = { x: event.clientX, y: event.clientY };
+    pointerDownPosition = { x: event.clientX, y: event.clientY, button: event.button };
     canvas.setPointerCapture(event.pointerId);
   });
 
@@ -105,9 +121,14 @@ function initScene() {
     lastPointer = { x: event.clientX, y: event.clientY };
   });
 
-  canvas.addEventListener("pointerup", () => {
+  canvas.addEventListener("pointerup", (event) => {
+    if (isClickPointerUp(event)) {
+      selectChatPointFromPointer(event);
+    }
+
     dragging = false;
     lastPointer = null;
+    pointerDownPosition = null;
   });
 
   canvas.addEventListener("wheel", (event) => {
@@ -169,7 +190,8 @@ async function loadHeatmap(options = {}) {
 
     const [payload, mapPayload] = await Promise.all([samplePromise, mapPromise]);
     const mapSnapshot = mapPayload.snapshot || null;
-    latestSamples = payload.samples || [];
+    const samplePayload = normalizeHeatmapPayload(payload);
+    latestSamples = samplePayload.samples;
     latestMapSnapshot = mapSnapshot;
     renderScene(latestSamples, latestMapSnapshot, {
       resetView: Boolean(options.resetView),
@@ -177,9 +199,9 @@ async function loadHeatmap(options = {}) {
 
     const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
-    sampleCount.textContent = `${payload.returnedCount || 0} ${modeLabel.toLowerCase()} sample${payload.returnedCount === 1 ? "" : "s"}`;
-    if (payload.returnedCount || mapSnapshot?.partCount) {
-      statusLine.textContent = `${getStatusText(payload)}${mapText}${mapErrorText}`;
+    sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeLabel.toLowerCase()} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
+    if (samplePayload.returnedCount || mapSnapshot?.partCount) {
+      statusLine.textContent = `${getStatusText(samplePayload)}${mapText}${mapErrorText}`;
     } else {
       statusLine.textContent = `No ${modeLabel.toLowerCase()} samples received yet.${mapErrorText}`;
     }
@@ -188,8 +210,35 @@ async function loadHeatmap(options = {}) {
   }
 }
 
-function setHeatmapMode(mode) {
-  activeHeatmapMode = ["deaths", "leaves"].includes(mode) ? mode : "movement";
+function normalizeHeatmapPayload(payload) {
+  if (activeHeatmapMode !== "chat") {
+    return {
+      ...payload,
+      returnedCount: payload.returnedCount || 0,
+      samples: payload.samples || [],
+    };
+  }
+
+  const samples = (payload.logs || []).filter((log) => (
+    Number.isFinite(Number(log.x))
+    && Number.isFinite(Number(log.y))
+    && Number.isFinite(Number(log.z))
+  ));
+
+  return {
+    ...payload,
+    returnedCount: samples.length,
+    sampleCount: payload.logCount || samples.length,
+    samples,
+  };
+}
+
+function setHeatmapMode(mode, options = {}) {
+  activeHeatmapMode = ["deaths", "leaves", "chat"].includes(mode) ? mode : "movement";
+  if (options.selectedChatLogId) {
+    selectedChatLogId = options.selectedChatLogId;
+  }
+
   for (const button of modeButtons) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
@@ -199,12 +248,14 @@ function setHeatmapMode(mode) {
 function getHeatmapEndpoint() {
   if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
+  if (activeHeatmapMode === "chat") return "/api/chat-logs";
   return "/api/movement-heatmap";
 }
 
 function getModeLabel() {
   if (activeHeatmapMode === "deaths") return "Death";
   if (activeHeatmapMode === "leaves") return "Leave";
+  if (activeHeatmapMode === "chat") return "Chat";
   return "Movement";
 }
 
@@ -255,7 +306,9 @@ function toDateTimeLocalValue(date) {
 
 function getStatusText(payload) {
   const filters = payload.filters || {};
-  const parts = ["Drag to rotate. Scroll to zoom."];
+  const parts = [activeHeatmapMode === "chat"
+    ? "Drag to rotate. Scroll to zoom. Click chat dots to open messages."
+    : "Drag to rotate. Scroll to zoom."];
   if (filters.userIds?.length) {
     parts.push(`Player filter: ${filters.userIds.join(", ")}`);
   }
@@ -278,6 +331,13 @@ function renderScene(samples, mapSnapshot, options = {}) {
     points = null;
   }
 
+  if (selectedMarker) {
+    scene.remove(selectedMarker);
+    selectedMarker.geometry.dispose();
+    selectedMarker.material.dispose();
+    selectedMarker = null;
+  }
+
   if (mapGroup) {
     scene.remove(mapGroup);
     for (const child of mapGroup.children) {
@@ -287,7 +347,8 @@ function renderScene(samples, mapSnapshot, options = {}) {
     mapGroup = null;
   }
 
-  const entries = getSampleBins(samples);
+  const entries = getSampleEntries(samples);
+  latestEntries = entries;
   latestBounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
   const dataCenter = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
   latestCenter = dataCenter;
@@ -302,6 +363,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
 
   if (entries.length) {
     renderSamples(entries, sceneCenter);
+    renderSelectedChatMarker(entries, sceneCenter);
   }
 
   if (latestBounds) {
@@ -314,6 +376,34 @@ function renderScene(samples, mapSnapshot, options = {}) {
   } else {
     updateCamera();
   }
+}
+
+function getSampleEntries(samples) {
+  if (activeHeatmapMode === "chat") {
+    return getChatSampleEntries(samples);
+  }
+
+  return getSampleBins(samples);
+}
+
+function getChatSampleEntries(samples) {
+  return samples.map((sample) => {
+    const x = Number(sample.x);
+    const y = Number(sample.y);
+    const z = Number(sample.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+
+    return {
+      id: String(sample.id || ""),
+      x,
+      y,
+      z,
+      count: 1,
+      username: sample.username || "Player",
+      message: sample.message || "",
+      sentAt: sample.sentAt || sample.receivedAt || 0,
+    };
+  }).filter(Boolean);
 }
 
 function getSampleBins(samples) {
@@ -346,7 +436,7 @@ function renderSamples(entries, center) {
 
   entries.forEach((entry, index) => {
     const intensity = entry.count / maxCount;
-    const color = getSampleColor(intensity);
+    const color = getSampleColor(intensity, entry);
     positions[index * 3] = entry.x - center.x;
     positions[index * 3 + 1] = entry.y - center.y;
     positions[index * 3 + 2] = entry.z - center.z;
@@ -362,7 +452,7 @@ function renderSamples(entries, center) {
   geometry.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
 
   const material = new THREE.PointsMaterial({
-    size: 8,
+    size: activeHeatmapMode === "chat" ? 10 : 8,
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
@@ -371,10 +461,19 @@ function renderSamples(entries, center) {
   });
 
   points = new THREE.Points(geometry, material);
+  points.userData.entries = entries;
   scene.add(points);
 }
 
-function getSampleColor(intensity) {
+function getSampleColor(intensity, entry = {}) {
+  if (activeHeatmapMode === "chat") {
+    if (entry.id && entry.id === selectedChatLogId) {
+      return new THREE.Color(0xf59e0b);
+    }
+
+    return new THREE.Color(0x58a6ff);
+  }
+
   if (activeHeatmapMode === "deaths") {
     return new THREE.Color().setHSL(0.02 + (1 - intensity) * 0.06, 0.98, 0.5);
   }
@@ -384,6 +483,24 @@ function getSampleColor(intensity) {
   }
 
   return new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
+}
+
+function renderSelectedChatMarker(entries, center) {
+  if (activeHeatmapMode !== "chat" || !selectedChatLogId) return;
+
+  const entry = entries.find((item) => item.id === selectedChatLogId);
+  if (!entry) return;
+
+  const geometry = new THREE.SphereGeometry(5.5, 16, 10);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xf59e0b,
+    transparent: true,
+    opacity: 0.95,
+  });
+
+  selectedMarker = new THREE.Mesh(geometry, material);
+  selectedMarker.position.set(entry.x - center.x, entry.y - center.y, entry.z - center.z);
+  scene.add(selectedMarker);
 }
 
 function renderMapSnapshot(snapshot, center) {
@@ -508,6 +625,45 @@ function centerView() {
 
   fitViewToBounds();
   viewInitialized = Boolean(latestBounds);
+}
+
+function isClickPointerUp(event) {
+  if (activeHeatmapMode !== "chat" || !pointerDownPosition || pointerDownPosition.button !== 0) return false;
+
+  const dx = event.clientX - pointerDownPosition.x;
+  const dy = event.clientY - pointerDownPosition.y;
+  return Math.hypot(dx, dy) <= 5;
+}
+
+function selectChatPointFromPointer(event) {
+  if (!points || !latestEntries.length) return;
+
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+  pointer.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
+
+  raycaster.params.Points.threshold = Math.max(8, distance * 0.018);
+  raycaster.setFromCamera(pointer, camera);
+
+  const hit = raycaster.intersectObject(points, false)[0];
+  const entry = hit ? latestEntries[hit.index] : null;
+  if (!entry?.id) return;
+
+  selectChatLogOnMap(entry.id, { notifyList: true });
+}
+
+function selectChatLogOnMap(id, options = {}) {
+  selectedChatLogId = id;
+
+  if (activeHeatmapMode === "chat") {
+    renderScene(latestSamples, latestMapSnapshot);
+  }
+
+  if (options.notifyList && id) {
+    window.dispatchEvent(new CustomEvent("dashboard:chatPointSelected", {
+      detail: { id },
+    }));
+  }
 }
 
 function fitViewToBounds() {
