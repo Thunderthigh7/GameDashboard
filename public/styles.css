@@ -71,14 +71,9 @@ button {
 }
 
 .experiences,
-.servers,
-.playerData,
 .chatLogs,
 .chatInsights,
-.movementHeatmap,
-.teleportation,
-.messages,
-.moderation {
+.movementHeatmap {
   margin-top: 20px;
 }
 
@@ -164,58 +159,6 @@ button {
   color: var(--muted);
 }
 
-.commandBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 14px;
-}
-
-.commandBar strong,
-.commandBar span {
-  display: block;
-}
-
-.commandBar span {
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.moderationGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.moderationCard {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 14px;
-}
-
-.moderationCard h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.moderationCard .button {
-  justify-self: start;
-}
-
-.dangerCard {
-  border-color: rgba(248, 81, 73, 0.55);
-}
-
 .fieldGroup {
   display: grid;
   gap: 6px;
@@ -228,8 +171,7 @@ button {
 
 .fieldGroup input,
 .fieldGroup select,
-.fieldGroup textarea,
-.jsonEditor {
+.fieldGroup textarea {
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--line);
@@ -246,196 +188,6 @@ button {
   resize: vertical;
 }
 
-.dataToolGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.dataStoreList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.dataStoreButton {
-  display: grid;
-  gap: 2px;
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #151922;
-  color: var(--text);
-  padding: 8px 10px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.dataStoreButton.active {
-  border-color: var(--blue);
-  background: #1c2f4f;
-}
-
-.dataStoreButton strong,
-.dataStoreButton span {
-  overflow-wrap: anywhere;
-}
-
-.dataStoreButton span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.checkboxRow {
-  display: inline-grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--muted);
-}
-
-.checkboxRow input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-}
-
-.dataEditorHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 14px;
-}
-
-.dataEditorHeader strong,
-.dataEditorHeader span {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.dataEditorHeader span {
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.dataEditorActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.jsonEditor {
-  min-height: 360px;
-  margin-top: 12px;
-  padding: 12px;
-  resize: vertical;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  line-height: 1.5;
-}
-
-.serverList {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.serverCard {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 16px;
-}
-
-.serverHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.serverHeader h3 {
-  margin: 0 0 4px;
-  font-size: 18px;
-}
-
-.serverHeader code {
-  max-width: 340px;
-  overflow-wrap: anywhere;
-  text-align: right;
-}
-
-.serverFacts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 14px 0 0;
-}
-
-.serverFacts dt {
-  color: var(--muted);
-}
-
-.serverFacts dd {
-  margin: 2px 0 0;
-  overflow-wrap: anywhere;
-}
-
-.playerList {
-  display: grid;
-  gap: 8px;
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.playerList li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-}
-
-.playerList strong,
-.playerList span {
-  overflow-wrap: anywhere;
-}
-
-.playerList small {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.playerSelect {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-}
-
-.playerSelect input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-}
-
-.playerActions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .miniButton {
   min-height: 32px;
   border: 1px solid var(--line);
@@ -450,18 +202,6 @@ button {
   border-color: var(--blue);
   background: var(--blue);
   color: white;
-}
-
-.playerList span {
-  color: var(--muted);
-}
-
-.playerList code {
-  white-space: nowrap;
-}
-
-.emptyPlayer {
-  color: var(--muted);
 }
 
 .chatLogList {
@@ -719,44 +459,8 @@ button {
   }
 
   .metricRow,
-  .serverFacts,
-  .dataToolGrid,
   .heatmapFilters {
     grid-template-columns: 1fr;
-  }
-
-  .commandBar,
-  .dataEditorHeader {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .dataEditorActions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .moderationGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .serverHeader,
-  .playerList li {
-    align-items: flex-start;
-    grid-template-columns: 1fr;
-  }
-
-  .serverHeader {
-    flex-direction: column;
-  }
-
-  .serverHeader code {
-    max-width: 100%;
-    text-align: left;
-  }
-
-  .playerActions {
-    justify-content: flex-start;
   }
 
   .chatLogHeader {

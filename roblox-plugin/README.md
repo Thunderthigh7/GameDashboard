@@ -39,5 +39,5 @@ Filters:
 Requirements:
 
 - Studio must allow HTTP requests for the experience.
-- The dashboard must already have movement samples from live servers.
+- The dashboard must already have movement samples from Roblox heartbeats.
 - Enter the correct universe ID if `game.GameId` is `0` in an unpublished/local place.

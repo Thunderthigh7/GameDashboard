@@ -1,8 +1,5 @@
 local HttpService = game:GetService("HttpService")
-local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local TextService = game:GetService("TextService")
 
 local Settings = require(script.Parent.Parent.Config.Settings)
 
@@ -16,18 +13,11 @@ local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
 local lastPlayerPositions = {}
 local leaveSampledUserIds = {}
-local processedCommandIds = {}
 local serverStartedAt = os.time()
 local chatLogCounter = 0
 local movementSampleCounter = 0
 local deathSampleCounter = 0
 local leaveSampleCounter = 0
-
-local COMMAND_TOPIC_PREFIX = "dashboard-command-"
-local KICK_COMMAND_TOPIC = "kick"
-local ANNOUNCEMENT_TOPIC = Settings.AnnouncementTopic or "dashboard-global-announcement"
-local ANNOUNCEMENT_GUI_NAME = "DashboardGlobalAnnouncement"
-local MAX_PROCESSED_COMMAND_IDS = 100
 
 local started = false
 local sending = false
@@ -102,169 +92,6 @@ local function trimChatMessage(message)
 	end
 
 	return text
-end
-
-local function trimAnnouncementMessage(message)
-	local text = tostring(message or "")
-	local maxLength = Settings.MaxAnnouncementLength or 240
-
-	if #text > maxLength then
-		return string.sub(text, 1, maxLength)
-	end
-
-	return text
-end
-
-local function getAnnouncementDuration(command)
-	local duration = tonumber(command.durationSeconds) or Settings.AnnouncementDuration or 6
-	return math.clamp(duration, 3, 20)
-end
-
-local function filterAnnouncementMessage(message, fromUserId)
-	local numericUserId = tonumber(fromUserId)
-	if not numericUserId or numericUserId <= 0 then
-		debugWarn("Announcement skipped because requestedBy is missing or invalid")
-		return nil
-	end
-
-	local ok, result = pcall(function()
-		local filterResult = TextService:FilterStringAsync(message, numericUserId, Enum.TextFilterContext.PublicChat)
-		return filterResult:GetNonChatStringForBroadcastAsync()
-	end)
-
-	if not ok then
-		debugWarn("Announcement skipped because filtering failed:", result)
-		return nil
-	end
-
-	return result
-end
-
-local function showAnnouncement(player, message, duration, commandId)
-	local playerGui = player:FindFirstChildOfClass("PlayerGui")
-	if not playerGui then
-		return
-	end
-
-	local existing = playerGui:FindFirstChild(ANNOUNCEMENT_GUI_NAME)
-	if existing then
-		existing:Destroy()
-	end
-
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = ANNOUNCEMENT_GUI_NAME
-	screenGui.ResetOnSpawn = false
-	screenGui.IgnoreGuiInset = true
-	screenGui.DisplayOrder = 1000
-	screenGui:SetAttribute("CommandId", commandId or "")
-	screenGui.Parent = playerGui
-
-	local frame = Instance.new("Frame")
-	frame.Name = "MessageFrame"
-	frame.AnchorPoint = Vector2.new(0.5, 0)
-	frame.Position = UDim2.new(0.5, 0, 0, 28)
-	frame.Size = UDim2.new(0.9, 0, 0, 92)
-	frame.BackgroundColor3 = Color3.fromRGB(15, 19, 28)
-	frame.BackgroundTransparency = 0.08
-	frame.BorderSizePixel = 0
-	frame.Parent = screenGui
-
-	local sizeLimit = Instance.new("UISizeConstraint")
-	sizeLimit.MaxSize = Vector2.new(620, 120)
-	sizeLimit.MinSize = Vector2.new(260, 72)
-	sizeLimit.Parent = frame
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = frame
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(80, 142, 255)
-	stroke.Thickness = 2
-	stroke.Transparency = 0.15
-	stroke.Parent = frame
-
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 14)
-	padding.PaddingBottom = UDim.new(0, 14)
-	padding.PaddingLeft = UDim.new(0, 18)
-	padding.PaddingRight = UDim.new(0, 18)
-	padding.Parent = frame
-
-	local label = Instance.new("TextLabel")
-	label.Name = "Message"
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
-	label.Font = Enum.Font.GothamBold
-	label.Text = message
-	label.TextColor3 = Color3.fromRGB(245, 248, 255)
-	label.TextSize = 24
-	label.TextWrapped = true
-	label.TextXAlignment = Enum.TextXAlignment.Center
-	label.TextYAlignment = Enum.TextYAlignment.Center
-	label.Parent = frame
-
-	task.delay(duration, function()
-		if screenGui.Parent and screenGui:GetAttribute("CommandId") == (commandId or "") then
-			screenGui:Destroy()
-		end
-	end)
-end
-
-local function processAnnouncementCommand(command)
-	local message = trimAnnouncementMessage(command.message)
-	if message == "" then
-		return
-	end
-
-	local filteredMessage = filterAnnouncementMessage(message, command.requestedBy)
-	if not filteredMessage or filteredMessage == "" then
-		return
-	end
-
-	local duration = getAnnouncementDuration(command)
-	local shownCount = 0
-	local targetUserIds = {}
-	local targetServerUserIds = {}
-
-	for _, userId in command.playerUserIds or {} do
-		local numericUserId = tonumber(userId)
-		if numericUserId then
-			targetUserIds[numericUserId] = true
-		end
-	end
-
-	for _, userId in command.targetServerUserIds or {} do
-		local numericUserId = tonumber(userId)
-		if numericUserId then
-			targetServerUserIds[numericUserId] = true
-		end
-	end
-
-	if next(targetServerUserIds) ~= nil then
-		local targetFoundInServer = false
-		for _, player in Players:GetPlayers() do
-			if targetServerUserIds[player.UserId] then
-				targetFoundInServer = true
-				break
-			end
-		end
-
-		if not targetFoundInServer then
-			return
-		end
-	end
-
-	for _, player in Players:GetPlayers() do
-		if next(targetUserIds) ~= nil and not targetUserIds[player.UserId] then
-			continue
-		end
-
-		showAnnouncement(player, filteredMessage, duration, command.id)
-		shownCount += 1
-	end
-
-	debugWarn("Global announcement shown:", shownCount, "player(s)")
 end
 
 local function queueChatLog(player, message)
@@ -481,130 +308,6 @@ local function untrackPlayer(player)
 	lastPlayerPositions[player.UserId] = nil
 end
 
-local function processTeleportCommand(command)
-	local target = command.target
-	if typeof(target) ~= "table" then
-		return
-	end
-
-	local placeId = tonumber(target.placeId)
-	local jobId = target.jobId
-
-	if not placeId or type(jobId) ~= "string" or jobId == "" then
-		return
-	end
-
-	for _, userId in command.playerUserIds or {} do
-		local player = Players:GetPlayerByUserId(tonumber(userId))
-		if player then
-			local ok, err = pcall(function()
-				TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
-			end)
-
-			if not ok then
-				debugWarn("Teleport failed:", player.Name, err)
-			end
-		end
-	end
-end
-
-local function getModerationReason(command, fallback)
-	if type(command.reason) == "string" and command.reason ~= "" then
-		return command.reason
-	end
-
-	return fallback
-end
-
-local function processKickCommand(command)
-	local reason = getModerationReason(command, "Kicked by an administrator.")
-	local kickedCount = 0
-	local requestedUserIds = {}
-
-	for _, userId in command.userIds or {} do
-		local numericUserId = tonumber(userId)
-		table.insert(requestedUserIds, tostring(numericUserId or userId))
-
-		local player = numericUserId and Players:GetPlayerByUserId(numericUserId)
-		if player then
-			kickedCount += 1
-			debugWarn("Kicking player:", player.Name, player.UserId)
-			player:Kick(reason)
-		end
-	end
-
-	debugWarn("Kick command processed:", kickedCount, "player(s)")
-	debugWarn("Kick requested userIds:", table.concat(requestedUserIds, ", "))
-	debugWarn("Current server players:", getPlayerSummary())
-end
-
-local function markCommandProcessed(command)
-	if type(command.id) ~= "string" or command.id == "" then
-		return false
-	end
-
-	if processedCommandIds[command.id] then
-		return true
-	end
-
-	processedCommandIds[command.id] = os.clock()
-
-	local count = 0
-	for commandId in processedCommandIds do
-		count += 1
-		if count > MAX_PROCESSED_COMMAND_IDS then
-			processedCommandIds[commandId] = nil
-		end
-	end
-
-	return false
-end
-
-local function processCommand(command)
-	if typeof(command) ~= "table" then
-		return
-	end
-
-	if markCommandProcessed(command) then
-		return
-	end
-
-	debugWarn("Command received:", command.type or "unknown", command.id or "no-id")
-
-	if command.type == "teleportPlayersToServer" then
-		processTeleportCommand(command)
-	elseif command.type == "kickPlayers" then
-		processKickCommand(command)
-	elseif command.type == "globalAnnouncement" then
-		processAnnouncementCommand(command)
-	end
-end
-
-local function processEncodedCommand(encoded)
-	if typeof(encoded) == "table" then
-		debugWarn("Received table command from MessagingService")
-		processCommand(encoded)
-		return
-	end
-
-	if type(encoded) ~= "string" then
-		debugWarn("Ignored command with non-string data type:", typeof(encoded))
-		return
-	end
-
-	debugWarn("Received encoded command:", encoded)
-
-	local ok, command = pcall(function()
-		return HttpService:JSONDecode(encoded)
-	end)
-
-	if ok then
-		processCommand(command)
-	else
-		debugWarn("Failed to decode command:", command)
-	end
-end
-
 local function processHeartbeatResponse(response)
 	if not response.Body or response.Body == "" then
 		debugWarn("Heartbeat response has no body")
@@ -620,33 +323,7 @@ local function processHeartbeatResponse(response)
 		return
 	end
 
-	local commands = payload.commands or {}
-	debugWarn("Heartbeat response:", "liveServers", payload.liveServers or "?", "commands", #commands)
-
-	for _, command in commands do
-		processCommand(command)
-	end
-end
-
-local function subscribeToTopic(topic)
-	local ok, err = pcall(function()
-		MessagingService:SubscribeAsync(topic, function(message)
-			debugWarn("Message received on topic:", topic)
-			processEncodedCommand(message.Data)
-		end)
-	end)
-
-	if ok then
-		debugWarn("Subscribed to command topic:", topic)
-	else
-		debugWarn("Command subscription failed:", topic, err)
-	end
-end
-
-local function subscribeToCommandTopics()
-	subscribeToTopic(KICK_COMMAND_TOPIC)
-	subscribeToTopic(ANNOUNCEMENT_TOPIC)
-	subscribeToTopic(COMMAND_TOPIC_PREFIX .. game.JobId)
+	debugWarn("Heartbeat response:", "savedChatCount", payload.savedChatCount or 0, "savedMovementCount", payload.savedMovementCount or 0, "savedDeathCount", payload.savedDeathCount or 0, "savedLeaveCount", payload.savedLeaveCount or 0)
 end
 
 local function getPlayersPayload()
@@ -844,8 +521,6 @@ function Methods.Start()
 	for _, player in Players:GetPlayers() do
 		watchPlayer(player)
 	end
-
-	subscribeToCommandTopics()
 
 	task.spawn(function()
 		while true do

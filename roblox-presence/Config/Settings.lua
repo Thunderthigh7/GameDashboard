@@ -17,9 +17,6 @@ Settings.MaxPendingDeathSamples = 500
 Settings.MaxLeaveSamplesPerPayload = 100
 Settings.MaxPendingLeaveSamples = 500
 Settings.ShutdownFlushTimeout = 8
-Settings.AnnouncementTopic = "dashboard-global-announcement"
-Settings.AnnouncementDuration = 6
-Settings.MaxAnnouncementLength = 240
 Settings.Debug = true
 
 return Settings
