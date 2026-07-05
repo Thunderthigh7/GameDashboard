@@ -7,7 +7,6 @@ const loginStatus = document.querySelector("#loginStatus");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const authError = document.querySelector("#authError");
-const themeToggleButton = document.querySelector("#themeToggleButton");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
@@ -36,12 +35,10 @@ window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
 
 const CHAT_REFRESH_MS = 5000;
-const THEME_STORAGE_KEY = "playlens-theme";
 
 init();
 
 async function init() {
-  applySavedTheme();
   showAuthError();
   bindEvents();
   await checkAuth();
@@ -62,7 +59,6 @@ function bindEvents() {
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
-  themeToggleButton.addEventListener("click", toggleTheme);
 
   chatLogList.addEventListener("click", (event) => {
     const item = event.target.closest("[data-chat-log-id]");
@@ -151,25 +147,6 @@ function setAuthenticated(value) {
   }
 
   loadDashboardData();
-}
-
-function applySavedTheme() {
-  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-  const theme = savedTheme === "light" ? "light" : "dark";
-  document.documentElement.dataset.theme = theme;
-  updateThemeToggle(theme);
-}
-
-function toggleTheme() {
-  const currentTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
-  const nextTheme = currentTheme === "light" ? "dark" : "light";
-  document.documentElement.dataset.theme = nextTheme;
-  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-  updateThemeToggle(nextTheme);
-}
-
-function updateThemeToggle(theme) {
-  themeToggleButton.textContent = theme === "light" ? "Dark mode" : "Light mode";
 }
 
 async function loadDashboardData() {

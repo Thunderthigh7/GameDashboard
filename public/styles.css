@@ -309,7 +309,7 @@ small,
 
 .topbarActions {
   display: grid;
-  grid-template-columns: 188px 188px max-content max-content max-content;
+  grid-template-columns: 188px 188px max-content max-content;
   align-items: flex-end;
   justify-content: flex-end;
   column-gap: 36px;
