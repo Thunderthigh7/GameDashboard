@@ -825,13 +825,15 @@ function renderChatLog(log) {
   const displayName = log.displayName && log.displayName !== log.username
     ? ` <span>${escapeHtml(log.displayName)}</span>`
     : "";
+  const locationText = formatChatLocation(log);
+  const locationMeta = locationText ? ` | ${locationText}` : "";
 
   return `
     <article class="chatLogItem">
       <div class="chatLogHeader">
         <div>
           <strong>${escapeHtml(log.username)}</strong>${displayName}
-          <small>${escapeHtml(formatDateTime(log.sentAt))} | ${escapeHtml(shortJobId(log.jobId))}</small>
+          <small>${escapeHtml(formatDateTime(log.sentAt))} | ${escapeHtml(shortJobId(log.jobId))}${escapeHtml(locationMeta)}</small>
         </div>
         <code>${escapeHtml(log.userId)}</code>
       </div>
@@ -883,6 +885,19 @@ function formatDateTime(timestamp) {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatChatLocation(log) {
+  const x = Number(log.x);
+  const y = Number(log.y);
+  const z = Number(log.z);
+
+  if (![x, y, z].every(Number.isFinite)) return "";
+  return `Loc ${formatCoordinate(x)}, ${formatCoordinate(y)}, ${formatCoordinate(z)}`;
+}
+
+function formatCoordinate(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function formatAction(action) {

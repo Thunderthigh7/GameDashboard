@@ -1377,18 +1377,27 @@ function normalizePresence(body) {
 function normalizeChatLogs(value, context) {
   if (!Array.isArray(value)) return [];
 
-  return value.slice(0, MAX_CHAT_LOGS_PER_PAYLOAD).map((entry) => ({
-    id: cleanString(entry?.id, 160),
-    universeId: context.universeId,
-    placeId: context.placeId,
-    jobId: context.jobId,
-    userId: cleanInteger(entry?.userId),
-    username: cleanString(entry?.username || entry?.name, 64),
-    displayName: cleanString(entry?.displayName, 64),
-    message: cleanString(entry?.message, 500),
-    sentAt: cleanTimestampMs(entry?.sentAt) || context.receivedAt,
-    receivedAt: context.receivedAt,
-  })).filter((entry) => entry.userId > 0 && entry.username && entry.message);
+  return value.slice(0, MAX_CHAT_LOGS_PER_PAYLOAD).map((entry) => {
+    const x = cleanFiniteNumber(entry?.x);
+    const y = cleanFiniteNumber(entry?.y);
+    const z = cleanFiniteNumber(entry?.z);
+
+    return {
+      id: cleanString(entry?.id, 160),
+      universeId: context.universeId,
+      placeId: context.placeId,
+      jobId: context.jobId,
+      userId: cleanInteger(entry?.userId),
+      username: cleanString(entry?.username || entry?.name, 64),
+      displayName: cleanString(entry?.displayName, 64),
+      message: cleanString(entry?.message, 500),
+      x: Number.isFinite(x) ? x : null,
+      y: Number.isFinite(y) ? y : null,
+      z: Number.isFinite(z) ? z : null,
+      sentAt: cleanTimestampMs(entry?.sentAt) || context.receivedAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter((entry) => entry.userId > 0 && entry.username && entry.message);
 }
 
 function saveChatLogs(presence) {

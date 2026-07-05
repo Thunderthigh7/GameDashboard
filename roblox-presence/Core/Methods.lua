@@ -273,21 +273,36 @@ local function queueChatLog(player, message)
 		return
 	end
 
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local position = rootPart and rootPart.Position or lastPlayerPositions[player.UserId]
+	if rootPart then
+		lastPlayerPositions[player.UserId] = rootPart.Position
+	end
+
 	chatLogCounter += 1
-	table.insert(pendingChatLogs, {
+	local chatLog = {
 		id = game.JobId .. ":" .. tostring(chatLogCounter),
 		userId = player.UserId,
 		username = player.Name,
 		displayName = player.DisplayName,
 		message = text,
 		sentAt = os.time(),
-	})
+	}
+
+	if position then
+		chatLog.x = roundPosition(position.X)
+		chatLog.y = roundPosition(position.Y)
+		chatLog.z = roundPosition(position.Z)
+	end
+
+	table.insert(pendingChatLogs, chatLog)
 
 	while #pendingChatLogs > getMaxPendingChatLogs() do
 		table.remove(pendingChatLogs, 1)
 	end
 
-	debugWarn("Queued chat log:", player.Name, player.UserId, text)
+	debugWarn("Queued chat log:", player.Name, player.UserId, text, position)
 end
 
 local function queueMovementSample(player)
