@@ -81,7 +81,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
-      if (!isValidPresenceSecret(req)) {
+      if (!isValidDashboardToolSecret(req)) {
         return sendJson(res, 401, { error: "Invalid dashboard secret" });
       }
 
@@ -206,7 +206,7 @@ async function handlePresenceHeartbeat(req, res) {
 }
 
 async function handleMapSnapshotUpload(req, res) {
-  if (!isValidPresenceSecret(req)) {
+  if (!isValidDashboardToolSecret(req)) {
     return sendJson(res, 401, { error: "Invalid dashboard secret" });
   }
 
@@ -229,6 +229,11 @@ async function handleMapSnapshotUpload(req, res) {
 function isValidPresenceSecret(req) {
   const secret = req.headers["x-dashboard-secret"];
   return isMatchingSecret(secret, PRESENCE_SECRET);
+}
+
+function isValidDashboardToolSecret(req) {
+  const secret = req.headers["x-dashboard-secret"];
+  return isMatchingSecret(secret, PRESENCE_SECRET) || isMatchingSecret(secret, DASHBOARD_PASSWORD);
 }
 
 function isMatchingSecret(value, expectedValue) {
