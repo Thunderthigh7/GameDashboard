@@ -50,6 +50,8 @@ let activeHeatmapMode = "ai-analysis";
 let activeRenderMode = "points";
 let selectedChatLogId = "";
 let hoveredAiAreaMarker = null;
+let selectedAiAreaMarker = null;
+let selectedAiArea = null;
 let heatmapRefreshTimer = null;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
@@ -438,6 +440,8 @@ function renderScene(samples, mapSnapshot, options = {}) {
     disposeObject3D(aiAreaGroup);
     aiAreaGroup = null;
     hoveredAiAreaMarker = null;
+    selectedAiAreaMarker = null;
+    selectedAiArea = null;
   }
 
   if (mapGroup) {
@@ -829,40 +833,27 @@ function openAiAreaCardFromPointer(event) {
     return;
   }
 
-  updateAiAreaCard(area, event);
+  updateAiAreaCard(area, marker, { focusCamera: true });
 }
 
 function openDefaultAiAreaCard(entries) {
   if (activeHeatmapMode !== "ai-analysis" || !entries.length || !sceneCenter) return;
-  updateAiAreaCard(entries[0], getAiAreaCardAnchorForEntry(entries[0]));
-}
-
-function getAiAreaCardAnchorForEntry(area) {
-  const shell = aiAreaCard?.parentElement;
-  if (!shell) return { clientX: 0, clientY: 0 };
-
-  const shellRect = shell.getBoundingClientRect();
-  const worldPosition = new THREE.Vector3(
-    area.x - sceneCenter.x,
-    area.y - sceneCenter.y + 18,
-    area.z - sceneCenter.z,
-  );
-  worldPosition.project(camera);
-
-  return {
-    clientX: shellRect.left + (worldPosition.x + 1) * shellRect.width * 0.5,
-    clientY: shellRect.top + (1 - worldPosition.y) * shellRect.height * 0.5,
-  };
+  const marker = getAiAreaMarkerForArea(entries[0]);
+  updateAiAreaCard(entries[0], marker, { focusCamera: true });
 }
 
 function hideAiAreaCard() {
   if (!aiAreaCard) return;
   aiAreaCard.hidden = true;
+  selectedAiAreaMarker = null;
+  selectedAiArea = null;
 }
 
-function updateAiAreaCard(area, event) {
+function updateAiAreaCard(area, marker = null, options = {}) {
   if (!aiAreaCard) return;
   const color = getTrafficRampColor(area.score || 1);
+  selectedAiArea = area;
+  selectedAiAreaMarker = marker || getAiAreaMarkerForArea(area);
   aiAreaCard.hidden = false;
   aiAreaBadge.textContent = String(area.rank || 1);
   aiAreaBadge.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
@@ -871,28 +862,75 @@ function updateAiAreaCard(area, event) {
   aiAreaVisits.textContent = String(area.movementCount || area.count || 0);
   aiAreaDeaths.textContent = String(area.deathCount ?? "--");
   aiAreaLeaves.textContent = String(area.leaveCount ?? "--");
-  positionAiAreaCard(event);
+  if (options.focusCamera) focusCameraOnAiAreaMarker(selectedAiAreaMarker);
+  positionAiAreaCard();
 }
 
-function positionAiAreaCard(event) {
+function getAiAreaMarkerForArea(area) {
+  if (!aiAreaGroup || !area?.id) return null;
+  return aiAreaGroup.children.find((child) => child.userData?.aiArea?.id === area.id) || null;
+}
+
+function positionAiAreaCard() {
+  if (!selectedAiArea || aiAreaCard.hidden) return;
   const shell = aiAreaCard.parentElement;
   if (!shell) return;
 
   const rect = shell.getBoundingClientRect();
+  const anchor = getAiAreaCardAnchor();
   const cardWidth = aiAreaCard.offsetWidth || 320;
   const cardHeight = aiAreaCard.offsetHeight || 140;
   const padding = 14;
-  let left = event.clientX - rect.left + 18;
-  let top = event.clientY - rect.top - cardHeight * 0.5;
+  let left = anchor.x + 24;
+  let top = anchor.y - cardHeight * 0.52;
 
   if (left + cardWidth + padding > rect.width) {
-    left = event.clientX - rect.left - cardWidth - 18;
+    left = anchor.x - cardWidth - 24;
   }
 
   top = clamp(top, padding, Math.max(padding, rect.height - cardHeight - padding));
   left = clamp(left, padding, Math.max(padding, rect.width - cardWidth - padding));
   aiAreaCard.style.left = `${left}px`;
   aiAreaCard.style.top = `${top}px`;
+}
+
+function getAiAreaCardAnchor() {
+  const shell = aiAreaCard.parentElement;
+  const rect = shell.getBoundingClientRect();
+  const worldPosition = new THREE.Vector3();
+
+  if (selectedAiAreaMarker) {
+    selectedAiAreaMarker.getWorldPosition(worldPosition);
+    worldPosition.y += 14;
+  } else if (selectedAiArea && sceneCenter) {
+    worldPosition.set(
+      selectedAiArea.x - sceneCenter.x,
+      selectedAiArea.y - sceneCenter.y + 22,
+      selectedAiArea.z - sceneCenter.z,
+    );
+  }
+
+  worldPosition.project(camera);
+
+  return {
+    x: (worldPosition.x + 1) * rect.width * 0.5,
+    y: (1 - worldPosition.y) * rect.height * 0.5,
+  };
+}
+
+function focusCameraOnAiAreaMarker(marker) {
+  if (!marker || !panTarget) return;
+  const target = new THREE.Vector3();
+  marker.getWorldPosition(target);
+  target.y = Math.max(0, target.y * 0.35);
+  panTarget.copy(target);
+
+  if (latestBounds) {
+    const focusDistance = clamp(Math.max(latestBounds.width, latestBounds.depth) * 0.7, 180, 950);
+    distance = Math.min(distance, focusDistance);
+  }
+
+  updateCamera();
 }
 
 function getAiAreaSummary(area) {
@@ -1342,6 +1380,7 @@ function animate(timestamp = 0) {
   const deltaSeconds = lastFrameTime ? Math.min((timestamp - lastFrameTime) / 1000, 0.05) : 0;
   lastFrameTime = timestamp;
   updateKeyboardMovement(deltaSeconds);
+  positionAiAreaCard();
   renderer.render(scene, camera);
 }
 
