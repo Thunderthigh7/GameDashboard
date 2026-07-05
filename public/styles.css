@@ -232,8 +232,7 @@ small,
   background: linear-gradient(135deg, #3b82f6, #22c55e);
 }
 
-.universeSelector strong,
-.planCard strong {
+.universeSelector strong {
   display: block;
   font-size: 13px;
 }
@@ -257,28 +256,6 @@ small,
 .universeSelector .status {
   margin-top: 0;
   font-size: 12px;
-}
-
-.planCard {
-  border-radius: 8px;
-  background: var(--surface-soft);
-  padding: 12px;
-}
-
-.progressLine {
-  height: 5px;
-  margin: 10px 0 8px;
-  border-radius: 999px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.progressLine span {
-  display: block;
-  width: 62%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--purple);
 }
 
 .dashboardMain {
