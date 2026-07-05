@@ -16,6 +16,7 @@ let renderer;
 let scene;
 let camera;
 let points;
+let heatmapMesh;
 let selectedMarker;
 let mapGroup;
 let grid;
@@ -44,7 +45,6 @@ let heatmapRefreshTimer = null;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const cloudPointTexture = createCloudPointTexture();
 
 if (canvas) {
   initScene();
@@ -281,7 +281,7 @@ function setHeatmapMode(mode, options = {}) {
 }
 
 function setRenderMode(mode) {
-  activeRenderMode = mode === "cloud" ? "cloud" : "points";
+  activeRenderMode = mode === "heatmap" ? "heatmap" : "points";
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
@@ -375,6 +375,14 @@ function renderScene(samples, mapSnapshot, options = {}) {
     points.geometry.dispose();
     points.material.dispose();
     points = null;
+  }
+
+  if (heatmapMesh) {
+    scene.remove(heatmapMesh);
+    heatmapMesh.geometry.dispose();
+    heatmapMesh.material.map?.dispose();
+    heatmapMesh.material.dispose();
+    heatmapMesh = null;
   }
 
   if (selectedMarker) {
@@ -475,6 +483,11 @@ function getSampleBins(samples) {
 function renderSamples(entries, center) {
   if (!entries.length) return;
 
+  if (activeRenderMode === "heatmap") {
+    renderDensityHeatmap(entries, center);
+    return;
+  }
+
   const maxCount = entries.reduce((max, entry) => Math.max(max, entry.count), 1);
   const positions = new Float32Array(entries.length * 3);
   const colors = new Float32Array(entries.length * 3);
@@ -494,16 +507,12 @@ function renderSamples(entries, center) {
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
-  const cloudMode = activeRenderMode === "cloud";
   const material = new THREE.PointsMaterial({
-    size: getRenderPointSize(cloudMode),
+    size: activeHeatmapMode === "chat" ? 10 : 8,
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
-    opacity: cloudMode ? 0.72 : 0.86,
-    map: cloudMode ? cloudPointTexture : null,
-    alphaTest: cloudMode ? 0.025 : 0,
-    blending: THREE.NormalBlending,
+    opacity: 0.86,
     depthWrite: false,
   });
 
@@ -512,31 +521,134 @@ function renderSamples(entries, center) {
   scene.add(points);
 }
 
-function getRenderPointSize(cloudMode) {
-  if (!cloudMode) return activeHeatmapMode === "chat" ? 10 : 8;
-  if (activeHeatmapMode === "chat") return 26;
-  if (activeHeatmapMode === "deaths") return 46;
-  if (activeHeatmapMode === "leaves") return 42;
-  return 44;
+function renderDensityHeatmap(entries, center) {
+  const extents = getEntryExtents(entries);
+  const padding = Math.max(24, Math.max(extents.width, extents.depth) * 0.04);
+  const minX = extents.minX - padding;
+  const maxX = extents.maxX + padding;
+  const minZ = extents.minZ - padding;
+  const maxZ = extents.maxZ + padding;
+  const width = Math.max(maxX - minX, 32);
+  const depth = Math.max(maxZ - minZ, 32);
+  const texture = createDensityTexture(entries, { minX, maxX, minZ, maxZ });
+
+  const geometry = new THREE.PlaneGeometry(width, depth);
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  heatmapMesh = new THREE.Mesh(geometry, material);
+  heatmapMesh.rotation.x = -Math.PI / 2;
+  heatmapMesh.position.set(
+    (minX + width / 2) - center.x,
+    (extents.maxY - center.y) + 1.5,
+    (minZ + depth / 2) - center.z,
+  );
+  scene.add(heatmapMesh);
 }
 
-function createCloudPointTexture() {
+function createDensityTexture(entries, bounds) {
+  const resolution = 256;
+  const cellCount = resolution * resolution;
+  const density = new Float32Array(cellCount);
+
+  for (const entry of entries) {
+    const xAlpha = (entry.x - bounds.minX) / Math.max(bounds.maxX - bounds.minX, 1);
+    const zAlpha = (entry.z - bounds.minZ) / Math.max(bounds.maxZ - bounds.minZ, 1);
+    const x = clamp(Math.floor(xAlpha * (resolution - 1)), 0, resolution - 1);
+    const y = clamp(Math.floor((1 - zAlpha) * (resolution - 1)), 0, resolution - 1);
+    density[y * resolution + x] += Math.max(1, entry.count || 1);
+  }
+
+  const smoothed = smoothDensityGrid(density, resolution, 3);
+  let maxDensity = 0;
+  for (const value of smoothed) {
+    maxDensity = Math.max(maxDensity, value);
+  }
+
   const textureCanvas = document.createElement("canvas");
-  textureCanvas.width = 96;
-  textureCanvas.height = 96;
-
+  textureCanvas.width = resolution;
+  textureCanvas.height = resolution;
   const context = textureCanvas.getContext("2d");
-  const gradient = context.createRadialGradient(48, 48, 0, 48, 48, 48);
-  gradient.addColorStop(0, "rgba(255,255,255,0.95)");
-  gradient.addColorStop(0.28, "rgba(255,255,255,0.72)");
-  gradient.addColorStop(0.62, "rgba(255,255,255,0.28)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
+  const image = context.createImageData(resolution, resolution);
 
+  for (let index = 0; index < cellCount; index += 1) {
+    const normalized = maxDensity > 0 ? smoothed[index] / maxDensity : 0;
+    const color = getHeatmapRampColor(Math.pow(normalized, 0.55));
+    const offset = index * 4;
+    image.data[offset] = color.r;
+    image.data[offset + 1] = color.g;
+    image.data[offset + 2] = color.b;
+    image.data[offset + 3] = Math.round(clamp(normalized * 1.35, 0, 0.9) * 255);
+  }
+
+  context.putImageData(image, 0, 0);
   const texture = new THREE.CanvasTexture(textureCanvas);
   texture.needsUpdate = true;
   return texture;
+}
+
+function smoothDensityGrid(source, size, passes) {
+  let current = source;
+  let next = new Float32Array(source.length);
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        let total = 0;
+        let weightTotal = 0;
+
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const px = x + dx;
+            const py = y + dy;
+            if (px < 0 || px >= size || py < 0 || py >= size) continue;
+
+            const weight = dx === 0 && dy === 0 ? 4 : (dx === 0 || dy === 0 ? 2 : 1);
+            total += current[py * size + px] * weight;
+            weightTotal += weight;
+          }
+        }
+
+        next[y * size + x] = total / Math.max(weightTotal, 1);
+      }
+    }
+
+    const swap = current;
+    current = next;
+    next = swap;
+  }
+
+  return current;
+}
+
+function getHeatmapRampColor(value) {
+  const stops = [
+    { at: 0, color: { r: 26, g: 112, b: 255 } },
+    { at: 0.28, color: { r: 20, g: 196, b: 128 } },
+    { at: 0.52, color: { r: 255, g: 229, b: 76 } },
+    { at: 0.76, color: { r: 255, g: 122, b: 36 } },
+    { at: 1, color: { r: 235, g: 35, b: 35 } },
+  ];
+
+  for (let index = 1; index < stops.length; index += 1) {
+    const previous = stops[index - 1];
+    const next = stops[index];
+    if (value <= next.at) {
+      const alpha = (value - previous.at) / Math.max(next.at - previous.at, 0.0001);
+      return {
+        r: Math.round(lerp(previous.color.r, next.color.r, alpha)),
+        g: Math.round(lerp(previous.color.g, next.color.g, alpha)),
+        b: Math.round(lerp(previous.color.b, next.color.b, alpha)),
+      };
+    }
+  }
+
+  return stops[stops.length - 1].color;
 }
 
 function getSampleColor(intensity, entry = {}) {
@@ -677,6 +789,31 @@ function getBounds(entries) {
   });
 
   return {
+    width: bounds.maxX - bounds.minX,
+    height: bounds.maxY - bounds.minY,
+    depth: bounds.maxZ - bounds.minZ,
+  };
+}
+
+function getEntryExtents(entries) {
+  const bounds = entries.reduce((box, entry) => ({
+    minX: Math.min(box.minX, entry.x),
+    maxX: Math.max(box.maxX, entry.x),
+    minY: Math.min(box.minY, entry.y),
+    maxY: Math.max(box.maxY, entry.y),
+    minZ: Math.min(box.minZ, entry.z),
+    maxZ: Math.max(box.maxZ, entry.z),
+  }), {
+    minX: Infinity,
+    maxX: -Infinity,
+    minY: Infinity,
+    maxY: -Infinity,
+    minZ: Infinity,
+    maxZ: -Infinity,
+  });
+
+  return {
+    ...bounds,
     width: bounds.maxX - bounds.minX,
     height: bounds.maxY - bounds.minY,
     depth: bounds.maxZ - bounds.minZ,
@@ -832,6 +969,10 @@ function animate(timestamp = 0) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function lerp(start, end, alpha) {
+  return start + (end - start) * clamp(alpha, 0, 1);
 }
 
 window.addEventListener("beforeunload", () => {
