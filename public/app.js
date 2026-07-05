@@ -16,6 +16,8 @@ const showAllUniversesButton = document.querySelector("#showAllUniversesButton")
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const chatLogCount = document.querySelector("#chatLogCount");
+const universeTotalMetric = document.querySelector("#universeTotalMetric");
+const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
@@ -128,6 +130,7 @@ function setAuthenticated(value) {
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
   universesPanel.hidden = !authenticated;
+  runChatInsightsButton.hidden = !authenticated;
   for (const panel of analyticsPanels) {
     panel.hidden = !authenticated;
   }
@@ -141,6 +144,8 @@ function setAuthenticated(value) {
     chatLogList.innerHTML = "";
     commonQuestionList.innerHTML = "";
     chatLogCount.textContent = "0";
+    universeTotalMetric.textContent = "0";
+    selectedUniverseLabel.textContent = "All stored data";
     chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
     chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
     return;
@@ -180,6 +185,7 @@ async function loadUniverses() {
   try {
     const data = await request("/api/universes");
     knownUniverses = data.universes || [];
+    universeTotalMetric.textContent = String(knownUniverses.length);
 
     if (!knownUniverses.length) {
       universesStatus.textContent = "No universe data stored yet. Enter a universe ID manually or wait for Roblox heartbeats.";
@@ -236,9 +242,12 @@ function updateSelectedUniverse() {
   }
 
   if (selectedUniverseId) {
+    selectedUniverseLabel.textContent = `Universe ${selectedUniverseId}`;
     universesStatus.textContent = knownUniverses.length
       ? `Showing universe ${selectedUniverseId}.`
       : `Showing universe ${selectedUniverseId}. Data will appear if stored for this ID.`;
+  } else {
+    selectedUniverseLabel.textContent = "All stored data";
   }
 }
 

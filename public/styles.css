@@ -1,15 +1,25 @@
 :root {
-  color-scheme: dark;
-  --bg: #111318;
-  --panel: #1b1f27;
-  --line: #343b49;
-  --text: #f2f5f8;
-  --muted: #a6afbc;
-  --blue: #2f81f7;
+  color-scheme: light;
+  --bg: #f7f8fc;
+  --surface: #ffffff;
+  --soft: #f4f1ff;
+  --line: #e2e6f0;
+  --line-strong: #d8dded;
+  --text: #10162b;
+  --muted: #65708a;
+  --purple: #6d42e8;
+  --purple-soft: #efe9ff;
+  --green: #21b26b;
+  --red: #ef4444;
+  --shadow: 0 18px 48px rgba(33, 39, 69, 0.08);
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -19,35 +29,173 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.shell {
-  width: min(900px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 48px 0;
+button,
+input {
+  font: inherit;
 }
 
-h1 {
-  margin: 0 0 8px;
-  font-size: 42px;
-}
-
+p,
+h1,
 h2 {
-  margin: 0 0 8px;
+  margin: 0;
 }
 
-p {
-  margin: 0;
+p,
+small,
+.status {
   color: var(--muted);
 }
 
-code {
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: #12161d;
-  padding: 2px 5px;
+.appShell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
 }
 
-button {
-  font: inherit;
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 20px 14px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 6px 28px;
+}
+
+.brandMark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 30% 30%, #8d7cf9 0 28%, transparent 29%),
+    radial-gradient(circle at 72% 28%, #6d42e8 0 26%, transparent 27%),
+    radial-gradient(circle at 48% 76%, #9ba7ff 0 32%, transparent 33%);
+}
+
+.brand strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.brand span {
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--purple-soft);
+  color: var(--purple);
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.brand small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.sideNav {
+  display: grid;
+  gap: 6px;
+}
+
+.sideNav a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  border-radius: 8px;
+  color: #44506c;
+  padding: 0 14px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.sideNav a::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 12px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+
+.sideNav a span {
+  flex: 1;
+}
+
+.sideNav a.active {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
+.sideNav em {
+  color: #9aa3b9;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.sidebarFooter {
+  display: grid;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.gameTile {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.gameThumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #3b82f6, #22c55e);
+}
+
+.gameTile strong,
+.planCard strong {
+  display: block;
+  font-size: 13px;
+}
+
+.planCard {
+  border-radius: 8px;
+  background: #fafbff;
+  padding: 12px;
+}
+
+.progressLine {
+  height: 5px;
+  margin: 10px 0 8px;
+  border-radius: 999px;
+  background: #e8ebf5;
+  overflow: hidden;
+}
+
+.progressLine span {
+  display: block;
+  width: 62%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--purple);
+}
+
+.dashboardMain {
+  min-width: 0;
+  padding: 20px 28px 34px;
 }
 
 .topbar {
@@ -55,7 +203,42 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+}
+
+.topbar h1 {
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+.topbar p {
+  margin-top: 4px;
+}
+
+.topbarActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dateButton,
+.aiButton,
+.account {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 14px;
+  font-weight: 700;
+}
+
+.aiButton {
+  color: var(--purple);
+  background: #fbf9ff;
+  cursor: pointer;
 }
 
 .account {
@@ -66,35 +249,146 @@ button {
 .notice {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
-  padding: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
-.universes,
-.chatLogs,
-.chatInsights,
-.movementHeatmap {
-  margin-top: 20px;
+.panel {
+  padding: 18px;
+}
+
+.notice {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+}
+
+.notice.error {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.loginPanel {
+  max-width: 560px;
+  margin: 80px auto;
+}
+
+.authControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  color: var(--muted);
+}
+
+.summaryBand {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.7fr) repeat(4, minmax(150px, 1fr));
+  align-items: stretch;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.aiSummary {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.aiSummary strong {
+  color: var(--purple);
+  font-size: 16px;
+}
+
+.metricCard {
+  display: grid;
+  gap: 8px;
+}
+
+.metricCard span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metricCard strong {
+  font-size: 26px;
+}
+
+.metricCard small {
+  color: var(--green);
+}
+
+.placeholderMetric small {
+  color: var(--muted);
 }
 
 .sectionHeader {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: 18px;
 }
 
-.sectionActions {
+.sectionHeader h2 {
+  font-size: 16px;
+}
+
+.sectionHeader p {
+  margin-top: 5px;
+}
+
+.sectionActions,
+.insightBadges {
   display: inline-flex;
-  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
-.status {
-  margin-top: 12px;
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--purple);
+  color: white;
+  padding: 0 16px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button.secondary {
+  border: 1px solid var(--line);
+  background: #f8f9fc;
+  color: #44506c;
 }
 
 .button.compact {
-  margin-top: 0;
+  min-height: 38px;
+}
+
+.miniButton {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: #44506c;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.miniButton.active {
+  border-color: var(--purple);
+  background: var(--purple);
+  color: white;
+}
+
+.universes {
+  margin-bottom: 18px;
 }
 
 .authForm,
@@ -110,34 +404,56 @@ button {
   grid-template-columns: minmax(180px, 1fr) auto auto;
 }
 
+.fieldGroup {
+  display: grid;
+  gap: 6px;
+}
+
+.fieldGroup label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.fieldGroup input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcff;
+  color: var(--text);
+  padding: 0 10px;
+}
+
 .universeGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .universeCard {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #151922;
-  padding: 16px;
+  background: #fbfcff;
+  padding: 14px;
 }
 
 .universeCard.selected {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 1px rgba(47, 129, 247, 0.35);
+  border-color: var(--purple);
+  box-shadow: 0 0 0 2px rgba(109, 66, 232, 0.12);
 }
 
 .universeCard dl {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   margin: 0;
 }
 
 .universeCard dl div {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .universeCard dt {
@@ -147,199 +463,161 @@ button {
 .universeCard dd {
   margin: 0;
   overflow-wrap: anywhere;
+  font-weight: 750;
 }
 
-.metricRow {
+.dashboardGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 160px));
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: minmax(0, 2.1fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  align-items: start;
 }
 
-.metricRow div {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 14px;
+.mapPanel {
+  min-width: 0;
 }
 
-.metricRow strong {
-  display: block;
-  font-size: 28px;
-}
-
-.metricRow span {
-  color: var(--muted);
-}
-
-.fieldGroup {
-  display: grid;
-  gap: 6px;
-}
-
-.fieldGroup label {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.fieldGroup input,
-.fieldGroup select,
-.fieldGroup textarea {
-  width: 100%;
-  min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #10141c;
-  color: var(--text);
-  padding: 0 10px;
-  font: inherit;
-}
-
-.fieldGroup textarea {
-  min-height: 78px;
-  padding: 10px;
-  resize: vertical;
-}
-
-.miniButton {
-  min-height: 32px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #202633;
-  color: var(--text);
-  padding: 0 10px;
-  cursor: pointer;
-}
-
-.miniButton.active {
-  border-color: var(--blue);
-  background: var(--blue);
-  color: white;
-}
-
-.chatLogList {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.chatLogItem {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 14px;
-  cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-}
-
-.chatLogItem:hover,
-.chatLogItem:focus-visible {
-  border-color: rgba(88, 166, 255, 0.65);
-  outline: none;
-}
-
-.chatLogItem.selected {
-  border-color: rgba(245, 158, 11, 0.92);
-  background: #181d25;
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.22);
-}
-
-.chatLogHeader {
+.heatmapToolbar {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.chatLogHeader strong,
-.chatLogHeader span {
-  overflow-wrap: anywhere;
-}
-
-.chatLogHeader small {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.chatLogHeader code {
-  white-space: nowrap;
-}
-
-.chatLogItem p {
-  color: var(--text);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.insightMode {
-  align-self: flex-start;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #151922;
-  color: var(--muted);
-  padding: 6px 10px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.insightBadges {
-  display: inline-flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.heatmapPresets {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.commonQuestionList {
+.heatmapFilters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(180px, 220px));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.heatmapShell {
+  position: relative;
+  min-height: clamp(560px, 66vh, 820px);
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f8faff, #eef2f8);
+}
+
+#movementHeatmapCanvas {
+  display: block;
+  width: 100%;
+  height: clamp(560px, 66vh, 820px);
+}
+
+.heatmapLegend,
+.heatmapOverlay {
+  position: absolute;
+  border: 1px solid rgba(216, 221, 237, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 30px rgba(33, 39, 69, 0.08);
+  pointer-events: none;
+}
+
+.heatmapLegend {
+  left: 14px;
+  top: 14px;
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.heatmapLegend div {
+  width: 10px;
+  height: 96px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ef4444, #facc15, #22c55e, #2563eb);
+}
+
+.heatmapOverlay {
+  left: 130px;
+  top: 14px;
+  display: grid;
+  gap: 4px;
+  max-width: min(460px, calc(100% - 158px));
+  padding: 10px 12px;
+}
+
+.insightRail {
+  display: grid;
+  gap: 18px;
+}
+
+.insightMode {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcff;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.commonQuestionList,
+.chatLogList {
   display: grid;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
+}
+
+.commonQuestionItem,
+.chatLogItem {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcff;
+  padding: 12px;
 }
 
 .commonQuestionItem {
   display: grid;
-  grid-template-columns: 34px 1fr;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #151922;
-  padding: 14px;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
 }
 
 .questionRank {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 999px;
-  background: rgba(47, 129, 247, 0.18);
-  color: #9ec5ff;
-  font-weight: 700;
+  background: var(--purple-soft);
+  color: var(--purple);
+  font-weight: 800;
 }
 
-.questionBody {
-  min-width: 0;
-}
-
-.questionHeader {
+.questionHeader,
+.chatLogHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.questionHeader strong {
+.questionHeader strong,
+.chatLogHeader strong,
+.chatLogHeader span,
+.questionExamples span,
+.chatLogItem p {
   overflow-wrap: anywhere;
 }
 
-.questionHeader span {
+.questionHeader span,
+.chatLogHeader small,
+.questionBody p,
+.questionExamples small {
   color: var(--muted);
-  white-space: nowrap;
-}
-
-.questionBody p {
-  margin-top: 4px;
 }
 
 .questionExamples {
@@ -353,133 +631,145 @@ button {
 .questionExamples li {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  border: 1px solid rgba(52, 59, 73, 0.65);
-  border-radius: 6px;
-  background: #12161d;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
   padding: 8px 10px;
 }
 
-.questionExamples span {
-  overflow-wrap: anywhere;
+.chatLogItem {
+  cursor: pointer;
 }
 
-.questionExamples small {
-  color: var(--muted);
+.chatLogItem.selected {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.16);
+}
+
+.chatLogHeader {
+  margin-bottom: 8px;
+}
+
+.chatLogHeader small {
+  display: block;
+  margin-top: 2px;
+}
+
+.chatLogHeader code {
   white-space: nowrap;
 }
 
-.heatmapFilters {
+.featureList {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(180px, 220px));
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.featureList li,
+.barList div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.featureList span {
+  border-radius: 999px;
+  background: #eafaf2;
+  color: var(--green);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.placeholderFeature .featureList span {
+  background: #f2f4f9;
+  color: var(--muted);
+}
+
+.lowerCards {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(340px, 1.4fr) minmax(220px, 0.75fr);
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.dataCard {
+  min-width: 0;
+}
+
+.barList {
+  display: grid;
   gap: 12px;
   margin-top: 16px;
 }
 
-.heatmapPresets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.heatmapShell {
-  position: relative;
-  min-height: clamp(560px, 72vh, 860px);
-  margin-top: 16px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #090d14;
-}
-
-#movementHeatmapCanvas {
-  display: block;
-  width: 100%;
-  height: clamp(560px, 72vh, 860px);
-}
-
-.heatmapOverlay {
-  position: absolute;
-  left: 14px;
-  top: 14px;
-  display: grid;
-  gap: 4px;
-  max-width: min(420px, calc(100% - 28px));
-  border: 1px solid rgba(139, 148, 158, 0.35);
-  border-radius: 8px;
-  background: rgba(13, 17, 23, 0.82);
-  padding: 10px 12px;
-  pointer-events: none;
-}
-
-.heatmapOverlay span {
+.barList span {
   color: var(--muted);
 }
 
-.notice {
-  margin-bottom: 20px;
+.barList b {
+  color: var(--red);
 }
 
-.notice.error {
-  background: #321e24;
-  color: #ffd1d1;
+.bigPlaceholder {
+  display: block;
+  margin-top: 20px;
+  font-size: 38px;
 }
 
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
-  margin-top: 16px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--blue);
-  color: white;
-  padding: 0 16px;
-  font-weight: 800;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.button.secondary {
-  background: #2a303c;
-}
-
-.button.danger {
-  background: #7f1d1d;
+.status {
+  margin-top: 12px;
 }
 
 [hidden] {
   display: none;
 }
 
-@media (max-width: 720px) {
-  .topbar {
-    align-items: flex-start;
-    flex-direction: column;
+@media (max-width: 1180px) {
+  .summaryBand,
+  .dashboardGrid,
+  .lowerCards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .appShell {
+    grid-template-columns: 1fr;
   }
 
+  .sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .dashboardMain {
+    padding: 18px;
+  }
+
+  .topbar,
   .sectionHeader {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .sectionActions {
+  .topbarActions,
+  .sectionActions,
+  .authControls {
     align-items: stretch;
     flex-direction: column;
     width: 100%;
   }
 
-  .metricRow,
   .authForm,
   .universePicker,
   .heatmapFilters {
     grid-template-columns: 1fr;
-  }
-
-  .chatLogHeader {
-    flex-direction: column;
   }
 
   .heatmapShell {
