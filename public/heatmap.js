@@ -10,6 +10,7 @@ const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
 const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]");
 const modeButtons = document.querySelectorAll("[data-heatmap-mode]");
+const renderButtons = document.querySelectorAll("[data-heatmap-render]");
 
 let renderer;
 let scene;
@@ -37,11 +38,13 @@ let viewInitialized = false;
 let canvasHovered = false;
 let lastFrameTime = 0;
 let activeHeatmapMode = "movement";
+let activeRenderMode = "points";
 let selectedChatLogId = "";
 let heatmapRefreshTimer = null;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+const cloudPointTexture = createCloudPointTexture();
 
 if (canvas) {
   initScene();
@@ -61,6 +64,11 @@ if (canvas) {
   for (const button of modeButtons) {
     button.addEventListener("click", () => {
       setHeatmapMode(button.dataset.heatmapMode || "movement");
+    });
+  }
+  for (const button of renderButtons) {
+    button.addEventListener("click", () => {
+      setRenderMode(button.dataset.heatmapRender || "points");
     });
   }
   window.addEventListener("dashboard:analyticsReady", () => {
@@ -272,6 +280,17 @@ function setHeatmapMode(mode, options = {}) {
   loadHeatmap();
 }
 
+function setRenderMode(mode) {
+  activeRenderMode = mode === "cloud" ? "cloud" : "points";
+  for (const button of renderButtons) {
+    button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
+  }
+
+  if (latestSamples.length || latestMapSnapshot) {
+    renderScene(latestSamples, latestMapSnapshot);
+  }
+}
+
 function getHeatmapEndpoint() {
   if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
@@ -459,7 +478,6 @@ function renderSamples(entries, center) {
   const maxCount = entries.reduce((max, entry) => Math.max(max, entry.count), 1);
   const positions = new Float32Array(entries.length * 3);
   const colors = new Float32Array(entries.length * 3);
-  const sizes = new Float32Array(entries.length);
 
   entries.forEach((entry, index) => {
     const intensity = entry.count / maxCount;
@@ -470,26 +488,55 @@ function renderSamples(entries, center) {
     colors[index * 3] = color.r;
     colors[index * 3 + 1] = color.g;
     colors[index * 3 + 2] = color.b;
-    sizes[index] = 3 + intensity * 12;
   });
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
 
+  const cloudMode = activeRenderMode === "cloud";
   const material = new THREE.PointsMaterial({
-    size: activeHeatmapMode === "chat" ? 10 : 8,
+    size: getRenderPointSize(cloudMode),
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
-    opacity: 0.86,
+    opacity: cloudMode ? 0.72 : 0.86,
+    map: cloudMode ? cloudPointTexture : null,
+    alphaTest: cloudMode ? 0.025 : 0,
+    blending: THREE.NormalBlending,
     depthWrite: false,
   });
 
   points = new THREE.Points(geometry, material);
   points.userData.entries = entries;
   scene.add(points);
+}
+
+function getRenderPointSize(cloudMode) {
+  if (!cloudMode) return activeHeatmapMode === "chat" ? 10 : 8;
+  if (activeHeatmapMode === "chat") return 26;
+  if (activeHeatmapMode === "deaths") return 46;
+  if (activeHeatmapMode === "leaves") return 42;
+  return 44;
+}
+
+function createCloudPointTexture() {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 96;
+  textureCanvas.height = 96;
+
+  const context = textureCanvas.getContext("2d");
+  const gradient = context.createRadialGradient(48, 48, 0, 48, 48, 48);
+  gradient.addColorStop(0, "rgba(255,255,255,0.95)");
+  gradient.addColorStop(0.28, "rgba(255,255,255,0.72)");
+  gradient.addColorStop(0.62, "rgba(255,255,255,0.28)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
+
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function getSampleColor(intensity, entry = {}) {
