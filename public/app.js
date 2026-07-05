@@ -22,9 +22,12 @@ const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
-const analyticsPanels = document.querySelectorAll(".chatLogs, .chatInsights, .movementHeatmap");
+const pageTitle = document.querySelector("#pageTitle");
+const pageSubtitle = document.querySelector("#pageSubtitle");
+const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
+const viewPanels = document.querySelectorAll("[data-view-panel]");
 const protectedDashboardPanels = document.querySelectorAll(
-  ".sidebar, .topbar, #authControls, .summaryBand, .dashboardGrid"
+  ".sidebar, .topbar, #authControls, .viewPage"
 );
 
 let chatRefreshTimer;
@@ -32,6 +35,7 @@ let selectedUniverseId = "";
 let selectedChatLogId = "";
 let knownUniverses = [];
 let authenticated = false;
+let activeView = getViewFromHash();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -62,6 +66,13 @@ function bindEvents() {
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
 
+  for (const link of viewNavLinks) {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      setActiveView(link.dataset.dashboardView || "overview", { updateHash: true });
+    });
+  }
+
   chatLogList.addEventListener("click", (event) => {
     const item = event.target.closest("[data-chat-log-id]");
     if (!item) return;
@@ -83,6 +94,9 @@ function bindEvents() {
     selectChatLog(event.detail?.id || "", { scroll: true });
   });
 
+  window.addEventListener("hashchange", () => {
+    setActiveView(getViewFromHash(), { updateHash: false });
+  });
 }
 
 async function checkAuth() {
@@ -125,9 +139,7 @@ function setAuthenticated(value) {
   for (const panel of protectedDashboardPanels) {
     panel.hidden = !authenticated;
   }
-  for (const panel of analyticsPanels) {
-    panel.hidden = !authenticated;
-  }
+  renderActiveView();
 
   window.dispatchEvent(new CustomEvent("dashboard:authChanged", {
     detail: { authenticated },
@@ -154,6 +166,7 @@ function setAuthenticated(value) {
 async function loadDashboardData() {
   await loadUniverses();
   await loadChatLogs();
+  renderActiveView();
   startChatRefresh();
   window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
     detail: { universeId: selectedUniverseId },
@@ -161,6 +174,45 @@ async function loadDashboardData() {
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
   }));
+}
+
+function getViewFromHash() {
+  return window.location.hash === "#chat" ? "chat" : "overview";
+}
+
+function setActiveView(view, options = {}) {
+  activeView = view === "chat" ? "chat" : "overview";
+  if (options.updateHash) {
+    const nextHash = activeView === "chat" ? "#chat" : "#overview";
+    if (window.location.hash !== nextHash) {
+      window.location.hash = nextHash;
+    }
+  }
+
+  renderActiveView();
+}
+
+function renderActiveView() {
+  for (const panel of viewPanels) {
+    panel.hidden = !authenticated || panel.dataset.viewPanel !== activeView;
+  }
+
+  for (const link of viewNavLinks) {
+    const isActive = link.dataset.dashboardView === activeView;
+    link.classList.toggle("active", isActive);
+    link.setAttribute("aria-current", isActive ? "page" : "false");
+  }
+
+  pageTitle.textContent = activeView === "chat" ? "Chat Analysis" : "Overview";
+  pageSubtitle.textContent = activeView === "chat"
+    ? "Player messages and grouped question insights."
+    : "Roblox game analytics powered by live heartbeat data.";
+
+  if (authenticated && activeView === "overview") {
+    window.dispatchEvent(new CustomEvent("dashboard:overviewShown", {
+      detail: { universeId: selectedUniverseId },
+    }));
+  }
 }
 
 function startChatRefresh() {

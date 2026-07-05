@@ -95,6 +95,10 @@ if (canvas) {
     resizeScene();
     loadHeatmap({ resetView: true });
   });
+  window.addEventListener("dashboard:overviewShown", () => {
+    resizeScene();
+    loadHeatmap();
+  });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
     if (activeHeatmapMode !== "chat") {

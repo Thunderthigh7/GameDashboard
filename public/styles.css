@@ -204,6 +204,12 @@ small,
   color: var(--purple);
 }
 
+.sideNav a.active::before {
+  border-color: var(--purple);
+  background: var(--purple);
+  box-shadow: 0 0 0 3px var(--purple-soft);
+}
+
 .sideNav em {
   color: var(--placeholder);
   font-size: 11px;
@@ -527,6 +533,16 @@ small,
   align-items: start;
 }
 
+.viewPage {
+  display: grid;
+  gap: 18px;
+}
+
+.chatAnalysisPage {
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  align-items: start;
+}
+
 .dashboardContentColumn {
   display: grid;
   gap: 18px;
@@ -832,7 +848,8 @@ small,
 
 @media (max-width: 1180px) {
   .summaryBand,
-  .dashboardGrid {
+  .dashboardGrid,
+  .chatAnalysisPage {
     grid-template-columns: 1fr;
   }
 }
