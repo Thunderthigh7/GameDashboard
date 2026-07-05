@@ -49,6 +49,7 @@ let lastFrameTime = 0;
 let activeHeatmapMode = "ai-analysis";
 let activeRenderMode = "points";
 let selectedChatLogId = "";
+let hoveredAiAreaMarker = null;
 let heatmapRefreshTimer = null;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
@@ -143,7 +144,7 @@ function initScene() {
       return;
     }
 
-    hideAiAreaCard();
+    setHoveredAiAreaMarker(null);
     const dx = event.clientX - lastPointer.x;
     const dy = event.clientY - lastPointer.y;
 
@@ -159,6 +160,10 @@ function initScene() {
   });
 
   canvas.addEventListener("pointerup", (event) => {
+    if (isAiAreaClickPointerUp(event)) {
+      openAiAreaCardFromPointer(event);
+    }
+
     if (isClickPointerUp(event)) {
       selectChatPointFromPointer(event);
     }
@@ -184,7 +189,7 @@ function initScene() {
 
   canvas.addEventListener("pointerleave", () => {
     canvasHovered = false;
-    hideAiAreaCard();
+    setHoveredAiAreaMarker(null);
   });
 
   window.addEventListener("keydown", (event) => {
@@ -432,6 +437,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
     scene.remove(aiAreaGroup);
     disposeObject3D(aiAreaGroup);
     aiAreaGroup = null;
+    hoveredAiAreaMarker = null;
   }
 
   if (mapGroup) {
@@ -654,6 +660,7 @@ function renderAiAnalysisAreas(entries, center) {
 function createAiAreaMarker(entry, color) {
   const group = new THREE.Group();
   group.userData.aiArea = entry;
+  group.userData.aiAreaMarkerRoot = group;
   const glowColor = new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
 
   const glowGeometry = new THREE.SphereGeometry(14, 24, 14);
@@ -664,6 +671,7 @@ function createAiAreaMarker(entry, color) {
     depthWrite: false,
   });
   const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  glow.name = "aiAreaGlow";
   glow.scale.set(2.2, 0.22, 2.2);
   group.add(glow);
 
@@ -676,6 +684,7 @@ function createAiAreaMarker(entry, color) {
     depthWrite: false,
   });
   const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+  ring.name = "aiAreaRing";
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 1.5;
   group.add(ring);
@@ -687,15 +696,29 @@ function createAiAreaMarker(entry, color) {
     opacity: 0.95,
   });
   const core = new THREE.Mesh(coreGeometry, coreMaterial);
+  core.name = "aiAreaCore";
   core.position.y = 5;
   group.add(core);
 
+  const hitGeometry = new THREE.SphereGeometry(18, 16, 10);
+  const hitMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const hitTarget = new THREE.Mesh(hitGeometry, hitMaterial);
+  hitTarget.name = "aiAreaHitTarget";
+  hitTarget.position.y = 10;
+  group.add(hitTarget);
+
   const badge = createNumberSprite(String(entry.rank || 1), color);
+  badge.name = "aiAreaBadge";
   badge.position.y = 18;
   group.add(badge);
 
   group.traverse((child) => {
     child.userData.aiArea = entry;
+    child.userData.aiAreaMarkerRoot = group;
   });
 
   return group;
@@ -740,9 +763,15 @@ function createNumberSprite(text, color) {
 
 function updateAiAreaHover(event) {
   if (activeHeatmapMode !== "ai-analysis" || !aiAreaGroup || !latestEntries.length) {
-    hideAiAreaCard();
+    setHoveredAiAreaMarker(null);
     return;
   }
+
+  setHoveredAiAreaMarker(getAiAreaMarkerFromPointer(event));
+}
+
+function getAiAreaMarkerFromPointer(event) {
+  if (!aiAreaGroup) return null;
 
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
@@ -750,7 +779,48 @@ function updateAiAreaHover(event) {
 
   raycaster.setFromCamera(pointer, camera);
   const hit = raycaster.intersectObject(aiAreaGroup, true)[0];
-  const area = hit?.object?.userData?.aiArea;
+  return hit?.object?.userData?.aiAreaMarkerRoot || null;
+}
+
+function setHoveredAiAreaMarker(marker) {
+  if (hoveredAiAreaMarker === marker) return;
+
+  if (hoveredAiAreaMarker) {
+    setAiAreaMarkerHoverState(hoveredAiAreaMarker, false);
+  }
+
+  hoveredAiAreaMarker = marker;
+
+  if (hoveredAiAreaMarker) {
+    setAiAreaMarkerHoverState(hoveredAiAreaMarker, true);
+  }
+
+  canvas.style.cursor = hoveredAiAreaMarker ? "pointer" : "";
+}
+
+function setAiAreaMarkerHoverState(marker, isHovered) {
+  const scale = isHovered ? 1.22 : 1;
+  marker.scale.setScalar(scale);
+
+  marker.traverse((child) => {
+    if (!child.material) return;
+    if (child.name === "aiAreaGlow") child.material.opacity = isHovered ? 0.34 : 0.16;
+    if (child.name === "aiAreaRing") child.material.opacity = isHovered ? 0.48 : 0.24;
+    if (child.name === "aiAreaCore") child.material.opacity = isHovered ? 1 : 0.95;
+  });
+}
+
+function isAiAreaClickPointerUp(event) {
+  if (activeHeatmapMode !== "ai-analysis" || !pointerDownPosition || pointerDownPosition.button !== 0) return false;
+
+  const dx = event.clientX - pointerDownPosition.x;
+  const dy = event.clientY - pointerDownPosition.y;
+  return Math.hypot(dx, dy) <= 5;
+}
+
+function openAiAreaCardFromPointer(event) {
+  const marker = getAiAreaMarkerFromPointer(event);
+  const area = marker?.userData?.aiArea;
 
   if (!area) {
     hideAiAreaCard();
@@ -763,7 +833,6 @@ function updateAiAreaHover(event) {
 function hideAiAreaCard() {
   if (!aiAreaCard) return;
   aiAreaCard.hidden = true;
-  canvas.style.cursor = "";
 }
 
 function updateAiAreaCard(area, event) {
@@ -778,7 +847,6 @@ function updateAiAreaCard(area, event) {
   aiAreaDeaths.textContent = String(area.deathCount ?? "--");
   aiAreaLeaves.textContent = String(area.leaveCount ?? "--");
   positionAiAreaCard(event);
-  canvas.style.cursor = "pointer";
 }
 
 function positionAiAreaCard(event) {
