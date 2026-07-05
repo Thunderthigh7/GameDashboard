@@ -35,6 +35,8 @@ const MAX_LEAVE_SAMPLES_PER_PAYLOAD = 200;
 const MAX_LEAVE_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_LEAVE_SAMPLES_RESPONSE = 5000;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
+const MAX_AI_ANALYSIS_AREAS = 5;
+const AI_ANALYSIS_CLUSTER_RADIUS = 44;
 const MAX_MAP_PARTS_PER_CHUNK = 1000;
 const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
 const ROBLOX_HEATMAP_BIN_SIZE = 8;
@@ -42,6 +44,7 @@ const DASHBOARD_AUTH_COOKIE = "dashboard_auth";
 const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
+const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
 
 const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
@@ -54,6 +57,7 @@ const leaveSampleIdsByUniverseId = new Map();
 const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
+const areaInsightsByScope = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -126,6 +130,23 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/leave-heatmap" && req.method === "GET") {
       return sendJson(res, 200, await getLeaveHeatmapFromQuery(url.searchParams));
+    }
+
+    if (url.pathname === "/api/ai-area-analysis" && req.method === "GET") {
+      return sendJson(res, 200, await getAiAreaAnalysisFromQuery(url.searchParams));
+    }
+
+    if (url.pathname === "/api/ai-area-analysis/analyze" && req.method === "POST") {
+      try {
+        return sendJson(res, 200, await analyzeAiAreaInsights({
+          universeId: url.searchParams.get("universeId"),
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+          target: url.searchParams.get("target") || url.searchParams.get("player"),
+        }));
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
     }
 
     if (url.pathname === "/api/map-snapshot" && req.method === "GET") {
@@ -888,6 +909,17 @@ async function getChatLogsFromQuery(searchParams) {
   return getChatLogs(filters);
 }
 
+async function getAiAreaAnalysisFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+
+  return getAiAreaAnalysis(filters);
+}
+
 async function getRobloxHeatmapFromQuery(searchParams) {
   const filters = await normalizeMovementFilters({
     universeId: searchParams.get("universeId"),
@@ -1022,6 +1054,226 @@ function getLeaveHeatmap(filters = {}) {
     filters: getMovementFilterSummary(filters),
     samples: limitedSamples,
   };
+}
+
+function getAiAreaAnalysis(filters = {}) {
+  return applyStoredAiAreaInsights(getAiAreaAnalysisWithoutStoredInsights(filters));
+}
+
+async function analyzeAiAreaInsights(rawFilters = {}) {
+  const filters = await normalizeMovementFilters(rawFilters);
+  const basePayload = getAiAreaAnalysisWithoutStoredInsights(filters);
+
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
+  }
+
+  if (!basePayload.areas.length) {
+    throw new Error("No map areas are available to analyze.");
+  }
+
+  try {
+    const aiPayload = await getAiAreaInsights(basePayload);
+    areaInsightsByScope.set(getAreaInsightsScopeKey(basePayload.universeId), aiPayload);
+    return applyStoredAiAreaInsights(basePayload);
+  } catch (error) {
+    console.warn("AI area analysis failed:", error.message);
+    throw error;
+  }
+}
+
+function getAiAreaAnalysisWithoutStoredInsights(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  const events = getAiAnalysisEvents(filters);
+  const clusters = clusterAiAnalysisEvents(events, AI_ANALYSIS_CLUSTER_RADIUS);
+  const topClusters = scoreAiAnalysisClusters(clusters)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_AI_ANALYSIS_AREAS);
+  const maxScore = topClusters.reduce((max, cluster) => Math.max(max, cluster.score), 1);
+
+  return {
+    universeId: universeIdFilter || null,
+    mode: "algorithm",
+    radius: AI_ANALYSIS_CLUSTER_RADIUS,
+    eventCount: events.length,
+    areaCount: topClusters.length,
+    filters: getMovementFilterSummary(filters),
+    areas: topClusters.map((cluster, index) => ({
+      id: `area${index + 1}`,
+      label: `Area ${index + 1}`,
+      rank: index + 1,
+      x: cluster.x,
+      y: cluster.y,
+      z: cluster.z,
+      score: maxScore > 0 ? cluster.score / maxScore : 0,
+      sampleCount: cluster.sampleCount,
+      movementCount: cluster.typeCounts.movement || 0,
+      deathCount: cluster.typeCounts.death || 0,
+      leaveCount: cluster.typeCounts.leave || 0,
+      chatCount: cluster.typeCounts.chat || 0,
+      topMessages: cluster.topMessages,
+    })),
+  };
+}
+
+function applyStoredAiAreaInsights(payload) {
+  const stored = areaInsightsByScope.get(getAreaInsightsScopeKey(payload.universeId));
+  if (!stored?.areas?.length) return payload;
+
+  const storedById = new Map(stored.areas.map((area) => [area.id, area]));
+  const areas = payload.areas.map((area) => {
+    const storedArea = storedById.get(area.id);
+    if (!storedArea) return area;
+
+    return {
+      ...area,
+      label: storedArea.title || area.label,
+      summary: storedArea.summary || "",
+      insightType: storedArea.insightType || "",
+      recommendation: storedArea.recommendation || "",
+      confidence: storedArea.confidence,
+    };
+  });
+
+  return {
+    ...payload,
+    mode: "ai",
+    generatedAt: stored.generatedAt,
+    model: stored.model,
+    areas,
+  };
+}
+
+function getAiAnalysisEvents(filters = {}) {
+  const events = [];
+
+  for (const sample of getMovementSamplesForFilters(filters)) {
+    events.push(createAiAnalysisEvent("movement", sample, 1));
+  }
+
+  for (const sample of getDeathSamplesForFilters(filters)) {
+    events.push(createAiAnalysisEvent("death", sample, 4));
+  }
+
+  for (const sample of getLeaveSamplesForFilters(filters)) {
+    events.push(createAiAnalysisEvent("leave", sample, 5));
+  }
+
+  for (const log of getChatLogs(filters).logs) {
+    if (!Number.isFinite(Number(log.x)) || !Number.isFinite(Number(log.y)) || !Number.isFinite(Number(log.z))) continue;
+    events.push(createAiAnalysisEvent("chat", log, isQuestionLikeMessage(log.message) ? 3 : 1.5));
+  }
+
+  return events.filter(Boolean);
+}
+
+function createAiAnalysisEvent(type, sample, weight) {
+  const x = Number(sample.x);
+  const y = Number(sample.y);
+  const z = Number(sample.z);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+
+  return {
+    type,
+    x,
+    y,
+    z,
+    weight,
+    message: sample.message || "",
+    timestamp: sample.sampledAt || sample.sentAt || sample.receivedAt || 0,
+  };
+}
+
+function clusterAiAnalysisEvents(events, radius) {
+  const clusters = [];
+  const radiusSq = radius * radius;
+
+  for (const event of events) {
+    let closestCluster = null;
+    let closestDistanceSq = Infinity;
+
+    for (const cluster of clusters) {
+      const dx = event.x - cluster.x;
+      const dz = event.z - cluster.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq <= radiusSq && distanceSq < closestDistanceSq) {
+        closestCluster = cluster;
+        closestDistanceSq = distanceSq;
+      }
+    }
+
+    if (closestCluster) {
+      addEventToAiAnalysisCluster(closestCluster, event);
+    } else {
+      clusters.push(createAiAnalysisCluster(event));
+    }
+  }
+
+  return clusters;
+}
+
+function createAiAnalysisCluster(event) {
+  const cluster = {
+    x: event.x,
+    y: event.y,
+    z: event.z,
+    weight: 0,
+    sampleCount: 0,
+    typeCounts: {},
+    messages: [],
+  };
+  addEventToAiAnalysisCluster(cluster, event);
+  return cluster;
+}
+
+function addEventToAiAnalysisCluster(cluster, event) {
+  const nextWeight = cluster.weight + event.weight;
+  cluster.x = (cluster.x * cluster.weight + event.x * event.weight) / nextWeight;
+  cluster.y = (cluster.y * cluster.weight + event.y * event.weight) / nextWeight;
+  cluster.z = (cluster.z * cluster.weight + event.z * event.weight) / nextWeight;
+  cluster.weight = nextWeight;
+  cluster.sampleCount += 1;
+  cluster.typeCounts[event.type] = (cluster.typeCounts[event.type] || 0) + 1;
+
+  if (event.message) {
+    cluster.messages.push({
+      message: event.message,
+      timestamp: event.timestamp,
+    });
+  }
+}
+
+function scoreAiAnalysisClusters(clusters) {
+  return clusters.map((cluster) => {
+    const movementCount = cluster.typeCounts.movement || 0;
+    const deathCount = cluster.typeCounts.death || 0;
+    const leaveCount = cluster.typeCounts.leave || 0;
+    const chatCount = cluster.typeCounts.chat || 0;
+    const frictionScore = deathCount * 4 + leaveCount * 5 + chatCount * 2.5;
+    const trafficScore = Math.sqrt(movementCount);
+
+    return {
+      ...cluster,
+      score: trafficScore + frictionScore,
+      topMessages: getTopAiAnalysisMessages(cluster.messages),
+    };
+  });
+}
+
+function getTopAiAnalysisMessages(messages) {
+  const counts = new Map();
+  for (const entry of messages) {
+    const text = cleanString(entry.message, 180);
+    if (!text) continue;
+    const existing = counts.get(text) || { message: text, count: 0, latestAt: 0 };
+    existing.count += 1;
+    existing.latestAt = Math.max(existing.latestAt, entry.timestamp || 0);
+    counts.set(text, existing);
+  }
+
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || b.latestAt - a.latestAt)
+    .slice(0, 3);
 }
 
 function getRobloxHeatmap(universeId, filters = {}) {
@@ -1242,6 +1494,121 @@ async function getAiChatInsights(chatPayload, candidateLogs) {
   };
 }
 
+async function getAiAreaInsights(areaPayload) {
+  const candidateAreas = areaPayload.areas.map((area) => ({
+    id: area.id,
+    fallbackLabel: area.label,
+    rank: area.rank,
+    movementCount: area.movementCount,
+    deathCount: area.deathCount,
+    leaveCount: area.leaveCount,
+    chatCount: area.chatCount,
+    score: area.score,
+    topMessages: area.topMessages,
+  }));
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_AREA_INSIGHTS_MODEL,
+      store: false,
+      reasoning: { effort: "low" },
+      text: {
+        verbosity: "low",
+        format: {
+          type: "json_schema",
+          name: "map_area_insights",
+          strict: true,
+          schema: getAreaInsightsJsonSchema(),
+        },
+      },
+      input: [
+        {
+          role: "system",
+          content: [
+            {
+              type: "input_text",
+              text: "Name and summarize Roblox map analytics areas. Use only the provided counts and messages. Do not invent map-specific place names unless the chat text supports them. Prefer concise product analytics language.",
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify({
+                task: "Return player-facing area insights for the provided clustered map areas.",
+                rules: [
+                  "Keep titles short, 2 to 5 words.",
+                  "Use neutral names like Spawn Path or Confusing Corner when no specific place name is supported.",
+                  "summary should explain what the signals suggest.",
+                  "recommendation should be a concrete design or analytics follow-up.",
+                  "insightType must be one of traffic, dropoff, danger, confusion, mixed.",
+                ],
+                areas: candidateAreas,
+              }),
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error?.message || payload.error || `OpenAI request failed with ${response.status}`);
+  }
+
+  const parsed = parseOpenAiJsonResponse(payload);
+  const areas = normalizeAiAreaInsights(parsed.areas, new Set(candidateAreas.map((area) => area.id)));
+  if (!areas.length) {
+    throw new Error("AI returned no usable map area insights");
+  }
+
+  return {
+    universeId: areaPayload.universeId,
+    generatedAt: Date.now(),
+    mode: "ai",
+    model: OPENAI_AREA_INSIGHTS_MODEL,
+    areas,
+  };
+}
+
+function getAreaInsightsJsonSchema() {
+  return {
+    type: "object",
+    properties: {
+      areas: {
+        type: "array",
+        maxItems: MAX_AI_ANALYSIS_AREAS,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            title: { type: "string" },
+            summary: { type: "string" },
+            insightType: {
+              type: "string",
+              enum: ["traffic", "dropoff", "danger", "confusion", "mixed"],
+            },
+            recommendation: { type: "string" },
+            confidence: { type: "number" },
+          },
+          required: ["id", "title", "summary", "insightType", "recommendation", "confidence"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["areas"],
+    additionalProperties: false,
+  };
+}
+
 function getChatInsightsJsonSchema() {
   return {
     type: "object",
@@ -1321,6 +1688,30 @@ function normalizeAiInsightQuestions(rawQuestions, logById) {
     .slice(0, MAX_COMMON_QUESTIONS_RESPONSE);
 }
 
+function normalizeAiAreaInsights(rawAreas, validAreaIds) {
+  if (!Array.isArray(rawAreas)) return [];
+
+  const allowedTypes = new Set(["traffic", "dropoff", "danger", "confusion", "mixed"]);
+  return rawAreas.map((area) => {
+    const id = cleanString(area?.id, 40);
+    if (!validAreaIds.has(id)) return null;
+
+    const title = cleanString(area.title, 60).replace(/\s+/g, " ").trim();
+    const summary = cleanString(area.summary, 220).replace(/\s+/g, " ").trim();
+    const recommendation = cleanString(area.recommendation, 220).replace(/\s+/g, " ").trim();
+    const insightType = allowedTypes.has(area.insightType) ? area.insightType : "mixed";
+
+    return {
+      id,
+      title: title || id,
+      summary: summary || "Player behavior is concentrated in this area.",
+      insightType,
+      recommendation: recommendation || "Review this area in Studio and compare against player intent.",
+      confidence: clampNumber(cleanFiniteNumber(area.confidence), 0, 1, 0),
+    };
+  }).filter(Boolean);
+}
+
 function normalizeAiQuestionTitle(value) {
   const title = cleanString(value, 120).replace(/\s+/g, " ").trim();
   if (!title) return "Unclear question?";
@@ -1328,6 +1719,10 @@ function normalizeAiQuestionTitle(value) {
 }
 
 function getChatInsightsScopeKey(universeId) {
+  return cleanInteger(universeId) > 0 ? String(cleanInteger(universeId)) : "all";
+}
+
+function getAreaInsightsScopeKey(universeId) {
   return cleanInteger(universeId) > 0 ? String(cleanInteger(universeId)) : "all";
 }
 

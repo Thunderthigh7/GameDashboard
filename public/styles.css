@@ -313,7 +313,7 @@ small,
   justify-content: flex-end;
   flex: 1;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 18px;
   min-width: 0;
 }
 
@@ -321,8 +321,16 @@ small,
 .topbarButtonGroup {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
+}
+
+.topbarFilters {
+  gap: 24px;
+}
+
+.topbarButtonGroup {
+  margin-left: 8px;
 }
 
 .dateButton,
@@ -385,16 +393,19 @@ small,
 }
 
 .authControls {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
-  color: var(--muted);
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.authControls .button {
+  width: 100%;
 }
 
 .summaryBand {
   display: grid;
-  grid-template-columns: minmax(260px, 1.7fr) repeat(3, minmax(150px, 1fr));
+  grid-template-columns: minmax(260px, 1.7fr) repeat(2, minmax(150px, 1fr));
   align-items: stretch;
   gap: 18px;
   margin-bottom: 18px;
@@ -539,6 +550,12 @@ small,
   align-items: start;
 }
 
+.dashboardContentColumn {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
 .mapPanel {
   min-width: 0;
 }
@@ -566,7 +583,7 @@ small,
 
 .heatmapShell {
   position: relative;
-  min-height: clamp(560px, 66vh, 820px);
+  min-height: clamp(480px, 56vh, 700px);
   margin-top: 14px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -577,16 +594,21 @@ small,
 #movementHeatmapCanvas {
   display: block;
   width: 100%;
-  height: clamp(560px, 66vh, 820px);
+  height: clamp(480px, 56vh, 700px);
 }
 
 .heatmapLegend,
-.heatmapOverlay {
+.heatmapOverlay,
+.aiAreaCard {
   position: absolute;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--overlay-bg);
   box-shadow: var(--overlay-shadow);
+}
+
+.heatmapLegend,
+.heatmapOverlay {
   pointer-events: none;
 }
 
@@ -614,6 +636,74 @@ small,
   gap: 4px;
   max-width: min(460px, calc(100% - 158px));
   padding: 10px 12px;
+}
+
+.aiAreaCard {
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  width: min(320px, calc(100% - 32px));
+  gap: 12px;
+  padding: 14px;
+  transform: translate(-12%, -30%);
+}
+
+.aiAreaCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aiAreaCardHeader strong {
+  flex: 1;
+}
+
+.aiAreaCardHeader em {
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.aiAreaBadge {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: white;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.aiAreaCard p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.aiAreaStats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.aiAreaStats div {
+  display: grid;
+  gap: 3px;
+}
+
+.aiAreaStats strong {
+  font-size: 15px;
+}
+
+.aiAreaStats span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .insightRail {
@@ -758,9 +848,8 @@ small,
 
 .lowerCards {
   display: grid;
-  grid-template-columns: minmax(260px, 0.95fr) minmax(340px, 1.4fr) minmax(220px, 0.75fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
-  margin-top: 18px;
   align-items: start;
 }
 
@@ -860,10 +949,10 @@ small,
   }
 
   .heatmapShell {
-    min-height: 520px;
+    min-height: 440px;
   }
 
   #movementHeatmapCanvas {
-    height: 520px;
+    height: 440px;
   }
 }

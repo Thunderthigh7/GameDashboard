@@ -47,6 +47,9 @@
             <div class="progressLine"><span></span></div>
             <small>Heatmaps, chat logs, AI question grouping</small>
           </div>
+          <section class="authControls" id="authControls" hidden>
+            <button class="button secondary compact" id="logoutButton" type="button">Log out</button>
+          </section>
         </div>
       </aside>
 
@@ -89,11 +92,6 @@
           <p class="status" id="loginStatus"></p>
         </section>
 
-        <section class="authControls" id="authControls" hidden>
-          <span id="userLine">Password session active.</span>
-          <button class="button secondary compact" id="logoutButton" type="button">Log out</button>
-        </section>
-
         <section class="summaryBand panel" hidden>
           <div class="aiSummary">
             <strong>AI Summary</strong>
@@ -107,61 +105,100 @@
             <span>Universes</span>
             <strong id="universeTotalMetric">0</strong>
           </div>
-          <div class="metricCard">
-            <span>Heatmap Types</span>
-            <strong>4</strong>
-            <small>movement, deaths, leaves, chat</small>
-          </div>
         </section>
 
         <div class="dashboardGrid" hidden>
-          <section class="panel movementHeatmap mapPanel" id="heatmaps" hidden>
-            <div class="sectionHeader">
-              <div>
-                <h2>Where players are going</h2>
-                <p>Movement, death, leave, and chat samples rendered on the exported map.</p>
+          <div class="dashboardContentColumn">
+            <section class="panel movementHeatmap mapPanel" id="heatmaps" hidden>
+              <div class="sectionHeader">
+                <div>
+                  <h2>Where players are going</h2>
+                  <p>Movement, death, leave, and chat samples rendered on the exported map.</p>
+                </div>
+                <div class="sectionActions">
+                  <button class="button secondary compact" id="centerMovementButton" type="button">Center</button>
+                  <button class="button secondary compact" id="refreshMovementButton" type="button">Refresh</button>
+                </div>
               </div>
-              <div class="sectionActions">
-                <button class="button secondary compact" id="centerMovementButton" type="button">Center</button>
-                <button class="button secondary compact" id="refreshMovementButton" type="button">Refresh</button>
+              <div class="heatmapToolbar">
+                <div class="heatmapPresets" aria-label="Heatmap mode">
+                  <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
+                  <button class="miniButton" type="button" data-heatmap-mode="movement">Movement</button>
+                  <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
+                  <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
+                  <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
+                </div>
+                <div class="heatmapPresets" aria-label="Heatmap render style">
+                  <button class="miniButton active" type="button" data-heatmap-render="points">Points</button>
+                  <button class="miniButton" type="button" data-heatmap-render="heatmap">Heatmap</button>
+                </div>
               </div>
-            </div>
-            <div class="heatmapToolbar">
-              <div class="heatmapPresets" aria-label="Heatmap mode">
-                <button class="miniButton active" type="button" data-heatmap-mode="movement">Movement</button>
-                <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
-                <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
-                <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
+              <div class="heatmapShell">
+                <canvas id="movementHeatmapCanvas"></canvas>
+                <div class="heatmapLegend">
+                  <span>Higher traffic</span>
+                  <div></div>
+                  <span>Lower traffic</span>
+                </div>
+                <div class="heatmapOverlay">
+                  <strong id="movementSampleCount">0 samples</strong>
+                  <span id="movementHeatmapStatus">Waiting for movement samples...</span>
+                </div>
+                <div class="aiAreaCard" id="aiAreaCard" hidden>
+                  <div class="aiAreaCardHeader">
+                    <span class="aiAreaBadge" id="aiAreaBadge">1</span>
+                    <strong id="aiAreaTitle">Area 1</strong>
+                    <em>AI Analysis</em>
+                  </div>
+                  <p id="aiAreaSummary">Potential point of interest from movement density.</p>
+                  <div class="aiAreaStats">
+                    <div><strong id="aiAreaVisits">0</strong><span>Samples</span></div>
+                    <div><strong id="aiAreaDeaths">--</strong><span>Deaths</span></div>
+                    <div><strong id="aiAreaLeaves">--</strong><span>Leaves</span></div>
+                  </div>
+                </div>
               </div>
-              <div class="heatmapPresets" aria-label="Heatmap render style">
-                <button class="miniButton active" type="button" data-heatmap-render="points">Points</button>
-                <button class="miniButton" type="button" data-heatmap-render="heatmap">Heatmap</button>
-              </div>
-            </div>
-            <div class="heatmapFilters">
-              <div class="fieldGroup">
-                <label for="movementPlayerFilter">Player</label>
-                <input id="movementPlayerFilter" type="text" placeholder="Username or user ID">
-              </div>
-            </div>
-            <div class="heatmapPresets" aria-label="Heatmap time presets">
-              <button class="miniButton" type="button" data-heatmap-preset-minutes="10">10 minutes</button>
-              <button class="miniButton" type="button" data-heatmap-preset-minutes="60">1 hour</button>
-              <button class="miniButton" type="button" data-heatmap-preset-minutes="1440">1 day</button>
-            </div>
-            <div class="heatmapShell">
-              <canvas id="movementHeatmapCanvas"></canvas>
-              <div class="heatmapLegend">
-                <span>Higher traffic</span>
-                <div></div>
-                <span>Lower traffic</span>
-              </div>
-              <div class="heatmapOverlay">
-                <strong id="movementSampleCount">0 samples</strong>
-                <span id="movementHeatmapStatus">Waiting for movement samples...</span>
-              </div>
-            </div>
-          </section>
+            </section>
+
+            <section class="lowerCards" hidden>
+              <article class="panel dataCard">
+                <h2>Top drop-off points</h2>
+                <p>Uses leave heatmap data. Name grouping is placeholder until zones are configured.</p>
+                <div class="barList">
+                  <div><span>Leave samples</span><b id="leavePlaceholderMetric">Tracked</b></div>
+                  <div><span>Death samples</span><b>Tracked</b></div>
+                  <div><span>Movement samples</span><b>Tracked</b></div>
+                </div>
+              </article>
+
+              <article class="panel dataCard chatLogs" hidden>
+                <div class="sectionHeader">
+                  <div>
+                    <h2>Chat Logs</h2>
+                    <p>Messages batched from Roblox heartbeats.</p>
+                  </div>
+                  <button class="button secondary compact" id="refreshChatLogsButton" type="button">Refresh</button>
+                </div>
+                <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
+                <div class="chatLogList" id="chatLogList"></div>
+              </article>
+
+              <article class="panel dataCard placeholderFeature">
+                <h2>Rage quit rate</h2>
+                <strong class="bigPlaceholder">--</strong>
+                <p>Placeholder until session duration and repeated reconnect logic are tracked.</p>
+              </article>
+
+              <article class="panel dataCard featureCard placeholderFeature">
+                <h2>Coming later</h2>
+                <ul class="featureList">
+                  <li><strong>Funnels</strong><span>Placeholder</span></li>
+                  <li><strong>Quests</strong><span>Placeholder</span></li>
+                  <li><strong>Economy</strong><span>Placeholder</span></li>
+                </ul>
+              </article>
+            </section>
+          </div>
 
           <aside class="insightRail">
             <section class="panel chatInsights" id="chat" hidden>
@@ -176,56 +213,8 @@
               <div class="commonQuestionList" id="commonQuestionList"></div>
             </section>
 
-            <section class="panel featureCard">
-              <h2>Tracked now</h2>
-              <ul class="featureList">
-                <li><strong>Movement heatmaps</strong><span>Live</span></li>
-                <li><strong>Death points</strong><span>Live</span></li>
-                <li><strong>Leave points</strong><span>Live</span></li>
-                <li><strong>Chat locations</strong><span>Live</span></li>
-              </ul>
-            </section>
-
-            <section class="panel featureCard placeholderFeature">
-              <h2>Coming later</h2>
-              <ul class="featureList">
-                <li><strong>Funnels</strong><span>Placeholder</span></li>
-                <li><strong>Quests</strong><span>Placeholder</span></li>
-                <li><strong>Economy</strong><span>Placeholder</span></li>
-              </ul>
-            </section>
           </aside>
         </div>
-
-        <section class="lowerCards" hidden>
-          <article class="panel dataCard">
-            <h2>Top drop-off points</h2>
-            <p>Uses leave heatmap data. Name grouping is placeholder until zones are configured.</p>
-            <div class="barList">
-              <div><span>Leave samples</span><b id="leavePlaceholderMetric">Tracked</b></div>
-              <div><span>Death samples</span><b>Tracked</b></div>
-              <div><span>Movement samples</span><b>Tracked</b></div>
-            </div>
-          </article>
-
-          <article class="panel dataCard chatLogs" hidden>
-            <div class="sectionHeader">
-              <div>
-                <h2>Chat Logs</h2>
-                <p>Messages batched from Roblox heartbeats.</p>
-              </div>
-              <button class="button secondary compact" id="refreshChatLogsButton" type="button">Refresh</button>
-            </div>
-            <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
-            <div class="chatLogList" id="chatLogList"></div>
-          </article>
-
-          <article class="panel dataCard placeholderFeature">
-            <h2>Rage quit rate</h2>
-            <strong class="bigPlaceholder">--</strong>
-            <p>Placeholder until session duration and repeated reconnect logic are tracked.</p>
-          </article>
-        </section>
       </main>
     </div>
     <script src="/app.js"></script>

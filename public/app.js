@@ -299,7 +299,7 @@ async function loadChatInsights() {
 async function runChatInsightsAnalysis() {
   runChatInsightsButton.disabled = true;
   chatInsightsMode.textContent = "Sending to AI";
-  chatInsightsStatus.textContent = "Sending recent question-like chat to AI...";
+  chatInsightsStatus.textContent = "Sending recent chat and map areas to AI...";
 
   try {
     if (!selectedUniverseId) {
@@ -309,12 +309,29 @@ async function runChatInsightsAnalysis() {
     }
 
     const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
-    const data = await request(`/api/chat-insights/analyze${query}`, { method: "POST" });
-    renderChatInsights(data);
-  } catch (error) {
-    handleAuthError(error);
-    chatInsightsStatus.textContent = error.message;
-    chatInsightsMode.textContent = "AI failed";
+    const [chatResult, areaResult] = await Promise.allSettled([
+      request(`/api/chat-insights/analyze${query}`, { method: "POST" }),
+      request(`/api/ai-area-analysis/analyze${query}`, { method: "POST" }),
+    ]);
+
+    if (chatResult.status === "fulfilled") {
+      renderChatInsights(chatResult.value);
+    } else {
+      handleAuthError(chatResult.reason);
+      chatInsightsStatus.textContent = chatResult.reason.message;
+      chatInsightsMode.textContent = "AI failed";
+    }
+
+    if (areaResult.status === "fulfilled") {
+      window.dispatchEvent(new CustomEvent("dashboard:aiAreaAnalysisUpdated", {
+        detail: { universeId: selectedUniverseId, analysis: areaResult.value },
+      }));
+    } else {
+      handleAuthError(areaResult.reason);
+      if (chatResult.status === "fulfilled") {
+        chatInsightsStatus.textContent += ` Map AI failed: ${areaResult.reason.message}`;
+      }
+    }
   } finally {
     runChatInsightsButton.disabled = false;
   }

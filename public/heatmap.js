@@ -1,6 +1,13 @@
 import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
 
 const canvas = document.querySelector("#movementHeatmapCanvas");
+const aiAreaCard = document.querySelector("#aiAreaCard");
+const aiAreaBadge = document.querySelector("#aiAreaBadge");
+const aiAreaTitle = document.querySelector("#aiAreaTitle");
+const aiAreaSummary = document.querySelector("#aiAreaSummary");
+const aiAreaVisits = document.querySelector("#aiAreaVisits");
+const aiAreaDeaths = document.querySelector("#aiAreaDeaths");
+const aiAreaLeaves = document.querySelector("#aiAreaLeaves");
 const refreshButton = document.querySelector("#refreshMovementButton");
 const centerButton = document.querySelector("#centerMovementButton");
 const sampleCount = document.querySelector("#movementSampleCount");
@@ -18,6 +25,7 @@ let camera;
 let points;
 let heatmapMesh;
 let selectedMarker;
+let aiAreaGroup;
 let mapGroup;
 let grid;
 let animationFrame;
@@ -38,7 +46,7 @@ let panTarget;
 let viewInitialized = false;
 let canvasHovered = false;
 let lastFrameTime = 0;
-let activeHeatmapMode = "movement";
+let activeHeatmapMode = "ai-analysis";
 let activeRenderMode = "points";
 let selectedChatLogId = "";
 let heatmapRefreshTimer = null;
@@ -92,6 +100,11 @@ if (canvas) {
     }
 
     selectChatLogOnMap(id, { notifyList: false });
+  });
+  window.addEventListener("dashboard:aiAreaAnalysisUpdated", () => {
+    if (activeHeatmapMode === "ai-analysis") {
+      loadHeatmap();
+    }
   });
   window.addEventListener("resize", resizeScene);
 }
@@ -253,6 +266,14 @@ function stopHeatmapRefresh() {
 }
 
 function normalizeHeatmapPayload(payload) {
+  if (activeHeatmapMode === "ai-analysis") {
+    return {
+      ...payload,
+      returnedCount: payload.areaCount || 0,
+      samples: payload.areas || [],
+    };
+  }
+
   if (activeHeatmapMode !== "chat") {
     return {
       ...payload,
@@ -276,7 +297,7 @@ function normalizeHeatmapPayload(payload) {
 }
 
 function setHeatmapMode(mode, options = {}) {
-  activeHeatmapMode = ["deaths", "leaves", "chat"].includes(mode) ? mode : "movement";
+  activeHeatmapMode = ["ai-analysis", "movement", "deaths", "leaves", "chat"].includes(mode) ? mode : "ai-analysis";
   if (options.selectedChatLogId) {
     selectedChatLogId = options.selectedChatLogId;
   }
@@ -299,6 +320,7 @@ function setRenderMode(mode) {
 }
 
 function getHeatmapEndpoint() {
+  if (activeHeatmapMode === "ai-analysis") return "/api/ai-area-analysis";
   if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
   if (activeHeatmapMode === "chat") return "/api/chat-logs";
@@ -306,6 +328,7 @@ function getHeatmapEndpoint() {
 }
 
 function getModeLabel() {
+  if (activeHeatmapMode === "ai-analysis") return "AI Analysis";
   if (activeHeatmapMode === "deaths") return "Death";
   if (activeHeatmapMode === "leaves") return "Leave";
   if (activeHeatmapMode === "chat") return "Chat";
@@ -399,17 +422,21 @@ function renderScene(samples, mapSnapshot, options = {}) {
     selectedMarker = null;
   }
 
+  if (aiAreaGroup) {
+    scene.remove(aiAreaGroup);
+    disposeObject3D(aiAreaGroup);
+    aiAreaGroup = null;
+  }
+
   if (mapGroup) {
     scene.remove(mapGroup);
-    for (const child of mapGroup.children) {
-      child.geometry?.dispose();
-      child.material?.dispose();
-    }
+    disposeObject3D(mapGroup);
     mapGroup = null;
   }
 
-  const entries = getSampleEntries(samples);
+  const entries = getSampleEntries(samples, mapSnapshot);
   latestEntries = entries;
+  updateAiAreaCard(entries);
   latestBounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
   const dataCenter = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
   latestCenter = dataCenter;
@@ -439,7 +466,11 @@ function renderScene(samples, mapSnapshot, options = {}) {
   }
 }
 
-function getSampleEntries(samples) {
+function getSampleEntries(samples, mapSnapshot = null) {
+  if (activeHeatmapMode === "ai-analysis") {
+    return getAiAnalysisAreaEntries(samples, mapSnapshot);
+  }
+
   if (activeHeatmapMode === "chat") {
     return getChatSampleEntries(samples);
   }
@@ -487,8 +518,79 @@ function getSampleBins(samples) {
   return [...bins.values()];
 }
 
+function getAiAnalysisAreaEntries(samples, mapSnapshot) {
+  const serverAreas = samples.filter((sample) => (
+    Number.isFinite(Number(sample.x))
+    && Number.isFinite(Number(sample.y))
+    && Number.isFinite(Number(sample.z))
+  ));
+
+  if (serverAreas.length) {
+    return serverAreas.map((area, index) => ({
+      ...area,
+      id: area.id || `area${index + 1}`,
+      label: area.label || `Area ${index + 1}`,
+      rank: area.rank || index + 1,
+      x: Number(area.x),
+      y: Number(area.y),
+      z: Number(area.z),
+      count: area.sampleCount || area.movementCount || 1,
+      score: clamp(Number(area.score) || 0.12, 0.12, 1),
+      movementCount: Number(area.movementCount) || 0,
+      deathCount: Number(area.deathCount) || 0,
+      leaveCount: Number(area.leaveCount) || 0,
+      chatCount: Number(area.chatCount) || 0,
+      topMessages: Array.isArray(area.topMessages) ? area.topMessages : [],
+    }));
+  }
+
+  const movementBins = getSampleBins(samples)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  if (movementBins.length) {
+    const maxCount = movementBins.reduce((max, entry) => Math.max(max, entry.count), 1);
+    return movementBins.map((entry, index) => ({
+      ...entry,
+      id: `area${index + 1}`,
+      label: `Area ${index + 1}`,
+      rank: index + 1,
+      score: clamp(entry.count / maxCount, 0.12, 1),
+    }));
+  }
+
+  const bounds = mapSnapshot?.bounds;
+  const center = bounds?.center || { x: 0, y: 0, z: 0 };
+  const width = Math.max(Number(bounds?.width) || 180, 120);
+  const depth = Math.max(Number(bounds?.depth) || 180, 120);
+  const y = Number(center.y) || 0;
+  const offsets = [
+    { x: -0.26, z: -0.18, score: 0.92 },
+    { x: 0.18, z: 0.16, score: 0.72 },
+    { x: -0.04, z: 0.32, score: 0.52 },
+    { x: 0.31, z: -0.22, score: 0.34 },
+    { x: -0.34, z: 0.08, score: 0.18 },
+  ];
+
+  return offsets.map((offset, index) => ({
+    id: `area${index + 1}`,
+    label: `Area ${index + 1}`,
+    rank: index + 1,
+    x: center.x + offset.x * width,
+    y,
+    z: center.z + offset.z * depth,
+    count: 1,
+    score: offset.score,
+  }));
+}
+
 function renderSamples(entries, center) {
   if (!entries.length) return;
+
+  if (activeHeatmapMode === "ai-analysis") {
+    renderAiAnalysisAreas(entries, center);
+    return;
+  }
 
   if (activeRenderMode === "heatmap") {
     renderDensityHeatmap(entries, center);
@@ -526,6 +628,136 @@ function renderSamples(entries, center) {
   points = new THREE.Points(geometry, material);
   points.userData.entries = entries;
   scene.add(points);
+}
+
+function renderAiAnalysisAreas(entries, center) {
+  aiAreaGroup = new THREE.Group();
+  aiAreaGroup.name = "AiAnalysisAreas";
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    const color = getTrafficRampColor(entry.score ?? ((entries.length - index) / entries.length));
+    const marker = createAiAreaMarker(entry, color);
+    marker.position.set(entry.x - center.x, entry.y - center.y + 8, entry.z - center.z);
+    aiAreaGroup.add(marker);
+  }
+
+  scene.add(aiAreaGroup);
+}
+
+function createAiAreaMarker(entry, color) {
+  const group = new THREE.Group();
+  const glowColor = new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
+
+  const glowGeometry = new THREE.SphereGeometry(14, 24, 14);
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+  });
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  glow.scale.set(2.2, 0.22, 2.2);
+  group.add(glow);
+
+  const ringGeometry = new THREE.RingGeometry(8, 18, 36);
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: 0.24,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 1.5;
+  group.add(ring);
+
+  const coreGeometry = new THREE.SphereGeometry(5.5, 20, 14);
+  const coreMaterial = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const core = new THREE.Mesh(coreGeometry, coreMaterial);
+  core.position.y = 5;
+  group.add(core);
+
+  const badge = createNumberSprite(String(entry.rank || 1), color);
+  badge.position.y = 18;
+  group.add(badge);
+
+  return group;
+}
+
+function createNumberSprite(text, color) {
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 96;
+  labelCanvas.height = 96;
+  const context = labelCanvas.getContext("2d");
+  context.font = "900 42px Inter, Segoe UI, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+
+  const fill = `rgb(${color.r}, ${color.g}, ${color.b})`;
+  context.shadowColor = fill;
+  context.shadowBlur = 18;
+  context.fillStyle = fill;
+  context.beginPath();
+  context.arc(48, 48, 32, 0, Math.PI * 2);
+  context.fill();
+  context.shadowBlur = 0;
+  context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  context.lineWidth = 7;
+  context.beginPath();
+  context.arc(48, 48, 32, 0, Math.PI * 2);
+  context.stroke();
+  context.fillStyle = "#f5f7fb";
+  context.fillText(text, 48, 50);
+
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(28, 28, 1);
+  return sprite;
+}
+
+function updateAiAreaCard(entries) {
+  if (!aiAreaCard) return;
+  const shouldShow = activeHeatmapMode === "ai-analysis" && entries.length > 0;
+  aiAreaCard.hidden = !shouldShow;
+  if (!shouldShow) return;
+
+  const area = entries[0];
+  const color = getTrafficRampColor(area.score || 1);
+  aiAreaBadge.textContent = String(area.rank || 1);
+  aiAreaBadge.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
+  aiAreaTitle.textContent = area.label || "Area 1";
+  aiAreaSummary.textContent = getAiAreaSummary(area);
+  aiAreaVisits.textContent = String(area.movementCount || area.count || 0);
+  aiAreaDeaths.textContent = String(area.deathCount ?? "--");
+  aiAreaLeaves.textContent = String(area.leaveCount ?? "--");
+}
+
+function getAiAreaSummary(area) {
+  if (area.topMessages?.length) {
+    return `Top local chat: "${area.topMessages[0].message}"`;
+  }
+
+  if ((area.leaveCount || 0) > 0 || (area.deathCount || 0) > 0) {
+    return "Potential friction area based on leave and death events near player movement.";
+  }
+
+  if ((area.chatCount || 0) > 0) {
+    return "Potential question area based on chat activity near player movement.";
+  }
+
+  return "Potential point of interest from movement density. AI naming and reasoning will come after clustering.";
 }
 
 function renderDensityHeatmap(entries, center) {
@@ -625,6 +857,10 @@ function getHeatmapRampColor(value) {
   return stops[stops.length - 1].color;
 }
 
+function getTrafficRampColor(value) {
+  return getHeatmapRampColor(clamp(value, 0, 1));
+}
+
 function getSampleColor(intensity, entry = {}) {
   if (activeHeatmapMode === "chat") {
     if (entry.id && entry.id === selectedChatLogId) {
@@ -643,6 +879,17 @@ function getSampleColor(intensity, entry = {}) {
   }
 
   return new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
+}
+
+function disposeObject3D(object) {
+  object.traverse((child) => {
+    child.geometry?.dispose?.();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      material?.map?.dispose?.();
+      material?.dispose?.();
+    }
+  });
 }
 
 function renderSelectedChatMarker(entries, center) {
