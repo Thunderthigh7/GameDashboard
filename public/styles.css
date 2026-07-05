@@ -308,17 +308,21 @@ small,
 }
 
 .topbarActions {
-  display: grid;
-  grid-template-columns: 188px 188px max-content max-content;
+  display: flex;
   align-items: flex-end;
   justify-content: flex-end;
-  column-gap: 36px;
-  row-gap: 12px;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
 }
 
 .topbarFilters,
 .topbarButtonGroup {
-  display: contents;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
 }
 
 .dateButton,
@@ -326,6 +330,7 @@ small,
 .account {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   min-height: 38px;
   border: 1px solid var(--line);
@@ -334,6 +339,7 @@ small,
   color: var(--text);
   padding: 0 14px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .aiButton {
@@ -488,8 +494,7 @@ small,
   color: white;
 }
 
-.authForm,
-.topbarFilters {
+.authForm {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto;
   align-items: end;
@@ -502,7 +507,7 @@ small,
 }
 
 .compactField {
-  width: 188px;
+  width: 220px;
   min-width: 0;
 }
 
@@ -524,7 +529,7 @@ small,
   border-radius: 7px;
   background: var(--field-bg);
   color: var(--text);
-  padding: 0 34px 0 10px;
+  padding: 0 10px;
 }
 
 .dashboardGrid {
@@ -827,11 +832,13 @@ small,
   }
 
   .topbarActions {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
   .topbarFilters {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
     width: 100%;
   }
 
