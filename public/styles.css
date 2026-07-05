@@ -294,6 +294,10 @@ small,
   margin-bottom: 20px;
 }
 
+.topbar > div:first-child {
+  min-width: 220px;
+}
+
 .topbar h1 {
   font-size: 26px;
   letter-spacing: 0;
@@ -304,12 +308,18 @@ small,
 }
 
 .topbarActions {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: flex-end;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  column-gap: 24px;
+  column-gap: 28px;
   row-gap: 12px;
+}
+
+.topbarButtonGroup {
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
 
 .dateButton,
@@ -491,12 +501,12 @@ small,
 .topbarFilters {
   display: flex;
   flex: 0 0 auto;
-  gap: 22px;
+  gap: 26px;
   margin-top: 0;
 }
 
 .compactField {
-  width: 190px;
+  width: 176px;
   min-width: 0;
 }
 
@@ -817,12 +827,22 @@ small,
   .sectionActions,
   .authControls {
     align-items: stretch;
-    flex-direction: column;
     width: 100%;
+  }
+
+  .topbarActions {
+    grid-template-columns: 1fr;
   }
 
   .topbarFilters {
     flex-direction: column;
+    width: 100%;
+  }
+
+  .topbarButtonGroup {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
     width: 100%;
   }
 
