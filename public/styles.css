@@ -639,14 +639,14 @@ small,
 }
 
 .aiAreaCard {
-  left: 50%;
-  top: 50%;
+  left: 14px;
+  top: 14px;
   z-index: 2;
   display: grid;
   width: min(320px, calc(100% - 32px));
   gap: 12px;
   padding: 14px;
-  transform: translate(-12%, -30%);
+  pointer-events: none;
 }
 
 .aiAreaCardHeader {

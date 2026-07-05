@@ -138,7 +138,12 @@ function initScene() {
   });
 
   canvas.addEventListener("pointermove", (event) => {
-    if (!dragging || !lastPointer) return;
+    if (!dragging || !lastPointer) {
+      updateAiAreaHover(event);
+      return;
+    }
+
+    hideAiAreaCard();
     const dx = event.clientX - lastPointer.x;
     const dy = event.clientY - lastPointer.y;
 
@@ -179,6 +184,7 @@ function initScene() {
 
   canvas.addEventListener("pointerleave", () => {
     canvasHovered = false;
+    hideAiAreaCard();
   });
 
   window.addEventListener("keydown", (event) => {
@@ -436,7 +442,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
 
   const entries = getSampleEntries(samples, mapSnapshot);
   latestEntries = entries;
-  updateAiAreaCard(entries);
+  hideAiAreaCard();
   latestBounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
   const dataCenter = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
   latestCenter = dataCenter;
@@ -647,6 +653,7 @@ function renderAiAnalysisAreas(entries, center) {
 
 function createAiAreaMarker(entry, color) {
   const group = new THREE.Group();
+  group.userData.aiArea = entry;
   const glowColor = new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
 
   const glowGeometry = new THREE.SphereGeometry(14, 24, 14);
@@ -686,6 +693,10 @@ function createAiAreaMarker(entry, color) {
   const badge = createNumberSprite(String(entry.rank || 1), color);
   badge.position.y = 18;
   group.add(badge);
+
+  group.traverse((child) => {
+    child.userData.aiArea = entry;
+  });
 
   return group;
 }
@@ -727,14 +738,38 @@ function createNumberSprite(text, color) {
   return sprite;
 }
 
-function updateAiAreaCard(entries) {
-  if (!aiAreaCard) return;
-  const shouldShow = activeHeatmapMode === "ai-analysis" && entries.length > 0;
-  aiAreaCard.hidden = !shouldShow;
-  if (!shouldShow) return;
+function updateAiAreaHover(event) {
+  if (activeHeatmapMode !== "ai-analysis" || !aiAreaGroup || !latestEntries.length) {
+    hideAiAreaCard();
+    return;
+  }
 
-  const area = entries[0];
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+  pointer.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
+
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObject(aiAreaGroup, true)[0];
+  const area = hit?.object?.userData?.aiArea;
+
+  if (!area) {
+    hideAiAreaCard();
+    return;
+  }
+
+  updateAiAreaCard(area, event);
+}
+
+function hideAiAreaCard() {
+  if (!aiAreaCard) return;
+  aiAreaCard.hidden = true;
+  canvas.style.cursor = "";
+}
+
+function updateAiAreaCard(area, event) {
+  if (!aiAreaCard) return;
   const color = getTrafficRampColor(area.score || 1);
+  aiAreaCard.hidden = false;
   aiAreaBadge.textContent = String(area.rank || 1);
   aiAreaBadge.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
   aiAreaTitle.textContent = area.label || "Area 1";
@@ -742,9 +777,38 @@ function updateAiAreaCard(entries) {
   aiAreaVisits.textContent = String(area.movementCount || area.count || 0);
   aiAreaDeaths.textContent = String(area.deathCount ?? "--");
   aiAreaLeaves.textContent = String(area.leaveCount ?? "--");
+  positionAiAreaCard(event);
+  canvas.style.cursor = "pointer";
+}
+
+function positionAiAreaCard(event) {
+  const shell = aiAreaCard.parentElement;
+  if (!shell) return;
+
+  const rect = shell.getBoundingClientRect();
+  const cardWidth = aiAreaCard.offsetWidth || 320;
+  const cardHeight = aiAreaCard.offsetHeight || 140;
+  const padding = 14;
+  let left = event.clientX - rect.left + 18;
+  let top = event.clientY - rect.top - cardHeight * 0.5;
+
+  if (left + cardWidth + padding > rect.width) {
+    left = event.clientX - rect.left - cardWidth - 18;
+  }
+
+  top = clamp(top, padding, Math.max(padding, rect.height - cardHeight - padding));
+  left = clamp(left, padding, Math.max(padding, rect.width - cardWidth - padding));
+  aiAreaCard.style.left = `${left}px`;
+  aiAreaCard.style.top = `${top}px`;
 }
 
 function getAiAreaSummary(area) {
+  if (area.summary) {
+    return area.recommendation
+      ? `${area.summary} Recommendation: ${area.recommendation}`
+      : area.summary;
+  }
+
   if (area.topMessages?.length) {
     return `Top local chat: "${area.topMessages[0].message}"`;
   }
