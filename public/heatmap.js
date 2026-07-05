@@ -523,107 +523,84 @@ function renderSamples(entries, center) {
 
 function renderDensityHeatmap(entries, center) {
   const extents = getEntryExtents(entries);
-  const padding = Math.max(24, Math.max(extents.width, extents.depth) * 0.04);
-  const minX = extents.minX - padding;
-  const maxX = extents.maxX + padding;
-  const minZ = extents.minZ - padding;
-  const maxZ = extents.maxZ + padding;
-  const width = Math.max(maxX - minX, 32);
-  const depth = Math.max(maxZ - minZ, 32);
-  const texture = createDensityTexture(entries, { minX, maxX, minZ, maxZ });
+  const binSize = getDensityBinSize(extents);
+  const bins = getDensityBins(entries, binSize);
+  if (!bins.length) return;
 
-  const geometry = new THREE.PlaneGeometry(width, depth);
+  const maxCount = bins.reduce((max, bin) => Math.max(max, bin.count), 1);
+  const geometry = new THREE.SphereGeometry(1, 16, 10);
   const material = new THREE.MeshBasicMaterial({
-    map: texture,
     transparent: true,
-    opacity: 0.82,
+    opacity: 0.64,
     depthWrite: false,
-    side: THREE.DoubleSide,
+    vertexColors: true,
   });
 
-  heatmapMesh = new THREE.Mesh(geometry, material);
-  heatmapMesh.rotation.x = -Math.PI / 2;
-  heatmapMesh.position.set(
-    (minX + width / 2) - center.x,
-    (extents.maxY - center.y) + 1.5,
-    (minZ + depth / 2) - center.z,
-  );
+  heatmapMesh = new THREE.InstancedMesh(geometry, material, bins.length);
+  heatmapMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  heatmapMesh.renderOrder = 2;
+
+  const transform = new THREE.Object3D();
+  for (let index = 0; index < bins.length; index += 1) {
+    const bin = bins[index];
+    const normalized = bin.count / maxCount;
+    const radius = getDensityRadius(binSize, normalized);
+    const color = getHeatmapRampColor(Math.pow(normalized, 0.48));
+
+    transform.position.set(bin.x - center.x, bin.y - center.y, bin.z - center.z);
+    transform.scale.setScalar(radius);
+    transform.updateMatrix();
+
+    heatmapMesh.setMatrixAt(index, transform.matrix);
+    heatmapMesh.setColorAt(index, new THREE.Color(color.r / 255, color.g / 255, color.b / 255));
+  }
+
+  heatmapMesh.instanceMatrix.needsUpdate = true;
+  if (heatmapMesh.instanceColor) heatmapMesh.instanceColor.needsUpdate = true;
   scene.add(heatmapMesh);
 }
 
-function createDensityTexture(entries, bounds) {
-  const resolution = 256;
-  const cellCount = resolution * resolution;
-  const density = new Float32Array(cellCount);
-
-  for (const entry of entries) {
-    const xAlpha = (entry.x - bounds.minX) / Math.max(bounds.maxX - bounds.minX, 1);
-    const zAlpha = (entry.z - bounds.minZ) / Math.max(bounds.maxZ - bounds.minZ, 1);
-    const x = clamp(Math.floor(xAlpha * (resolution - 1)), 0, resolution - 1);
-    const y = clamp(Math.floor((1 - zAlpha) * (resolution - 1)), 0, resolution - 1);
-    density[y * resolution + x] += Math.max(1, entry.count || 1);
-  }
-
-  const smoothed = smoothDensityGrid(density, resolution, 3);
-  let maxDensity = 0;
-  for (const value of smoothed) {
-    maxDensity = Math.max(maxDensity, value);
-  }
-
-  const textureCanvas = document.createElement("canvas");
-  textureCanvas.width = resolution;
-  textureCanvas.height = resolution;
-  const context = textureCanvas.getContext("2d");
-  const image = context.createImageData(resolution, resolution);
-
-  for (let index = 0; index < cellCount; index += 1) {
-    const normalized = maxDensity > 0 ? smoothed[index] / maxDensity : 0;
-    const color = getHeatmapRampColor(Math.pow(normalized, 0.55));
-    const offset = index * 4;
-    image.data[offset] = color.r;
-    image.data[offset + 1] = color.g;
-    image.data[offset + 2] = color.b;
-    image.data[offset + 3] = Math.round(clamp(normalized * 1.35, 0, 0.9) * 255);
-  }
-
-  context.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(textureCanvas);
-  texture.needsUpdate = true;
-  return texture;
+function getDensityBinSize(extents) {
+  const span = Math.max(extents.width, extents.height, extents.depth, 1);
+  return clamp(span / 70, 4, 32);
 }
 
-function smoothDensityGrid(source, size, passes) {
-  let current = source;
-  let next = new Float32Array(source.length);
+function getDensityBins(entries, binSize) {
+  const binsByKey = new Map();
+  for (const entry of entries) {
+    const weight = Math.max(1, entry.count || 1);
+    const key = [
+      Math.round(entry.x / binSize),
+      Math.round(entry.y / binSize),
+      Math.round(entry.z / binSize),
+    ].join(":");
+    const bin = binsByKey.get(key);
 
-  for (let pass = 0; pass < passes; pass += 1) {
-    for (let y = 0; y < size; y += 1) {
-      for (let x = 0; x < size; x += 1) {
-        let total = 0;
-        let weightTotal = 0;
-
-        for (let dy = -1; dy <= 1; dy += 1) {
-          for (let dx = -1; dx <= 1; dx += 1) {
-            const px = x + dx;
-            const py = y + dy;
-            if (px < 0 || px >= size || py < 0 || py >= size) continue;
-
-            const weight = dx === 0 && dy === 0 ? 4 : (dx === 0 || dy === 0 ? 2 : 1);
-            total += current[py * size + px] * weight;
-            weightTotal += weight;
-          }
-        }
-
-        next[y * size + x] = total / Math.max(weightTotal, 1);
-      }
+    if (bin) {
+      bin.x += entry.x * weight;
+      bin.y += entry.y * weight;
+      bin.z += entry.z * weight;
+      bin.count += weight;
+    } else {
+      binsByKey.set(key, {
+        x: entry.x * weight,
+        y: entry.y * weight,
+        z: entry.z * weight,
+        count: weight,
+      });
     }
-
-    const swap = current;
-    current = next;
-    next = swap;
   }
 
-  return current;
+  return [...binsByKey.values()].map((bin) => ({
+    x: bin.x / bin.count,
+    y: bin.y / bin.count,
+    z: bin.z / bin.count,
+    count: bin.count,
+  }));
+}
+
+function getDensityRadius(binSize, normalized) {
+  return clamp(binSize * (0.65 + normalized * 1.65), 4, 48);
 }
 
 function getHeatmapRampColor(value) {
