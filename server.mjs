@@ -110,6 +110,19 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
+    if (url.pathname === "/api/ai-insights/analyze" && req.method === "POST") {
+      try {
+        return sendJson(res, 200, await analyzeAllAiInsights({
+          universeId: url.searchParams.get("universeId"),
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+          target: url.searchParams.get("target") || url.searchParams.get("player"),
+        }));
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
+    }
+
     if (url.pathname === "/api/chat-insights/analyze" && req.method === "POST") {
       try {
         return sendJson(res, 200, await analyzeChatInsights({
@@ -1407,6 +1420,46 @@ async function analyzeChatInsights(filters = {}) {
     console.warn("Chat insights AI failed:", error.message);
     throw error;
   }
+}
+
+async function analyzeAllAiInsights(rawFilters = {}) {
+  const filters = await normalizeMovementFilters(rawFilters);
+  const [chatResult, areaResult] = await Promise.allSettled([
+    analyzeChatInsights(filters),
+    analyzeAiAreaInsights(filters),
+  ]);
+  const errors = [];
+
+  if (chatResult.status === "rejected") {
+    errors.push({
+      area: "chatQuestions",
+      message: chatResult.reason?.message || "Chat question AI failed.",
+    });
+  }
+
+  if (areaResult.status === "rejected") {
+    errors.push({
+      area: "mapAreas",
+      message: areaResult.reason?.message || "Map area AI failed.",
+    });
+  }
+
+  if (chatResult.status === "rejected" && areaResult.status === "rejected") {
+    throw new Error(errors.map((error) => error.message).join(" "));
+  }
+
+  return {
+    universeId: cleanInteger(filters.universeId) || null,
+    generatedAt: Date.now(),
+    mode: errors.length ? "partial" : "ai",
+    jobs: {
+      chatQuestions: chatResult.status,
+      mapAreas: areaResult.status,
+    },
+    errors,
+    chatInsights: chatResult.status === "fulfilled" ? chatResult.value : null,
+    areaAnalysis: areaResult.status === "fulfilled" ? areaResult.value : null,
+  };
 }
 
 async function getAiChatInsights(chatPayload, candidateLogs) {

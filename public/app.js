@@ -20,6 +20,8 @@ const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const commonQuestionList = document.querySelector("#commonQuestionList");
+const movementFromFilter = document.querySelector("#movementFromFilter");
+const movementToFilter = document.querySelector("#movementToFilter");
 const analyticsPanels = document.querySelectorAll(".chatLogs, .chatInsights, .movementHeatmap");
 const protectedDashboardPanels = document.querySelectorAll(
   ".sidebar, .topbar, #authControls, .summaryBand, .dashboardGrid, .lowerCards"
@@ -298,8 +300,8 @@ async function loadChatInsights() {
 
 async function runChatInsightsAnalysis() {
   runChatInsightsButton.disabled = true;
-  chatInsightsMode.textContent = "Sending to AI";
-  chatInsightsStatus.textContent = "Sending recent chat and map areas to AI...";
+  chatInsightsMode.textContent = "Running AI";
+  chatInsightsStatus.textContent = "Running AI across chat questions and map areas...";
 
   try {
     if (!selectedUniverseId) {
@@ -308,33 +310,54 @@ async function runChatInsightsAnalysis() {
       return;
     }
 
-    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
-    const [chatResult, areaResult] = await Promise.allSettled([
-      request(`/api/chat-insights/analyze${query}`, { method: "POST" }),
-      request(`/api/ai-area-analysis/analyze${query}`, { method: "POST" }),
-    ]);
+    const query = buildAiInsightsQuery();
+    const data = await request(`/api/ai-insights/analyze${query}`, { method: "POST" });
 
-    if (chatResult.status === "fulfilled") {
-      renderChatInsights(chatResult.value);
+    if (data.chatInsights) {
+      renderChatInsights(data.chatInsights);
     } else {
-      handleAuthError(chatResult.reason);
-      chatInsightsStatus.textContent = chatResult.reason.message;
-      chatInsightsMode.textContent = "AI failed";
+      chatInsightsMode.textContent = "Partial AI";
+      commonQuestionList.innerHTML = "";
     }
 
-    if (areaResult.status === "fulfilled") {
+    if (data.areaAnalysis) {
       window.dispatchEvent(new CustomEvent("dashboard:aiAreaAnalysisUpdated", {
-        detail: { universeId: selectedUniverseId, analysis: areaResult.value },
+        detail: { universeId: selectedUniverseId, analysis: data.areaAnalysis },
       }));
-    } else {
-      handleAuthError(areaResult.reason);
-      if (chatResult.status === "fulfilled") {
-        chatInsightsStatus.textContent += ` Map AI failed: ${areaResult.reason.message}`;
-      }
     }
+
+    if (data.errors?.length) {
+      const errorText = data.errors.map((error) => error.message).join(" ");
+      chatInsightsStatus.textContent = `${chatInsightsStatus.textContent} ${errorText}`.trim();
+      chatInsightsMode.textContent = "Partial AI";
+    }
+  } catch (error) {
+    handleAuthError(error);
+    chatInsightsStatus.textContent = error.message;
+    chatInsightsMode.textContent = "AI failed";
   } finally {
     runChatInsightsButton.disabled = false;
   }
+}
+
+function buildAiInsightsQuery() {
+  const params = new URLSearchParams();
+  params.set("universeId", selectedUniverseId);
+
+  const from = getDateTimeMs(movementFromFilter?.value);
+  if (from) params.set("from", String(from));
+
+  const to = getDateTimeMs(movementToFilter?.value);
+  if (to) params.set("to", String(to));
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function getDateTimeMs(value) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function renderChatInsights(data) {
