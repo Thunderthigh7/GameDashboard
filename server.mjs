@@ -29,7 +29,9 @@ const MAX_PLAYERS_PER_SERVER = 100;
 const MAX_CHAT_LOGS_PER_PAYLOAD = 200;
 const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_CHAT_MESSAGES_FOR_INSIGHTS = 500;
+const MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS = 200;
 const MAX_COMMON_QUESTIONS_RESPONSE = 5;
+const CHAT_INSIGHTS_CACHE_MS = 2 * 60 * 1000;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -50,6 +52,8 @@ const KICK_COMMAND_TOPIC = "kick";
 const GLOBAL_ANNOUNCEMENT_TOPIC = "dashboard-global-announcement";
 const OAUTH_STATE_COOKIE = "oauth_state";
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
 
 const redirectUri = `${appBaseUrl}/auth/roblox/callback`;
 const oauthScope = "openid universe:read universe-messaging-service:publish universe.user-restriction:write";
@@ -67,6 +71,7 @@ const leaveSamplesByUniverseId = new Map();
 const leaveSampleIdsByUniverseId = new Map();
 const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
+const chatInsightsCache = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -101,7 +106,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
-      return sendJson(res, 200, getChatInsights({
+      return sendJson(res, 200, await getChatInsights({
         universeId: url.searchParams.get("universeId"),
       }));
     }
@@ -2053,11 +2058,44 @@ function getChatLogs(filters = {}) {
   };
 }
 
-function getChatInsights(filters = {}) {
+async function getChatInsights(filters = {}) {
   const chatPayload = getChatLogs(filters);
   const candidateLogs = chatPayload.logs
     .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
     .filter((log) => isQuestionLikeMessage(log.message));
+  const localInsights = getLocalChatInsights(chatPayload, candidateLogs);
+
+  if (!OPENAI_API_KEY || candidateLogs.length === 0) {
+    return localInsights;
+  }
+
+  const cacheKey = getChatInsightsCacheKey(chatPayload, candidateLogs);
+  const cached = chatInsightsCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < CHAT_INSIGHTS_CACHE_MS) {
+    return {
+      ...cached.payload,
+      cached: true,
+      cacheAgeSeconds: Math.floor((Date.now() - cached.cachedAt) / 1000),
+    };
+  }
+
+  try {
+    const aiInsights = await getAiChatInsights(chatPayload, candidateLogs, localInsights);
+    chatInsightsCache.set(cacheKey, {
+      cachedAt: Date.now(),
+      payload: aiInsights,
+    });
+    return aiInsights;
+  } catch (error) {
+    console.warn("Chat insights AI fallback:", error.message);
+    return {
+      ...localInsights,
+      fallbackReason: error.message,
+    };
+  }
+}
+
+function getLocalChatInsights(chatPayload, candidateLogs) {
   const groups = new Map();
 
   for (const log of candidateLogs) {
@@ -2120,6 +2158,179 @@ function getChatInsights(filters = {}) {
     mode: "local",
     questions,
   };
+}
+
+async function getAiChatInsights(chatPayload, candidateLogs, localInsights) {
+  const candidateMessages = candidateLogs.slice(0, MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS).map((log, index) => ({
+    id: `m${index}`,
+    message: log.message,
+    username: log.username,
+    sentAt: log.sentAt,
+    userId: log.userId,
+  }));
+  const logById = new Map(candidateMessages.map((entry) => [entry.id, candidateLogs[Number(entry.id.slice(1))]]));
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_CHAT_INSIGHTS_MODEL,
+      store: false,
+      reasoning: { effort: "low" },
+      text: {
+        verbosity: "low",
+        format: {
+          type: "json_schema",
+          name: "chat_question_insights",
+          strict: true,
+          schema: getChatInsightsJsonSchema(),
+        },
+      },
+      input: [
+        {
+          role: "system",
+          content: [
+            {
+              type: "input_text",
+              text: "Group Roblox player chat into the top repeated semantic questions. Treat typos, shorthand, pronouns, and different wording as the same question when the intent is the same. Do not invent questions unsupported by the messages. Return concise canonical player-facing questions.",
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify({
+                task: "Return the top 5 common player questions.",
+                rules: [
+                  "Use only the provided message ids.",
+                  "Group messages by meaning, not by exact words.",
+                  "Examples: 'when do i get ugc', 'how do get ugc', and 'where do i get it' can be one question if they refer to getting UGC.",
+                  "Ignore greetings, spam, and messages that are not questions or player confusion.",
+                  "Canonical titles should be grammatical, short, and end with a question mark.",
+                ],
+                messages: candidateMessages,
+              }),
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error?.message || payload.error || `OpenAI request failed with ${response.status}`);
+  }
+
+  const parsed = parseOpenAiJsonResponse(payload);
+  const questions = normalizeAiInsightQuestions(parsed.questions, logById);
+  if (!questions.length) {
+    throw new Error("AI returned no usable question groups");
+  }
+
+  return {
+    ...localInsights,
+    mode: "ai",
+    model: OPENAI_CHAT_INSIGHTS_MODEL,
+    questionLikeCount: candidateLogs.length,
+    questions,
+  };
+}
+
+function getChatInsightsJsonSchema() {
+  return {
+    type: "object",
+    properties: {
+      questions: {
+        type: "array",
+        maxItems: MAX_COMMON_QUESTIONS_RESPONSE,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            messageIds: {
+              type: "array",
+              items: { type: "string" },
+            },
+            confidence: { type: "number" },
+          },
+          required: ["title", "messageIds", "confidence"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["questions"],
+    additionalProperties: false,
+  };
+}
+
+function parseOpenAiJsonResponse(payload) {
+  const text = payload.output_text || getOpenAiOutputText(payload);
+  if (!text) throw new Error("OpenAI response did not include text output");
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("OpenAI response was not valid JSON");
+  }
+}
+
+function getOpenAiOutputText(payload) {
+  for (const item of payload.output || []) {
+    for (const content of item.content || []) {
+      if (typeof content.text === "string") return content.text;
+    }
+  }
+
+  return "";
+}
+
+function normalizeAiInsightQuestions(rawQuestions, logById) {
+  if (!Array.isArray(rawQuestions)) return [];
+
+  return rawQuestions.map((question, index) => {
+    const logs = [...new Set(Array.isArray(question.messageIds) ? question.messageIds : [])]
+      .map((id) => logById.get(id))
+      .filter(Boolean);
+    if (!logs.length) return null;
+
+    const players = new Set(logs.map((log) => log.userId).filter((userId) => userId > 0));
+    logs.sort((a, b) => b.sentAt - a.sentAt || b.receivedAt - a.receivedAt);
+
+    return {
+      id: `ai:${index}:${crypto.createHash("sha1").update(String(question.title || "")).digest("hex").slice(0, 10)}`,
+      title: normalizeAiQuestionTitle(question.title),
+      mentions: logs.length,
+      playerCount: players.size,
+      confidence: clampNumber(cleanFiniteNumber(question.confidence), 0, 1, 0),
+      examples: logs.slice(0, 3).map((log) => ({
+        message: log.message,
+        username: log.username,
+        sentAt: log.sentAt,
+      })),
+      firstSeenAt: logs.reduce((min, log) => Math.min(min, log.sentAt), logs[0].sentAt),
+      lastSeenAt: logs.reduce((max, log) => Math.max(max, log.sentAt), logs[0].sentAt),
+    };
+  }).filter(Boolean)
+    .sort((a, b) => b.mentions - a.mentions || b.confidence - a.confidence)
+    .slice(0, MAX_COMMON_QUESTIONS_RESPONSE);
+}
+
+function normalizeAiQuestionTitle(value) {
+  const title = cleanString(value, 120).replace(/\s+/g, " ").trim();
+  if (!title) return "Unclear question?";
+  return title.endsWith("?") ? title : `${title}?`;
+}
+
+function getChatInsightsCacheKey(chatPayload, candidateLogs) {
+  const newest = candidateLogs.reduce((max, log) => Math.max(max, log.sentAt || 0, log.receivedAt || 0), 0);
+  const latestIds = candidateLogs.slice(0, 40).map((log) => log.id || `${log.jobId}:${log.userId}:${log.sentAt}`).join("|");
+  const digest = crypto.createHash("sha1").update(latestIds).digest("hex").slice(0, 16);
+  return `${chatPayload.universeId || "all"}:${candidateLogs.length}:${newest}:${digest}`;
 }
 
 function isQuestionLikeMessage(message) {
