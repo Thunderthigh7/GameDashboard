@@ -8,7 +8,7 @@ roblox-plugin/DashboardHeatmap.plugin.lua
 
 Install it as a local Roblox Studio plugin by copying that `.lua` file into your local Roblox `Plugins` folder, then restart Studio or reload plugins.
 
-The plugin adds a `Dashboard` toolbar with a `Heatmap` button. It fetches:
+The plugin adds a `Dashboard` toolbar with a `Heatmap` button. It fetches heatmap data with the dashboard secret:
 
 ```txt
 https://game-dashboard-zaya.onrender.com/api/roblox/heatmap?universeId=<your universe id>

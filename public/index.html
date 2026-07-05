@@ -11,38 +11,53 @@
       <header class="topbar">
         <div>
           <h1>Dashboard</h1>
-          <p>Roblox sign-in only.</p>
+          <p>Roblox game analytics.</p>
         </div>
         <div class="account" id="accountBox">Checking...</div>
       </header>
 
       <section class="notice error" id="authError" hidden></section>
 
-      <section class="panel" id="signedOut">
-        <h2>Sign in</h2>
-        <p>Connect with Roblox using the <code>openid</code> scope.</p>
-        <a class="button" href="/auth/roblox/start">Sign in with Roblox</a>
+      <section class="panel" id="loginPanel" hidden>
+        <h2>Unlock dashboard</h2>
+        <p>Enter the dashboard password to view analytics.</p>
+        <form class="authForm" id="loginForm">
+          <div class="fieldGroup">
+            <label for="dashboardPassword">Password</label>
+            <input id="dashboardPassword" type="password" autocomplete="current-password">
+          </div>
+          <button class="button compact" id="loginButton" type="submit">Unlock</button>
+        </form>
+        <p class="status" id="loginStatus"></p>
       </section>
 
-      <section class="panel" id="signedIn" hidden>
-        <h2>Signed in</h2>
-        <p id="userLine"></p>
+      <section class="panel" id="authControls" hidden>
+        <h2>Dashboard unlocked</h2>
+        <p id="userLine">Password session active.</p>
         <button class="button secondary" id="logoutButton" type="button">Log out</button>
       </section>
 
-      <section class="panel experiences" id="experiencesPanel" hidden>
+      <section class="panel universes" id="universesPanel" hidden>
         <div class="sectionHeader">
           <div>
-            <h2>Experiences</h2>
-            <p>Authorized by Roblox OAuth.</p>
+            <h2>Universes</h2>
+            <p>Select a detected universe or enter one manually.</p>
           </div>
-          <button class="button secondary compact" id="refreshExperiencesButton" type="button">Refresh</button>
+          <button class="button secondary compact" id="refreshUniversesButton" type="button">Refresh</button>
         </div>
-        <p class="status" id="experiencesStatus">Loading...</p>
-        <div class="experienceGrid" id="experienceGrid"></div>
+        <div class="universePicker">
+          <div class="fieldGroup">
+            <label for="universeIdInput">Universe ID</label>
+            <input id="universeIdInput" type="text" inputmode="numeric" placeholder="Enter universe ID">
+          </div>
+          <button class="button secondary compact" id="selectUniverseButton" type="button">Load universe</button>
+          <button class="button secondary compact" id="showAllUniversesButton" type="button">Show all</button>
+        </div>
+        <p class="status" id="universesStatus">Loading...</p>
+        <div class="universeGrid" id="universeGrid"></div>
       </section>
 
-      <section class="panel chatLogs">
+      <section class="panel chatLogs" hidden>
         <div class="sectionHeader">
           <div>
             <h2>Chat Logs</h2>
@@ -57,7 +72,7 @@
         <div class="chatLogList" id="chatLogList"></div>
       </section>
 
-      <section class="panel chatInsights">
+      <section class="panel chatInsights" hidden>
         <div class="sectionHeader">
           <div>
             <h2>Most Common Questions</h2>
@@ -72,7 +87,7 @@
         <div class="commonQuestionList" id="commonQuestionList"></div>
       </section>
 
-      <section class="panel movementHeatmap">
+      <section class="panel movementHeatmap" hidden>
         <div class="sectionHeader">
           <div>
             <h2>Analytics Heat Map</h2>

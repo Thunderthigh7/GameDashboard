@@ -8,7 +8,7 @@ npm start
 
 Open `http://localhost:3000`.
 
-Copy `.env.example` to `.env` and fill in the Roblox OAuth, presence, and OpenAI values before starting the server. The hosted dashboard uses `https://game-dashboard-zaya.onrender.com`, so the Roblox OAuth redirect URI should be `https://game-dashboard-zaya.onrender.com/auth/roblox/callback`.
+Copy `.env.example` to `.env` and fill in the dashboard password, Roblox presence secret, and optional OpenAI values before starting the server.
 
 To start the dashboard and Rojo together:
 

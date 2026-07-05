@@ -1,13 +1,19 @@
 const accountBox = document.querySelector("#accountBox");
-const signedOut = document.querySelector("#signedOut");
-const signedIn = document.querySelector("#signedIn");
-const userLine = document.querySelector("#userLine");
+const loginPanel = document.querySelector("#loginPanel");
+const loginForm = document.querySelector("#loginForm");
+const dashboardPassword = document.querySelector("#dashboardPassword");
+const loginButton = document.querySelector("#loginButton");
+const loginStatus = document.querySelector("#loginStatus");
+const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const authError = document.querySelector("#authError");
-const experiencesPanel = document.querySelector("#experiencesPanel");
-const experiencesStatus = document.querySelector("#experiencesStatus");
-const experienceGrid = document.querySelector("#experienceGrid");
-const refreshExperiencesButton = document.querySelector("#refreshExperiencesButton");
+const universesPanel = document.querySelector("#universesPanel");
+const universesStatus = document.querySelector("#universesStatus");
+const universeGrid = document.querySelector("#universeGrid");
+const universeIdInput = document.querySelector("#universeIdInput");
+const selectUniverseButton = document.querySelector("#selectUniverseButton");
+const showAllUniversesButton = document.querySelector("#showAllUniversesButton");
+const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const chatLogCount = document.querySelector("#chatLogCount");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
@@ -16,10 +22,13 @@ const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const commonQuestionList = document.querySelector("#commonQuestionList");
+const analyticsPanels = document.querySelectorAll(".chatLogs, .chatInsights, .movementHeatmap");
 
 let chatRefreshTimer;
 let selectedUniverseId = "";
 let selectedChatLogId = "";
+let knownUniverses = [];
+let authenticated = false;
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 
@@ -29,114 +38,205 @@ init();
 
 async function init() {
   showAuthError();
-  await loadChatLogs();
-  chatRefreshTimer = window.setInterval(loadChatLogs, CHAT_REFRESH_MS);
+  bindEvents();
+  await checkAuth();
+}
 
-  const { account } = await request("/api/me");
+function bindEvents() {
+  loginForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    login();
+  });
 
-  if (!account) {
-    accountBox.textContent = "Not signed in";
-    signedOut.hidden = false;
-    signedIn.hidden = true;
+  logoutButton.addEventListener("click", async () => {
+    await request("/api/auth/logout", { method: "POST" });
+    window.location.reload();
+  });
+
+  refreshUniversesButton.addEventListener("click", loadUniverses);
+  selectUniverseButton.addEventListener("click", () => selectUniverse(universeIdInput.value.trim()));
+  showAllUniversesButton.addEventListener("click", () => selectUniverse(""));
+  universeIdInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") selectUniverse(universeIdInput.value.trim());
+  });
+  refreshChatLogsButton.addEventListener("click", loadChatLogs);
+  runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
+
+  chatLogList.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-chat-log-id]");
+    if (!item) return;
+
+    selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
+  });
+
+  chatLogList.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+
+    const item = event.target.closest("[data-chat-log-id]");
+    if (!item) return;
+
+    event.preventDefault();
+    selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
+  });
+
+  window.addEventListener("dashboard:chatPointSelected", (event) => {
+    selectChatLog(event.detail?.id || "", { scroll: true });
+  });
+
+  universeGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-universe-id]");
+    if (!button) return;
+
+    selectUniverse(button.dataset.universeId || "");
+  });
+}
+
+async function checkAuth() {
+  try {
+    const data = await request("/api/auth/status");
+    setAuthenticated(Boolean(data.authenticated));
+  } catch {
+    setAuthenticated(false);
+  }
+}
+
+async function login() {
+  loginButton.disabled = true;
+  loginStatus.textContent = "Checking password...";
+
+  try {
+    await request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: dashboardPassword.value }),
+    });
+    dashboardPassword.value = "";
+    loginStatus.textContent = "";
+    setAuthenticated(true);
+  } catch (error) {
+    loginStatus.textContent = error.message;
+    setAuthenticated(false);
+  } finally {
+    loginButton.disabled = false;
+  }
+}
+
+function setAuthenticated(value) {
+  authenticated = value;
+  accountBox.textContent = authenticated ? "Unlocked" : "Locked";
+  loginPanel.hidden = authenticated;
+  authControls.hidden = !authenticated;
+  universesPanel.hidden = !authenticated;
+  for (const panel of analyticsPanels) {
+    panel.hidden = !authenticated;
+  }
+
+  if (!authenticated) {
+    stopChatRefresh();
+    chatLogList.innerHTML = "";
+    commonQuestionList.innerHTML = "";
+    chatLogCount.textContent = "0";
+    chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
+    chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
     return;
   }
 
-  accountBox.textContent = `Roblox ID ${account.robloxUserId}`;
-  userLine.textContent = `Roblox user ID: ${account.robloxUserId} | Scopes: ${account.scope}`;
-  signedOut.hidden = true;
-  signedIn.hidden = false;
-  experiencesPanel.hidden = false;
-  await loadExperiences();
+  loadDashboardData();
 }
 
-logoutButton.addEventListener("click", async () => {
-  await request("/api/logout", { method: "POST" });
-  window.location.reload();
-});
-
-refreshExperiencesButton.addEventListener("click", loadExperiences);
-refreshChatLogsButton.addEventListener("click", loadChatLogs);
-runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
-
-chatLogList.addEventListener("click", (event) => {
-  const item = event.target.closest("[data-chat-log-id]");
-  if (!item) return;
-
-  selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
-});
-
-chatLogList.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" && event.key !== " ") return;
-
-  const item = event.target.closest("[data-chat-log-id]");
-  if (!item) return;
-
-  event.preventDefault();
-  selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
-});
-
-window.addEventListener("dashboard:chatPointSelected", (event) => {
-  selectChatLog(event.detail?.id || "", { scroll: true });
-});
-
-experienceGrid.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-universe-id]");
-  if (!button) return;
-
-  selectedUniverseId = button.dataset.universeId || "";
-  selectedChatLogId = "";
-  updateSelectedExperience();
-  loadChatLogs();
-  window.dispatchEvent(new CustomEvent("dashboard:experienceChanged", {
+async function loadDashboardData() {
+  await loadUniverses();
+  await loadChatLogs();
+  startChatRefresh();
+  window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
   }));
-});
+}
 
-async function loadExperiences() {
-  experiencesStatus.textContent = "Loading...";
-  experienceGrid.innerHTML = "";
+function startChatRefresh() {
+  stopChatRefresh();
+  chatRefreshTimer = window.setInterval(loadChatLogs, CHAT_REFRESH_MS);
+}
 
-  try {
-    const data = await request("/api/experiences");
-    if (!data.signedIn) {
-      experiencesStatus.textContent = "Sign in first.";
-      return;
-    }
-
-    if (!data.experiences.length) {
-      experiencesStatus.textContent = "No authorized experiences found. Log out and sign in again after approving universe:read for experiences.";
-      return;
-    }
-
-    experiencesStatus.textContent = `${data.experiences.length} experience${data.experiences.length === 1 ? "" : "s"} authorized.`;
-    experienceGrid.innerHTML = data.experiences.map(renderExperience).join("");
-    if (!selectedUniverseId && data.experiences.length === 1) {
-      selectedUniverseId = getUniverseId(data.experiences[0]);
-    }
-    updateSelectedExperience();
-    await loadChatLogs();
-  } catch (error) {
-    experiencesStatus.textContent = error.message;
+function stopChatRefresh() {
+  if (chatRefreshTimer) {
+    window.clearInterval(chatRefreshTimer);
+    chatRefreshTimer = null;
   }
 }
 
-function renderExperience(experience) {
-  const id = getUniverseId(experience);
-  const description = experience.description || "No description.";
+async function loadUniverses() {
+  universesStatus.textContent = "Loading universes...";
+  universeGrid.innerHTML = "";
+
+  try {
+    const data = await request("/api/universes");
+    knownUniverses = data.universes || [];
+
+    if (!knownUniverses.length) {
+      universesStatus.textContent = "No universe data stored yet. Enter a universe ID manually or wait for Roblox heartbeats.";
+      updateSelectedUniverse();
+      return;
+    }
+
+    universesStatus.textContent = `${knownUniverses.length} universe${knownUniverses.length === 1 ? "" : "s"} with stored analytics.`;
+    universeGrid.innerHTML = knownUniverses.map(renderUniverse).join("");
+    updateSelectedUniverse();
+  } catch (error) {
+    universesStatus.textContent = error.message;
+  }
+}
+
+function renderUniverse(universe) {
+  const id = String(universe.id || "");
+  const totalSamples = Number(universe.totalSamples || 0);
+  const mapText = universe.hasMapSnapshot ? "Map uploaded" : "No map";
+  const lastSeen = universe.lastSeenAt ? `Last seen ${formatDateTime(universe.lastSeenAt)}` : "No recent samples";
 
   return `
-    <article class="experienceCard" data-universe-id="${escapeHtml(id)}">
+    <article class="universeCard" data-universe-id="${escapeHtml(id)}">
       <dl>
-        <div><dt>Description</dt><dd>${escapeHtml(description)}</dd></div>
         <div><dt>Universe ID</dt><dd>${escapeHtml(id)}</dd></div>
-        ${experience.error ? `<div><dt>Error</dt><dd>${escapeHtml(experience.error)}</dd></div>` : ""}
+        <div><dt>Samples</dt><dd>${escapeHtml(String(totalSamples))}</dd></div>
+        <div><dt>Map</dt><dd>${escapeHtml(mapText)}</dd></div>
+        <div><dt>Activity</dt><dd>${escapeHtml(lastSeen)}</dd></div>
       </dl>
-      <button class="button secondary compact selectExperienceButton" type="button" data-universe-id="${escapeHtml(id)}">Select</button>
+      <button class="button secondary compact selectUniverseCardButton" type="button" data-universe-id="${escapeHtml(id)}">Select</button>
     </article>
   `;
 }
 
+function selectUniverse(value) {
+  const cleanValue = String(value || "").trim();
+  selectedUniverseId = /^\d+$/.test(cleanValue) ? cleanValue : "";
+  selectedChatLogId = "";
+  universeIdInput.value = selectedUniverseId;
+  updateSelectedUniverse();
+  loadChatLogs();
+  window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
+    detail: { universeId: selectedUniverseId },
+  }));
+}
+
+function updateSelectedUniverse() {
+  for (const card of universeGrid.querySelectorAll(".universeCard")) {
+    const isSelected = card.dataset.universeId === selectedUniverseId;
+    card.classList.toggle("selected", isSelected);
+
+    const button = card.querySelector(".selectUniverseCardButton");
+    if (button) button.textContent = isSelected ? "Selected" : "Select";
+  }
+
+  if (selectedUniverseId) {
+    universesStatus.textContent = knownUniverses.length
+      ? `Showing universe ${selectedUniverseId}.`
+      : `Showing universe ${selectedUniverseId}. Data will appear if stored for this ID.`;
+  }
+}
+
 async function loadChatLogs() {
+  if (!authenticated) return;
+
   try {
     const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
     const data = await request(`/api/chat-logs${query}`);
@@ -157,17 +257,21 @@ async function loadChatLogs() {
     chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
     highlightSelectedChatLog({ scroll: false });
   } catch (error) {
+    handleAuthError(error);
     chatLogsStatus.textContent = error.message;
     loadChatInsights();
   }
 }
 
 async function loadChatInsights() {
+  if (!authenticated) return;
+
   try {
     const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
     const data = await request(`/api/chat-insights${query}`);
     renderChatInsights(data);
   } catch (error) {
+    handleAuthError(error);
     chatInsightsStatus.textContent = error.message;
     commonQuestionList.innerHTML = "";
   }
@@ -183,6 +287,7 @@ async function runChatInsightsAnalysis() {
     const data = await request(`/api/chat-insights/analyze${query}`, { method: "POST" });
     renderChatInsights(data);
   } catch (error) {
+    handleAuthError(error);
     chatInsightsStatus.textContent = error.message;
     chatInsightsMode.textContent = "AI failed";
   } finally {
@@ -204,16 +309,6 @@ function renderChatInsights(data) {
   const generatedText = data.generatedAt ? ` Last run: ${formatDateTime(data.generatedAt)}.` : "";
   chatInsightsStatus.textContent = `AI grouped ${data.questions.length} question theme${data.questions.length === 1 ? "" : "s"} from ${data.questionLikeCount || 0} question-like messages.${generatedText}`;
   commonQuestionList.innerHTML = data.questions.map(renderCommonQuestion).join("");
-}
-
-function updateSelectedExperience() {
-  for (const card of experienceGrid.querySelectorAll(".experienceCard")) {
-    const isSelected = card.dataset.universeId === selectedUniverseId;
-    card.classList.toggle("selected", isSelected);
-
-    const button = card.querySelector(".selectExperienceButton");
-    if (button) button.textContent = isSelected ? "Selected" : "Select";
-  }
 }
 
 function renderChatLog(log) {
@@ -285,6 +380,12 @@ function renderCommonQuestion(question, index) {
   `;
 }
 
+function handleAuthError(error) {
+  if (error.status === 401) {
+    setAuthenticated(false);
+  }
+}
+
 function formatDateTime(timestamp) {
   const date = new Date(Number(timestamp) || Date.now());
   return date.toLocaleTimeString([], {
@@ -310,12 +411,6 @@ function formatCoordinate(value) {
 function shortJobId(jobId) {
   const value = String(jobId || "");
   return value.length > 12 ? `Server ${value.slice(0, 8)}` : `Server ${value}`;
-}
-
-function getUniverseId(experience) {
-  if (experience.id) return String(experience.id);
-  const match = String(experience.path || "").match(/universes\/(\d+)/);
-  return match ? match[1] : "";
 }
 
 function showAuthError() {

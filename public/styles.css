@@ -70,7 +70,7 @@ button {
   padding: 20px;
 }
 
-.experiences,
+.universes,
 .chatLogs,
 .chatInsights,
 .movementHeatmap {
@@ -97,41 +97,54 @@ button {
   margin-top: 0;
 }
 
-.experienceGrid {
+.authForm,
+.universePicker {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.universePicker {
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+}
+
+.universeGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
 
-.experienceCard {
+.universeCard {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #151922;
   padding: 16px;
 }
 
-.experienceCard.selected {
+.universeCard.selected {
   border-color: var(--blue);
   box-shadow: 0 0 0 1px rgba(47, 129, 247, 0.35);
 }
 
-.experienceCard dl {
+.universeCard dl {
   display: grid;
   gap: 8px;
   margin: 0;
 }
 
-.experienceCard dl div {
+.universeCard dl div {
   display: grid;
   gap: 4px;
 }
 
-.experienceCard dt {
+.universeCard dt {
   color: var(--muted);
 }
 
-.experienceCard dd {
+.universeCard dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -459,6 +472,8 @@ button {
   }
 
   .metricRow,
+  .authForm,
+  .universePicker,
   .heatmapFilters {
     grid-template-columns: 1fr;
   }

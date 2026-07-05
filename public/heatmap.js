@@ -62,7 +62,7 @@ if (canvas) {
       setHeatmapMode(button.dataset.heatmapMode || "movement");
     });
   }
-  window.addEventListener("dashboard:experienceChanged", () => loadHeatmap({ resetView: true }));
+  window.addEventListener("dashboard:universeChanged", () => loadHeatmap({ resetView: true }));
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
     if (activeHeatmapMode !== "chat") {

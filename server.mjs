@@ -15,9 +15,7 @@ const port = Number(process.env.PORT || 3000);
 const localBaseUrl = `http://localhost:${port}`;
 const appBaseUrl = cleanBaseUrl(process.env.PUBLIC_BASE_URL || localBaseUrl);
 
-const ROBLOX_OAUTH_CLIENT_ID = getRequiredEnv("ROBLOX_OAUTH_CLIENT_ID");
-const ROBLOX_OAUTH_CLIENT_SECRET = getRequiredEnv("ROBLOX_OAUTH_CLIENT_SECRET");
-const SESSION_SECRET = getRequiredEnv("SESSION_SECRET");
+const DASHBOARD_PASSWORD = getRequiredEnv("DASHBOARD_PASSWORD");
 const PRESENCE_SECRET = getRequiredEnv("PRESENCE_SECRET");
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
@@ -40,14 +38,11 @@ const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_MAP_PARTS_PER_CHUNK = 1000;
 const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
 const ROBLOX_HEATMAP_BIN_SIZE = 8;
-const OAUTH_STATE_COOKIE = "oauth_state";
-const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
+const DASHBOARD_AUTH_COOKIE = "dashboard_auth";
+const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
 
-const redirectUri = `${appBaseUrl}/auth/roblox/callback`;
-const oauthScope = "openid universe:read";
-const sessions = new Map();
 const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
 const movementSamplesByUniverseId = new Map();
@@ -64,20 +59,41 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", appBaseUrl);
 
-    if (req.method === "GET" && url.pathname === "/auth/roblox/start") {
-      return startRobloxAuth(req, res);
+    if (url.pathname === "/api/auth/status" && req.method === "GET") {
+      return sendJson(res, 200, { authenticated: isDashboardAuthenticated(req) });
     }
 
-    if (req.method === "GET" && url.pathname === "/auth/roblox/callback") {
-      return handleRobloxCallback(req, res, url);
+    if (url.pathname === "/api/auth/login" && req.method === "POST") {
+      return handleDashboardLogin(req, res);
     }
 
-    if (url.pathname === "/api/me" && req.method === "GET") {
-      return sendJson(res, 200, { account: getCurrentAccount(req) });
+    if (url.pathname === "/api/auth/logout" && req.method === "POST") {
+      clearDashboardAuthCookie(res);
+      return sendJson(res, 200, { ok: true });
     }
 
-    if (url.pathname === "/api/experiences" && req.method === "GET") {
-      return sendJson(res, 200, await getExperiences(req));
+    if (url.pathname === "/api/roblox/presence" && req.method === "POST") {
+      return handlePresenceHeartbeat(req, res);
+    }
+
+    if (url.pathname === "/api/roblox/map-snapshot" && req.method === "POST") {
+      return handleMapSnapshotUpload(req, res);
+    }
+
+    if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
+      if (!isValidPresenceSecret(req)) {
+        return sendJson(res, 401, { error: "Invalid dashboard secret" });
+      }
+
+      return sendJson(res, 200, await getRobloxHeatmapFromQuery(url.searchParams));
+    }
+
+    if (url.pathname.startsWith("/api/") && !isDashboardAuthenticated(req)) {
+      return sendJson(res, 401, { error: "Enter the dashboard password first" });
+    }
+
+    if (url.pathname === "/api/universes" && req.method === "GET") {
+      return sendJson(res, 200, await getUniverseSummaries());
     }
 
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
@@ -118,25 +134,6 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
-    if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
-      return sendJson(res, 200, await getRobloxHeatmapFromQuery(url.searchParams));
-    }
-
-    if (url.pathname === "/api/roblox/presence" && req.method === "POST") {
-      return handlePresenceHeartbeat(req, res);
-    }
-
-    if (url.pathname === "/api/roblox/map-snapshot" && req.method === "POST") {
-      return handleMapSnapshotUpload(req, res);
-    }
-
-    if (url.pathname === "/api/logout" && req.method === "POST") {
-      const sessionId = getSessionId(req);
-      if (sessionId) sessions.delete(sessionId);
-      clearSessionCookie(res);
-      return sendJson(res, 200, { ok: true });
-    }
-
     if (url.pathname.startsWith("/api/")) {
       return sendJson(res, 404, { error: "Not found" });
     }
@@ -154,9 +151,25 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`Dashboard running on ${appBaseUrl}`);
-  console.log(`Roblox redirect URL: ${redirectUri}`);
   console.log(`Roblox presence endpoint: ${appBaseUrl}/api/roblox/presence`);
 });
+
+async function handleDashboardLogin(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!isMatchingSecret(password, DASHBOARD_PASSWORD)) {
+    return sendJson(res, 401, { error: "Incorrect dashboard password" });
+  }
+
+  setDashboardAuthCookie(res);
+  return sendJson(res, 200, { ok: true, authenticated: true });
+}
 
 async function handlePresenceHeartbeat(req, res) {
   if (!isValidPresenceSecret(req)) {
@@ -215,10 +228,14 @@ async function handleMapSnapshotUpload(req, res) {
 
 function isValidPresenceSecret(req) {
   const secret = req.headers["x-dashboard-secret"];
-  if (typeof secret !== "string" || !secret || !PRESENCE_SECRET) return false;
+  return isMatchingSecret(secret, PRESENCE_SECRET);
+}
 
-  const expected = Buffer.from(PRESENCE_SECRET);
-  const provided = Buffer.from(secret);
+function isMatchingSecret(value, expectedValue) {
+  if (typeof value !== "string" || !value || !expectedValue) return false;
+
+  const expected = Buffer.from(expectedValue);
+  const provided = Buffer.from(value);
   if (expected.length !== provided.length) return false;
 
   return crypto.timingSafeEqual(expected, provided);
@@ -698,6 +715,79 @@ async function readPersistedMapSnapshot(universeId) {
 
 function getMapSnapshotPath(universeId) {
   return path.join(mapSnapshotDir, `${cleanInteger(universeId)}.json`);
+}
+
+async function getUniverseSummaries() {
+  const universeIds = new Set();
+  addUniverseKeys(universeIds, chatLogsByUniverseId);
+  addUniverseKeys(universeIds, movementSamplesByUniverseId);
+  addUniverseKeys(universeIds, deathSamplesByUniverseId);
+  addUniverseKeys(universeIds, leaveSamplesByUniverseId);
+  addUniverseKeys(universeIds, mapSnapshotsByUniverseId);
+
+  const persistedMapUniverseIds = new Set((await getPersistedMapUniverseIds()).map(String));
+  for (const universeId of persistedMapUniverseIds) {
+    universeIds.add(String(universeId));
+  }
+
+  const universes = [...universeIds]
+    .map((id) => buildUniverseSummary(cleanInteger(id), persistedMapUniverseIds.has(String(cleanInteger(id)))))
+    .filter((summary) => summary.id > 0)
+    .sort((a, b) => b.totalSamples - a.totalSamples || b.lastSeenAt - a.lastSeenAt || b.id - a.id);
+
+  return {
+    universes,
+  };
+}
+
+function addUniverseKeys(target, sourceMap) {
+  for (const key of sourceMap.keys()) {
+    if (cleanInteger(key) > 0) {
+      target.add(String(cleanInteger(key)));
+    }
+  }
+}
+
+async function getPersistedMapUniverseIds() {
+  try {
+    const entries = await fs.readdir(mapSnapshotDir);
+    return entries
+      .map((name) => cleanInteger(String(name).replace(/\.json$/i, "")))
+      .filter((universeId) => universeId > 0);
+  } catch {
+    return [];
+  }
+}
+
+function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
+  const key = String(universeId);
+  const chatLogs = chatLogsByUniverseId.get(key) || [];
+  const movementSamples = movementSamplesByUniverseId.get(key) || [];
+  const deathSamples = deathSamplesByUniverseId.get(key) || [];
+  const leaveSamples = leaveSamplesByUniverseId.get(key) || [];
+  const mapSnapshot = mapSnapshotsByUniverseId.get(key);
+  const lastSeenAt = Math.max(
+    getLastTimestamp(chatLogs, "receivedAt"),
+    getLastTimestamp(movementSamples, "receivedAt"),
+    getLastTimestamp(deathSamples, "receivedAt"),
+    getLastTimestamp(leaveSamples, "receivedAt"),
+    cleanInteger(mapSnapshot?.receivedAt),
+  );
+
+  return {
+    id: universeId,
+    chatLogCount: chatLogs.length,
+    movementSampleCount: movementSamples.length,
+    deathSampleCount: deathSamples.length,
+    leaveSampleCount: leaveSamples.length,
+    totalSamples: chatLogs.length + movementSamples.length + deathSamples.length + leaveSamples.length,
+    hasMapSnapshot: Boolean(mapSnapshot) || hasPersistedMapSnapshot,
+    lastSeenAt,
+  };
+}
+
+function getLastTimestamp(entries, field) {
+  return entries.reduce((max, entry) => Math.max(max, cleanInteger(entry?.[field])), 0);
 }
 
 function getMapBounds(parts) {
@@ -1379,189 +1469,6 @@ async function fetchUserIdsByUsernames(usernames) {
   return results;
 }
 
-function startRobloxAuth(req, res) {
-  const state = randomBase64Url(32);
-  const nonce = randomBase64Url(24);
-  const codeVerifier = randomBase64Url(64);
-  const codeChallenge = base64Url(crypto.createHash("sha256").update(codeVerifier).digest());
-
-  setOAuthStateCookie(res, {
-    state,
-    nonce,
-    codeVerifier,
-    createdAt: Date.now(),
-  });
-
-  const authUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
-  authUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("scope", oauthScope);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("prompt", "login consent select_account");
-  authUrl.searchParams.set("nonce", nonce);
-  authUrl.searchParams.set("state", state);
-  authUrl.searchParams.set("code_challenge", codeChallenge);
-  authUrl.searchParams.set("code_challenge_method", "S256");
-
-  redirect(res, authUrl.toString());
-}
-
-async function handleRobloxCallback(req, res, url) {
-  const error = url.searchParams.get("error");
-  if (error) {
-    clearOAuthStateCookie(res);
-    const description = url.searchParams.get("error_description") || error;
-    return redirect(res, `/?auth_error=${encodeURIComponent(description)}`);
-  }
-
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  const authState = getOAuthState(req);
-
-  if (!code || !state || !authState || authState.state !== state) {
-    clearOAuthStateCookie(res);
-    return redirect(res, "/?auth_error=Invalid OAuth callback state");
-  }
-
-  clearOAuthStateCookie(res);
-
-  const tokens = await exchangeCodeForTokens(code, authState.codeVerifier);
-  const userInfo = await fetchUserInfo(tokens.access_token);
-  const sessionId = randomBase64Url(32);
-
-  sessions.set(sessionId, {
-    robloxUserId: userInfo.sub,
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    scope: tokens.scope || oauthScope,
-    expiresAt: Date.now() + Number(tokens.expires_in || 899) * 1000,
-    signedInAt: new Date().toISOString(),
-  });
-
-  setSessionCookie(res, sessionId);
-  redirect(res, "/");
-}
-
-async function exchangeCodeForTokens(code, codeVerifier) {
-  const params = new URLSearchParams();
-  params.set("grant_type", "authorization_code");
-  params.set("code", code);
-  params.set("code_verifier", codeVerifier);
-  params.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
-  params.set("client_secret", ROBLOX_OAUTH_CLIENT_SECRET);
-
-  const response = await fetch("https://apis.roblox.com/oauth/v1/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-
-  const payload = await parseRobloxResponse(response);
-  if (!response.ok) throw new Error(payload.error_description || payload.error || "Token exchange failed");
-  return payload;
-}
-
-async function refreshAccessToken(session) {
-  if (Date.now() < Number(session.expiresAt || 0) - 60_000) {
-    return session.accessToken;
-  }
-
-  const params = new URLSearchParams();
-  params.set("grant_type", "refresh_token");
-  params.set("refresh_token", session.refreshToken);
-  params.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
-  params.set("client_secret", ROBLOX_OAUTH_CLIENT_SECRET);
-
-  const response = await fetch("https://apis.roblox.com/oauth/v1/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-
-  const payload = await parseRobloxResponse(response);
-  if (!response.ok) throw new Error(payload.error_description || payload.error || "Token refresh failed");
-
-  session.accessToken = payload.access_token;
-  session.refreshToken = payload.refresh_token;
-  session.scope = payload.scope || session.scope;
-  session.expiresAt = Date.now() + Number(payload.expires_in || 899) * 1000;
-
-  return session.accessToken;
-}
-
-async function getExperiences(req) {
-  const sessionId = getSessionId(req);
-  const session = sessionId ? sessions.get(sessionId) : null;
-  if (!session) return { signedIn: false, experiences: [] };
-
-  const accessToken = await refreshAccessToken(session);
-  const resources = await fetchAuthorizedResources(accessToken);
-  const universeIds = getAuthorizedUniverseIds(resources);
-  const experiences = await Promise.all(universeIds.map((universeId) => fetchUniverse(accessToken, universeId)));
-
-  return {
-    signedIn: true,
-    universeIds,
-    experiences,
-    resources,
-  };
-}
-
-async function fetchAuthorizedResources(accessToken) {
-  const params = new URLSearchParams();
-  params.set("token", accessToken);
-  params.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
-  params.set("client_secret", ROBLOX_OAUTH_CLIENT_SECRET);
-
-  const response = await fetch("https://apis.roblox.com/oauth/v1/token/resources", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-
-  const payload = await parseRobloxResponse(response);
-  if (!response.ok) throw new Error(payload.error_description || payload.error || "Failed to fetch authorized resources");
-  return payload;
-}
-
-function getAuthorizedUniverseIds(resourcesPayload) {
-  const ids = [];
-  for (const resourceInfo of resourcesPayload.resource_infos || []) {
-    const universeIds = resourceInfo.resources?.universe?.ids || [];
-    for (const universeId of universeIds) {
-      if (/^\d+$/.test(String(universeId)) && !ids.includes(String(universeId))) {
-        ids.push(String(universeId));
-      }
-    }
-  }
-  return ids;
-}
-
-async function fetchUniverse(accessToken, universeId) {
-  const response = await fetch(`https://apis.roblox.com/cloud/v2/universes/${encodeURIComponent(universeId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  const payload = await parseRobloxResponse(response);
-  if (!response.ok) {
-    return {
-      id: universeId,
-      error: payload.error_description || payload.error || payload.message || "Failed to fetch universe",
-    };
-  }
-  return payload;
-}
-
-async function fetchUserInfo(accessToken) {
-  const response = await fetch("https://apis.roblox.com/oauth/v1/userinfo", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  const payload = await parseRobloxResponse(response);
-  if (!response.ok) throw new Error(payload.error_description || payload.error || "Failed to fetch user info");
-  return payload;
-}
-
 async function parseRobloxResponse(response) {
   const text = await response.text();
   if (!text) return {};
@@ -1571,22 +1478,6 @@ async function parseRobloxResponse(response) {
   } catch {
     return { error: text };
   }
-}
-
-function getRobloxErrorMessage(payload, fallback) {
-  const nestedError = Array.isArray(payload?.value?.errors)
-    ? payload.value.errors.map((error) => error.message || error.code).filter(Boolean).join("; ")
-    : "";
-
-  return payload?.error_description
-    || payload?.error
-    || payload?.message
-    || payload?.value?.error_description
-    || payload?.value?.error
-    || payload?.value?.message
-    || nestedError
-    || payload?.rawText
-    || fallback;
 }
 
 async function readJsonBody(req, maxBytes) {
@@ -1608,72 +1499,38 @@ async function readJsonBody(req, maxBytes) {
   }
 }
 
-function getCurrentAccount(req) {
-  const sessionId = getSessionId(req);
-  const session = sessionId ? sessions.get(sessionId) : null;
-  if (!session) return null;
-
-  return {
-    robloxUserId: session.robloxUserId,
-    scope: session.scope,
-    signedInAt: session.signedInAt,
-  };
-}
-
-function getSessionId(req) {
-  const value = getCookieValue(req, "session");
-  if (!value) return null;
-
-  const [sessionId, signature] = value.split(".");
-  if (!sessionId || !signature) return null;
-
-  const expected = sign(sessionId);
-  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) ? sessionId : null;
-}
-
-function setSessionCookie(res, sessionId) {
-  appendSetCookie(res, `session=${encodeURIComponent(`${sessionId}.${sign(sessionId)}`)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=7776000`);
-}
-
-function clearSessionCookie(res) {
-  appendSetCookie(res, "session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
-}
-
-function sign(value) {
-  return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("base64url");
-}
-
-function setOAuthStateCookie(res, value) {
-  const payload = Buffer.from(JSON.stringify(value)).toString("base64url");
-  const cookieValue = `${payload}.${sign(payload)}`;
-  appendSetCookie(res, `${OAUTH_STATE_COOKIE}=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/auth/roblox; Max-Age=${Math.ceil(OAUTH_STATE_MAX_AGE_MS / 1000)}`);
-}
-
-function getOAuthState(req) {
-  const value = getCookieValue(req, OAUTH_STATE_COOKIE);
-  if (!value) return null;
+function isDashboardAuthenticated(req) {
+  const value = getCookieValue(req, DASHBOARD_AUTH_COOKIE);
+  if (!value) return false;
 
   const [payload, signature] = value.split(".");
-  if (!payload || !signature) return null;
+  if (!payload || !signature) return false;
 
-  const expected = sign(payload);
-  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const expected = signDashboardValue(payload);
+  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return false;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return false;
 
   try {
-    const state = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    const createdAt = Number(state?.createdAt || 0);
-    if (!state?.state || !state?.nonce || !state?.codeVerifier) return null;
-    if (!createdAt || Date.now() - createdAt > OAUTH_STATE_MAX_AGE_MS) return null;
-    return state;
+    const auth = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const issuedAt = Number(auth?.issuedAt || 0);
+    return Boolean(issuedAt && Date.now() - issuedAt <= DASHBOARD_AUTH_MAX_AGE_MS);
   } catch {
-    return null;
+    return false;
   }
 }
 
-function clearOAuthStateCookie(res) {
-  appendSetCookie(res, `${OAUTH_STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/auth/roblox; Max-Age=0`);
+function setDashboardAuthCookie(res) {
+  const payload = Buffer.from(JSON.stringify({ issuedAt: Date.now() })).toString("base64url");
+  const cookieValue = `${payload}.${signDashboardValue(payload)}`;
+  appendSetCookie(res, `${DASHBOARD_AUTH_COOKIE}=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.ceil(DASHBOARD_AUTH_MAX_AGE_MS / 1000)}`);
+}
+
+function clearDashboardAuthCookie(res) {
+  appendSetCookie(res, `${DASHBOARD_AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
+
+function signDashboardValue(value) {
+  return crypto.createHmac("sha256", DASHBOARD_PASSWORD).update(value).digest("base64url");
 }
 
 function getCookieValue(req, name) {
@@ -1733,14 +1590,6 @@ function contentType(filePath) {
   if (ext === ".css") return "text/css; charset=utf-8";
   if (ext === ".js") return "text/javascript; charset=utf-8";
   return "application/octet-stream";
-}
-
-function randomBase64Url(bytes) {
-  return crypto.randomBytes(bytes).toString("base64url");
-}
-
-function base64Url(buffer) {
-  return Buffer.from(buffer).toString("base64url");
 }
 
 function loadLocalEnv() {

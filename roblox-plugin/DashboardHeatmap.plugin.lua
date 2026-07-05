@@ -303,8 +303,18 @@ local function fetchHeatmap()
 	setStatus("Fetching heatmap...", false)
 
 	local ok, result = pcall(function()
-		local response = HttpService:GetAsync(buildHeatmapUrl())
-		local heatmap = HttpService:JSONDecode(response)
+		local response = HttpService:RequestAsync({
+			Url = buildHeatmapUrl(),
+			Method = "GET",
+			Headers = {
+				["X-Dashboard-Secret"] = getDashboardSecret(),
+			},
+		})
+		if not response.Success then
+			error("HTTP " .. tostring(response.StatusCode) .. ": " .. tostring(response.Body))
+		end
+
+		local heatmap = HttpService:JSONDecode(response.Body)
 		local rendered = renderHeatmap(heatmap)
 		return {
 			rendered = rendered,
