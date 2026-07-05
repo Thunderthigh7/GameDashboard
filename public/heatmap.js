@@ -476,6 +476,8 @@ function renderScene(samples, mapSnapshot, options = {}) {
   } else {
     updateCamera();
   }
+
+  openDefaultAiAreaCard(entries);
 }
 
 function getSampleEntries(samples, mapSnapshot = null) {
@@ -828,6 +830,29 @@ function openAiAreaCardFromPointer(event) {
   }
 
   updateAiAreaCard(area, event);
+}
+
+function openDefaultAiAreaCard(entries) {
+  if (activeHeatmapMode !== "ai-analysis" || !entries.length || !sceneCenter) return;
+  updateAiAreaCard(entries[0], getAiAreaCardAnchorForEntry(entries[0]));
+}
+
+function getAiAreaCardAnchorForEntry(area) {
+  const shell = aiAreaCard?.parentElement;
+  if (!shell) return { clientX: 0, clientY: 0 };
+
+  const shellRect = shell.getBoundingClientRect();
+  const worldPosition = new THREE.Vector3(
+    area.x - sceneCenter.x,
+    area.y - sceneCenter.y + 18,
+    area.z - sceneCenter.z,
+  );
+  worldPosition.project(camera);
+
+  return {
+    clientX: shellRect.left + (worldPosition.x + 1) * shellRect.width * 0.5,
+    clientY: shellRect.top + (1 - worldPosition.y) * shellRect.height * 0.5,
+  };
 }
 
 function hideAiAreaCard() {
