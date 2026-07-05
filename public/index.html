@@ -6,9 +6,9 @@
     <title>PlayLens Dashboard</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body>
+  <body class="isLocked">
     <div class="appShell">
-      <aside class="sidebar">
+      <aside class="sidebar" hidden>
         <div class="brand">
           <div class="brandMark" aria-hidden="true"></div>
           <div>
@@ -46,13 +46,14 @@
       </aside>
 
       <main class="dashboardMain">
-        <header class="topbar" id="overview">
+        <header class="topbar" id="overview" hidden>
           <div>
             <h1>Overview</h1>
             <p>Roblox game analytics powered by live heartbeat data.</p>
           </div>
           <div class="topbarActions">
             <button class="dateButton" type="button">Last 7 days</button>
+            <button class="dateButton" id="themeToggleButton" type="button">Light mode</button>
             <button class="aiButton" id="runChatInsightsButton" type="button">AI Insights</button>
             <div class="account" id="accountBox">Checking...</div>
           </div>
@@ -78,7 +79,7 @@
           <button class="button secondary compact" id="logoutButton" type="button">Log out</button>
         </section>
 
-        <section class="summaryBand panel">
+        <section class="summaryBand panel" hidden>
           <div class="aiSummary">
             <strong>AI Summary</strong>
             <p>Run AI analysis to group player questions. Heatmaps, leave points, death points, and chat locations are already tracked.</p>
@@ -125,7 +126,7 @@
           <div class="universeGrid" id="universeGrid"></div>
         </section>
 
-        <div class="dashboardGrid">
+        <div class="dashboardGrid" hidden>
           <section class="panel movementHeatmap mapPanel" id="heatmaps" hidden>
             <div class="sectionHeader">
               <div>
@@ -216,7 +217,7 @@
           </aside>
         </div>
 
-        <section class="lowerCards">
+        <section class="lowerCards" hidden>
           <article class="panel dataCard">
             <h2>Top drop-off points</h2>
             <p>Uses leave heatmap data. Name grouping is placeholder until zones are configured.</p>

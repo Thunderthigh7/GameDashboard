@@ -7,6 +7,7 @@ const loginStatus = document.querySelector("#loginStatus");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const authError = document.querySelector("#authError");
+const themeToggleButton = document.querySelector("#themeToggleButton");
 const universesPanel = document.querySelector("#universesPanel");
 const universesStatus = document.querySelector("#universesStatus");
 const universeGrid = document.querySelector("#universeGrid");
@@ -25,6 +26,9 @@ const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const analyticsPanels = document.querySelectorAll(".chatLogs, .chatInsights, .movementHeatmap");
+const protectedDashboardPanels = document.querySelectorAll(
+  ".sidebar, .topbar, #authControls, .summaryBand, #universesPanel, .dashboardGrid, .lowerCards"
+);
 
 let chatRefreshTimer;
 let selectedUniverseId = "";
@@ -36,10 +40,12 @@ window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
 
 const CHAT_REFRESH_MS = 5000;
+const THEME_STORAGE_KEY = "playlens-theme";
 
 init();
 
 async function init() {
+  applySavedTheme();
   showAuthError();
   bindEvents();
   await checkAuth();
@@ -64,6 +70,7 @@ function bindEvents() {
   });
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
+  themeToggleButton.addEventListener("click", toggleTheme);
 
   chatLogList.addEventListener("click", (event) => {
     const item = event.target.closest("[data-chat-log-id]");
@@ -126,11 +133,15 @@ async function login() {
 
 function setAuthenticated(value) {
   authenticated = value;
+  document.body.classList.toggle("isLocked", !authenticated);
   accountBox.textContent = authenticated ? "Unlocked" : "Locked";
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
   universesPanel.hidden = !authenticated;
   runChatInsightsButton.hidden = !authenticated;
+  for (const panel of protectedDashboardPanels) {
+    panel.hidden = !authenticated;
+  }
   for (const panel of analyticsPanels) {
     panel.hidden = !authenticated;
   }
@@ -152,6 +163,25 @@ function setAuthenticated(value) {
   }
 
   loadDashboardData();
+}
+
+function applySavedTheme() {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  const theme = savedTheme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  updateThemeToggle(theme);
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  const nextTheme = currentTheme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = nextTheme;
+  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  updateThemeToggle(nextTheme);
+}
+
+function updateThemeToggle(theme) {
+  themeToggleButton.textContent = theme === "light" ? "Dark mode" : "Light mode";
 }
 
 async function loadDashboardData() {
