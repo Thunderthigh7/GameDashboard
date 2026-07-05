@@ -341,7 +341,7 @@ small,
 
 .summaryBand {
   display: grid;
-  grid-template-columns: minmax(260px, 1.7fr) repeat(4, minmax(150px, 1fr));
+  grid-template-columns: minmax(260px, 1.7fr) repeat(3, minmax(150px, 1fr));
   align-items: stretch;
   gap: 18px;
   margin-bottom: 18px;
@@ -374,10 +374,6 @@ small,
 
 .metricCard small {
   color: var(--green);
-}
-
-.placeholderMetric small {
-  color: var(--muted);
 }
 
 .sectionHeader {
