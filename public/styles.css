@@ -305,8 +305,10 @@ small,
 
 .topbarActions {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 
 .dateButton,
@@ -485,8 +487,13 @@ small,
 }
 
 .topbarFilters {
-  grid-template-columns: repeat(2, minmax(160px, 180px));
+  grid-template-columns: repeat(2, minmax(188px, 210px));
+  gap: 16px;
   margin-top: 0;
+}
+
+.compactField {
+  min-width: 0;
 }
 
 .fieldGroup {
@@ -807,6 +814,10 @@ small,
   .authControls {
     align-items: stretch;
     flex-direction: column;
+    width: 100%;
+  }
+
+  .topbarFilters {
     width: 100%;
   }
 
