@@ -31,7 +31,6 @@ const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_CHAT_MESSAGES_FOR_INSIGHTS = 500;
 const MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS = 200;
 const MAX_COMMON_QUESTIONS_RESPONSE = 5;
-const CHAT_INSIGHTS_CACHE_MS = 2 * 60 * 1000;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -71,7 +70,7 @@ const leaveSamplesByUniverseId = new Map();
 const leaveSampleIdsByUniverseId = new Map();
 const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
-const chatInsightsCache = new Map();
+const chatInsightsByScope = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -106,9 +105,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
-      return sendJson(res, 200, await getChatInsights({
+      return sendJson(res, 200, getStoredChatInsights({
         universeId: url.searchParams.get("universeId"),
       }));
+    }
+
+    if (url.pathname === "/api/chat-insights/analyze" && req.method === "POST") {
+      try {
+        return sendJson(res, 200, await analyzeChatInsights({
+          universeId: url.searchParams.get("universeId"),
+        }));
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
     }
 
     if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
@@ -2058,95 +2067,21 @@ function getChatLogs(filters = {}) {
   };
 }
 
-async function getChatInsights(filters = {}) {
+function getStoredChatInsights(filters = {}) {
   const chatPayload = getChatLogs(filters);
   const candidateLogs = chatPayload.logs
     .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
     .filter((log) => isQuestionLikeMessage(log.message));
-  const localInsights = getLocalChatInsights(chatPayload, candidateLogs);
+  const stored = chatInsightsByScope.get(getChatInsightsScopeKey(chatPayload.universeId));
 
-  if (!OPENAI_API_KEY || candidateLogs.length === 0) {
-    return localInsights;
-  }
-
-  const cacheKey = getChatInsightsCacheKey(chatPayload, candidateLogs);
-  const cached = chatInsightsCache.get(cacheKey);
-  if (cached && Date.now() - cached.cachedAt < CHAT_INSIGHTS_CACHE_MS) {
+  if (stored) {
     return {
-      ...cached.payload,
-      cached: true,
-      cacheAgeSeconds: Math.floor((Date.now() - cached.cachedAt) / 1000),
+      ...stored,
+      sourceLogCount: chatPayload.logCount,
+      analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
+      questionLikeCount: candidateLogs.length,
     };
   }
-
-  try {
-    const aiInsights = await getAiChatInsights(chatPayload, candidateLogs, localInsights);
-    chatInsightsCache.set(cacheKey, {
-      cachedAt: Date.now(),
-      payload: aiInsights,
-    });
-    return aiInsights;
-  } catch (error) {
-    console.warn("Chat insights AI fallback:", error.message);
-    return {
-      ...localInsights,
-      fallbackReason: error.message,
-    };
-  }
-}
-
-function getLocalChatInsights(chatPayload, candidateLogs) {
-  const groups = new Map();
-
-  for (const log of candidateLogs) {
-    const normalized = normalizeChatQuestion(log.message);
-    if (!normalized.key) continue;
-
-    const existing = groups.get(normalized.key) || {
-      id: normalized.key,
-      title: normalized.title,
-      titleScore: getQuestionTitleScore(log.message),
-      mentions: 0,
-      examples: [],
-      firstSeenAt: log.sentAt,
-      lastSeenAt: log.sentAt,
-      players: new Set(),
-    };
-
-    existing.mentions += 1;
-    existing.firstSeenAt = Math.min(existing.firstSeenAt || log.sentAt, log.sentAt);
-    existing.lastSeenAt = Math.max(existing.lastSeenAt || log.sentAt, log.sentAt);
-    if (log.userId > 0) existing.players.add(log.userId);
-
-    const titleScore = getQuestionTitleScore(log.message);
-    if (titleScore > existing.titleScore) {
-      existing.title = normalized.title;
-      existing.titleScore = titleScore;
-    }
-
-    if (existing.examples.length < 3 && !existing.examples.some((example) => example.message === log.message)) {
-      existing.examples.push({
-        message: log.message,
-        username: log.username,
-        sentAt: log.sentAt,
-      });
-    }
-
-    groups.set(normalized.key, existing);
-  }
-
-  const questions = [...groups.values()]
-    .sort((a, b) => b.mentions - a.mentions || b.lastSeenAt - a.lastSeenAt)
-    .slice(0, MAX_COMMON_QUESTIONS_RESPONSE)
-    .map((group) => ({
-      id: group.id,
-      title: group.title,
-      mentions: group.mentions,
-      playerCount: group.players.size,
-      examples: group.examples,
-      firstSeenAt: group.firstSeenAt,
-      lastSeenAt: group.lastSeenAt,
-    }));
 
   return {
     universeId: chatPayload.universeId,
@@ -2154,13 +2089,37 @@ function getLocalChatInsights(chatPayload, candidateLogs) {
     analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
     questionLikeCount: candidateLogs.length,
     maxMessagesAnalyzed: MAX_CHAT_MESSAGES_FOR_INSIGHTS,
-    generatedAt: Date.now(),
-    mode: "local",
-    questions,
+    generatedAt: null,
+    mode: "none",
+    questions: [],
   };
 }
 
-async function getAiChatInsights(chatPayload, candidateLogs, localInsights) {
+async function analyzeChatInsights(filters = {}) {
+  const chatPayload = getChatLogs(filters);
+  const candidateLogs = chatPayload.logs
+    .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
+    .filter((log) => isQuestionLikeMessage(log.message));
+
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
+  }
+
+  if (candidateLogs.length === 0) {
+    throw new Error("No question-like chat messages are available to analyze.");
+  }
+
+  try {
+    const aiInsights = await getAiChatInsights(chatPayload, candidateLogs);
+    chatInsightsByScope.set(getChatInsightsScopeKey(chatPayload.universeId), aiInsights);
+    return aiInsights;
+  } catch (error) {
+    console.warn("Chat insights AI failed:", error.message);
+    throw error;
+  }
+}
+
+async function getAiChatInsights(chatPayload, candidateLogs) {
   const candidateMessages = candidateLogs.slice(0, MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS).map((log, index) => ({
     id: `m${index}`,
     message: log.message,
@@ -2233,7 +2192,11 @@ async function getAiChatInsights(chatPayload, candidateLogs, localInsights) {
   }
 
   return {
-    ...localInsights,
+    universeId: chatPayload.universeId,
+    sourceLogCount: chatPayload.logCount,
+    analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
+    maxMessagesAnalyzed: MAX_CHAT_MESSAGES_FOR_INSIGHTS,
+    generatedAt: Date.now(),
     mode: "ai",
     model: OPENAI_CHAT_INSIGHTS_MODEL,
     questionLikeCount: candidateLogs.length,
@@ -2326,11 +2289,8 @@ function normalizeAiQuestionTitle(value) {
   return title.endsWith("?") ? title : `${title}?`;
 }
 
-function getChatInsightsCacheKey(chatPayload, candidateLogs) {
-  const newest = candidateLogs.reduce((max, log) => Math.max(max, log.sentAt || 0, log.receivedAt || 0), 0);
-  const latestIds = candidateLogs.slice(0, 40).map((log) => log.id || `${log.jobId}:${log.userId}:${log.sentAt}`).join("|");
-  const digest = crypto.createHash("sha1").update(latestIds).digest("hex").slice(0, 16);
-  return `${chatPayload.universeId || "all"}:${candidateLogs.length}:${newest}:${digest}`;
+function getChatInsightsScopeKey(universeId) {
+  return cleanInteger(universeId) > 0 ? String(cleanInteger(universeId)) : "all";
 }
 
 function isQuestionLikeMessage(message) {
@@ -2339,94 +2299,6 @@ function isQuestionLikeMessage(message) {
   if (text.includes("?")) return true;
   if (/^(where|how|what|why|when|who|can|do|does|did|is|are|will|should)\b/.test(text)) return true;
   return /\b(help|stuck|lost|confused|cant|can't|cannot|wheres|where's|find|exit)\b/.test(text);
-}
-
-function normalizeChatQuestion(message) {
-  const rawText = String(message || "").trim();
-  const normalizedText = rawText
-    .toLowerCase()
-    .replace(/can't/g, "cant")
-    .replace(/where's/g, "where is")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!normalizedText) return { key: "", title: "" };
-
-  const tokens = normalizedText.split(" ").filter(Boolean);
-  const tokenSet = new Set(tokens);
-  let intent = "question";
-
-  if (tokenSet.has("where") || tokenSet.has("wheres") || tokenSet.has("find")) {
-    intent = "where";
-  } else if (tokenSet.has("how")) {
-    intent = "how";
-  } else if (tokenSet.has("what")) {
-    intent = "what";
-  } else if (tokenSet.has("why")) {
-    intent = "why";
-  } else if (["help", "stuck", "lost", "confused", "cant", "cannot", "exit"].some((word) => tokenSet.has(word))) {
-    intent = "help";
-  }
-
-  const stopWords = new Set([
-    "a", "an", "and", "are", "at", "bro", "can", "cant", "cannot", "did", "do", "does",
-    "find", "for", "get", "guys", "help", "how", "i", "in", "is", "it", "me", "my", "of",
-    "on", "please", "pls", "someone", "the", "this", "to", "u", "where", "wheres", "with",
-  ]);
-  const keywordTokens = tokens
-    .filter((token) => !stopWords.has(token))
-    .map((token) => normalizeQuestionToken(token))
-    .filter(Boolean);
-  const uniqueKeywords = [...new Set(keywordTokens)].slice(0, 6);
-  const keyText = uniqueKeywords.join(" ") || tokens.slice(0, 6).join(" ");
-  const key = `${intent}:${keyText}`;
-
-  return {
-    key,
-    title: formatQuestionTitle(rawText),
-  };
-}
-
-function normalizeQuestionToken(token) {
-  if (token === "swords") return "sword";
-  if (token === "exits") return "exit";
-  if (token === "quests") return "quest";
-  if (token === "bosses") return "boss";
-  if (token === "doors") return "door";
-  return token;
-}
-
-function formatQuestionTitle(message) {
-  const words = cleanString(message, 100)
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[?.!]+$/g, "")
-    .split(" ")
-    .filter(Boolean)
-    .map(formatQuestionWord);
-  const title = words.join(" ");
-  if (!title) return "Unclear question?";
-  return `${title[0].toUpperCase()}${title.slice(1)}?`;
-}
-
-function formatQuestionWord(word) {
-  const lower = word.toLowerCase();
-  const knownAcronyms = new Set(["ugc", "ui", "xp", "vip", "afk"]);
-  if (knownAcronyms.has(lower)) return lower.toUpperCase();
-  return lower;
-}
-
-function getQuestionTitleScore(message) {
-  const text = String(message || "").trim();
-  if (!text) return 0;
-
-  let score = 100;
-  if (text.includes("?")) score += 30;
-  if (/^(where|how|what|why|when|who|can|do|does|did|is|are|will|should)\b/i.test(text)) score += 20;
-  score -= Math.abs(text.length - 42);
-  score -= (text.match(/[^a-z0-9\s?.!']/gi) || []).length * 2;
-  return score;
 }
 
 function getLiveServers(filters = {}) {

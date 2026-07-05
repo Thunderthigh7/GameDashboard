@@ -43,7 +43,7 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
-const chatInsightsCountdown = document.querySelector("#chatInsightsCountdown");
+const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const playerDataPanel = document.querySelector("#playerDataPanel");
 const dataTarget = document.querySelector("#dataTarget");
@@ -60,8 +60,6 @@ const dataMetaSummary = document.querySelector("#dataMetaSummary");
 
 let serverRefreshTimer;
 let chatRefreshTimer;
-let chatCountdownTimer;
-let nextChatAnalysisRefreshAt = 0;
 let selectedUniverseId = "";
 let selectedPlayerIds = new Set();
 let targetPlayer = null;
@@ -72,7 +70,7 @@ let selectedDataStoreName = "";
 window.getSelectedUniverseId = () => selectedUniverseId;
 
 const SERVER_REFRESH_MS = 5000;
-const CHAT_ANALYSIS_REFRESH_MS = 5000;
+const CHAT_REFRESH_MS = 5000;
 
 init();
 
@@ -81,9 +79,7 @@ async function init() {
   await loadServers();
   await loadChatLogs();
   serverRefreshTimer = window.setInterval(loadServers, SERVER_REFRESH_MS);
-  chatRefreshTimer = window.setInterval(loadChatLogs, CHAT_ANALYSIS_REFRESH_MS);
-  chatCountdownTimer = window.setInterval(updateChatInsightsCountdown, 250);
-  scheduleNextChatAnalysisRefresh();
+  chatRefreshTimer = window.setInterval(loadChatLogs, CHAT_REFRESH_MS);
 
   const { account } = await request("/api/me");
 
@@ -112,8 +108,8 @@ refreshExperiencesButton.addEventListener("click", loadExperiences);
 refreshServersButton.addEventListener("click", loadServers);
 refreshChatLogsButton.addEventListener("click", () => {
   loadChatLogs();
-  scheduleNextChatAnalysisRefresh();
 });
+runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
 refreshDataStoresButton.addEventListener("click", loadDataStores);
 loadPlayerDataButton.addEventListener("click", loadPlayerData);
 savePlayerDataButton.addEventListener("click", savePlayerData);
@@ -278,8 +274,6 @@ async function loadChatLogs() {
   } catch (error) {
     chatLogsStatus.textContent = error.message;
     loadChatInsights();
-  } finally {
-    scheduleNextChatAnalysisRefresh();
   }
 }
 
@@ -287,42 +281,46 @@ async function loadChatInsights() {
   try {
     const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
     const data = await request(`/api/chat-insights${query}`);
-    chatInsightsMode.textContent = data.mode === "local" ? "Local analysis" : "AI analysis";
-
-    if (!data.questions.length) {
-      chatInsightsStatus.textContent = data.sourceLogCount
-        ? `Analyzed ${data.analyzedCount || 0} recent messages; no repeated questions found yet.`
-        : "No chat data available for question analysis yet.";
-      commonQuestionList.innerHTML = "";
-      return;
-    }
-
-    chatInsightsStatus.textContent = `Found ${data.questions.length} question group${data.questions.length === 1 ? "" : "s"} from ${data.questionLikeCount || 0} question-like messages.`;
-    commonQuestionList.innerHTML = data.questions.map(renderCommonQuestion).join("");
+    renderChatInsights(data);
   } catch (error) {
     chatInsightsStatus.textContent = error.message;
     commonQuestionList.innerHTML = "";
   }
 }
 
-function scheduleNextChatAnalysisRefresh() {
-  nextChatAnalysisRefreshAt = Date.now() + CHAT_ANALYSIS_REFRESH_MS;
-  updateChatInsightsCountdown();
+async function runChatInsightsAnalysis() {
+  runChatInsightsButton.disabled = true;
+  chatInsightsMode.textContent = "Sending to AI";
+  chatInsightsStatus.textContent = "Sending recent question-like chat to AI...";
+
+  try {
+    const query = selectedUniverseId ? `?universeId=${encodeURIComponent(selectedUniverseId)}` : "";
+    const data = await request(`/api/chat-insights/analyze${query}`, { method: "POST" });
+    renderChatInsights(data);
+  } catch (error) {
+    chatInsightsStatus.textContent = error.message;
+    chatInsightsMode.textContent = "AI failed";
+  } finally {
+    runChatInsightsButton.disabled = false;
+  }
 }
 
-function updateChatInsightsCountdown() {
-  if (!chatInsightsCountdown) return;
+function renderChatInsights(data) {
+  chatInsightsMode.textContent = data.mode === "ai" ? "AI analysis" : "Not analyzed";
 
-  if (!nextChatAnalysisRefreshAt) {
-    chatInsightsCountdown.textContent = "Updates soon";
+  if (!data.questions.length) {
+    chatInsightsStatus.textContent = data.sourceLogCount
+      ? `No AI analysis saved yet. ${data.questionLikeCount || 0} question-like messages are ready to send.`
+      : "No chat data available for AI analysis yet.";
+    commonQuestionList.innerHTML = "";
     return;
   }
 
-  const remainingSeconds = Math.max(0, Math.ceil((nextChatAnalysisRefreshAt - Date.now()) / 1000));
-  chatInsightsCountdown.textContent = remainingSeconds > 0
-    ? `Updates in ${remainingSeconds}s`
-    : "Updating...";
+  const generatedText = data.generatedAt ? ` Last run: ${formatDateTime(data.generatedAt)}.` : "";
+  chatInsightsStatus.textContent = `AI grouped ${data.questions.length} question theme${data.questions.length === 1 ? "" : "s"} from ${data.questionLikeCount || 0} question-like messages.${generatedText}`;
+  commonQuestionList.innerHTML = data.questions.map(renderCommonQuestion).join("");
 }
+
 
 async function loadDataStores() {
   if (!selectedUniverseId) {
