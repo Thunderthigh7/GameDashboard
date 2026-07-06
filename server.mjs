@@ -37,6 +37,7 @@ const MAX_LEAVE_SAMPLES_RESPONSE = 5000;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_AI_ANALYSIS_AREAS = 5;
 const AI_ANALYSIS_CLUSTER_RADIUS = 44;
+const AI_AREA_OUTCOME_WINDOW_MS = 60 * 1000;
 const MAX_MAP_PARTS_PER_CHUNK = 1000;
 const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
 const ROBLOX_HEATMAP_BIN_SIZE = 8;
@@ -1125,6 +1126,7 @@ function getAiAreaAnalysisWithoutStoredInsights(filters = {}) {
       leaveCount: cluster.typeCounts.leave || 0,
       chatCount: cluster.typeCounts.chat || 0,
       topMessages: cluster.topMessages,
+      evidence: cluster.evidence,
     })),
   };
 }
@@ -1192,6 +1194,7 @@ function createAiAnalysisEvent(type, sample, weight) {
     y,
     z,
     weight,
+    userId: cleanInteger(sample.userId),
     message: sample.message || "",
     timestamp: sample.sampledAt || sample.sentAt || sample.receivedAt || 0,
   };
@@ -1234,6 +1237,7 @@ function createAiAnalysisCluster(event) {
     sampleCount: 0,
     typeCounts: {},
     messages: [],
+    events: [],
   };
   addEventToAiAnalysisCluster(cluster, event);
   return cluster;
@@ -1247,10 +1251,17 @@ function addEventToAiAnalysisCluster(cluster, event) {
   cluster.weight = nextWeight;
   cluster.sampleCount += 1;
   cluster.typeCounts[event.type] = (cluster.typeCounts[event.type] || 0) + 1;
+  cluster.events.push({
+    type: event.type,
+    userId: event.userId || 0,
+    message: event.message || "",
+    timestamp: event.timestamp || 0,
+  });
 
   if (event.message) {
     cluster.messages.push({
       message: event.message,
+      userId: event.userId || 0,
       timestamp: event.timestamp,
     });
   }
@@ -1264,28 +1275,105 @@ function scoreAiAnalysisClusters(clusters) {
     const chatCount = cluster.typeCounts.chat || 0;
     const frictionScore = deathCount * 4 + leaveCount * 5 + chatCount * 2.5;
     const trafficScore = Math.sqrt(movementCount);
+    const evidence = buildAiAreaEvidence(cluster.events, cluster.typeCounts);
 
     return {
       ...cluster,
-      score: trafficScore + frictionScore,
-      topMessages: getTopAiAnalysisMessages(cluster.messages),
+      score: trafficScore + frictionScore + evidence.outcomeChatCount * 2,
+      topMessages: evidence.topMessages,
+      evidence,
     };
   });
 }
 
-function getTopAiAnalysisMessages(messages) {
+function buildAiAreaEvidence(events, typeCounts = {}) {
+  const cleanEvents = events
+    .filter((event) => event.timestamp > 0)
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const chatEvents = cleanEvents.filter((event) => event.type === "chat" && cleanString(event.message, 180));
+  const deathEvents = cleanEvents.filter((event) => event.type === "death");
+  const leaveEvents = cleanEvents.filter((event) => event.type === "leave");
+  const topMessages = getTopAiAnalysisMessages(chatEvents, deathEvents, leaveEvents);
+  const firstSeenAt = cleanEvents[0]?.timestamp || 0;
+  const lastSeenAt = cleanEvents[cleanEvents.length - 1]?.timestamp || 0;
+  const chatBeforeDeathCount = countChatsBeforeOutcomes(chatEvents, deathEvents);
+  const chatBeforeLeaveCount = countChatsBeforeOutcomes(chatEvents, leaveEvents);
+  const notes = [];
+
+  if (chatBeforeLeaveCount > 0) {
+    notes.push(`${chatBeforeLeaveCount} local chat message${chatBeforeLeaveCount === 1 ? "" : "s"} happened within ${Math.round(AI_AREA_OUTCOME_WINDOW_MS / 1000)} seconds before a leave.`);
+  }
+
+  if (chatBeforeDeathCount > 0) {
+    notes.push(`${chatBeforeDeathCount} local chat message${chatBeforeDeathCount === 1 ? "" : "s"} happened within ${Math.round(AI_AREA_OUTCOME_WINDOW_MS / 1000)} seconds before a death.`);
+  }
+
+  if ((typeCounts.leave || 0) > 0) {
+    notes.push(`${typeCounts.leave} leave sample${typeCounts.leave === 1 ? "" : "s"} occurred in this area.`);
+  }
+
+  if ((typeCounts.death || 0) > 0) {
+    notes.push(`${typeCounts.death} death sample${typeCounts.death === 1 ? "" : "s"} occurred in this area.`);
+  }
+
+  if ((typeCounts.movement || 0) > 0 && !(typeCounts.leave || 0) && !(typeCounts.death || 0)) {
+    notes.push(`${typeCounts.movement} movement sample${typeCounts.movement === 1 ? "" : "s"} indicate traffic without a matching failure signal yet.`);
+  }
+
+  return {
+    firstSeenAt: firstSeenAt || null,
+    lastSeenAt: lastSeenAt || null,
+    chatBeforeLeaveCount,
+    chatBeforeDeathCount,
+    outcomeChatCount: chatBeforeLeaveCount + chatBeforeDeathCount,
+    topMessages,
+    notes: notes.slice(0, 5),
+  };
+}
+
+function countChatsBeforeOutcomes(chatEvents, outcomeEvents) {
+  let count = 0;
+  for (const chat of chatEvents) {
+    if (hasOutcomeAfterChat(chat, outcomeEvents)) count += 1;
+  }
+
+  return count;
+}
+
+function hasOutcomeAfterChat(chat, outcomeEvents) {
+  return outcomeEvents.some((outcome) => {
+    if (outcome.timestamp <= chat.timestamp) return false;
+    if (outcome.timestamp - chat.timestamp > AI_AREA_OUTCOME_WINDOW_MS) return false;
+    if (chat.userId > 0 && outcome.userId > 0 && chat.userId !== outcome.userId) return false;
+    return true;
+  });
+}
+
+function getTopAiAnalysisMessages(messages, deathEvents = [], leaveEvents = []) {
   const counts = new Map();
   for (const entry of messages) {
     const text = cleanString(entry.message, 180);
     if (!text) continue;
-    const existing = counts.get(text) || { message: text, count: 0, latestAt: 0 };
+    const existing = counts.get(text) || {
+      message: text,
+      count: 0,
+      latestAt: 0,
+      beforeDeathCount: 0,
+      beforeLeaveCount: 0,
+    };
     existing.count += 1;
     existing.latestAt = Math.max(existing.latestAt, entry.timestamp || 0);
+    if (hasOutcomeAfterChat(entry, deathEvents)) existing.beforeDeathCount += 1;
+    if (hasOutcomeAfterChat(entry, leaveEvents)) existing.beforeLeaveCount += 1;
     counts.set(text, existing);
   }
 
   return [...counts.values()]
-    .sort((a, b) => b.count - a.count || b.latestAt - a.latestAt)
+    .sort((a, b) => (
+      (b.beforeDeathCount + b.beforeLeaveCount) - (a.beforeDeathCount + a.beforeLeaveCount)
+      || b.count - a.count
+      || b.latestAt - a.latestAt
+    ))
     .slice(0, 3);
 }
 
@@ -1558,6 +1646,7 @@ async function getAiAreaInsights(areaPayload) {
     chatCount: area.chatCount,
     score: area.score,
     topMessages: area.topMessages,
+    evidence: area.evidence,
   }));
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -1601,6 +1690,11 @@ async function getAiAreaInsights(areaPayload) {
                   "Use neutral names like Spawn Path or Confusing Corner when no specific place name is supported.",
                   "summary should explain what the signals suggest.",
                   "recommendation should be a concrete design or analytics follow-up.",
+                  "Use evidence.chatBeforeLeaveCount and evidence.chatBeforeDeathCount when explaining likely causes.",
+                  "If evidence shows chat shortly before a leave or death, treat that as stronger than generic nearby traffic.",
+                  "Use evidence.notes as the compact explanation of supporting signals.",
+                  "Use topMessages as player testimony, especially messages with beforeLeaveCount or beforeDeathCount.",
+                  "Mention timing only when the evidence fields support it.",
                   "insightType must be one of traffic, dropoff, danger, confusion, mixed.",
                 ],
                 areas: candidateAreas,

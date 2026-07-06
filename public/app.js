@@ -11,6 +11,7 @@ const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
+const refreshMovementButton = document.querySelector("#refreshMovementButton");
 const chatLogCount = document.querySelector("#chatLogCount");
 const universeTotalMetric = document.querySelector("#universeTotalMetric");
 const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
@@ -34,6 +35,7 @@ const protectedDashboardPanels = document.querySelectorAll(
 );
 
 let chatRefreshTimer;
+let signalRefreshTimer;
 let selectedUniverseId = "";
 let selectedChatLogId = "";
 let knownUniverses = [];
@@ -44,6 +46,7 @@ window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
 
 const CHAT_REFRESH_MS = 5000;
+const SIGNAL_REFRESH_MS = 15000;
 const SIGNAL_CLUSTER_RADIUS = 44;
 const MAX_SIGNAL_AREAS = 3;
 
@@ -69,6 +72,7 @@ function bindEvents() {
   refreshUniversesButton.addEventListener("click", loadUniverses);
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
+  refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
@@ -186,6 +190,7 @@ function setAuthenticated(value) {
 
   if (!authenticated) {
     stopChatRefresh();
+    stopSignalRefresh();
     chatLogList.innerHTML = "";
     commonQuestionList.innerHTML = "";
     chatLogCount.textContent = "0";
@@ -211,6 +216,7 @@ async function loadDashboardData() {
   await loadSignalAreaCards();
   renderActiveView();
   startChatRefresh();
+  startSignalRefresh();
   window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
     detail: { universeId: selectedUniverseId },
   }));
@@ -267,6 +273,18 @@ function stopChatRefresh() {
   if (chatRefreshTimer) {
     window.clearInterval(chatRefreshTimer);
     chatRefreshTimer = null;
+  }
+}
+
+function startSignalRefresh() {
+  stopSignalRefresh();
+  signalRefreshTimer = window.setInterval(loadSignalAreaCards, SIGNAL_REFRESH_MS);
+}
+
+function stopSignalRefresh() {
+  if (signalRefreshTimer) {
+    window.clearInterval(signalRefreshTimer);
+    signalRefreshTimer = null;
   }
 }
 
