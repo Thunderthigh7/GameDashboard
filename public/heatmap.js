@@ -521,8 +521,6 @@ function renderScene(samples, mapSnapshot, options = {}) {
     updateCamera();
   }
 
-  openDefaultAiAreaCard(entries);
-
   if (focusedSignalArea && activeHeatmapMode !== "ai-analysis") {
     focusCameraOnSignalArea(focusedSignalArea);
   }
@@ -1038,12 +1036,6 @@ function openAiAreaCardFromPointer(event) {
   }
 
   updateAiAreaCard(area, marker, { focusCamera: true });
-}
-
-function openDefaultAiAreaCard(entries) {
-  if (activeHeatmapMode !== "ai-analysis" || !entries.length || !sceneCenter) return;
-  const marker = getAiAreaMarkerForArea(entries[0]);
-  updateAiAreaCard(entries[0], marker, { focusCamera: true });
 }
 
 function hideAiAreaCard() {
