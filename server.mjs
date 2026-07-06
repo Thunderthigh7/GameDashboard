@@ -51,6 +51,13 @@ const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPE
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
 const MONGO_HYDRATE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const ANALYTICS_COLLECTION_RETENTION_MS = {
+  chat_logs: 14 * 24 * 60 * 60 * 1000,
+  movement_samples: 24 * 60 * 60 * 1000,
+  movement_rollups: 14 * 24 * 60 * 60 * 1000,
+  death_samples: 14 * 24 * 60 * 60 * 1000,
+  leave_samples: 14 * 24 * 60 * 60 * 1000,
+};
 
 const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
@@ -264,6 +271,7 @@ async function initializeMongoStorage() {
     if (!db) return;
 
     await ensureMongoIndexes(db);
+    await pruneExpiredAnalyticsDocuments(db);
     await hydrateRuntimeFromMongo(db);
     mongoStatus.connected = true;
     mongoStatus.hydrated = true;
@@ -315,7 +323,20 @@ async function ensureAnalyticsIndexes(db, collectionName, timeField) {
     collection.createIndex({ id: 1 }, { unique: true }),
     collection.createIndex({ universeId: 1, [timeField]: -1 }),
     collection.createIndex({ receivedAt: -1 }),
+    collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
+}
+
+async function pruneExpiredAnalyticsDocuments(db) {
+  const now = Date.now();
+  await Promise.all(Object.entries(ANALYTICS_COLLECTION_RETENTION_MS).map(([collectionName, retentionMs]) => (
+    db.collection(collectionName).deleteMany({
+      $or: [
+        { expiresAt: { $lte: new Date(now) } },
+        { expiresAt: { $exists: false }, receivedAt: { $lt: now - retentionMs } },
+      ],
+    })
+  )));
 }
 
 async function hydrateRuntimeFromMongo(db) {
@@ -387,6 +408,8 @@ async function persistPresenceToMongo(presence) {
 async function upsertAnalyticsDocuments(db, collectionName, documents) {
   if (!Array.isArray(documents) || !documents.length) return;
 
+  const retentionMs = ANALYTICS_COLLECTION_RETENTION_MS[collectionName] || MONGO_HYDRATE_WINDOW_MS;
+  const storedAt = new Date();
   const operations = documents
     .filter((document) => cleanString(document?.id, 180))
     .map((document) => ({
@@ -395,7 +418,8 @@ async function upsertAnalyticsDocuments(db, collectionName, documents) {
         update: {
           $setOnInsert: {
             ...document,
-            storedAt: Date.now(),
+            storedAt,
+            expiresAt: new Date((cleanInteger(document.receivedAt) || Date.now()) + retentionMs),
           },
         },
         upsert: true,
