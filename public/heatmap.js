@@ -329,7 +329,7 @@ function setHeatmapMode(mode, options = {}) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
 
-  if (options.forcePoints) {
+  if (options.forcePoints || activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
     activeRenderMode = "points";
     for (const button of renderButtons) {
       button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
@@ -340,7 +340,9 @@ function setHeatmapMode(mode, options = {}) {
 }
 
 function setRenderMode(mode) {
-  activeRenderMode = mode === "heatmap" ? "heatmap" : "points";
+  activeRenderMode = mode === "heatmap" && activeHeatmapMode !== "deaths" && activeHeatmapMode !== "leaves"
+    ? "heatmap"
+    : "points";
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
@@ -517,6 +519,10 @@ function getSampleEntries(samples, mapSnapshot = null) {
     return getChatSampleEntries(samples);
   }
 
+  if (activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
+    return getSignalAreaEntries(samples, activeHeatmapMode);
+  }
+
   return getSampleBins(samples);
 }
 
@@ -558,6 +564,56 @@ function getSampleBins(samples) {
   }
 
   return [...bins.values()];
+}
+
+function getSignalAreaEntries(samples, mode) {
+  const radius = 44;
+  const radiusSq = radius * radius;
+  const clusters = [];
+
+  for (const sample of samples) {
+    const x = Number(sample.x);
+    const y = Number(sample.y);
+    const z = Number(sample.z);
+    if (![x, y, z].every(Number.isFinite)) continue;
+
+    let nearest = null;
+    let nearestDistanceSq = Infinity;
+    for (const cluster of clusters) {
+      const dx = x - cluster.x;
+      const dz = z - cluster.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq <= radiusSq && distanceSq < nearestDistanceSq) {
+        nearest = cluster;
+        nearestDistanceSq = distanceSq;
+      }
+    }
+
+    if (nearest) {
+      const nextCount = nearest.count + 1;
+      nearest.x = (nearest.x * nearest.count + x) / nextCount;
+      nearest.y = (nearest.y * nearest.count + y) / nextCount;
+      nearest.z = (nearest.z * nearest.count + z) / nextCount;
+      nearest.count = nextCount;
+    } else {
+      clusters.push({ x, y, z, count: 1 });
+    }
+  }
+
+  const topClusters = clusters
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+  const maxCount = topClusters.reduce((max, area) => Math.max(max, area.count), 1);
+  const labelPrefix = mode === "deaths" ? "Death Area" : "Drop-off Area";
+
+  return topClusters.map((area, index) => ({
+    ...area,
+    id: `${mode}-area-${index + 1}`,
+    label: `${labelPrefix} ${index + 1}`,
+    rank: index + 1,
+    score: clamp(area.count / maxCount, 0.12, 1),
+    signalMode: mode,
+  }));
 }
 
 function getAiAnalysisAreaEntries(samples, mapSnapshot) {
@@ -634,6 +690,11 @@ function renderSamples(entries, center) {
     return;
   }
 
+  if (activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
+    renderSignalAreas(entries, center, activeHeatmapMode);
+    return;
+  }
+
   if (activeRenderMode === "heatmap") {
     renderDensityHeatmap(entries, center);
     return;
@@ -670,6 +731,73 @@ function renderSamples(entries, center) {
   points = new THREE.Points(geometry, material);
   points.userData.entries = entries;
   scene.add(points);
+}
+
+function renderSignalAreas(entries, center, mode) {
+  aiAreaGroup = new THREE.Group();
+  aiAreaGroup.name = mode === "deaths" ? "DeathAreaMarkers" : "DropOffAreaMarkers";
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    const marker = createSignalAreaMarker(entry, mode);
+    marker.position.set(entry.x - center.x, entry.y - center.y + 8, entry.z - center.z);
+    aiAreaGroup.add(marker);
+  }
+
+  scene.add(aiAreaGroup);
+}
+
+function createSignalAreaMarker(entry, mode) {
+  const group = new THREE.Group();
+  const color = getSignalAreaColor(entry.score || 1, mode);
+  const glowColor = new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
+  const isDeath = mode === "deaths";
+
+  const glowGeometry = new THREE.SphereGeometry(isDeath ? 16 : 15, 24, 14);
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: isDeath ? 0.2 : 0.18,
+    depthWrite: false,
+  });
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  glow.scale.set(isDeath ? 2.1 : 2.45, 0.2, isDeath ? 2.1 : 1.75);
+  group.add(glow);
+
+  const ringGeometry = new THREE.RingGeometry(isDeath ? 7 : 9, isDeath ? 18 : 20, 36);
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: isDeath ? 0.38 : 0.32,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 1.2;
+  group.add(ring);
+
+  const coreGeometry = isDeath
+    ? new THREE.ConeGeometry(6.2, 16, 4)
+    : new THREE.BoxGeometry(11, 11, 11);
+  const coreMaterial = new THREE.MeshBasicMaterial({
+    color: glowColor,
+    transparent: true,
+    opacity: 0.96,
+  });
+  const core = new THREE.Mesh(coreGeometry, coreMaterial);
+  core.position.y = isDeath ? 8 : 7;
+  if (!isDeath) {
+    core.rotation.y = Math.PI / 4;
+    core.rotation.z = Math.PI / 8;
+  }
+  group.add(core);
+
+  const badge = createNumberSprite(String(entry.rank || 1), color);
+  badge.position.y = 24;
+  group.add(badge);
+
+  return group;
 }
 
 function renderAiAnalysisAreas(entries, center) {
@@ -1096,6 +1224,23 @@ function getHeatmapRampColor(value) {
 
 function getTrafficRampColor(value) {
   return getHeatmapRampColor(clamp(value, 0, 1));
+}
+
+function getSignalAreaColor(value, mode) {
+  const intensity = clamp(value, 0, 1);
+  if (mode === "deaths") {
+    return {
+      r: Math.round(lerp(248, 239, intensity)),
+      g: Math.round(lerp(113, 68, intensity)),
+      b: Math.round(lerp(113, 68, intensity)),
+    };
+  }
+
+  return {
+    r: Math.round(lerp(251, 245, intensity)),
+    g: Math.round(lerp(191, 128, intensity)),
+    b: Math.round(lerp(36, 11, intensity)),
+  };
 }
 
 function getSampleColor(intensity, entry = {}) {
