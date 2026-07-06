@@ -52,6 +52,7 @@ let selectedChatLogId = "";
 let hoveredAiAreaMarker = null;
 let selectedAiAreaMarker = null;
 let selectedAiArea = null;
+let focusedSignalArea = null;
 let heatmapRefreshTimer = null;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
@@ -112,6 +113,11 @@ if (canvas) {
     if (activeHeatmapMode === "ai-analysis") {
       loadHeatmap();
     }
+  });
+  window.addEventListener("dashboard:focusHeatmapArea", (event) => {
+    const mode = event.detail?.mode || "";
+    const area = event.detail?.area || null;
+    setHeatmapMode(mode, { focusArea: area, forcePoints: true });
   });
   window.addEventListener("resize", resizeScene);
 }
@@ -322,7 +328,15 @@ function setHeatmapMode(mode, options = {}) {
   for (const button of modeButtons) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
-  loadHeatmap();
+
+  if (options.forcePoints) {
+    activeRenderMode = "points";
+    for (const button of renderButtons) {
+      button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
+    }
+  }
+
+  return loadHeatmap({ focusArea: options.focusArea || null });
 }
 
 function setRenderMode(mode) {
@@ -457,6 +471,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
   const entries = getSampleEntries(samples, mapSnapshot);
   latestEntries = entries;
   hideAiAreaCard();
+  focusedSignalArea = options.focusArea || null;
   latestBounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
   const dataCenter = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
   latestCenter = dataCenter;
@@ -472,6 +487,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
   if (entries.length) {
     renderSamples(entries, sceneCenter);
     renderSelectedChatMarker(entries, sceneCenter);
+    renderFocusedSignalArea(sceneCenter);
   }
 
   if (latestBounds) {
@@ -486,6 +502,10 @@ function renderScene(samples, mapSnapshot, options = {}) {
   }
 
   openDefaultAiAreaCard(entries);
+
+  if (focusedSignalArea && activeHeatmapMode !== "ai-analysis") {
+    focusCameraOnSignalArea(focusedSignalArea);
+  }
 }
 
 function getSampleEntries(samples, mapSnapshot = null) {
@@ -937,6 +957,24 @@ function focusCameraOnAiAreaMarker(marker) {
   updateCamera();
 }
 
+function focusCameraOnSignalArea(area) {
+  if (!area || !sceneCenter || !panTarget) return;
+
+  const x = Number(area.x);
+  const y = Number(area.y);
+  const z = Number(area.z);
+  if (![x, y, z].every(Number.isFinite)) return;
+
+  panTarget.set(x - sceneCenter.x, Math.max(0, y - sceneCenter.y), z - sceneCenter.z);
+
+  if (latestBounds) {
+    const focusDistance = clamp(Math.max(latestBounds.width, latestBounds.depth) * 0.68, 170, 900);
+    distance = Math.min(distance, focusDistance);
+  }
+
+  updateCamera();
+}
+
 function getAiAreaSummary(area) {
   if (area.summary) {
     return area.recommendation
@@ -1106,6 +1144,26 @@ function renderSelectedChatMarker(entries, center) {
 
   selectedMarker = new THREE.Mesh(geometry, material);
   selectedMarker.position.set(entry.x - center.x, entry.y - center.y, entry.z - center.z);
+  scene.add(selectedMarker);
+}
+
+function renderFocusedSignalArea(center) {
+  if (!focusedSignalArea || activeHeatmapMode === "ai-analysis") return;
+
+  const x = Number(focusedSignalArea.x);
+  const y = Number(focusedSignalArea.y);
+  const z = Number(focusedSignalArea.z);
+  if (![x, y, z].every(Number.isFinite)) return;
+
+  const geometry = new THREE.SphereGeometry(8, 24, 16);
+  const material = new THREE.MeshBasicMaterial({
+    color: activeHeatmapMode === "deaths" ? 0xef4444 : 0xf59e0b,
+    transparent: true,
+    opacity: 0.96,
+  });
+
+  selectedMarker = new THREE.Mesh(geometry, material);
+  selectedMarker.position.set(x - center.x, y - center.y + 7, z - center.z);
   scene.add(selectedMarker);
 }
 

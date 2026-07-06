@@ -26,6 +26,8 @@ const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
 const viewPanels = document.querySelectorAll("[data-view-panel]");
+const dropOffAreaList = document.querySelector("#dropOffAreaList");
+const deathAreaList = document.querySelector("#deathAreaList");
 const protectedDashboardPanels = document.querySelectorAll(
   ".sidebar, .topbar, #authControls, .viewPage"
 );
@@ -41,6 +43,8 @@ window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
 
 const CHAT_REFRESH_MS = 5000;
+const SIGNAL_CLUSTER_RADIUS = 44;
+const MAX_SIGNAL_AREAS = 3;
 
 init();
 
@@ -65,6 +69,8 @@ function bindEvents() {
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
+  movementFromFilter?.addEventListener("change", loadSignalAreaCards);
+  movementToFilter?.addEventListener("change", loadSignalAreaCards);
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -88,6 +94,18 @@ function bindEvents() {
 
     event.preventDefault();
     selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
+  });
+
+  dropOffAreaList?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-signal-area-index]");
+    if (!item) return;
+    focusSignalAreaFromElement(item);
+  });
+
+  deathAreaList?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-signal-area-index]");
+    if (!item) return;
+    focusSignalAreaFromElement(item);
   });
 
   window.addEventListener("dashboard:chatPointSelected", (event) => {
@@ -157,6 +175,8 @@ function setAuthenticated(value) {
     universeSelect.disabled = true;
     chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
     chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
+    renderSignalAreas(dropOffAreaList, [], "leaves");
+    renderSignalAreas(deathAreaList, [], "deaths");
     return;
   }
 
@@ -166,6 +186,7 @@ function setAuthenticated(value) {
 async function loadDashboardData() {
   await loadUniverses();
   await loadChatLogs();
+  await loadSignalAreaCards();
   renderActiveView();
   startChatRefresh();
   window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
@@ -241,6 +262,7 @@ async function loadUniverses() {
       universeSelect.innerHTML = `<option value="">No universe data yet</option>`;
       universesStatus.textContent = "No universe IDs are sending data yet.";
       updateSelectedUniverse();
+      loadSignalAreaCards();
       return;
     }
 
@@ -279,8 +301,143 @@ function selectUniverse(value) {
   selectedChatLogId = "";
   updateSelectedUniverse();
   loadChatLogs();
+  loadSignalAreaCards();
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
+  }));
+}
+
+async function loadSignalAreaCards() {
+  if (!authenticated) return;
+
+  if (!selectedUniverseId) {
+    renderSignalAreas(dropOffAreaList, [], "leaves");
+    renderSignalAreas(deathAreaList, [], "deaths");
+    return;
+  }
+
+  renderSignalLoading(dropOffAreaList, "drop-off");
+  renderSignalLoading(deathAreaList, "death");
+
+  const query = buildSignalAreaQuery();
+  const [leaveResult, deathResult] = await Promise.allSettled([
+    request(`/api/leave-heatmap${query}`),
+    request(`/api/death-heatmap${query}`),
+  ]);
+
+  if (leaveResult.status === "fulfilled") {
+    renderSignalAreas(dropOffAreaList, clusterSignalSamples(leaveResult.value.samples || []), "leaves");
+  } else {
+    handleAuthError(leaveResult.reason);
+    renderSignalError(dropOffAreaList, leaveResult.reason.message);
+  }
+
+  if (deathResult.status === "fulfilled") {
+    renderSignalAreas(deathAreaList, clusterSignalSamples(deathResult.value.samples || []), "deaths");
+  } else {
+    handleAuthError(deathResult.reason);
+    renderSignalError(deathAreaList, deathResult.reason.message);
+  }
+}
+
+function buildSignalAreaQuery() {
+  const params = new URLSearchParams();
+  params.set("universeId", selectedUniverseId);
+
+  const from = getDateTimeMs(movementFromFilter?.value);
+  if (from) params.set("from", String(from));
+
+  const to = getDateTimeMs(movementToFilter?.value);
+  if (to) params.set("to", String(to));
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function clusterSignalSamples(samples) {
+  const clusters = [];
+  const radiusSq = SIGNAL_CLUSTER_RADIUS * SIGNAL_CLUSTER_RADIUS;
+
+  for (const sample of samples) {
+    const x = Number(sample.x);
+    const y = Number(sample.y);
+    const z = Number(sample.z);
+    if (![x, y, z].every(Number.isFinite)) continue;
+
+    let nearest = null;
+    let nearestDistanceSq = Infinity;
+    for (const cluster of clusters) {
+      const dx = x - cluster.x;
+      const dz = z - cluster.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq <= radiusSq && distanceSq < nearestDistanceSq) {
+        nearest = cluster;
+        nearestDistanceSq = distanceSq;
+      }
+    }
+
+    if (nearest) {
+      const nextCount = nearest.count + 1;
+      nearest.x = (nearest.x * nearest.count + x) / nextCount;
+      nearest.y = (nearest.y * nearest.count + y) / nextCount;
+      nearest.z = (nearest.z * nearest.count + z) / nextCount;
+      nearest.count = nextCount;
+    } else {
+      clusters.push({ x, y, z, count: 1 });
+    }
+  }
+
+  return clusters
+    .sort((a, b) => b.count - a.count)
+    .slice(0, MAX_SIGNAL_AREAS)
+    .map((cluster, index) => ({ ...cluster, rank: index + 1 }));
+}
+
+function renderSignalLoading(container, label) {
+  if (!container) return;
+  container.innerHTML = `<p class="status">Loading ${escapeHtml(label)} areas...</p>`;
+}
+
+function renderSignalError(container, message) {
+  if (!container) return;
+  container.innerHTML = `<p class="status">${escapeHtml(message)}</p>`;
+}
+
+function renderSignalAreas(container, areas, mode) {
+  if (!container) return;
+
+  if (!areas.length) {
+    const label = mode === "deaths" ? "death" : "drop-off";
+    container.innerHTML = `<p class="status">No ${label} areas tracked yet.</p>`;
+    return;
+  }
+
+  const label = mode === "deaths" ? "Death" : "Drop-off";
+  container.innerHTML = areas.map((area) => `
+    <button class="signalAreaItem ${mode === "deaths" ? "deathSignal" : "leaveSignal"}" type="button"
+      data-signal-area-index="${escapeHtml(String(area.rank - 1))}"
+      data-signal-mode="${escapeHtml(mode)}"
+      data-signal-x="${escapeHtml(String(area.x))}"
+      data-signal-y="${escapeHtml(String(area.y))}"
+      data-signal-z="${escapeHtml(String(area.z))}">
+      <span>${escapeHtml(label)} area ${area.rank}</span>
+      <b>${escapeHtml(String(area.count))}</b>
+    </button>
+  `).join("");
+}
+
+function focusSignalAreaFromElement(item) {
+  const mode = item.dataset.signalMode === "deaths" ? "deaths" : "leaves";
+  const x = Number(item.dataset.signalX);
+  const y = Number(item.dataset.signalY);
+  const z = Number(item.dataset.signalZ);
+  if (![x, y, z].every(Number.isFinite)) return;
+
+  window.dispatchEvent(new CustomEvent("dashboard:focusHeatmapArea", {
+    detail: {
+      mode,
+      area: { x, y, z },
+    },
   }));
 }
 

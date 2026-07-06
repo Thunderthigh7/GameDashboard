@@ -154,21 +154,17 @@
             <aside class="insightRail">
               <article class="panel dataCard">
                 <h2>Top drop-off rate</h2>
-                <p>Uses leave heatmap data. Name grouping is placeholder until zones are configured.</p>
-                <div class="barList">
-                  <div><span>Leave samples</span><b id="leavePlaceholderMetric">Tracked</b></div>
-                  <div><span>Death samples</span><b>Tracked</b></div>
-                  <div><span>Movement samples</span><b>Tracked</b></div>
+                <p>Highest leave clusters from raw player exit locations.</p>
+                <div class="signalAreaList" id="dropOffAreaList">
+                  <p class="status">Waiting for leave samples...</p>
                 </div>
               </article>
 
               <article class="panel dataCard placeholderFeature">
                 <h2>Most common death areas</h2>
-                <p>Placeholder until death area grouping is wired into the dashboard.</p>
-                <div class="barList">
-                  <div><span>Area 1</span><b>Coming soon</b></div>
-                  <div><span>Area 2</span><b>Coming soon</b></div>
-                  <div><span>Area 3</span><b>Coming soon</b></div>
+                <p>Highest death clusters from raw death event locations.</p>
+                <div class="signalAreaList" id="deathAreaList">
+                  <p class="status">Waiting for death samples...</p>
                 </div>
               </article>
             </aside>
