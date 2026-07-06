@@ -235,7 +235,10 @@ async function loadHeatmap(options = {}) {
     latestEntries = [];
     sampleCount.textContent = "0 samples";
     statusLine.textContent = "Select universe first";
-    renderScene([], null, { resetView: Boolean(options.resetView) });
+    renderScene([], null, {
+      resetView: Boolean(options.resetView),
+      suppressFallbackAreas: true,
+    });
     return;
   }
 
@@ -470,7 +473,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
     mapGroup = null;
   }
 
-  const entries = getSampleEntries(samples, mapSnapshot);
+  const entries = getSampleEntries(samples, mapSnapshot, options);
   latestEntries = entries;
   hideAiAreaCard();
   focusedSignalArea = options.focusArea || null;
@@ -510,8 +513,9 @@ function renderScene(samples, mapSnapshot, options = {}) {
   }
 }
 
-function getSampleEntries(samples, mapSnapshot = null) {
+function getSampleEntries(samples, mapSnapshot = null, options = {}) {
   if (activeHeatmapMode === "ai-analysis") {
+    if (options.suppressFallbackAreas) return [];
     return getAiAnalysisAreaEntries(samples, mapSnapshot);
   }
 
