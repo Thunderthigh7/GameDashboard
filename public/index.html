@@ -156,6 +156,14 @@
 
             <aside class="insightRail">
               <article class="panel dataCard">
+                <h2>Top movement areas</h2>
+                <p>Highest traffic clusters from raw player movement locations.</p>
+                <div class="signalAreaList" id="movementAreaList">
+                  <p class="status">Waiting for movement samples...</p>
+                </div>
+              </article>
+
+              <article class="panel dataCard">
                 <h2>Top drop-off rate</h2>
                 <p>Highest leave clusters from raw player exit locations.</p>
                 <div class="signalAreaList" id="dropOffAreaList">
@@ -170,23 +178,23 @@
                   <p class="status">Waiting for death samples...</p>
                 </div>
               </article>
+
+              <article class="panel chatInsights">
+                <div class="sectionHeader">
+                  <div>
+                    <h2>Most Common Questions</h2>
+                    <p>Grouped from recent player chat.</p>
+                  </div>
+                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
+                </div>
+                <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
+                <div class="commonQuestionList" id="commonQuestionList"></div>
+              </article>
             </aside>
           </div>
         </section>
 
         <section class="viewPage chatAnalysisPage" data-view-panel="chat" hidden>
-          <section class="panel chatInsights" id="chat">
-            <div class="sectionHeader">
-              <div>
-                <h2>Most Common Questions</h2>
-                <p>Grouped from recent player chat.</p>
-              </div>
-              <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
-            </div>
-            <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
-            <div class="commonQuestionList" id="commonQuestionList"></div>
-          </section>
-
           <article class="panel dataCard chatLogs">
             <div class="sectionHeader">
               <div>

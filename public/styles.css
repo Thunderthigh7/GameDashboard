@@ -539,7 +539,7 @@ small,
 }
 
 .chatAnalysisPage {
-  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 
@@ -897,6 +897,10 @@ small,
 
 .signalAreaItem b {
   color: var(--red);
+}
+
+.signalAreaItem.movementSignal b {
+  color: #22d3ee;
 }
 
 .signalAreaItem.leaveSignal b {

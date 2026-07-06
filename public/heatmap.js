@@ -345,7 +345,7 @@ function setHeatmapMode(mode, options = {}) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
 
-  if (options.forcePoints || activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
+  if (options.forcePoints || activeHeatmapMode === "movement" || activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
     activeRenderMode = "points";
     for (const button of renderButtons) {
       button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
@@ -536,6 +536,10 @@ function getSampleEntries(samples, mapSnapshot = null, options = {}) {
     return getChatSampleEntries(samples);
   }
 
+  if (activeHeatmapMode === "movement" && activeRenderMode === "points") {
+    return getSignalAreaEntries(samples, activeHeatmapMode);
+  }
+
   if (activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
@@ -621,7 +625,7 @@ function getSignalAreaEntries(samples, mode) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
   const maxCount = topClusters.reduce((max, area) => Math.max(max, area.count), 1);
-  const labelPrefix = mode === "deaths" ? "Death Area" : "Drop-off Area";
+  const labelPrefix = getSignalAreaLabelPrefix(mode);
 
   return topClusters.map((area, index) => ({
     ...area,
@@ -707,7 +711,11 @@ function renderSamples(entries, center) {
     return;
   }
 
-  if (activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
+  if (
+    activeHeatmapMode === "deaths"
+    || activeHeatmapMode === "leaves"
+    || (activeHeatmapMode === "movement" && activeRenderMode === "points")
+  ) {
     renderSignalAreas(entries, center, activeHeatmapMode);
     return;
   }
@@ -752,7 +760,7 @@ function renderSamples(entries, center) {
 
 function renderSignalAreas(entries, center, mode) {
   aiAreaGroup = new THREE.Group();
-  aiAreaGroup.name = mode === "deaths" ? "DeathAreaMarkers" : "DropOffAreaMarkers";
+  aiAreaGroup.name = getSignalAreaGroupName(mode);
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
@@ -769,23 +777,24 @@ function createSignalAreaMarker(entry, mode) {
   const color = getSignalAreaColor(entry.score || 1, mode);
   const glowColor = new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
   const isDeath = mode === "deaths";
+  const isMovement = mode === "movement";
 
-  const glowGeometry = new THREE.SphereGeometry(isDeath ? 16 : 15, 24, 14);
+  const glowGeometry = new THREE.SphereGeometry(isDeath ? 16 : isMovement ? 17 : 15, 24, 14);
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: glowColor,
     transparent: true,
-    opacity: isDeath ? 0.2 : 0.18,
+    opacity: isDeath ? 0.2 : isMovement ? 0.16 : 0.18,
     depthWrite: false,
   });
   const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-  glow.scale.set(isDeath ? 2.1 : 2.45, 0.2, isDeath ? 2.1 : 1.75);
+  glow.scale.set(isDeath ? 2.1 : isMovement ? 2.9 : 2.45, 0.2, isDeath ? 2.1 : isMovement ? 2.9 : 1.75);
   group.add(glow);
 
-  const ringGeometry = new THREE.RingGeometry(isDeath ? 7 : 9, isDeath ? 18 : 20, 36);
+  const ringGeometry = new THREE.RingGeometry(isDeath ? 7 : isMovement ? 13 : 9, isDeath ? 18 : isMovement ? 24 : 20, 36);
   const ringMaterial = new THREE.MeshBasicMaterial({
     color: glowColor,
     transparent: true,
-    opacity: isDeath ? 0.38 : 0.32,
+    opacity: isDeath ? 0.38 : isMovement ? 0.28 : 0.32,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -796,25 +805,39 @@ function createSignalAreaMarker(entry, mode) {
 
   const coreGeometry = isDeath
     ? new THREE.ConeGeometry(6.2, 16, 4)
-    : new THREE.BoxGeometry(11, 11, 11);
+    : isMovement
+      ? new THREE.CylinderGeometry(7, 7, 8, 24)
+      : new THREE.BoxGeometry(11, 11, 11);
   const coreMaterial = new THREE.MeshBasicMaterial({
     color: glowColor,
     transparent: true,
     opacity: 0.96,
   });
   const core = new THREE.Mesh(coreGeometry, coreMaterial);
-  core.position.y = isDeath ? 8 : 7;
-  if (!isDeath) {
+  core.position.y = isDeath ? 8 : isMovement ? 5.5 : 7;
+  if (!isDeath && !isMovement) {
     core.rotation.y = Math.PI / 4;
     core.rotation.z = Math.PI / 8;
   }
   group.add(core);
 
   const badge = createNumberSprite(String(entry.rank || 1), color);
-  badge.position.y = 24;
+  badge.position.y = isMovement ? 23 : 24;
   group.add(badge);
 
   return group;
+}
+
+function getSignalAreaGroupName(mode) {
+  if (mode === "movement") return "MovementAreaMarkers";
+  if (mode === "deaths") return "DeathAreaMarkers";
+  return "DropOffAreaMarkers";
+}
+
+function getSignalAreaLabelPrefix(mode) {
+  if (mode === "movement") return "Movement Area";
+  if (mode === "deaths") return "Death Area";
+  return "Drop-off Area";
 }
 
 function renderAiAnalysisAreas(entries, center) {
@@ -1245,6 +1268,14 @@ function getTrafficRampColor(value) {
 
 function getSignalAreaColor(value, mode) {
   const intensity = clamp(value, 0, 1);
+  if (mode === "movement") {
+    return {
+      r: Math.round(lerp(96, 34, intensity)),
+      g: Math.round(lerp(165, 211, intensity)),
+      b: Math.round(lerp(250, 238, intensity)),
+    };
+  }
+
   if (mode === "deaths") {
     return {
       r: Math.round(lerp(248, 239, intensity)),
@@ -1319,7 +1350,7 @@ function renderFocusedSignalArea(center) {
 
   const geometry = new THREE.SphereGeometry(8, 24, 16);
   const material = new THREE.MeshBasicMaterial({
-    color: activeHeatmapMode === "deaths" ? 0xef4444 : 0xf59e0b,
+    color: getFocusedSignalColor(activeHeatmapMode),
     transparent: true,
     opacity: 0.96,
   });
@@ -1327,6 +1358,12 @@ function renderFocusedSignalArea(center) {
   selectedMarker = new THREE.Mesh(geometry, material);
   selectedMarker.position.set(x - center.x, y - center.y + 7, z - center.z);
   scene.add(selectedMarker);
+}
+
+function getFocusedSignalColor(mode) {
+  if (mode === "movement") return 0x22d3ee;
+  if (mode === "deaths") return 0xef4444;
+  return 0xf59e0b;
 }
 
 function renderMapSnapshot(snapshot, center) {

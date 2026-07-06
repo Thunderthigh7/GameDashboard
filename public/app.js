@@ -26,6 +26,7 @@ const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
 const viewPanels = document.querySelectorAll("[data-view-panel]");
+const movementAreaList = document.querySelector("#movementAreaList");
 const dropOffAreaList = document.querySelector("#dropOffAreaList");
 const deathAreaList = document.querySelector("#deathAreaList");
 const protectedDashboardPanels = document.querySelectorAll(
@@ -96,15 +97,35 @@ function bindEvents() {
     selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
   });
 
-  dropOffAreaList?.addEventListener("click", (event) => {
+  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList]) {
+    areaList?.addEventListener("click", (event) => {
+      const item = event.target.closest("[data-signal-area-index]");
+      if (!item) return;
+      focusSignalAreaFromElement(item);
+    });
+  }
+
+  dropOffAreaList?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
     const item = event.target.closest("[data-signal-area-index]");
     if (!item) return;
+    event.preventDefault();
     focusSignalAreaFromElement(item);
   });
 
-  deathAreaList?.addEventListener("click", (event) => {
+  deathAreaList?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
     const item = event.target.closest("[data-signal-area-index]");
     if (!item) return;
+    event.preventDefault();
+    focusSignalAreaFromElement(item);
+  });
+
+  movementAreaList?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const item = event.target.closest("[data-signal-area-index]");
+    if (!item) return;
+    event.preventDefault();
     focusSignalAreaFromElement(item);
   });
 
@@ -175,6 +196,7 @@ function setAuthenticated(value) {
     universeSelect.disabled = true;
     chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
     chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
+    renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
     return;
@@ -311,19 +333,29 @@ async function loadSignalAreaCards() {
   if (!authenticated) return;
 
   if (!selectedUniverseId) {
+    renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
     return;
   }
 
+  renderSignalLoading(movementAreaList, "movement");
   renderSignalLoading(dropOffAreaList, "drop-off");
   renderSignalLoading(deathAreaList, "death");
 
   const query = buildSignalAreaQuery();
-  const [leaveResult, deathResult] = await Promise.allSettled([
+  const [movementResult, leaveResult, deathResult] = await Promise.allSettled([
+    request(`/api/movement-heatmap${query}`),
     request(`/api/leave-heatmap${query}`),
     request(`/api/death-heatmap${query}`),
   ]);
+
+  if (movementResult.status === "fulfilled") {
+    renderSignalAreas(movementAreaList, clusterSignalSamples(movementResult.value.samples || []), "movement");
+  } else {
+    handleAuthError(movementResult.reason);
+    renderSignalError(movementAreaList, movementResult.reason.message);
+  }
 
   if (leaveResult.status === "fulfilled") {
     renderSignalAreas(dropOffAreaList, clusterSignalSamples(leaveResult.value.samples || []), "leaves");
@@ -407,14 +439,14 @@ function renderSignalAreas(container, areas, mode) {
   if (!container) return;
 
   if (!areas.length) {
-    const label = mode === "deaths" ? "death" : "drop-off";
+    const label = getSignalAreaTypeText(mode);
     container.innerHTML = `<p class="status">No ${label} areas tracked yet.</p>`;
     return;
   }
 
-  const label = mode === "deaths" ? "Death" : "Drop-off";
+  const label = getSignalAreaTitleText(mode);
   container.innerHTML = areas.map((area) => `
-    <button class="signalAreaItem ${mode === "deaths" ? "deathSignal" : "leaveSignal"}" type="button"
+    <button class="signalAreaItem ${getSignalAreaClass(mode)}" type="button"
       data-signal-area-index="${escapeHtml(String(area.rank - 1))}"
       data-signal-mode="${escapeHtml(mode)}"
       data-signal-x="${escapeHtml(String(area.x))}"
@@ -427,7 +459,9 @@ function renderSignalAreas(container, areas, mode) {
 }
 
 function focusSignalAreaFromElement(item) {
-  const mode = item.dataset.signalMode === "deaths" ? "deaths" : "leaves";
+  const mode = ["movement", "deaths", "leaves"].includes(item.dataset.signalMode)
+    ? item.dataset.signalMode
+    : "leaves";
   const x = Number(item.dataset.signalX);
   const y = Number(item.dataset.signalY);
   const z = Number(item.dataset.signalZ);
@@ -439,6 +473,24 @@ function focusSignalAreaFromElement(item) {
       area: { x, y, z },
     },
   }));
+}
+
+function getSignalAreaTypeText(mode) {
+  if (mode === "movement") return "movement";
+  if (mode === "deaths") return "death";
+  return "drop-off";
+}
+
+function getSignalAreaTitleText(mode) {
+  if (mode === "movement") return "Movement";
+  if (mode === "deaths") return "Death";
+  return "Drop-off";
+}
+
+function getSignalAreaClass(mode) {
+  if (mode === "movement") return "movementSignal";
+  if (mode === "deaths") return "deathSignal";
+  return "leaveSignal";
 }
 
 function updateSelectedUniverse() {
