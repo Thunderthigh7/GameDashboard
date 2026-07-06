@@ -12,6 +12,9 @@ const refreshButton = document.querySelector("#refreshMovementButton");
 const centerButton = document.querySelector("#centerMovementButton");
 const sampleCount = document.querySelector("#movementSampleCount");
 const statusLine = document.querySelector("#movementHeatmapStatus");
+const emptyState = document.querySelector("#heatmapEmptyState");
+const heatmapLegend = document.querySelector(".heatmapLegend");
+const heatmapOverlay = document.querySelector(".heatmapOverlay");
 const playerFilter = document.querySelector("#movementPlayerFilter");
 const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
@@ -233,8 +236,9 @@ async function loadHeatmap(options = {}) {
   if (!universeId) {
     latestSamples = [];
     latestEntries = [];
+    setHeatmapEmptyState(true);
     sampleCount.textContent = "0 samples";
-    statusLine.textContent = "Select universe first";
+    statusLine.textContent = "Pick universe first";
     renderScene([], null, {
       resetView: Boolean(options.resetView),
       suppressFallbackAreas: true,
@@ -245,6 +249,7 @@ async function loadHeatmap(options = {}) {
   const query = buildHeatmapQuery(universeId);
   const modeLabel = getModeLabel();
 
+  setHeatmapEmptyState(false);
   statusLine.textContent = `Loading ${modeLabel.toLowerCase()} samples for universe ${universeId}...`;
 
   try {
@@ -278,6 +283,14 @@ async function loadHeatmap(options = {}) {
   } catch (error) {
     statusLine.textContent = error.message;
   }
+}
+
+function setHeatmapEmptyState(isEmpty) {
+  if (emptyState) emptyState.hidden = !isEmpty;
+  if (heatmapLegend) heatmapLegend.hidden = isEmpty;
+  if (heatmapOverlay) heatmapOverlay.hidden = isEmpty;
+  canvas?.classList.toggle("isEmpty", isEmpty);
+  if (isEmpty) hideAiAreaCard();
 }
 
 function startHeatmapRefresh() {

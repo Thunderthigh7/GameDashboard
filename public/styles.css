@@ -590,6 +590,31 @@ small,
   height: clamp(480px, 56vh, 700px);
 }
 
+#movementHeatmapCanvas.isEmpty {
+  opacity: 0;
+}
+
+.heatmapEmptyState {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  background: var(--heatmap-bg);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.heatmapEmptyState strong {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--overlay-bg);
+  padding: 14px 18px;
+  color: var(--text);
+  font-size: 18px;
+  box-shadow: var(--overlay-shadow);
+}
+
 .heatmapLegend,
 .heatmapOverlay,
 .aiAreaCard {
