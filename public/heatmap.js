@@ -598,6 +598,7 @@ function getSignalAreaEntries(samples, mode) {
     const x = Number(sample.x);
     const y = Number(sample.y);
     const z = Number(sample.z);
+    const weight = getSampleWeight(sample);
     if (![x, y, z].every(Number.isFinite)) continue;
 
     let nearest = null;
@@ -613,13 +614,13 @@ function getSignalAreaEntries(samples, mode) {
     }
 
     if (nearest) {
-      const nextCount = nearest.count + 1;
-      nearest.x = (nearest.x * nearest.count + x) / nextCount;
-      nearest.y = (nearest.y * nearest.count + y) / nextCount;
-      nearest.z = (nearest.z * nearest.count + z) / nextCount;
+      const nextCount = nearest.count + weight;
+      nearest.x = (nearest.x * nearest.count + x * weight) / nextCount;
+      nearest.y = (nearest.y * nearest.count + y * weight) / nextCount;
+      nearest.z = (nearest.z * nearest.count + z * weight) / nextCount;
       nearest.count = nextCount;
     } else {
-      clusters.push({ x, y, z, count: 1 });
+      clusters.push({ x, y, z, count: weight });
     }
   }
 
@@ -637,6 +638,15 @@ function getSignalAreaEntries(samples, mode) {
     score: clamp(area.count / maxCount, 0.12, 1),
     signalMode: mode,
   }));
+}
+
+function getSampleWeight(sample) {
+  return Math.max(
+    Number(sample?.count) || 0,
+    Number(sample?.movementCount) || 0,
+    Number(sample?.sampleCount) || 0,
+    1,
+  );
 }
 
 function getAiAnalysisAreaEntries(samples, mapSnapshot) {

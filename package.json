@@ -8,6 +8,9 @@
     "dev": "node server.mjs",
     "start:all": "node scripts/start-all.mjs"
   },
+  "dependencies": {
+    "mongodb": "^6.0.0"
+  },
   "engines": {
     "node": ">=20"
   }

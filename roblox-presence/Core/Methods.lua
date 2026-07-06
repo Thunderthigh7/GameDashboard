@@ -9,6 +9,8 @@ local playerConnections = {}
 local characterConnections = {}
 local pendingChatLogs = {}
 local pendingMovementSamples = {}
+local pendingMovementRollups = {}
+local pendingMovementRollupOrder = {}
 local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
 local lastPlayerPositions = {}
@@ -52,6 +54,22 @@ end
 
 local function getMaxPendingMovementSamples()
 	return Settings.MaxPendingMovementSamples or 1000
+end
+
+local function getMovementRollupInterval()
+	return math.max(Settings.MovementRollupInterval or 60, 1)
+end
+
+local function getMovementRollupGridSize()
+	return math.max(Settings.MovementRollupGridSize or 12, 1)
+end
+
+local function getMaxMovementRollupsPerPayload()
+	return Settings.MaxMovementRollupsPerPayload or 300
+end
+
+local function getMaxPendingMovementRollups()
+	return Settings.MaxPendingMovementRollups or 2000
 end
 
 local function getMaxDeathSamplesPerPayload()
@@ -140,21 +158,73 @@ local function queueMovementSample(player)
 	end
 
 	local position = rootPart.Position
+	local sampledAt = os.time()
 	lastPlayerPositions[player.UserId] = position
 	movementSampleCounter += 1
-	table.insert(pendingMovementSamples, {
-		id = game.JobId .. ":move:" .. tostring(movementSampleCounter),
-		userId = player.UserId,
-		username = player.Name,
-		displayName = player.DisplayName,
-		x = roundPosition(position.X),
-		y = roundPosition(position.Y),
-		z = roundPosition(position.Z),
-		sampledAt = os.time(),
-	})
 
-	while #pendingMovementSamples > getMaxPendingMovementSamples() do
-		table.remove(pendingMovementSamples, 1)
+	if Settings.SendRawMovementSamples ~= false then
+		table.insert(pendingMovementSamples, {
+			id = game.JobId .. ":move:" .. tostring(movementSampleCounter),
+			userId = player.UserId,
+			username = player.Name,
+			displayName = player.DisplayName,
+			x = roundPosition(position.X),
+			y = roundPosition(position.Y),
+			z = roundPosition(position.Z),
+			sampledAt = sampledAt,
+		})
+
+		while #pendingMovementSamples > getMaxPendingMovementSamples() do
+			table.remove(pendingMovementSamples, 1)
+		end
+	end
+
+	local bucketSize = getMovementRollupInterval()
+	local gridSize = getMovementRollupGridSize()
+	local bucketStart = sampledAt - (sampledAt % bucketSize)
+	local gridX = math.floor(position.X / gridSize)
+	local gridZ = math.floor(position.Z / gridSize)
+	local rollupKey = tostring(bucketStart) .. ":" .. tostring(gridX) .. ":" .. tostring(gridZ)
+	local rollup = pendingMovementRollups[rollupKey]
+
+	if not rollup then
+		rollup = {
+			id = game.JobId .. ":move-rollup:" .. rollupKey,
+			bucketStart = bucketStart,
+			bucketSizeSeconds = bucketSize,
+			gridSize = gridSize,
+			gridX = gridX,
+			gridZ = gridZ,
+			x = 0,
+			y = 0,
+			z = 0,
+			movementCount = 0,
+			sampleCount = 0,
+			uniquePlayerCount = 0,
+			playerIds = {},
+			sampledAt = sampledAt,
+		}
+		pendingMovementRollups[rollupKey] = rollup
+		table.insert(pendingMovementRollupOrder, rollupKey)
+	end
+
+	local nextCount = rollup.movementCount + 1
+	rollup.x = ((rollup.x * rollup.movementCount) + roundPosition(position.X)) / nextCount
+	rollup.y = ((rollup.y * rollup.movementCount) + roundPosition(position.Y)) / nextCount
+	rollup.z = ((rollup.z * rollup.movementCount) + roundPosition(position.Z)) / nextCount
+	rollup.movementCount = nextCount
+	rollup.sampleCount = nextCount
+	rollup.sampledAt = sampledAt
+
+	local playerKey = tostring(player.UserId)
+	if not rollup.playerIds[playerKey] then
+		rollup.playerIds[playerKey] = true
+		rollup.uniquePlayerCount += 1
+	end
+
+	while #pendingMovementRollupOrder > getMaxPendingMovementRollups() do
+		local removedKey = table.remove(pendingMovementRollupOrder, 1)
+		pendingMovementRollups[removedKey] = nil
 	end
 end
 
@@ -370,6 +440,34 @@ local function getMovementSamplesPayload()
 	return movementSamples
 end
 
+local function getMovementRollupsPayload()
+	local movementRollups = {}
+	local maxMovementRollups = getMaxMovementRollupsPerPayload()
+
+	for index = 1, math.min(#pendingMovementRollupOrder, maxMovementRollups) do
+		local rollup = pendingMovementRollups[pendingMovementRollupOrder[index]]
+		if rollup then
+			table.insert(movementRollups, {
+				id = rollup.id,
+				bucketStart = rollup.bucketStart,
+				bucketSizeSeconds = rollup.bucketSizeSeconds,
+				gridSize = rollup.gridSize,
+				gridX = rollup.gridX,
+				gridZ = rollup.gridZ,
+				x = roundPosition(rollup.x),
+				y = roundPosition(rollup.y),
+				z = roundPosition(rollup.z),
+				movementCount = rollup.movementCount,
+				sampleCount = rollup.sampleCount,
+				uniquePlayerCount = rollup.uniquePlayerCount,
+				sampledAt = rollup.sampledAt,
+			})
+		end
+	end
+
+	return movementRollups
+end
+
 local function getDeathSamplesPayload()
 	local deathSamples = {}
 	local maxDeathSamples = getMaxDeathSamplesPerPayload()
@@ -404,6 +502,13 @@ local function clearSentMovementSamples(count)
 	end
 end
 
+local function clearSentMovementRollups(count)
+	for _ = 1, math.min(count, #pendingMovementRollupOrder) do
+		local key = table.remove(pendingMovementRollupOrder, 1)
+		pendingMovementRollups[key] = nil
+	end
+end
+
 local function clearSentDeathSamples(count)
 	for _ = 1, math.min(count, #pendingDeathSamples) do
 		table.remove(pendingDeathSamples, 1)
@@ -427,6 +532,7 @@ local function buildPayload()
 		players = getPlayersPayload(),
 		chatLogs = getChatLogsPayload(),
 		movementSamples = getMovementSamplesPayload(),
+		movementRollups = getMovementRollupsPayload(),
 		deathSamples = getDeathSamplesPayload(),
 		leaveSamples = getLeaveSamplesPayload(),
 	}
@@ -447,7 +553,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -477,6 +583,7 @@ function Methods.SendHeartbeat()
 
 	clearSentChatLogs(#payload.chatLogs)
 	clearSentMovementSamples(#payload.movementSamples)
+	clearSentMovementRollups(#payload.movementRollups)
 	clearSentDeathSamples(#payload.deathSamples)
 	clearSentLeaveSamples(#payload.leaveSamples)
 	processHeartbeatResponse(response)

@@ -28,6 +28,8 @@ const MAX_COMMON_QUESTIONS_RESPONSE = 5;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
+const MAX_MOVEMENT_ROLLUPS_PER_PAYLOAD = 500;
+const MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE = 10_000;
 const MAX_DEATH_SAMPLES_PER_PAYLOAD = 200;
 const MAX_DEATH_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_DEATH_SAMPLES_RESPONSE = 5000;
@@ -46,11 +48,16 @@ const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
+const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
+const MONGO_HYDRATE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
 const movementSamplesByUniverseId = new Map();
 const movementSampleIdsByUniverseId = new Map();
+const movementRollupsByUniverseId = new Map();
+const movementRollupIdsByUniverseId = new Map();
 const deathSamplesByUniverseId = new Map();
 const deathSampleIdsByUniverseId = new Map();
 const leaveSamplesByUniverseId = new Map();
@@ -59,6 +66,13 @@ const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
 const areaInsightsByScope = new Map();
+let mongoClientPromise = null;
+const mongoStatus = {
+  configured: Boolean(MONGODB_URI),
+  connected: false,
+  hydrated: false,
+  lastError: "",
+};
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -66,6 +80,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/auth/status" && req.method === "GET") {
       return sendJson(res, 200, { authenticated: isDashboardAuthenticated(req) });
+    }
+
+    if (url.pathname === "/api/health" && req.method === "GET") {
+      return sendJson(res, 200, getHealthStatus());
     }
 
     if (url.pathname === "/api/auth/login" && req.method === "POST") {
@@ -189,6 +207,205 @@ server.listen(port, () => {
   console.log(`Roblox presence endpoint: ${appBaseUrl}/api/roblox/presence`);
 });
 
+void initializeMongoStorage();
+
+function getHealthStatus() {
+  const counts = getRuntimeDataCounts();
+  return {
+    ok: true,
+    app: "RoAnalytics",
+    now: Date.now(),
+    storage: {
+      mode: mongoStatus.connected ? "mongodb" : "memory",
+      mongodbConfigured: mongoStatus.configured,
+      mongodbConnected: mongoStatus.connected,
+      hydrated: mongoStatus.hydrated,
+      dbName: mongoStatus.configured ? DB_NAME : null,
+      lastError: mongoStatus.lastError || null,
+      note: mongoStatus.connected
+        ? "MongoDB is connected. Incoming analytics are being written to collections and recent data hydrates on boot."
+        : "MongoDB is not connected, so this process is using memory only.",
+    },
+    counts,
+  };
+}
+
+function getRuntimeDataCounts() {
+  return {
+    universes: new Set([
+      ...chatLogsByUniverseId.keys(),
+      ...movementSamplesByUniverseId.keys(),
+      ...movementRollupsByUniverseId.keys(),
+      ...deathSamplesByUniverseId.keys(),
+      ...leaveSamplesByUniverseId.keys(),
+      ...mapSnapshotsByUniverseId.keys(),
+    ]).size,
+    chatLogs: countMapEntries(chatLogsByUniverseId),
+    movementSamples: countMapEntries(movementSamplesByUniverseId),
+    movementRollups: countMapEntries(movementRollupsByUniverseId),
+    deathSamples: countMapEntries(deathSamplesByUniverseId),
+    leaveSamples: countMapEntries(leaveSamplesByUniverseId),
+  };
+}
+
+function countMapEntries(map) {
+  let count = 0;
+  for (const entries of map.values()) {
+    count += Array.isArray(entries) ? entries.length : 1;
+  }
+  return count;
+}
+
+async function initializeMongoStorage() {
+  if (!MONGODB_URI) return;
+
+  try {
+    const db = await getMongoDb();
+    if (!db) return;
+
+    await ensureMongoIndexes(db);
+    await hydrateRuntimeFromMongo(db);
+    mongoStatus.connected = true;
+    mongoStatus.hydrated = true;
+    mongoStatus.lastError = "";
+    console.log(`MongoDB analytics storage connected: ${DB_NAME}`);
+  } catch (error) {
+    mongoStatus.connected = false;
+    mongoStatus.lastError = error.message || String(error);
+    console.warn("MongoDB analytics storage unavailable:", mongoStatus.lastError);
+  }
+}
+
+async function getMongoDb() {
+  if (!MONGODB_URI) return null;
+
+  if (!mongoClientPromise) {
+    mongoClientPromise = import("mongodb")
+      .then(({ MongoClient }) => {
+        const client = new MongoClient(MONGODB_URI, {
+          maxPoolSize: 5,
+          serverSelectionTimeoutMS: 5000,
+        });
+        return client.connect();
+      })
+      .catch((error) => {
+        mongoClientPromise = null;
+        throw error;
+      });
+  }
+
+  const client = await mongoClientPromise;
+  mongoStatus.connected = true;
+  return client.db(DB_NAME);
+}
+
+async function ensureMongoIndexes(db) {
+  await Promise.all([
+    ensureAnalyticsIndexes(db, "chat_logs", "sentAt"),
+    ensureAnalyticsIndexes(db, "movement_samples", "sampledAt"),
+    ensureAnalyticsIndexes(db, "movement_rollups", "sampledAt"),
+    ensureAnalyticsIndexes(db, "death_samples", "sampledAt"),
+    ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
+  ]);
+}
+
+async function ensureAnalyticsIndexes(db, collectionName, timeField) {
+  const collection = db.collection(collectionName);
+  await Promise.all([
+    collection.createIndex({ id: 1 }, { unique: true }),
+    collection.createIndex({ universeId: 1, [timeField]: -1 }),
+    collection.createIndex({ receivedAt: -1 }),
+  ]);
+}
+
+async function hydrateRuntimeFromMongo(db) {
+  const since = Date.now() - MONGO_HYDRATE_WINDOW_MS;
+  await Promise.all([
+    hydrateAnalyticsCollection(db, "chat_logs", chatLogsByUniverseId, chatLogIdsByUniverseId, MAX_CHAT_LOGS_PER_UNIVERSE, since),
+    hydrateAnalyticsCollection(db, "movement_samples", movementSamplesByUniverseId, movementSampleIdsByUniverseId, MAX_MOVEMENT_SAMPLES_PER_UNIVERSE, since),
+    hydrateAnalyticsCollection(db, "movement_rollups", movementRollupsByUniverseId, movementRollupIdsByUniverseId, MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE, since),
+    hydrateAnalyticsCollection(db, "death_samples", deathSamplesByUniverseId, deathSampleIdsByUniverseId, MAX_DEATH_SAMPLES_PER_UNIVERSE, since),
+    hydrateAnalyticsCollection(db, "leave_samples", leaveSamplesByUniverseId, leaveSampleIdsByUniverseId, MAX_LEAVE_SAMPLES_PER_UNIVERSE, since),
+  ]);
+}
+
+async function hydrateAnalyticsCollection(db, collectionName, targetMap, idMap, maxPerUniverse, since) {
+  const documents = await db.collection(collectionName)
+    .find({ receivedAt: { $gte: since } })
+    .sort({ receivedAt: -1 })
+    .limit(maxPerUniverse * 10)
+    .toArray();
+
+  for (const document of documents.reverse()) {
+    const { _id, ...entry } = document;
+    const universeId = cleanInteger(entry.universeId);
+    const id = cleanString(entry.id, 180);
+    if (universeId <= 0 || !id) continue;
+
+    const universeKey = String(universeId);
+    const entries = targetMap.get(universeKey) || [];
+    const ids = idMap.get(universeKey) || new Set();
+    if (ids.has(id)) continue;
+
+    ids.add(id);
+    entries.push(entry);
+
+    while (entries.length > maxPerUniverse) {
+      const removed = entries.shift();
+      if (removed?.id) ids.delete(removed.id);
+    }
+
+    targetMap.set(universeKey, entries);
+    idMap.set(universeKey, ids);
+  }
+}
+
+async function persistPresenceToMongo(presence) {
+  if (!MONGODB_URI) return;
+
+  try {
+    const db = await getMongoDb();
+    if (!db) return;
+
+    await Promise.all([
+      upsertAnalyticsDocuments(db, "chat_logs", presence.chatLogs),
+      upsertAnalyticsDocuments(db, "movement_samples", presence.movementSamples),
+      upsertAnalyticsDocuments(db, "movement_rollups", presence.movementRollups),
+      upsertAnalyticsDocuments(db, "death_samples", presence.deathSamples),
+      upsertAnalyticsDocuments(db, "leave_samples", presence.leaveSamples),
+    ]);
+
+    mongoStatus.connected = true;
+    mongoStatus.lastError = "";
+  } catch (error) {
+    mongoStatus.connected = false;
+    mongoStatus.lastError = error.message || String(error);
+    console.warn("MongoDB analytics write failed:", mongoStatus.lastError);
+  }
+}
+
+async function upsertAnalyticsDocuments(db, collectionName, documents) {
+  if (!Array.isArray(documents) || !documents.length) return;
+
+  const operations = documents
+    .filter((document) => cleanString(document?.id, 180))
+    .map((document) => ({
+      updateOne: {
+        filter: { id: document.id },
+        update: {
+          $setOnInsert: {
+            ...document,
+            storedAt: Date.now(),
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+  if (!operations.length) return;
+  await db.collection(collectionName).bulkWrite(operations, { ordered: false });
+}
+
 async function handleDashboardLogin(req, res) {
   let body;
   try {
@@ -226,14 +443,17 @@ async function handlePresenceHeartbeat(req, res) {
 
   const savedChatCount = saveChatLogs(presence.value);
   const savedMovementCount = saveMovementSamples(presence.value);
+  const savedMovementRollupCount = saveMovementRollups(presence.value);
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
+  await persistPresenceToMongo(presence.value);
 
   return sendJson(res, 200, {
     ok: true,
     receivedAt: presence.value.receivedAt,
     savedChatCount,
     savedMovementCount,
+    savedMovementRollupCount,
     savedDeathCount,
     savedLeaveCount,
     heatmap: getRobloxHeatmap(presence.value.universeId),
@@ -314,6 +534,12 @@ function normalizePresence(body) {
     jobId,
     receivedAt,
   });
+  const movementRollups = normalizeMovementRollups(body.movementRollups, {
+    universeId: cleanInteger(body.universeId),
+    placeId: cleanInteger(body.placeId),
+    jobId,
+    receivedAt,
+  });
   const deathSamples = normalizeDeathSamples(body.deathSamples, {
     universeId: cleanInteger(body.universeId),
     placeId: cleanInteger(body.placeId),
@@ -340,6 +566,7 @@ function normalizePresence(body) {
       players: cleanPlayers,
       chatLogs,
       movementSamples,
+      movementRollups,
       deathSamples,
       leaveSamples,
     },
@@ -427,6 +654,47 @@ function normalizeMovementSamples(value, context) {
   ));
 }
 
+function normalizeMovementRollups(value, context) {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, MAX_MOVEMENT_ROLLUPS_PER_PAYLOAD).map((entry) => {
+    const rawBucketSizeSeconds = cleanInteger(entry?.bucketSizeSeconds);
+    const rawGridSize = cleanInteger(entry?.gridSize);
+    const bucketSizeSeconds = rawBucketSizeSeconds > 0 ? clampNumber(rawBucketSizeSeconds, 1, 24 * 60 * 60, 60) : 60;
+    const gridSize = rawGridSize > 0 ? rawGridSize : 12;
+    const bucketStart = cleanTimestampMs(entry?.bucketStart);
+    const sampledAt = cleanTimestampMs(entry?.sampledAt) || (bucketStart ? bucketStart + bucketSizeSeconds * 1000 : context.receivedAt);
+    const movementCount = Math.max(cleanInteger(entry?.movementCount) || cleanInteger(entry?.sampleCount), 1);
+
+    return {
+      id: cleanString(entry?.id, 180),
+      universeId: context.universeId,
+      placeId: context.placeId,
+      jobId: context.jobId,
+      bucketStart,
+      bucketEnd: bucketStart ? bucketStart + bucketSizeSeconds * 1000 : sampledAt,
+      bucketSizeSeconds,
+      gridSize,
+      gridX: cleanInteger(entry?.gridX),
+      gridZ: cleanInteger(entry?.gridZ),
+      x: cleanFiniteNumber(entry?.x),
+      y: cleanFiniteNumber(entry?.y),
+      z: cleanFiniteNumber(entry?.z),
+      movementCount,
+      sampleCount: movementCount,
+      uniquePlayerCount: Math.max(cleanInteger(entry?.uniquePlayerCount), 0),
+      sampledAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter((entry) => (
+    Number.isFinite(entry.x)
+    && Number.isFinite(entry.y)
+    && Number.isFinite(entry.z)
+    && entry.movementCount > 0
+    && entry.sampledAt > 0
+  ));
+}
+
 function normalizeDeathSamples(value, context) {
   if (!Array.isArray(value)) return [];
 
@@ -506,6 +774,36 @@ function saveMovementSamples(presence) {
 
   movementSamplesByUniverseId.set(universeKey, samples);
   movementSampleIdsByUniverseId.set(universeKey, ids);
+  return savedCount;
+}
+
+function saveMovementRollups(presence) {
+  if (!presence.movementRollups?.length || presence.universeId <= 0) return 0;
+
+  const universeKey = String(presence.universeId);
+  const rollups = movementRollupsByUniverseId.get(universeKey) || [];
+  const ids = movementRollupIdsByUniverseId.get(universeKey) || new Set();
+  let savedCount = 0;
+
+  for (const rollup of presence.movementRollups) {
+    const rollupId = rollup.id || `${rollup.jobId}:${rollup.bucketStart}:${rollup.gridSize}:${rollup.gridX}:${rollup.gridZ}`;
+    if (ids.has(rollupId)) continue;
+
+    ids.add(rollupId);
+    rollups.push({
+      ...rollup,
+      id: rollupId,
+    });
+    savedCount += 1;
+  }
+
+  while (rollups.length > MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE) {
+    const removed = rollups.shift();
+    if (removed?.id) ids.delete(removed.id);
+  }
+
+  movementRollupsByUniverseId.set(universeKey, rollups);
+  movementRollupIdsByUniverseId.set(universeKey, ids);
   return savedCount;
 }
 
@@ -761,6 +1059,7 @@ async function getUniverseSummaries() {
   const universeIds = new Set();
   addUniverseKeys(universeIds, chatLogsByUniverseId);
   addUniverseKeys(universeIds, movementSamplesByUniverseId);
+  addUniverseKeys(universeIds, movementRollupsByUniverseId);
   addUniverseKeys(universeIds, deathSamplesByUniverseId);
   addUniverseKeys(universeIds, leaveSamplesByUniverseId);
   addUniverseKeys(universeIds, mapSnapshotsByUniverseId);
@@ -803,12 +1102,14 @@ function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
   const key = String(universeId);
   const chatLogs = chatLogsByUniverseId.get(key) || [];
   const movementSamples = movementSamplesByUniverseId.get(key) || [];
+  const movementRollups = movementRollupsByUniverseId.get(key) || [];
   const deathSamples = deathSamplesByUniverseId.get(key) || [];
   const leaveSamples = leaveSamplesByUniverseId.get(key) || [];
   const mapSnapshot = mapSnapshotsByUniverseId.get(key);
   const lastSeenAt = Math.max(
     getLastTimestamp(chatLogs, "receivedAt"),
     getLastTimestamp(movementSamples, "receivedAt"),
+    getLastTimestamp(movementRollups, "receivedAt"),
     getLastTimestamp(deathSamples, "receivedAt"),
     getLastTimestamp(leaveSamples, "receivedAt"),
     cleanInteger(mapSnapshot?.receivedAt),
@@ -818,9 +1119,10 @@ function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
     id: universeId,
     chatLogCount: chatLogs.length,
     movementSampleCount: movementSamples.length,
+    movementRollupCount: movementRollups.length,
     deathSampleCount: deathSamples.length,
     leaveSampleCount: leaveSamples.length,
-    totalSamples: chatLogs.length + movementSamples.length + deathSamples.length + leaveSamples.length,
+    totalSamples: chatLogs.length + movementSamples.length + movementRollups.reduce((sum, rollup) => sum + getSampleWeight(rollup), 0) + deathSamples.length + leaveSamples.length,
     hasMapSnapshot: Boolean(mapSnapshot) || hasPersistedMapSnapshot,
     lastSeenAt,
   };
@@ -979,6 +1281,47 @@ function getMovementSamplesForFilters(filters = {}) {
   });
 }
 
+function getMovementRollupsForFilters(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  if (filters.userIds?.size) return [];
+
+  const rollups = [];
+
+  if (universeIdFilter > 0) {
+    rollups.push(...(movementRollupsByUniverseId.get(String(universeIdFilter)) || []));
+  } else {
+    for (const universeRollups of movementRollupsByUniverseId.values()) {
+      rollups.push(...universeRollups);
+    }
+  }
+
+  return rollups.filter((rollup) => {
+    if (filters.fromMs > 0 && rollup.sampledAt < filters.fromMs) return false;
+    if (filters.toMs > 0 && rollup.sampledAt > filters.toMs) return false;
+    return true;
+  });
+}
+
+function getMovementAnalysisSamplesForFilters(filters = {}) {
+  const rollups = getMovementRollupsForFilters(filters);
+  if (rollups.length) return rollups.map(movementRollupToSample);
+  return getMovementSamplesForFilters(filters);
+}
+
+function movementRollupToSample(rollup) {
+  return {
+    ...rollup,
+    userId: 0,
+    username: "Movement rollup",
+    displayName: "Movement rollup",
+    count: getSampleWeight(rollup),
+  };
+}
+
+function getSampleWeight(sample) {
+  return Math.max(cleanInteger(sample?.count) || cleanInteger(sample?.movementCount) || cleanInteger(sample?.sampleCount), 1);
+}
+
 function getDeathSamplesForFilters(filters = {}) {
   const universeIdFilter = cleanInteger(filters.universeId);
   const samples = [];
@@ -1021,16 +1364,21 @@ function getLeaveSamplesForFilters(filters = {}) {
 
 function getMovementHeatmap(filters = {}) {
   const universeIdFilter = cleanInteger(filters.universeId);
-  const samples = getMovementSamplesForFilters(filters);
+  const rollups = getMovementRollupsForFilters(filters);
+  const samples = rollups.length
+    ? rollups.map(movementRollupToSample)
+    : getMovementSamplesForFilters(filters);
 
   samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
   const limitedSamples = samples.slice(0, MAX_MOVEMENT_SAMPLES_RESPONSE);
+  const sampleCount = samples.reduce((sum, sample) => sum + getSampleWeight(sample), 0);
 
   return {
     universeId: universeIdFilter || null,
-    sampleCount: samples.length,
+    sampleCount,
     returnedCount: limitedSamples.length,
     maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
+    source: rollups.length ? "rollups" : "samples",
     filters: getMovementFilterSummary(filters),
     samples: limitedSamples,
   };
@@ -1162,8 +1510,8 @@ function applyStoredAiAreaInsights(payload) {
 function getAiAnalysisEvents(filters = {}) {
   const events = [];
 
-  for (const sample of getMovementSamplesForFilters(filters)) {
-    events.push(createAiAnalysisEvent("movement", sample, 1));
+  for (const sample of getMovementAnalysisSamplesForFilters(filters)) {
+    events.push(createAiAnalysisEvent("movement", sample, Math.max(1, Math.sqrt(getSampleWeight(sample)))));
   }
 
   for (const sample of getDeathSamplesForFilters(filters)) {
@@ -1379,13 +1727,14 @@ function getTopAiAnalysisMessages(messages, deathEvents = [], leaveEvents = []) 
 
 function getRobloxHeatmap(universeId, filters = {}) {
   const cleanUniverseId = cleanInteger(universeId);
-  const samples = getMovementSamplesForFilters({
+  const samples = getMovementAnalysisSamplesForFilters({
     ...filters,
     universeId: cleanUniverseId,
   });
   const bins = new Map();
 
   for (const sample of samples) {
+    const sampleWeight = getSampleWeight(sample);
     const x = Math.round(sample.x / ROBLOX_HEATMAP_BIN_SIZE) * ROBLOX_HEATMAP_BIN_SIZE;
     const y = Math.round(sample.y / ROBLOX_HEATMAP_BIN_SIZE) * ROBLOX_HEATMAP_BIN_SIZE;
     const z = Math.round(sample.z / ROBLOX_HEATMAP_BIN_SIZE) * ROBLOX_HEATMAP_BIN_SIZE;
@@ -1393,9 +1742,9 @@ function getRobloxHeatmap(universeId, filters = {}) {
     const existing = bins.get(key);
 
     if (existing) {
-      existing.count += 1;
+      existing.count += sampleWeight;
     } else {
-      bins.set(key, { x, y, z, count: 1 });
+      bins.set(key, { x, y, z, count: sampleWeight });
     }
   }
 
@@ -1407,7 +1756,7 @@ function getRobloxHeatmap(universeId, filters = {}) {
   return {
     binSize: ROBLOX_HEATMAP_BIN_SIZE,
     universeId: cleanUniverseId || null,
-    sampleCount: samples.length,
+    sampleCount: samples.reduce((sum, sample) => sum + getSampleWeight(sample), 0),
     pointCount: points.length,
     maxCount,
     filters: getMovementFilterSummary(filters),
