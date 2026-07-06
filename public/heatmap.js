@@ -234,7 +234,7 @@ async function loadHeatmap(options = {}) {
     latestSamples = [];
     latestEntries = [];
     sampleCount.textContent = "0 samples";
-    statusLine.textContent = "Select a universe with data to view heatmap samples.";
+    statusLine.textContent = "Select universe first";
     renderScene([], null, { resetView: Boolean(options.resetView) });
     return;
   }
