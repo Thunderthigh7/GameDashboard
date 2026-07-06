@@ -4,7 +4,9 @@ const canvas = document.querySelector("#movementHeatmapCanvas");
 const aiAreaCard = document.querySelector("#aiAreaCard");
 const aiAreaBadge = document.querySelector("#aiAreaBadge");
 const aiAreaTitle = document.querySelector("#aiAreaTitle");
-const aiAreaSummary = document.querySelector("#aiAreaSummary");
+const aiAreaIssue = document.querySelector("#aiAreaIssue");
+const aiAreaQuote = document.querySelector("#aiAreaQuote");
+const aiAreaRecommendation = document.querySelector("#aiAreaRecommendation");
 const aiAreaVisits = document.querySelector("#aiAreaVisits");
 const aiAreaDeaths = document.querySelector("#aiAreaDeaths");
 const aiAreaLeaves = document.querySelector("#aiAreaLeaves");
@@ -1050,7 +1052,7 @@ function updateAiAreaCard(area, marker = null, options = {}) {
   aiAreaBadge.textContent = String(area.rank || 1);
   aiAreaBadge.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
   aiAreaTitle.textContent = area.label || "Area 1";
-  aiAreaSummary.textContent = getAiAreaSummary(area);
+  updateAiAreaInsightText(area);
   aiAreaVisits.textContent = String(area.movementCount || area.count || 0);
   aiAreaDeaths.textContent = String(area.deathCount ?? "--");
   aiAreaLeaves.textContent = String(area.leaveCount ?? "--");
@@ -1143,15 +1145,27 @@ function focusCameraOnSignalArea(area) {
   updateCamera();
 }
 
-function getAiAreaSummary(area) {
+function updateAiAreaInsightText(area) {
+  const quote = getAiAreaTopQuote(area);
+  aiAreaIssue.textContent = getAiAreaIssue(area);
+  aiAreaRecommendation.textContent = getAiAreaRecommendation(area);
+
+  if (quote) {
+    aiAreaQuote.hidden = false;
+    aiAreaQuote.textContent = `Top chat quote: "${quote}"`;
+  } else {
+    aiAreaQuote.hidden = true;
+    aiAreaQuote.textContent = "";
+  }
+}
+
+function getAiAreaIssue(area) {
   if (area.summary) {
-    return area.recommendation
-      ? `${area.summary} Recommendation: ${area.recommendation}`
-      : area.summary;
+    return area.summary;
   }
 
   if (area.topMessages?.length) {
-    return `Top local chat: "${area.topMessages[0].message}"`;
+    return "Players are repeatedly calling out confusion or friction near this area.";
   }
 
   if ((area.leaveCount || 0) > 0 || (area.deathCount || 0) > 0) {
@@ -1163,6 +1177,28 @@ function getAiAreaSummary(area) {
   }
 
   return "Potential point of interest from movement density. AI naming and reasoning will come after clustering.";
+}
+
+function getAiAreaRecommendation(area) {
+  if (area.recommendation) {
+    return area.recommendation;
+  }
+
+  if ((area.leaveCount || 0) > 0 || (area.deathCount || 0) > 0) {
+    return "Review the nearby pathing, hazards, and objective clarity, then compare the area against the local chat evidence.";
+  }
+
+  if (area.topMessages?.length || (area.chatCount || 0) > 0) {
+    return "Inspect the nearby objective flow and add clearer in-game guidance where players are asking for help.";
+  }
+
+  return "Review this area in Studio and compare against player intent.";
+}
+
+function getAiAreaTopQuote(area) {
+  const topMessage = Array.isArray(area.topMessages) ? area.topMessages[0] : null;
+  const message = typeof topMessage === "string" ? topMessage : topMessage?.message;
+  return String(message || "").trim();
 }
 
 function renderDensityHeatmap(entries, center) {
