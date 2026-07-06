@@ -42,6 +42,7 @@ const AI_ANALYSIS_CLUSTER_RADIUS = 44;
 const AI_AREA_OUTCOME_WINDOW_MS = 60 * 1000;
 const MAX_MAP_PARTS_PER_CHUNK = 1000;
 const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
+const MAP_SNAPSHOT_PARTS_PER_MONGO_CHUNK = 750;
 const ROBLOX_HEATMAP_BIN_SIZE = 8;
 const DASHBOARD_AUTH_COOKIE = "dashboard_auth";
 const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -314,6 +315,8 @@ async function ensureMongoIndexes(db) {
     ensureAnalyticsIndexes(db, "movement_rollups", "sampledAt"),
     ensureAnalyticsIndexes(db, "death_samples", "sampledAt"),
     ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
+    db.collection("map_snapshots").createIndex({ universeId: 1 }, { unique: true }),
+    db.collection("map_snapshot_chunks").createIndex({ universeId: 1, chunkIndex: 1 }, { unique: true }),
   ]);
 }
 
@@ -1057,11 +1060,46 @@ async function getMapSnapshot(filters = {}) {
 }
 
 async function persistMapSnapshot(snapshot) {
+  if (MONGODB_URI) {
+    try {
+      const db = await getMongoDb();
+      if (db) {
+        const { parts, ...metadata } = snapshot;
+        const partChunks = chunkArray(parts, MAP_SNAPSHOT_PARTS_PER_MONGO_CHUNK);
+        await db.collection("map_snapshots").replaceOne(
+          { universeId: snapshot.universeId },
+          {
+            ...metadata,
+            partChunkCount: partChunks.length,
+            storedAt: new Date(),
+          },
+          { upsert: true },
+        );
+        await db.collection("map_snapshot_chunks").deleteMany({ universeId: snapshot.universeId });
+        if (partChunks.length) {
+          await db.collection("map_snapshot_chunks").insertMany(partChunks.map((chunkParts, index) => ({
+            universeId: snapshot.universeId,
+            chunkIndex: index,
+            parts: chunkParts,
+            storedAt: new Date(),
+          })));
+        }
+        return;
+      }
+    } catch (error) {
+      mongoStatus.lastError = error.message || String(error);
+      console.warn("MongoDB map snapshot write failed:", mongoStatus.lastError);
+    }
+  }
+
   await fs.mkdir(mapSnapshotDir, { recursive: true });
   await fs.writeFile(getMapSnapshotPath(snapshot.universeId), JSON.stringify(snapshot), "utf8");
 }
 
 async function readPersistedMapSnapshot(universeId) {
+  const mongoSnapshot = await readMongoMapSnapshot(universeId);
+  if (mongoSnapshot) return mongoSnapshot;
+
   try {
     const text = await fs.readFile(getMapSnapshotPath(universeId), "utf8");
     const snapshot = JSON.parse(text);
@@ -1069,10 +1107,55 @@ async function readPersistedMapSnapshot(universeId) {
       return null;
     }
 
+    if (MONGODB_URI) {
+      await persistMapSnapshot(snapshot);
+    }
+
     return snapshot;
   } catch {
     return null;
   }
+}
+
+async function readMongoMapSnapshot(universeId) {
+  if (!MONGODB_URI) return null;
+
+  try {
+    const db = await getMongoDb();
+    if (!db) return null;
+
+    const document = await db.collection("map_snapshots").findOne({ universeId });
+    if (!document) return null;
+
+    const chunks = await db.collection("map_snapshot_chunks")
+      .find({ universeId })
+      .sort({ chunkIndex: 1 })
+      .toArray();
+    const { _id, storedAt, partChunkCount, parts: legacyParts, ...snapshot } = document;
+    const parts = chunks.length
+      ? chunks.flatMap((chunk) => (Array.isArray(chunk.parts) ? chunk.parts : []))
+      : (Array.isArray(legacyParts) ? legacyParts : []);
+    if (cleanInteger(snapshot?.universeId) !== universeId || !Array.isArray(parts)) {
+      return null;
+    }
+
+    return {
+      ...snapshot,
+      parts,
+    };
+  } catch (error) {
+    mongoStatus.lastError = error.message || String(error);
+    console.warn("MongoDB map snapshot read failed:", mongoStatus.lastError);
+    return null;
+  }
+}
+
+function chunkArray(items, chunkSize) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
 }
 
 function getMapSnapshotPath(universeId) {
@@ -1112,12 +1195,38 @@ function addUniverseKeys(target, sourceMap) {
 }
 
 async function getPersistedMapUniverseIds() {
+  const universeIds = new Set(await getPersistedMongoMapUniverseIds());
+
   try {
     const entries = await fs.readdir(mapSnapshotDir);
-    return entries
+    for (const universeId of entries
       .map((name) => cleanInteger(String(name).replace(/\.json$/i, "")))
-      .filter((universeId) => universeId > 0);
+      .filter((universeId) => universeId > 0)) {
+      universeIds.add(universeId);
+    }
   } catch {
+    // The filesystem fallback is optional on Render.
+  }
+
+  return [...universeIds];
+}
+
+async function getPersistedMongoMapUniverseIds() {
+  if (!MONGODB_URI) return [];
+
+  try {
+    const db = await getMongoDb();
+    if (!db) return [];
+
+    const documents = await db.collection("map_snapshots")
+      .find({}, { projection: { universeId: 1 } })
+      .toArray();
+    return documents
+      .map((document) => cleanInteger(document.universeId))
+      .filter((universeId) => universeId > 0);
+  } catch (error) {
+    mongoStatus.lastError = error.message || String(error);
+    console.warn("MongoDB map snapshot list failed:", mongoStatus.lastError);
     return [];
   }
 }
