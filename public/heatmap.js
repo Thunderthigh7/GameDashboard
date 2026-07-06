@@ -451,6 +451,10 @@ function getStatusText(payload) {
 }
 
 function renderScene(samples, mapSnapshot, options = {}) {
+  const previousSelectedAiAreaId = activeHeatmapMode === "ai-analysis" && !aiAreaCard?.hidden
+    ? selectedAiArea?.id || ""
+    : "";
+
   if (points) {
     scene.remove(points);
     points.geometry.dispose();
@@ -479,7 +483,6 @@ function renderScene(samples, mapSnapshot, options = {}) {
     aiAreaGroup = null;
     hoveredAiAreaMarker = null;
     selectedAiAreaMarker = null;
-    selectedAiArea = null;
   }
 
   if (mapGroup) {
@@ -490,7 +493,9 @@ function renderScene(samples, mapSnapshot, options = {}) {
 
   const entries = getSampleEntries(samples, mapSnapshot, options);
   latestEntries = entries;
-  hideAiAreaCard();
+  if (!previousSelectedAiAreaId) {
+    hideAiAreaCard();
+  }
   focusedSignalArea = options.focusArea || null;
   latestBounds = mapSnapshot?.bounds || (entries.length ? getBounds(entries) : null);
   const dataCenter = mapSnapshot?.bounds?.center || (entries.length ? getCenter(entries) : { x: 0, y: 0, z: 0 });
@@ -510,6 +515,8 @@ function renderScene(samples, mapSnapshot, options = {}) {
     renderFocusedSignalArea(sceneCenter);
   }
 
+  restoreAiAreaCardAfterRefresh(previousSelectedAiAreaId, entries);
+
   if (latestBounds) {
     grid.scale.setScalar(clamp(Math.max(latestBounds.width, latestBounds.depth) / 500, 0.5, 8));
   }
@@ -524,6 +531,18 @@ function renderScene(samples, mapSnapshot, options = {}) {
   if (focusedSignalArea && activeHeatmapMode !== "ai-analysis") {
     focusCameraOnSignalArea(focusedSignalArea);
   }
+}
+
+function restoreAiAreaCardAfterRefresh(areaId, entries) {
+  if (!areaId || activeHeatmapMode !== "ai-analysis") return;
+
+  const refreshedArea = entries.find((entry) => entry.id === areaId);
+  if (!refreshedArea) {
+    hideAiAreaCard();
+    return;
+  }
+
+  updateAiAreaCard(refreshedArea, getAiAreaMarkerForArea(refreshedArea), { focusCamera: false });
 }
 
 function getSampleEntries(samples, mapSnapshot = null, options = {}) {
