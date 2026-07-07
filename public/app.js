@@ -20,6 +20,8 @@ const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
+const aiAutomationToggle = document.querySelector("#aiAutomationToggle");
+const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
@@ -74,6 +76,7 @@ function bindEvents() {
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
+  aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
 
@@ -201,6 +204,7 @@ function setAuthenticated(value) {
     universeSelect.disabled = true;
     chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
     chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
+    if (aiAutomationStatus) aiAutomationStatus.textContent = "";
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
@@ -212,6 +216,7 @@ function setAuthenticated(value) {
 
 async function loadDashboardData() {
   await loadUniverses();
+  await loadAiAutomationSettings();
   await loadChatLogs();
   await loadSignalAreaCards();
   renderActiveView();
@@ -584,6 +589,47 @@ async function loadChatInsights() {
     handleAuthError(error);
     chatInsightsStatus.textContent = error.message;
     commonQuestionList.innerHTML = "";
+  }
+}
+
+async function loadAiAutomationSettings() {
+  if (!authenticated || !aiAutomationToggle) return;
+
+  try {
+    const data = await request("/api/ai-insights/settings");
+    const isAuto = data.mode !== "manual";
+    aiAutomationToggle.checked = isAuto;
+    aiAutomationStatus.textContent = isAuto
+      ? "Runs every hour"
+      : "Manual only";
+  } catch (error) {
+    handleAuthError(error);
+    if (aiAutomationStatus) aiAutomationStatus.textContent = error.message;
+  }
+}
+
+async function saveAiAutomationSettings() {
+  if (!authenticated || !aiAutomationToggle) return;
+
+  aiAutomationToggle.disabled = true;
+  aiAutomationStatus.textContent = "Saving...";
+
+  try {
+    const mode = aiAutomationToggle.checked ? "auto" : "manual";
+    const data = await request("/api/ai-insights/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    aiAutomationStatus.textContent = data.mode === "manual"
+      ? "Manual only"
+      : "Runs every hour";
+  } catch (error) {
+    handleAuthError(error);
+    aiAutomationToggle.checked = !aiAutomationToggle.checked;
+    aiAutomationStatus.textContent = error.message;
+  } finally {
+    aiAutomationToggle.disabled = false;
   }
 }
 

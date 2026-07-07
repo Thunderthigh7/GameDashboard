@@ -83,6 +83,7 @@ const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
 const areaInsightsByScope = new Map();
+let aiAutomationSettingsCache = null;
 let mongoClientPromise = null;
 let b2S3ClientPromise = null;
 const mongoStatus = {
@@ -101,6 +102,12 @@ const objectStorageStatus = {
 };
 const objectStorageRollupCache = new Map();
 const OBJECT_STORAGE_ROLLUP_CACHE_MS = 60 * 1000;
+const DEFAULT_AI_AUTOMATION_SETTINGS = {
+  mode: "auto",
+  intervalHours: 1,
+  updatedAt: null,
+  updatedBy: "default",
+};
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -131,6 +138,10 @@ const server = http.createServer(async (req, res) => {
       return handleMapSnapshotUpload(req, res);
     }
 
+    if (url.pathname === "/api/ai-insights/auto-run" && req.method === "POST") {
+      return handleScheduledAiInsightsRun(req, res);
+    }
+
     if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
       if (!isValidDashboardToolSecret(req)) {
         return sendJson(res, 401, { error: "Invalid dashboard secret" });
@@ -152,9 +163,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
-      return sendJson(res, 200, getStoredChatInsights({
+      return sendJson(res, 200, await getStoredChatInsights({
         universeId: url.searchParams.get("universeId"),
       }));
+    }
+
+    if (url.pathname === "/api/ai-insights/settings" && req.method === "GET") {
+      return sendJson(res, 200, await getAiAutomationSettings());
+    }
+
+    if (url.pathname === "/api/ai-insights/settings" && req.method === "POST") {
+      return handleAiAutomationSettingsUpdate(req, res);
     }
 
     if (url.pathname === "/api/ai-insights/analyze" && req.method === "POST") {
@@ -753,6 +772,42 @@ async function handleMapSnapshotUpload(req, res) {
 
   const result = await saveMapSnapshotChunk(chunk.value);
   return sendJson(res, result.ok === false ? 400 : 200, result);
+}
+
+async function handleScheduledAiInsightsRun(req, res) {
+  if (!isValidDashboardToolSecret(req)) {
+    return sendJson(res, 401, { error: "Invalid dashboard secret" });
+  }
+
+  try {
+    const result = await runScheduledAiInsights();
+    return sendJson(res, 200, result);
+  } catch (error) {
+    return sendJson(res, 500, { ok: false, error: error.message });
+  }
+}
+
+async function handleAiAutomationSettingsUpdate(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const mode = cleanString(body.mode, 24).toLowerCase();
+  if (mode !== "auto" && mode !== "manual") {
+    return sendJson(res, 400, { error: "mode must be auto or manual" });
+  }
+
+  const settings = await saveAiAutomationSettings({
+    mode,
+    intervalHours: 1,
+    updatedAt: Date.now(),
+    updatedBy: "dashboard",
+  });
+
+  return sendJson(res, 200, settings);
 }
 
 function isValidPresenceSecret(req) {
@@ -1772,6 +1827,10 @@ async function getAiAreaAnalysisFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const storedReport = await readObjectStorageAiReport(filters.universeId);
+  if (storedReport?.areaAnalysis) {
+    return storedReport.areaAnalysis;
+  }
 
   return getAiAreaAnalysis(filters);
 }
@@ -2426,16 +2485,19 @@ function getRollupSamplesForFilters(samples, filters = {}, options = {}) {
   });
 }
 
-function getStoredChatInsights(filters = {}) {
+async function getStoredChatInsights(filters = {}) {
   const chatPayload = getChatLogs(filters);
   const candidateLogs = chatPayload.logs
     .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
     .filter((log) => isQuestionLikeMessage(log.message));
   const stored = chatInsightsByScope.get(getChatInsightsScopeKey(chatPayload.universeId));
+  const storedReport = await readObjectStorageAiReport(chatPayload.universeId);
+  const durableStored = storedReport?.chatInsights || null;
 
-  if (stored) {
+  if (stored || durableStored) {
+    const insight = stored || durableStored;
     return {
-      ...stored,
+      ...insight,
       sourceLogCount: chatPayload.logCount,
       analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
       questionLikeCount: candidateLogs.length,
@@ -2504,7 +2566,7 @@ async function analyzeAllAiInsights(rawFilters = {}) {
     throw new Error(errors.map((error) => error.message).join(" "));
   }
 
-  return {
+  const report = {
     universeId: cleanInteger(filters.universeId) || null,
     generatedAt: Date.now(),
     mode: errors.length ? "partial" : "ai",
@@ -2516,6 +2578,169 @@ async function analyzeAllAiInsights(rawFilters = {}) {
     chatInsights: chatResult.status === "fulfilled" ? chatResult.value : null,
     areaAnalysis: areaResult.status === "fulfilled" ? areaResult.value : null,
   };
+
+  await persistAiInsightsReport(report);
+  return report;
+}
+
+async function runScheduledAiInsights() {
+  const settings = await getAiAutomationSettings();
+  if (settings.mode !== "auto") {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "AI automation is set to manual.",
+      settings,
+      results: [],
+    };
+  }
+
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
+  }
+
+  const summaries = await getUniverseSummaries();
+  const results = [];
+
+  for (const universe of summaries.universes || []) {
+    const universeId = cleanInteger(universe.id);
+    if (universeId <= 0 || cleanInteger(universe.totalSamples) <= 0) continue;
+
+    try {
+      const report = await analyzeAllAiInsights({ universeId });
+      results.push({
+        universeId,
+        ok: true,
+        mode: report.mode,
+        generatedAt: report.generatedAt,
+        reportKey: getObjectStorageAiReportKey(universeId),
+      });
+    } catch (error) {
+      results.push({
+        universeId,
+        ok: false,
+        error: error.message || String(error),
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    settings,
+    universeCount: results.length,
+    results,
+  };
+}
+
+async function persistAiInsightsReport(report) {
+  const universeId = cleanInteger(report?.universeId);
+  if (!OBJECT_STORAGE_CONFIGURED || universeId <= 0) return;
+
+  const latestKey = getObjectStorageAiReportKey(universeId);
+  const versionedKey = getObjectStorageAiReportVersionKey(report);
+  const body = JSON.stringify(report);
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  const putOptions = {
+    Bucket: B2_BUCKET_NAME,
+    Body: body,
+    ContentType: "application/json",
+    Metadata: {
+      universeid: String(universeId),
+      generatedat: String(report.generatedAt || Date.now()),
+      mode: cleanString(report.mode, 32),
+    },
+  };
+
+  await client.send(new PutObjectCommand({
+    ...putOptions,
+    Key: latestKey,
+  }));
+  await client.send(new PutObjectCommand({
+    ...putOptions,
+    Key: versionedKey,
+  }));
+}
+
+async function readObjectStorageAiReport(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!OBJECT_STORAGE_CONFIGURED || cleanUniverseId <= 0) return null;
+
+  try {
+    const report = await readObjectStorageJson(getObjectStorageAiReportKey(cleanUniverseId));
+    if (cleanInteger(report?.universeId) !== cleanUniverseId) return null;
+    if (report.chatInsights) {
+      chatInsightsByScope.set(getChatInsightsScopeKey(cleanUniverseId), report.chatInsights);
+    }
+    if (report.areaAnalysis) {
+      areaInsightsByScope.set(getAreaInsightsScopeKey(cleanUniverseId), report.areaAnalysis);
+    }
+    return report;
+  } catch (error) {
+    if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
+      objectStorageStatus.lastError = error.message || String(error);
+    }
+    return null;
+  }
+}
+
+async function getAiAutomationSettings() {
+  if (aiAutomationSettingsCache) return aiAutomationSettingsCache;
+
+  if (OBJECT_STORAGE_CONFIGURED) {
+    try {
+      const stored = await readObjectStorageJson(getObjectStorageAiAutomationSettingsKey());
+      aiAutomationSettingsCache = normalizeAiAutomationSettings(stored);
+      return aiAutomationSettingsCache;
+    } catch (error) {
+      if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
+        objectStorageStatus.lastError = error.message || String(error);
+      }
+    }
+  }
+
+  aiAutomationSettingsCache = { ...DEFAULT_AI_AUTOMATION_SETTINGS };
+  return aiAutomationSettingsCache;
+}
+
+async function saveAiAutomationSettings(settings) {
+  aiAutomationSettingsCache = normalizeAiAutomationSettings(settings);
+
+  if (OBJECT_STORAGE_CONFIGURED) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getB2S3Client();
+    await client.send(new PutObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: getObjectStorageAiAutomationSettingsKey(),
+      Body: JSON.stringify(aiAutomationSettingsCache),
+      ContentType: "application/json",
+    }));
+  }
+
+  return aiAutomationSettingsCache;
+}
+
+function normalizeAiAutomationSettings(value) {
+  const mode = cleanString(value?.mode, 24).toLowerCase() === "manual" ? "manual" : "auto";
+  return {
+    mode,
+    intervalHours: 1,
+    updatedAt: cleanInteger(value?.updatedAt) || null,
+    updatedBy: cleanString(value?.updatedBy, 64) || "system",
+  };
+}
+
+function getObjectStorageAiReportKey(universeId) {
+  return `reports/${cleanInteger(universeId)}/latest.json`;
+}
+
+function getObjectStorageAiReportVersionKey(report) {
+  return `reports/${cleanInteger(report.universeId)}/${cleanInteger(report.generatedAt) || Date.now()}.json`;
+}
+
+function getObjectStorageAiAutomationSettingsKey() {
+  return "settings/ai-automation.json";
 }
 
 async function getAiChatInsights(chatPayload, candidateLogs) {

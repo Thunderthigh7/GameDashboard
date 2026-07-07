@@ -108,3 +108,40 @@ ROLLUP_UNIVERSE_IDS=
 ```
 
 For a large production setup, set `ROLLUP_UNIVERSE_IDS` on separate scheduled workers so each worker only scans its assigned universe ids.
+
+### Generate Scheduled AI Reports
+
+Run the AI report trigger manually:
+
+```bash
+npm run ai-report
+```
+
+The command calls the dashboard service, which checks the website automation setting. When automation is enabled, it analyzes each active universe and writes:
+
+```txt
+reports/{universeId}/latest.json
+reports/{universeId}/{generatedAt}.json
+settings/ai-automation.json
+```
+
+Use a Render cron job with this command for hourly reports:
+
+```bash
+npm run ai-report
+```
+
+Schedule:
+
+```txt
+0 * * * *
+```
+
+Required environment variables for the AI cron:
+
+```env
+AI_REPORT_BASE_URL=https://game-dashboard-zaya.onrender.com
+AI_REPORT_SECRET=your-presence-secret
+```
+
+The dashboard AI panel includes an Auto hourly toggle. Turning it off stores manual mode in B2 and causes the cron job to skip AI calls.
