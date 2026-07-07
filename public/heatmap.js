@@ -464,9 +464,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
 
   if (heatmapMesh) {
     scene.remove(heatmapMesh);
-    heatmapMesh.geometry.dispose();
-    heatmapMesh.material.map?.dispose();
-    heatmapMesh.material.dispose();
+    disposeObject3D(heatmapMesh);
     heatmapMesh = null;
   }
 
@@ -1224,49 +1222,146 @@ function getAiAreaTopQuote(area) {
 
 function renderDensityHeatmap(entries, center) {
   const extents = getEntryExtents(entries);
-  const binSize = getDensityBinSize(extents);
-  const bins = getDensityBins(entries, binSize);
+  const cellSize = getDensityCellSize(extents);
+  const bins = getDensityBins(entries, cellSize);
   if (!bins.length) return;
 
-  const maxCount = bins.reduce((max, bin) => Math.max(max, bin.count), 1);
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshBasicMaterial({
+  const field = buildDensitySurfaceField(extents, bins, cellSize);
+  if (!field?.vertices.length) return;
+
+  const surfaceGeometry = createDensitySurfaceGeometry(field, center, false);
+  surfaceGeometry.computeVertexNormals();
+
+  const surfaceMaterial = new THREE.MeshBasicMaterial({
     transparent: true,
-    opacity: 0.58,
+    opacity: 0.72,
     depthWrite: false,
     vertexColors: true,
+    side: THREE.DoubleSide,
   });
 
-  heatmapMesh = new THREE.InstancedMesh(geometry, material, bins.length);
-  heatmapMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  heatmapMesh.renderOrder = 2;
+  const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
+  surface.renderOrder = 3;
 
-  const transform = new THREE.Object3D();
-  for (let index = 0; index < bins.length; index += 1) {
-    const bin = bins[index];
-    const normalized = bin.count / maxCount;
-    const color = getHeatmapRampColor(Math.pow(normalized, 0.48));
+  const baseGeometry = createDensitySurfaceGeometry(field, center, true);
+  const baseMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.24,
+    depthWrite: false,
+    vertexColors: true,
+    side: THREE.DoubleSide,
+  });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.renderOrder = 2;
 
-    transform.position.set(bin.x - center.x, bin.y - center.y, bin.z - center.z);
-    transform.scale.set(
-      binSize * 0.92,
-      binSize * 0.92,
-      binSize * 0.92,
-    );
-    transform.updateMatrix();
-
-    heatmapMesh.setMatrixAt(index, transform.matrix);
-    heatmapMesh.setColorAt(index, new THREE.Color(color.r / 255, color.g / 255, color.b / 255));
-  }
-
-  heatmapMesh.instanceMatrix.needsUpdate = true;
-  if (heatmapMesh.instanceColor) heatmapMesh.instanceColor.needsUpdate = true;
+  heatmapMesh = new THREE.Group();
+  heatmapMesh.name = "DensityHeatmap";
+  heatmapMesh.add(base);
+  heatmapMesh.add(surface);
   scene.add(heatmapMesh);
 }
 
-function getDensityBinSize(extents) {
-  const span = Math.max(extents.width, extents.height, extents.depth, 1);
-  return clamp(span / 70, 4, 32);
+function getDensityCellSize(extents) {
+  const span = Math.max(extents.width, extents.depth, 1);
+  return clamp(span / 58, 5, 28);
+}
+
+function buildDensitySurfaceField(extents, bins, cellSize) {
+  const radius = cellSize * 3.2;
+  const margin = radius * 1.15;
+  const width = Math.max(extents.width + margin * 2, cellSize * 8);
+  const depth = Math.max(extents.depth + margin * 2, cellSize * 8);
+  const columns = Math.round(clamp(Math.ceil(width / cellSize), 8, 92));
+  const rows = Math.round(clamp(Math.ceil(depth / cellSize), 8, 92));
+  const stepX = width / columns;
+  const stepZ = depth / rows;
+  const startX = ((extents.minX + extents.maxX) / 2) - width / 2;
+  const startZ = ((extents.minZ + extents.maxZ) / 2) - depth / 2;
+  const baseY = Number.isFinite(extents.minY) ? extents.minY : 0;
+  const twoSigmaSquared = 2 * (radius * 0.42) ** 2;
+  const heightScale = clamp(Math.max(extents.width, extents.depth) * 0.08, 18, 90);
+  const vertices = [];
+  let maxDensity = 0;
+
+  for (let row = 0; row <= rows; row += 1) {
+    for (let column = 0; column <= columns; column += 1) {
+      const x = startX + column * stepX;
+      const z = startZ + row * stepZ;
+      let density = 0;
+      let weightedY = 0;
+
+      for (const bin of bins) {
+        const dx = x - bin.x;
+        const dz = z - bin.z;
+        const distanceSquared = dx * dx + dz * dz;
+        if (distanceSquared > radius * radius) continue;
+
+        const influence = bin.count * Math.exp(-distanceSquared / twoSigmaSquared);
+        density += influence;
+        weightedY += influence * bin.y;
+      }
+
+      maxDensity = Math.max(maxDensity, density);
+      vertices.push({
+        x,
+        y: density > 0 ? weightedY / density : baseY,
+        z,
+        density,
+      });
+    }
+  }
+
+  if (maxDensity <= 0) return null;
+
+  for (const vertex of vertices) {
+    const normalized = vertex.density / maxDensity;
+    vertex.normalized = normalized;
+    vertex.surfaceY = vertex.y + 2 + Math.pow(normalized, 0.72) * heightScale;
+  }
+
+  return {
+    columns,
+    rows,
+    vertices,
+  };
+}
+
+function createDensitySurfaceGeometry(field, center, isBaseLayer) {
+  const positions = new Float32Array(field.vertices.length * 3);
+  const colors = new Float32Array(field.vertices.length * 3);
+
+  field.vertices.forEach((vertex, index) => {
+    const normalized = clamp(vertex.normalized || 0, 0, 1);
+    const color = getHeatmapRampColor(Math.pow(normalized, isBaseLayer ? 0.52 : 0.38));
+    const y = isBaseLayer
+      ? vertex.y + 0.8 + Math.pow(normalized, 0.9) * 3
+      : vertex.surfaceY;
+
+    positions[index * 3] = vertex.x - center.x;
+    positions[index * 3 + 1] = y - center.y;
+    positions[index * 3 + 2] = vertex.z - center.z;
+    colors[index * 3] = color.r / 255;
+    colors[index * 3 + 1] = color.g / 255;
+    colors[index * 3 + 2] = color.b / 255;
+  });
+
+  const indices = [];
+  const stride = field.columns + 1;
+  for (let row = 0; row < field.rows; row += 1) {
+    for (let column = 0; column < field.columns; column += 1) {
+      const a = row * stride + column;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  return geometry;
 }
 
 function getDensityBins(entries, binSize) {
