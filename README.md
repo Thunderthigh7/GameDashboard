@@ -78,3 +78,28 @@ To verify B2 writes after starting the server:
 1. Send a Roblox presence heartbeat.
 2. Open `/api/health` while logged in.
 3. Check `storage.objectStorageConnected`, `storage.objectStorageLastObjectKey`, and your B2 bucket's `raw/` folder.
+
+### Generate Rollups
+
+Run the batch processor manually:
+
+```bash
+npm run rollups
+```
+
+It reads recent `raw/` `.jsonl.gz` objects from B2 and writes:
+
+```txt
+rollups/{universeId}/latest.json
+rollups/{universeId}/{yyyy}/{mm}/{dd}/{hour}.json.gz
+```
+
+Useful environment variables:
+
+```env
+ROLLUP_LOOKBACK_HOURS=24
+ROLLUP_MAX_RAW_OBJECTS=5000
+ROLLUP_UNIVERSE_IDS=
+```
+
+For a large production setup, set `ROLLUP_UNIVERSE_IDS` on separate scheduled workers so each worker only scans its assigned universe ids.

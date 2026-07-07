@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "start:all": "node scripts/start-all.mjs"
+    "start:all": "node scripts/start-all.mjs",
+    "rollups": "node scripts/process-rollups.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1080.0",

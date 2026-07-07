@@ -96,6 +96,8 @@ const objectStorageStatus = {
   lastWriteAt: 0,
   lastObjectKey: "",
 };
+const objectStorageRollupCache = new Map();
+const OBJECT_STORAGE_ROLLUP_CACHE_MS = 60 * 1000;
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -507,6 +509,78 @@ async function getB2S3Client() {
   }
 
   return b2S3ClientPromise;
+}
+
+async function getObjectStorageRollupUniverseIds() {
+  if (!OBJECT_STORAGE_CONFIGURED) return [];
+
+  try {
+    const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+    const client = await getB2S3Client();
+    const universeIds = new Set();
+    let ContinuationToken;
+
+    do {
+      const response = await client.send(new ListObjectsV2Command({
+        Bucket: B2_BUCKET_NAME,
+        Prefix: "rollups/",
+        ContinuationToken,
+        MaxKeys: 1000,
+      }));
+
+      for (const object of response.Contents || []) {
+        const match = String(object.Key || "").match(/^rollups\/(\d+)\/latest[.]json$/);
+        if (match) universeIds.add(match[1]);
+      }
+
+      ContinuationToken = response.NextContinuationToken;
+    } while (ContinuationToken);
+
+    return [...universeIds].map((id) => cleanInteger(id)).filter((id) => id > 0);
+  } catch (error) {
+    objectStorageStatus.lastError = error.message || String(error);
+    return [];
+  }
+}
+
+async function getObjectStorageRollup(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!OBJECT_STORAGE_CONFIGURED || cleanUniverseId <= 0) return null;
+
+  const cacheKey = String(cleanUniverseId);
+  const cached = objectStorageRollupCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < OBJECT_STORAGE_ROLLUP_CACHE_MS) {
+    return cached.rollup;
+  }
+
+  try {
+    const rollup = await readObjectStorageJson(`rollups/${cleanUniverseId}/latest.json`);
+    if (!rollup || cleanInteger(rollup.universeId) !== cleanUniverseId) return null;
+
+    objectStorageRollupCache.set(cacheKey, {
+      cachedAt: Date.now(),
+      rollup,
+    });
+    objectStorageStatus.connected = true;
+    objectStorageStatus.lastError = "";
+    return rollup;
+  } catch (error) {
+    if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
+      objectStorageStatus.lastError = error.message || String(error);
+    }
+    return null;
+  }
+}
+
+async function readObjectStorageJson(objectKey) {
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  const response = await client.send(new GetObjectCommand({
+    Bucket: B2_BUCKET_NAME,
+    Key: objectKey,
+  }));
+  const buffer = await streamToBuffer(response.Body);
+  return JSON.parse(buffer.toString("utf8"));
 }
 
 function createPresenceJsonLines(presence) {
@@ -1317,10 +1391,26 @@ async function getUniverseSummaries() {
     universeIds.add(String(universeId));
   }
 
-  const universes = [...universeIds]
-    .map((id) => buildUniverseSummary(cleanInteger(id), persistedMapUniverseIds.has(String(cleanInteger(id)))))
-    .filter((summary) => summary.id > 0)
-    .sort((a, b) => b.totalSamples - a.totalSamples || b.lastSeenAt - a.lastSeenAt || b.id - a.id);
+  const objectStorageUniverseIds = new Set((await getObjectStorageRollupUniverseIds()).map(String));
+  for (const universeId of objectStorageUniverseIds) {
+    universeIds.add(String(universeId));
+  }
+
+  const universes = [];
+  for (const id of universeIds) {
+    const universeId = cleanInteger(id);
+    if (universeId <= 0) continue;
+
+    const summary = buildUniverseSummary(universeId, persistedMapUniverseIds.has(String(universeId)));
+    const rollup = await getObjectStorageRollup(universeId);
+    if (rollup && rollupTotalSamples(rollup) > summary.totalSamples) {
+      universes.push(buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot));
+    } else {
+      universes.push(summary);
+    }
+  }
+
+  universes.sort((a, b) => b.totalSamples - a.totalSamples || b.lastSeenAt - a.lastSeenAt || b.id - a.id);
 
   return {
     universes,
@@ -1402,6 +1492,29 @@ function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
   };
 }
 
+function buildUniverseSummaryFromRollup(rollup, hasPersistedMapSnapshot = false) {
+  const totalSamples = rollupTotalSamples(rollup);
+
+  return {
+    id: cleanInteger(rollup.universeId),
+    chatLogCount: Array.isArray(rollup.chatLogs) ? rollup.chatLogs.length : 0,
+    movementSampleCount: cleanInteger(rollup.movement?.sampleCount),
+    movementRollupCount: Array.isArray(rollup.movement?.samples) ? rollup.movement.samples.length : 0,
+    deathSampleCount: cleanInteger(rollup.deaths?.sampleCount),
+    leaveSampleCount: cleanInteger(rollup.leaves?.sampleCount),
+    totalSamples,
+    hasMapSnapshot: hasPersistedMapSnapshot,
+    lastSeenAt: cleanInteger(rollup.lastSeenAt) || cleanInteger(rollup.generatedAt),
+  };
+}
+
+function rollupTotalSamples(rollup) {
+  return (Array.isArray(rollup?.chatLogs) ? rollup.chatLogs.length : 0)
+    + cleanInteger(rollup?.movement?.sampleCount)
+    + cleanInteger(rollup?.deaths?.sampleCount)
+    + cleanInteger(rollup?.leaves?.sampleCount);
+}
+
 function getLastTimestamp(entries, field) {
   return entries.reduce((max, entry) => Math.max(max, cleanInteger(entry?.[field])), 0);
 }
@@ -1462,6 +1575,8 @@ async function getMovementHeatmapFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  if (rollup) return getMovementHeatmapFromRollup(rollup, filters);
 
   return getMovementHeatmap(filters);
 }
@@ -1473,6 +1588,8 @@ async function getDeathHeatmapFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  if (rollup) return getDeathHeatmapFromRollup(rollup, filters);
 
   return getDeathHeatmap(filters);
 }
@@ -1484,6 +1601,8 @@ async function getLeaveHeatmapFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  if (rollup) return getLeaveHeatmapFromRollup(rollup, filters);
 
   return getLeaveHeatmap(filters);
 }
@@ -1495,6 +1614,8 @@ async function getChatLogsFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  if (rollup) return getChatLogsFromRollup(rollup, filters);
 
   return getChatLogs(filters);
 }
@@ -1658,6 +1779,24 @@ function getMovementHeatmap(filters = {}) {
   };
 }
 
+function getMovementHeatmapFromRollup(rollup, filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const samples = getRollupSamplesForFilters(rollup.movement?.samples || [], filters, { allowUserFilter: false });
+  samples.sort((a, b) => getSampleWeight(b) - getSampleWeight(a) || b.sampledAt - a.sampledAt);
+  const limitedSamples = samples.slice(0, MAX_MOVEMENT_SAMPLES_RESPONSE);
+  const sampleCount = cleanInteger(rollup.movement?.sampleCount) || samples.reduce((sum, sample) => sum + getSampleWeight(sample), 0);
+
+  return {
+    universeId: universeIdFilter || null,
+    sampleCount,
+    returnedCount: limitedSamples.length,
+    maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
+    source: "b2-rollup",
+    filters: getMovementFilterSummary(filters),
+    samples: limitedSamples,
+  };
+}
+
 function getDeathHeatmap(filters = {}) {
   const universeIdFilter = cleanInteger(filters.universeId);
   const samples = getDeathSamplesForFilters(filters);
@@ -1675,6 +1814,23 @@ function getDeathHeatmap(filters = {}) {
   };
 }
 
+function getDeathHeatmapFromRollup(rollup, filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const samples = getRollupSamplesForFilters(rollup.deaths?.samples || [], filters);
+  samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
+  const limitedSamples = samples.slice(0, MAX_DEATH_SAMPLES_RESPONSE);
+
+  return {
+    universeId: universeIdFilter || null,
+    sampleCount: cleanInteger(rollup.deaths?.sampleCount) || samples.length,
+    returnedCount: limitedSamples.length,
+    maxSamplesPerUniverse: MAX_DEATH_SAMPLES_PER_UNIVERSE,
+    source: "b2-rollup",
+    filters: getMovementFilterSummary(filters),
+    samples: limitedSamples,
+  };
+}
+
 function getLeaveHeatmap(filters = {}) {
   const universeIdFilter = cleanInteger(filters.universeId);
   const samples = getLeaveSamplesForFilters(filters);
@@ -1687,6 +1843,23 @@ function getLeaveHeatmap(filters = {}) {
     sampleCount: samples.length,
     returnedCount: limitedSamples.length,
     maxSamplesPerUniverse: MAX_LEAVE_SAMPLES_PER_UNIVERSE,
+    filters: getMovementFilterSummary(filters),
+    samples: limitedSamples,
+  };
+}
+
+function getLeaveHeatmapFromRollup(rollup, filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const samples = getRollupSamplesForFilters(rollup.leaves?.samples || [], filters);
+  samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
+  const limitedSamples = samples.slice(0, MAX_LEAVE_SAMPLES_RESPONSE);
+
+  return {
+    universeId: universeIdFilter || null,
+    sampleCount: cleanInteger(rollup.leaves?.sampleCount) || samples.length,
+    returnedCount: limitedSamples.length,
+    maxSamplesPerUniverse: MAX_LEAVE_SAMPLES_PER_UNIVERSE,
+    source: "b2-rollup",
     filters: getMovementFilterSummary(filters),
     samples: limitedSamples,
   };
@@ -2079,6 +2252,33 @@ function getChatLogs(filters = {}) {
     filters: getMovementFilterSummary(filters),
     logs: filteredLogs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
   };
+}
+
+function getChatLogsFromRollup(rollup, filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const filteredLogs = getRollupSamplesForFilters(rollup.chatLogs || [], filters);
+  filteredLogs.sort((a, b) => b.sentAt - a.sentAt || b.receivedAt - a.receivedAt);
+
+  return {
+    universeId: universeIdFilter || null,
+    logCount: filteredLogs.length,
+    maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
+    source: "b2-rollup",
+    filters: getMovementFilterSummary(filters),
+    logs: filteredLogs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
+  };
+}
+
+function getRollupSamplesForFilters(samples, filters = {}, options = {}) {
+  if (!Array.isArray(samples)) return [];
+
+  return samples.filter((sample) => {
+    const timestamp = cleanInteger(sample.sampledAt) || cleanInteger(sample.sentAt) || cleanInteger(sample.receivedAt);
+    if (filters.fromMs > 0 && timestamp < filters.fromMs) return false;
+    if (filters.toMs > 0 && timestamp > filters.toMs) return false;
+    if (options.allowUserFilter !== false && filters.userIds?.size && !filters.userIds.has(cleanInteger(sample.userId))) return false;
+    return true;
+  });
 }
 
 function getStoredChatInsights(filters = {}) {
@@ -2804,4 +3004,16 @@ function cleanObjectStorageEndpoint(value) {
 function getRegionFromB2Endpoint(endpoint) {
   const match = String(endpoint || "").match(/s3[.]([a-z0-9-]+)[.]backblazeb2[.]com/i);
   return match ? match[1] : "";
+}
+
+async function streamToBuffer(stream) {
+  if (!stream) return Buffer.alloc(0);
+  if (Buffer.isBuffer(stream)) return stream;
+
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
 }
