@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -52,6 +53,12 @@ const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPE
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
 const MONGO_HYDRATE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const B2_BUCKET_NAME = process.env.B2_BUCKET_NAME || "";
+const B2_ENDPOINT = cleanObjectStorageEndpoint(process.env.B2_ENDPOINT || process.env.B2_S3_ENDPOINT || "");
+const B2_KEY_ID = process.env.B2_KEY_ID || "";
+const B2_APPLICATION_KEY = process.env.B2_APPLICATION_KEY || "";
+const B2_REGION = process.env.B2_REGION || getRegionFromB2Endpoint(B2_ENDPOINT) || "us-west-000";
+const OBJECT_STORAGE_CONFIGURED = Boolean(B2_BUCKET_NAME && B2_ENDPOINT && B2_KEY_ID && B2_APPLICATION_KEY);
 const ANALYTICS_COLLECTION_RETENTION_MS = {
   chat_logs: 14 * 24 * 60 * 60 * 1000,
   movement_samples: 24 * 60 * 60 * 1000,
@@ -75,11 +82,19 @@ const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
 const areaInsightsByScope = new Map();
 let mongoClientPromise = null;
+let b2S3ClientPromise = null;
 const mongoStatus = {
   configured: Boolean(MONGODB_URI),
   connected: false,
   hydrated: false,
   lastError: "",
+};
+const objectStorageStatus = {
+  configured: OBJECT_STORAGE_CONFIGURED,
+  connected: false,
+  lastError: "",
+  lastWriteAt: 0,
+  lastObjectKey: "",
 };
 
 const server = http.createServer(async (req, res) => {
@@ -229,6 +244,12 @@ function getHealthStatus() {
       mongodbConnected: mongoStatus.connected,
       hydrated: mongoStatus.hydrated,
       dbName: mongoStatus.configured ? DB_NAME : null,
+      objectStorageConfigured: objectStorageStatus.configured,
+      objectStorageConnected: objectStorageStatus.connected,
+      objectStorageBucket: objectStorageStatus.configured ? B2_BUCKET_NAME : null,
+      objectStorageLastWriteAt: objectStorageStatus.lastWriteAt || null,
+      objectStorageLastObjectKey: objectStorageStatus.lastObjectKey || null,
+      objectStorageLastError: objectStorageStatus.lastError || null,
       lastError: mongoStatus.lastError || null,
       note: mongoStatus.connected
         ? "MongoDB is connected. Incoming analytics are being written to collections and recent data hydrates on boot."
@@ -433,6 +454,119 @@ async function upsertAnalyticsDocuments(db, collectionName, documents) {
   await db.collection(collectionName).bulkWrite(operations, { ordered: false });
 }
 
+async function persistPresenceToObjectStorage(presence) {
+  if (!OBJECT_STORAGE_CONFIGURED) return;
+
+  try {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getB2S3Client();
+    const objectKey = getPresenceBatchObjectKey(presence);
+    const body = gzipSync(Buffer.from(createPresenceJsonLines(presence), "utf8"));
+
+    await client.send(new PutObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+      Body: body,
+      ContentType: "application/x-ndjson",
+      ContentEncoding: "gzip",
+      Metadata: {
+        universeid: String(presence.universeId),
+        placeid: String(presence.placeId),
+        jobid: presence.jobId,
+        receivedat: String(presence.receivedAt),
+      },
+    }));
+
+    objectStorageStatus.connected = true;
+    objectStorageStatus.lastError = "";
+    objectStorageStatus.lastWriteAt = Date.now();
+    objectStorageStatus.lastObjectKey = objectKey;
+  } catch (error) {
+    objectStorageStatus.connected = false;
+    objectStorageStatus.lastError = error.message || String(error);
+    console.warn("B2 analytics batch write failed:", objectStorageStatus.lastError);
+  }
+}
+
+async function getB2S3Client() {
+  if (!b2S3ClientPromise) {
+    b2S3ClientPromise = import("@aws-sdk/client-s3")
+      .then(({ S3Client }) => new S3Client({
+        endpoint: B2_ENDPOINT,
+        region: B2_REGION,
+        forcePathStyle: true,
+        credentials: {
+          accessKeyId: B2_KEY_ID,
+          secretAccessKey: B2_APPLICATION_KEY,
+        },
+      }))
+      .catch((error) => {
+        b2S3ClientPromise = null;
+        throw error;
+      });
+  }
+
+  return b2S3ClientPromise;
+}
+
+function createPresenceJsonLines(presence) {
+  const lines = [
+    {
+      type: "batch",
+      universeId: presence.universeId,
+      placeId: presence.placeId,
+      jobId: presence.jobId,
+      serverStartedAt: presence.serverStartedAt,
+      updatedAt: presence.updatedAt,
+      receivedAt: presence.receivedAt,
+      playerCount: presence.playerCount,
+      players: presence.players,
+      counts: {
+        chatLogs: presence.chatLogs.length,
+        movementSamples: presence.movementSamples.length,
+        movementRollups: presence.movementRollups.length,
+        deathSamples: presence.deathSamples.length,
+        leaveSamples: presence.leaveSamples.length,
+      },
+    },
+    ...presence.chatLogs.map((event) => ({ type: "chat", ...event })),
+    ...presence.movementSamples.map((event) => ({ type: "movement", ...event })),
+    ...presence.movementRollups.map((event) => ({ type: "movement_rollup", ...event })),
+    ...presence.deathSamples.map((event) => ({ type: "death", ...event })),
+    ...presence.leaveSamples.map((event) => ({ type: "leave", ...event })),
+  ];
+
+  return lines.map((line) => JSON.stringify(line)).join("\n") + "\n";
+}
+
+function getPresenceBatchObjectKey(presence) {
+  const receivedDate = new Date(presence.receivedAt);
+  const year = String(receivedDate.getUTCFullYear());
+  const month = String(receivedDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(receivedDate.getUTCDate()).padStart(2, "0");
+  const hour = String(receivedDate.getUTCHours()).padStart(2, "0");
+  const safeJobId = getSafeObjectKeySegment(presence.jobId || "server");
+  const batchId = crypto.randomUUID();
+
+  return [
+    "raw",
+    String(presence.universeId),
+    year,
+    month,
+    day,
+    hour,
+    `${safeJobId}-${presence.receivedAt}-${batchId}.jsonl.gz`,
+  ].join("/");
+}
+
+function getSafeObjectKeySegment(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96) || "server";
+}
+
 async function handleDashboardLogin(req, res) {
   let body;
   try {
@@ -474,10 +608,17 @@ async function handlePresenceHeartbeat(req, res) {
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
   await persistPresenceToMongo(presence.value);
+  await persistPresenceToObjectStorage(presence.value);
 
   return sendJson(res, 200, {
     ok: true,
     receivedAt: presence.value.receivedAt,
+    objectStorage: {
+      configured: objectStorageStatus.configured,
+      connected: objectStorageStatus.connected,
+      objectKey: objectStorageStatus.lastObjectKey || null,
+      lastError: objectStorageStatus.lastError || null,
+    },
     savedChatCount,
     savedMovementCount,
     savedMovementRollupCount,
@@ -2652,4 +2793,15 @@ function getRequiredEnv(key) {
 
 function cleanBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function cleanObjectStorageEndpoint(value) {
+  const endpoint = String(value || "").trim().replace(/\/+$/, "");
+  if (!endpoint) return "";
+  return /^https?:\/\//i.test(endpoint) ? endpoint : `https://${endpoint}`;
+}
+
+function getRegionFromB2Endpoint(endpoint) {
+  const match = String(endpoint || "").match(/s3[.]([a-z0-9-]+)[.]backblazeb2[.]com/i);
+  return match ? match[1] : "";
 }

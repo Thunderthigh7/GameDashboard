@@ -9,6 +9,7 @@
     "start:all": "node scripts/start-all.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1080.0",
     "mongodb": "^6.0.0"
   },
   "engines": {
