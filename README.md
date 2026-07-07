@@ -72,9 +72,11 @@ When all `B2_*` environment variables are configured, incoming Roblox presence b
 
 ```txt
 raw/{universeId}/{yyyy}/{mm}/{dd}/{hour}/{jobId}-{receivedAt}-{batchId}.jsonl.gz
+maps/{universeId}/latest.json.gz
+maps/{universeId}/{receivedAt}.json.gz
 ```
 
-The current dashboard still keeps recent data in memory for fast local testing. B2 is the durable raw analytics source for the scalable rollup pipeline.
+The current dashboard still keeps recent data in memory for fast local testing. B2 is the durable raw analytics and map snapshot source for the scalable rollup pipeline.
 
 To verify B2 writes after starting the server:
 

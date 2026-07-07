@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -602,6 +602,17 @@ async function readObjectStorageJson(objectKey) {
   }));
   const buffer = await streamToBuffer(response.Body);
   return JSON.parse(buffer.toString("utf8"));
+}
+
+async function readObjectStorageGzipJson(objectKey) {
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  const response = await client.send(new GetObjectCommand({
+    Bucket: B2_BUCKET_NAME,
+    Key: objectKey,
+  }));
+  const buffer = await streamToBuffer(response.Body);
+  return JSON.parse(gunzipSync(buffer).toString("utf8"));
 }
 
 function createPresenceJsonLines(presence) {
@@ -1296,6 +1307,16 @@ async function getMapSnapshot(filters = {}) {
 }
 
 async function persistMapSnapshot(snapshot) {
+  if (OBJECT_STORAGE_CONFIGURED) {
+    try {
+      await persistMapSnapshotToObjectStorage(snapshot);
+      return;
+    } catch (error) {
+      objectStorageStatus.lastError = error.message || String(error);
+      console.warn("B2 map snapshot write failed:", objectStorageStatus.lastError);
+    }
+  }
+
   if (MONGODB_URI) {
     try {
       const db = await getMongoDb();
@@ -1333,6 +1354,9 @@ async function persistMapSnapshot(snapshot) {
 }
 
 async function readPersistedMapSnapshot(universeId) {
+  const objectStorageSnapshot = await readObjectStorageMapSnapshot(universeId);
+  if (objectStorageSnapshot) return objectStorageSnapshot;
+
   const mongoSnapshot = await readMongoMapSnapshot(universeId);
   if (mongoSnapshot) return mongoSnapshot;
 
@@ -1349,6 +1373,62 @@ async function readPersistedMapSnapshot(universeId) {
 
     return snapshot;
   } catch {
+    return null;
+  }
+}
+
+async function persistMapSnapshotToObjectStorage(snapshot) {
+  const latestKey = getObjectStorageMapSnapshotKey(snapshot.universeId);
+  const versionedKey = getObjectStorageMapSnapshotVersionKey(snapshot);
+  const body = gzipSync(Buffer.from(JSON.stringify(snapshot), "utf8"));
+
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  const putOptions = {
+    Bucket: B2_BUCKET_NAME,
+    Body: body,
+    ContentType: "application/json",
+    ContentEncoding: "gzip",
+    Metadata: {
+      universeid: String(snapshot.universeId),
+      placeid: String(snapshot.placeId || 0),
+      receivedat: String(snapshot.receivedAt || Date.now()),
+      partcount: String(snapshot.partCount || 0),
+    },
+  };
+
+  await client.send(new PutObjectCommand({
+    ...putOptions,
+    Key: latestKey,
+  }));
+  await client.send(new PutObjectCommand({
+    ...putOptions,
+    Key: versionedKey,
+  }));
+
+  objectStorageStatus.connected = true;
+  objectStorageStatus.lastError = "";
+  objectStorageStatus.lastWriteAt = Date.now();
+  objectStorageStatus.lastObjectKey = latestKey;
+}
+
+async function readObjectStorageMapSnapshot(universeId) {
+  if (!OBJECT_STORAGE_CONFIGURED) return null;
+
+  try {
+    const snapshot = await readObjectStorageGzipJson(getObjectStorageMapSnapshotKey(universeId));
+    if (cleanInteger(snapshot?.universeId) !== universeId || !Array.isArray(snapshot?.parts)) {
+      return null;
+    }
+
+    objectStorageStatus.connected = true;
+    objectStorageStatus.lastError = "";
+    return snapshot;
+  } catch (error) {
+    if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
+      objectStorageStatus.lastError = error.message || String(error);
+      console.warn("B2 map snapshot read failed:", objectStorageStatus.lastError);
+    }
     return null;
   }
 }
@@ -1396,6 +1476,15 @@ function chunkArray(items, chunkSize) {
 
 function getMapSnapshotPath(universeId) {
   return path.join(mapSnapshotDir, `${cleanInteger(universeId)}.json`);
+}
+
+function getObjectStorageMapSnapshotKey(universeId) {
+  return `maps/${cleanInteger(universeId)}/latest.json.gz`;
+}
+
+function getObjectStorageMapSnapshotVersionKey(snapshot) {
+  const receivedAt = cleanInteger(snapshot.receivedAt) || Date.now();
+  return `maps/${cleanInteger(snapshot.universeId)}/${receivedAt}.json.gz`;
 }
 
 async function getUniverseSummaries() {
@@ -1448,6 +1537,9 @@ function addUniverseKeys(target, sourceMap) {
 
 async function getPersistedMapUniverseIds() {
   const universeIds = new Set(await getPersistedMongoMapUniverseIds());
+  for (const universeId of await getPersistedObjectStorageMapUniverseIds()) {
+    universeIds.add(universeId);
+  }
 
   try {
     const entries = await fs.readdir(mapSnapshotDir);
@@ -1461,6 +1553,38 @@ async function getPersistedMapUniverseIds() {
   }
 
   return [...universeIds];
+}
+
+async function getPersistedObjectStorageMapUniverseIds() {
+  if (!OBJECT_STORAGE_CONFIGURED) return [];
+
+  try {
+    const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+    const client = await getB2S3Client();
+    const universeIds = new Set();
+    let ContinuationToken;
+
+    do {
+      const response = await client.send(new ListObjectsV2Command({
+        Bucket: B2_BUCKET_NAME,
+        Prefix: "maps/",
+        ContinuationToken,
+        MaxKeys: 1000,
+      }));
+
+      for (const object of response.Contents || []) {
+        const match = String(object.Key || "").match(/^maps\/(\d+)\/latest[.]json[.]gz$/);
+        if (match) universeIds.add(cleanInteger(match[1]));
+      }
+
+      ContinuationToken = response.NextContinuationToken;
+    } while (ContinuationToken);
+
+    return [...universeIds].filter((universeId) => universeId > 0);
+  } catch (error) {
+    objectStorageStatus.lastError = error.message || String(error);
+    return [];
+  }
 }
 
 async function getPersistedMongoMapUniverseIds() {
