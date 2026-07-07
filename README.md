@@ -13,6 +13,7 @@ Copy `.env.example` to `.env` and fill in the dashboard password, Roblox presenc
 For Backblaze B2 raw analytics storage, add the values from your B2 bucket and application key:
 
 ```env
+ANALYTICS_STORAGE_MODE=b2
 B2_BUCKET_NAME=your-bucket-name
 B2_ENDPOINT=https://s3.your-region.backblazeb2.com
 B2_KEY_ID=your-key-id
@@ -20,6 +21,8 @@ B2_APPLICATION_KEY=your-application-key
 ```
 
 Do not commit `.env`. It is ignored by git.
+
+`ANALYTICS_STORAGE_MODE=b2` keeps the high-volume analytics path on B2. Incoming Roblox batches are still kept briefly in memory for live dashboard testing, but MongoDB analytics writes and startup hydration are skipped.
 
 To start the dashboard and Rojo together:
 

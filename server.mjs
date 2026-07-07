@@ -50,6 +50,7 @@ const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
+const ANALYTICS_STORAGE_MODE = cleanAnalyticsStorageMode(process.env.ANALYTICS_STORAGE_MODE || "");
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
 const MONGO_HYDRATE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
@@ -59,6 +60,7 @@ const B2_KEY_ID = process.env.B2_KEY_ID || "";
 const B2_APPLICATION_KEY = process.env.B2_APPLICATION_KEY || "";
 const B2_REGION = process.env.B2_REGION || getRegionFromB2Endpoint(B2_ENDPOINT) || "us-west-000";
 const OBJECT_STORAGE_CONFIGURED = Boolean(B2_BUCKET_NAME && B2_ENDPOINT && B2_KEY_ID && B2_APPLICATION_KEY);
+const MONGO_ANALYTICS_ENABLED = ANALYTICS_STORAGE_MODE !== "b2" && Boolean(MONGODB_URI);
 const ANALYTICS_COLLECTION_RETENTION_MS = {
   chat_logs: 14 * 24 * 60 * 60 * 1000,
   movement_samples: 24 * 60 * 60 * 1000,
@@ -85,6 +87,7 @@ let mongoClientPromise = null;
 let b2S3ClientPromise = null;
 const mongoStatus = {
   configured: Boolean(MONGODB_URI),
+  analyticsEnabled: MONGO_ANALYTICS_ENABLED,
   connected: false,
   hydrated: false,
   lastError: "",
@@ -232,17 +235,25 @@ server.listen(port, () => {
   console.log(`Roblox presence endpoint: ${appBaseUrl}/api/roblox/presence`);
 });
 
-void initializeMongoStorage();
+if (MONGO_ANALYTICS_ENABLED) {
+  void initializeMongoStorage();
+}
 
 function getHealthStatus() {
   const counts = getRuntimeDataCounts();
+  const storageMode = ANALYTICS_STORAGE_MODE === "b2"
+    ? (objectStorageStatus.configured ? "b2" : "memory")
+    : (mongoStatus.connected ? "mongodb" : "memory");
+
   return {
     ok: true,
     app: "RoAnalytics",
     now: Date.now(),
     storage: {
-      mode: mongoStatus.connected ? "mongodb" : "memory",
+      mode: storageMode,
+      analyticsStorageMode: ANALYTICS_STORAGE_MODE,
       mongodbConfigured: mongoStatus.configured,
+      mongodbAnalyticsEnabled: mongoStatus.analyticsEnabled,
       mongodbConnected: mongoStatus.connected,
       hydrated: mongoStatus.hydrated,
       dbName: mongoStatus.configured ? DB_NAME : null,
@@ -253,12 +264,22 @@ function getHealthStatus() {
       objectStorageLastObjectKey: objectStorageStatus.lastObjectKey || null,
       objectStorageLastError: objectStorageStatus.lastError || null,
       lastError: mongoStatus.lastError || null,
-      note: mongoStatus.connected
-        ? "MongoDB is connected. Incoming analytics are being written to collections and recent data hydrates on boot."
-        : "MongoDB is not connected, so this process is using memory only.",
+      note: getStorageHealthNote(storageMode),
     },
     counts,
   };
+}
+
+function getStorageHealthNote(storageMode) {
+  if (storageMode === "b2") {
+    return "B2 analytics mode is active. Incoming analytics are uploaded as raw compressed batches and dashboard reads prefer B2 rollups.";
+  }
+
+  if (mongoStatus.connected) {
+    return "MongoDB is connected. Incoming analytics are being written to collections and recent data hydrates on boot.";
+  }
+
+  return "MongoDB analytics storage is not active, so this process is using memory plus any available B2 rollups.";
 }
 
 function getRuntimeDataCounts() {
@@ -288,7 +309,7 @@ function countMapEntries(map) {
 }
 
 async function initializeMongoStorage() {
-  if (!MONGODB_URI) return;
+  if (!MONGO_ANALYTICS_ENABLED) return;
 
   try {
     const db = await getMongoDb();
@@ -408,7 +429,7 @@ async function hydrateAnalyticsCollection(db, collectionName, targetMap, idMap, 
 }
 
 async function persistPresenceToMongo(presence) {
-  if (!MONGODB_URI) return;
+  if (!MONGO_ANALYTICS_ENABLED) return;
 
   try {
     const db = await getMongoDb();
@@ -3004,6 +3025,12 @@ function cleanObjectStorageEndpoint(value) {
 function getRegionFromB2Endpoint(endpoint) {
   const match = String(endpoint || "").match(/s3[.]([a-z0-9-]+)[.]backblazeb2[.]com/i);
   return match ? match[1] : "";
+}
+
+function cleanAnalyticsStorageMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "b2" || mode === "mongodb") return mode;
+  return "mongodb";
 }
 
 async function streamToBuffer(stream) {
