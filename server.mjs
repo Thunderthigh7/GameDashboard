@@ -168,6 +168,14 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
+    if (url.pathname === "/api/ai-insights/reports" && req.method === "GET") {
+      return sendJson(res, 200, await getAiInsightReportsFromQuery(url.searchParams));
+    }
+
+    if (url.pathname === "/api/ai-insights/report" && req.method === "GET") {
+      return sendJson(res, 200, await getAiInsightReportFromQuery(url.searchParams));
+    }
+
     if (url.pathname === "/api/ai-insights/settings" && req.method === "GET") {
       return sendJson(res, 200, await getAiAutomationSettings());
     }
@@ -2570,6 +2578,7 @@ async function analyzeAllAiInsights(rawFilters = {}) {
     universeId: cleanInteger(filters.universeId) || null,
     generatedAt: Date.now(),
     mode: errors.length ? "partial" : "ai",
+    source: cleanString(rawFilters.source, 32) || "manual",
     jobs: {
       chatQuestions: chatResult.status,
       mapAreas: areaResult.status,
@@ -2607,7 +2616,7 @@ async function runScheduledAiInsights() {
     if (universeId <= 0 || cleanInteger(universe.totalSamples) <= 0) continue;
 
     try {
-      const report = await analyzeAllAiInsights({ universeId });
+      const report = await analyzeAllAiInsights({ universeId, source: "auto" });
       results.push({
         universeId,
         ok: true,
@@ -2630,6 +2639,36 @@ async function runScheduledAiInsights() {
     settings,
     universeCount: results.length,
     results,
+  };
+}
+
+async function getAiInsightReportsFromQuery(searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (universeId <= 0) {
+    return { universeId: null, reports: [] };
+  }
+
+  return {
+    universeId,
+    reports: await readAiReportManifest(universeId),
+  };
+}
+
+async function getAiInsightReportFromQuery(searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const generatedAt = cleanInteger(searchParams.get("generatedAt"));
+  if (universeId <= 0) {
+    return { universeId: null, report: null };
+  }
+
+  const report = generatedAt > 0
+    ? await readObjectStorageAiReportVersion(universeId, generatedAt)
+    : await readObjectStorageAiReport(universeId);
+
+  return {
+    universeId,
+    generatedAt: generatedAt || cleanInteger(report?.generatedAt) || null,
+    report,
   };
 }
 
@@ -2661,6 +2700,16 @@ async function persistAiInsightsReport(report) {
     ...putOptions,
     Key: versionedKey,
   }));
+
+  await appendAiReportManifest(universeId, {
+    generatedAt: cleanInteger(report.generatedAt) || Date.now(),
+    mode: cleanString(report.mode, 32),
+    source: report.source || "manual",
+    reportKey: versionedKey,
+    chatQuestionCount: Array.isArray(report.chatInsights?.questions) ? report.chatInsights.questions.length : 0,
+    areaCount: Array.isArray(report.areaAnalysis?.areas) ? report.areaAnalysis.areas.length : 0,
+    errorCount: Array.isArray(report.errors) ? report.errors.length : 0,
+  });
 }
 
 async function readObjectStorageAiReport(universeId) {
@@ -2683,6 +2732,83 @@ async function readObjectStorageAiReport(universeId) {
     }
     return null;
   }
+}
+
+async function readObjectStorageAiReportVersion(universeId, generatedAt) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const cleanGeneratedAt = cleanInteger(generatedAt);
+  if (!OBJECT_STORAGE_CONFIGURED || cleanUniverseId <= 0 || cleanGeneratedAt <= 0) return null;
+
+  try {
+    const report = await readObjectStorageJson(getObjectStorageAiReportVersionKey({
+      universeId: cleanUniverseId,
+      generatedAt: cleanGeneratedAt,
+    }));
+    if (cleanInteger(report?.universeId) !== cleanUniverseId) return null;
+    return report;
+  } catch (error) {
+    if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
+      objectStorageStatus.lastError = error.message || String(error);
+    }
+    return null;
+  }
+}
+
+async function appendAiReportManifest(universeId, reportSummary) {
+  const reports = await readAiReportManifest(universeId);
+  const byGeneratedAt = new Map(reports.map((entry) => [cleanInteger(entry.generatedAt), entry]));
+  byGeneratedAt.set(cleanInteger(reportSummary.generatedAt), reportSummary);
+  const nextReports = [...byGeneratedAt.values()]
+    .filter((entry) => cleanInteger(entry.generatedAt) > 0)
+    .sort((a, b) => cleanInteger(b.generatedAt) - cleanInteger(a.generatedAt))
+    .slice(0, 250);
+
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  await client.send(new PutObjectCommand({
+    Bucket: B2_BUCKET_NAME,
+    Key: getObjectStorageAiReportManifestKey(universeId),
+    Body: JSON.stringify({
+      universeId,
+      updatedAt: Date.now(),
+      reports: nextReports,
+    }),
+    ContentType: "application/json",
+  }));
+}
+
+async function readAiReportManifest(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!OBJECT_STORAGE_CONFIGURED || cleanUniverseId <= 0) return [];
+
+  try {
+    const manifest = await readObjectStorageJson(getObjectStorageAiReportManifestKey(cleanUniverseId));
+    if (cleanInteger(manifest?.universeId) !== cleanUniverseId || !Array.isArray(manifest?.reports)) {
+      return [];
+    }
+
+    return manifest.reports
+      .map(normalizeAiReportSummary)
+      .filter((entry) => entry.generatedAt > 0)
+      .sort((a, b) => b.generatedAt - a.generatedAt);
+  } catch (error) {
+    if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
+      objectStorageStatus.lastError = error.message || String(error);
+    }
+    return [];
+  }
+}
+
+function normalizeAiReportSummary(value) {
+  return {
+    generatedAt: cleanInteger(value?.generatedAt),
+    mode: cleanString(value?.mode, 32),
+    source: cleanString(value?.source, 32) || "manual",
+    reportKey: cleanString(value?.reportKey, 256),
+    chatQuestionCount: cleanInteger(value?.chatQuestionCount),
+    areaCount: cleanInteger(value?.areaCount),
+    errorCount: cleanInteger(value?.errorCount),
+  };
 }
 
 async function getAiAutomationSettings() {
@@ -2737,6 +2863,10 @@ function getObjectStorageAiReportKey(universeId) {
 
 function getObjectStorageAiReportVersionKey(report) {
   return `reports/${cleanInteger(report.universeId)}/${cleanInteger(report.generatedAt) || Date.now()}.json`;
+}
+
+function getObjectStorageAiReportManifestKey(universeId) {
+  return `reports/${cleanInteger(universeId)}/manifest.json`;
 }
 
 function getObjectStorageAiAutomationSettingsKey() {

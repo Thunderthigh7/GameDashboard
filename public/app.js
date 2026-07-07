@@ -22,6 +22,7 @@ const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const aiAutomationToggle = document.querySelector("#aiAutomationToggle");
 const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
+const aiReportSelect = document.querySelector("#aiReportSelect");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
@@ -77,6 +78,7 @@ function bindEvents() {
   refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
+  aiReportSelect?.addEventListener("change", loadSelectedAiReport);
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
 
@@ -196,6 +198,10 @@ function setAuthenticated(value) {
     stopSignalRefresh();
     chatLogList.innerHTML = "";
     commonQuestionList.innerHTML = "";
+    if (aiReportSelect) {
+      aiReportSelect.innerHTML = `<option value="">Latest saved report</option>`;
+      aiReportSelect.disabled = true;
+    }
     chatLogCount.textContent = "0";
     universeTotalMetric.textContent = "0";
     selectedUniverseId = "";
@@ -578,6 +584,7 @@ async function loadChatInsights() {
   if (!selectedUniverseId) {
     chatInsightsStatus.textContent = "Select a universe with data to view chat insights.";
     commonQuestionList.innerHTML = "";
+    renderAiReportHistory([]);
     return;
   }
 
@@ -585,10 +592,77 @@ async function loadChatInsights() {
     const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
     const data = await request(`/api/chat-insights${query}`);
     renderChatInsights(data);
+    await loadAiReportHistory();
   } catch (error) {
     handleAuthError(error);
     chatInsightsStatus.textContent = error.message;
     commonQuestionList.innerHTML = "";
+    renderAiReportHistory([]);
+  }
+}
+
+async function loadAiReportHistory() {
+  if (!authenticated || !selectedUniverseId || !aiReportSelect) return;
+
+  try {
+    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
+    const data = await request(`/api/ai-insights/reports${query}`);
+    renderAiReportHistory(data.reports || []);
+  } catch (error) {
+    handleAuthError(error);
+    renderAiReportHistory([]);
+  }
+}
+
+function renderAiReportHistory(reports) {
+  if (!aiReportSelect) return;
+
+  const cleanReports = Array.isArray(reports) ? reports : [];
+  aiReportSelect.disabled = !selectedUniverseId || !cleanReports.length;
+  aiReportSelect.innerHTML = [
+    `<option value="">Latest saved report</option>`,
+    ...cleanReports.map((report) => {
+      const generatedAt = String(report.generatedAt || "");
+      const source = report.source === "auto" ? "Auto" : "Manual";
+      const label = `${source} | ${formatDateTime(report.generatedAt)} | Q${report.chatQuestionCount || 0} A${report.areaCount || 0}`;
+      return `<option value="${escapeHtml(generatedAt)}">${escapeHtml(label)}</option>`;
+    }),
+  ].join("");
+}
+
+async function loadSelectedAiReport() {
+  if (!authenticated || !selectedUniverseId || !aiReportSelect) return;
+
+  try {
+    const params = new URLSearchParams();
+    params.set("universeId", selectedUniverseId);
+    if (aiReportSelect.value) params.set("generatedAt", aiReportSelect.value);
+
+    const data = await request(`/api/ai-insights/report?${params.toString()}`);
+    if (!data.report) {
+      chatInsightsStatus.textContent = "Saved AI report was not found.";
+      return;
+    }
+
+    renderAiReport(data.report);
+  } catch (error) {
+    handleAuthError(error);
+    chatInsightsStatus.textContent = error.message;
+  }
+}
+
+function renderAiReport(report) {
+  if (report.chatInsights) {
+    renderChatInsights(report.chatInsights);
+  } else {
+    chatInsightsMode.textContent = report.mode === "partial" ? "Partial AI" : "Not analyzed";
+    commonQuestionList.innerHTML = "";
+  }
+
+  if (report.areaAnalysis) {
+    window.dispatchEvent(new CustomEvent("dashboard:aiAreaAnalysisUpdated", {
+      detail: { universeId: selectedUniverseId, analysis: report.areaAnalysis },
+    }));
   }
 }
 
@@ -665,6 +739,11 @@ async function runChatInsightsAnalysis() {
       const errorText = data.errors.map((error) => error.message).join(" ");
       chatInsightsStatus.textContent = `${chatInsightsStatus.textContent} ${errorText}`.trim();
       chatInsightsMode.textContent = "Partial AI";
+    }
+
+    await loadAiReportHistory();
+    if (aiReportSelect && data.generatedAt) {
+      aiReportSelect.value = String(data.generatedAt);
     }
   } catch (error) {
     handleAuthError(error);

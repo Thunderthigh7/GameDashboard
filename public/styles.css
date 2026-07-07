@@ -798,6 +798,29 @@ small,
   text-align: right;
 }
 
+.aiReportHistory {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.aiReportHistory label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.aiReportHistory select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
 .commonQuestionItem,
 .chatLogItem {
   border: 1px solid var(--line);

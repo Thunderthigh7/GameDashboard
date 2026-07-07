@@ -122,6 +122,7 @@ The command calls the dashboard service, which checks the website automation set
 ```txt
 reports/{universeId}/latest.json
 reports/{universeId}/{generatedAt}.json
+reports/{universeId}/manifest.json
 settings/ai-automation.json
 ```
 
@@ -145,3 +146,5 @@ AI_REPORT_SECRET=your-presence-secret
 ```
 
 The dashboard AI panel includes an Auto hourly toggle. Turning it off stores manual mode in B2 and causes the cron job to skip AI calls.
+
+Every manual or scheduled AI run is saved. Use the Saved runs dropdown in the AI panel to reload an older report without paying for another AI call.
