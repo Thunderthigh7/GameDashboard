@@ -1613,13 +1613,16 @@ function createMapMesh(part, center, heatContext = null) {
   const shape = String(part.shape || part.className || "");
   const geometry = getMapGeometry(shape);
   const color = Array.isArray(part.color) ? part.color : [110, 122, 140];
+  const sx = Math.max(Number(size[0]) || 1, 0.05);
+  const sy = Math.max(Number(size[1]) || 1, 0.05);
+  const sz = Math.max(Number(size[2]) || 1, 0.05);
   const baseColor = new THREE.Color(
     clamp((Number(color[0]) || 0) / 255, 0, 1),
     clamp((Number(color[1]) || 0) / 255, 0, 1),
     clamp((Number(color[2]) || 0) / 255, 0, 1),
   );
   const opacity = clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24);
-  const material = heatContext
+  const material = heatContext && canApplySurfaceHeat(part, sx, sy, sz, heatContext)
     ? createSurfaceHeatMaterial(baseColor, opacity, heatContext)
     : new THREE.MeshStandardMaterial({
       color: baseColor,
@@ -1633,9 +1636,6 @@ function createMapMesh(part, center, heatContext = null) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.matrixAutoUpdate = false;
 
-  const sx = Math.max(Number(size[0]) || 1, 0.05);
-  const sy = Math.max(Number(size[1]) || 1, 0.05);
-  const sz = Math.max(Number(size[2]) || 1, 0.05);
   const px = (Number(cframe[0]) || 0) - center.x;
   const py = (Number(cframe[1]) || 0) - center.y;
   const pz = (Number(cframe[2]) || 0) - center.z;
@@ -1648,6 +1648,19 @@ function createMapMesh(part, center, heatContext = null) {
   );
 
   return mesh;
+}
+
+function canApplySurfaceHeat(part, sx, sy, sz, heatContext) {
+  const transparency = Number(part.transparency) || 0;
+  if (transparency > 0.35) return false;
+
+  const span = heatContext.mapSpan || 1;
+  const largest = Math.max(sx, sy, sz);
+  const footprint = Math.max(sx * sz, sx * sy, sy * sz);
+  if (largest > span * 0.72) return false;
+  if (footprint > span * span * 0.18) return false;
+
+  return true;
 }
 
 function createSurfaceHeatContext(entries, center, snapshot) {
@@ -1668,7 +1681,7 @@ function createSurfaceHeatContext(entries, center, snapshot) {
 
   const maxCount = bins.reduce((max, bin) => Math.max(max, bin.count), 1);
   const spots = bins.map((bin) => {
-    const heat = Math.pow(clamp(bin.count / maxCount, 0, 1), 0.58);
+    const heat = Math.pow(clamp(bin.count / maxCount, 0, 1), 1.18);
     return new THREE.Vector4(
       bin.x - center.x,
       bin.y - center.y,
@@ -1682,7 +1695,8 @@ function createSurfaceHeatContext(entries, center, snapshot) {
   }
 
   return {
-    radius: clamp(binSize * 2.25, 16, 54),
+    radius: clamp(binSize * 1.55, 10, 34),
+    mapSpan: span,
     spots,
     spotCount: bins.length,
   };
@@ -1738,15 +1752,15 @@ function createSurfaceHeatMaterial(baseColor, opacity, heatContext) {
           vec3 delta = vSurfacePosition - spot.xyz;
           float distanceSq = dot(delta.xz, delta.xz) + delta.y * delta.y * 0.18;
           float influence = exp(-distanceSq / (2.0 * uRadius * uRadius)) * spot.w;
-          heat += influence;
+          heat = max(heat, influence);
         }
 
         heat = clamp(heat, 0.0, 1.0);
-        float visibleHeat = smoothstep(0.05, 0.72, heat);
-        vec3 heatColor = heatRamp(pow(heat, 0.72));
-        vec3 color = mix(uBaseColor, heatColor, visibleHeat * 0.86);
-        color += heatColor * visibleHeat * 0.14;
-        float alpha = clamp(uOpacity + visibleHeat * 0.16, uOpacity, 0.48);
+        float visibleHeat = smoothstep(0.12, 0.92, heat);
+        vec3 heatColor = heatRamp(pow(heat, 1.18));
+        vec3 color = mix(uBaseColor, heatColor, visibleHeat * 0.78);
+        color += heatColor * visibleHeat * 0.06;
+        float alpha = clamp(uOpacity + visibleHeat * 0.08, uOpacity, 0.34);
 
         gl_FragColor = vec4(color, alpha);
       }
