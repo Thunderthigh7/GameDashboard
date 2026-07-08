@@ -21,6 +21,10 @@ const appBaseUrl = cleanBaseUrl(process.env.PUBLIC_BASE_URL || localBaseUrl);
 const DASHBOARD_PASSWORD = getRequiredEnv("DASHBOARD_PASSWORD");
 const PRESENCE_SECRET = getRequiredEnv("PRESENCE_SECRET");
 const ADMIN_USERNAMES = parseAdminUsernames(process.env.ADMIN_USERNAMES || process.env.ADMIN_USERNAME || "");
+const ROBLOX_OAUTH_CLIENT_ID = process.env.ROBLOX_OAUTH_CLIENT_ID || "";
+const ROBLOX_OAUTH_CLIENT_SECRET = process.env.ROBLOX_OAUTH_CLIENT_SECRET || "";
+const ROBLOX_OAUTH_REDIRECT_URI = process.env.ROBLOX_OAUTH_REDIRECT_URI || `${appBaseUrl}/api/roblox/oauth/callback`;
+const ROBLOX_OAUTH_SCOPES = process.env.ROBLOX_OAUTH_SCOPES || "openid profile";
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -49,7 +53,9 @@ const MAX_MAP_PARTS_PER_UNIVERSE = 50_000;
 const MAP_SNAPSHOT_PARTS_PER_MONGO_CHUNK = 750;
 const ROBLOX_HEATMAP_BIN_SIZE = 8;
 const DASHBOARD_AUTH_COOKIE = "dashboard_auth";
+const ROBLOX_OAUTH_STATE_COOKIE = "roblox_oauth_state";
 const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const ROBLOX_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
@@ -174,6 +180,14 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/projects" && req.method === "POST") {
       return handleProjectCreate(req, res, auth);
+    }
+
+    if (url.pathname === "/api/roblox/oauth/start" && req.method === "GET") {
+      return handleRobloxOAuthStart(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/roblox/oauth/callback" && req.method === "GET") {
+      return handleRobloxOAuthCallback(req, res, auth, url.searchParams);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -826,43 +840,163 @@ async function handleDashboardSignup(req, res) {
 }
 
 async function handleProjectCreate(req, res, auth) {
-  let body;
-  try {
-    body = await readJsonBody(req, 8 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
+  return sendJson(res, 400, { error: "Use Roblox owner verification to connect a universe." });
+}
+
+async function handleRobloxOAuthStart(req, res, auth, searchParams) {
+  if (!isRobloxOAuthConfigured()) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox OAuth is not configured",
+      message: "Add ROBLOX_OAUTH_CLIENT_ID, ROBLOX_OAUTH_CLIENT_SECRET, and ROBLOX_OAUTH_REDIRECT_URI on Render, then redeploy.",
+    });
   }
 
-  const universeId = cleanInteger(body.universeId);
+  const universeId = cleanInteger(searchParams.get("universeId"));
   if (universeId <= 0) {
-    return sendJson(res, 400, { error: "Enter a valid universe ID" });
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Invalid universe ID",
+      message: "Go back to the dashboard and enter a valid Roblox universe ID.",
+    });
   }
 
-  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
-  const project = {
-    id: crypto.randomUUID(),
-    ownerUserId: auth.userId,
+  if (await getProjectByUniverseId(universeId)) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Universe already connected",
+      message: "This universe is already connected to an account.",
+    });
+  }
+
+  const state = crypto.randomBytes(24).toString("base64url");
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  const codeVerifier = crypto.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+  setRobloxOAuthStateCookie(res, {
+    state,
+    nonce,
+    codeVerifier,
     universeId,
-    name: cleanString(body.name, 80) || `Universe ${universeId}`,
-    secretHash: hashProjectSecret(projectSecret),
+    name: cleanString(searchParams.get("name"), 80),
+    userId: auth.userId,
     createdAt: Date.now(),
-  };
+  });
+
+  const authorizeUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
+  authorizeUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
+  authorizeUrl.searchParams.set("redirect_uri", ROBLOX_OAUTH_REDIRECT_URI);
+  authorizeUrl.searchParams.set("scope", ROBLOX_OAUTH_SCOPES);
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("state", state);
+  authorizeUrl.searchParams.set("nonce", nonce);
+  authorizeUrl.searchParams.set("code_challenge", codeChallenge);
+  authorizeUrl.searchParams.set("code_challenge_method", "S256");
+
+  return redirect(res, authorizeUrl.toString());
+}
+
+async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
+  clearRobloxOAuthStateCookie(res);
+
+  const oauthState = getRobloxOAuthState(req);
+  if (!oauthState || oauthState.userId !== auth.userId) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox verification expired",
+      message: "Start the universe connection again from the dashboard.",
+    });
+  }
+
+  if (Date.now() - cleanInteger(oauthState.createdAt) > ROBLOX_OAUTH_STATE_MAX_AGE_MS) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox verification expired",
+      message: "Start the universe connection again from the dashboard.",
+    });
+  }
+
+  const error = cleanString(searchParams.get("error_description") || searchParams.get("error"), 240);
+  if (error) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox verification was cancelled",
+      message: error,
+    });
+  }
+
+  const state = cleanString(searchParams.get("state"), 128);
+  const code = cleanString(searchParams.get("code"), 2048);
+  if (!code || state !== oauthState.state) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox verification failed",
+      message: "The OAuth state did not match. Start again from the dashboard.",
+    });
+  }
+
+  const universeId = cleanInteger(oauthState.universeId);
+  if (universeId <= 0) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Invalid universe",
+      message: "Start the universe connection again with a valid universe ID.",
+    });
+  }
 
   try {
-    await createProject(project);
-  } catch (error) {
-    if (error.code === 11000) {
-      return sendJson(res, 409, { error: "This universe is already connected to an account" });
+    const tokens = await exchangeRobloxOAuthCode(code, oauthState.codeVerifier);
+    const robloxUser = await getRobloxOAuthUser(tokens.access_token);
+    const ownership = await verifyRobloxUniverseOwnership(universeId, cleanInteger(robloxUser.sub));
+    if (!ownership.ok) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Universe ownership not verified",
+        message: ownership.reason || "The Roblox account you connected does not own this universe.",
+      });
     }
 
-    throw error;
-  }
+    const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+    const project = {
+      id: crypto.randomUUID(),
+      ownerUserId: auth.userId,
+      universeId,
+      name: cleanString(oauthState.name, 80) || ownership.universeName || `Universe ${universeId}`,
+      secretHash: hashProjectSecret(projectSecret),
+      createdAt: Date.now(),
+      ownershipVerifiedAt: Date.now(),
+      ownershipMethod: "roblox-oauth",
+      robloxUserId: cleanInteger(robloxUser.sub),
+      robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
+      creatorType: ownership.creatorType,
+      creatorId: ownership.creatorId,
+      creatorName: ownership.creatorName,
+    };
 
-  return sendJson(res, 201, {
-    ok: true,
-    project: serializeProject(project),
-    ingestSecret: projectSecret,
-  });
+    await createProject(project);
+    return sendRobloxOAuthResult(res, {
+      ok: true,
+      title: "Universe connected",
+      message: "Copy this Roblox secret now. It is shown once.",
+      secret: projectSecret,
+      universeId,
+      universeName: project.name,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Universe already connected",
+        message: "This universe is already connected to an account.",
+      });
+    }
+
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox verification failed",
+      message: error.message || String(error),
+    });
+  }
 }
 
 async function handlePresenceHeartbeat(req, res) {
@@ -987,6 +1121,10 @@ function isValidPresenceSecret(req) {
 function isValidDashboardToolSecret(req) {
   const secret = req.headers["x-dashboard-secret"];
   return isMatchingSecret(secret, PRESENCE_SECRET) || isMatchingSecret(secret, DASHBOARD_PASSWORD);
+}
+
+function isRobloxOAuthConfigured() {
+  return Boolean(ROBLOX_OAUTH_CLIENT_ID && ROBLOX_OAUTH_CLIENT_SECRET && ROBLOX_OAUTH_REDIRECT_URI);
 }
 
 function isMatchingSecret(value, expectedValue) {
@@ -3596,6 +3734,34 @@ function clearDashboardAuthCookie(res) {
   appendSetCookie(res, `${DASHBOARD_AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
+function setRobloxOAuthStateCookie(res, state) {
+  const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
+  const cookieValue = `${payload}.${signDashboardValue(payload)}`;
+  appendSetCookie(res, `${ROBLOX_OAUTH_STATE_COOKIE}=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.ceil(ROBLOX_OAUTH_STATE_MAX_AGE_MS / 1000)}`);
+}
+
+function getRobloxOAuthState(req) {
+  const value = getCookieValue(req, ROBLOX_OAUTH_STATE_COOKIE);
+  if (!value) return null;
+
+  const [payload, signature] = value.split(".");
+  if (!payload || !signature) return null;
+
+  const expected = signDashboardValue(payload);
+  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function clearRobloxOAuthStateCookie(res) {
+  appendSetCookie(res, `${ROBLOX_OAUTH_STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
+
 function signDashboardValue(value) {
   return crypto.createHmac("sha256", DASHBOARD_PASSWORD).update(value).digest("base64url");
 }
@@ -3745,6 +3911,140 @@ async function getAdminUserSummaries() {
   };
 }
 
+async function exchangeRobloxOAuthCode(code, codeVerifier) {
+  const body = new URLSearchParams({
+    client_id: ROBLOX_OAUTH_CLIENT_ID,
+    client_secret: ROBLOX_OAUTH_CLIENT_SECRET,
+    grant_type: "authorization_code",
+    code,
+    code_verifier: codeVerifier,
+    redirect_uri: ROBLOX_OAUTH_REDIRECT_URI,
+  });
+  const response = await fetch("https://apis.roblox.com/oauth/v1/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const payload = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(payload.error_description || payload.error || "Roblox token exchange failed");
+  }
+
+  if (!payload.access_token) {
+    throw new Error("Roblox did not return an access token.");
+  }
+
+  return payload;
+}
+
+async function getRobloxOAuthUser(accessToken) {
+  const response = await fetch("https://apis.roblox.com/oauth/v1/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const payload = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(payload.error_description || payload.error || "Roblox user lookup failed");
+  }
+
+  if (cleanInteger(payload.sub) <= 0) {
+    throw new Error("Roblox user lookup did not return a valid user ID.");
+  }
+
+  return payload;
+}
+
+async function verifyRobloxUniverseOwnership(universeId, robloxUserId) {
+  if (universeId <= 0 || robloxUserId <= 0) {
+    return { ok: false, reason: "Invalid Roblox verification data." };
+  }
+
+  const universe = await getRobloxUniverseDetails(universeId);
+  if (!universe) {
+    return { ok: false, reason: "Roblox could not find that universe." };
+  }
+
+  const creator = universe.creator || {};
+  const creatorId = cleanInteger(creator.id);
+  const creatorType = normalizeRobloxCreatorType(creator.type);
+  const creatorName = cleanString(creator.name, 120);
+
+  if (creatorType === "User") {
+    return {
+      ok: creatorId === robloxUserId,
+      reason: creatorId === robloxUserId ? "" : "The connected Roblox account is not the owner of this user-owned universe.",
+      universeName: cleanString(universe.name, 120),
+      creatorType,
+      creatorId,
+      creatorName,
+    };
+  }
+
+  if (creatorType === "Group") {
+    const group = await getRobloxGroupDetails(creatorId);
+    const ownerId = cleanInteger(group?.owner?.id || group?.owner?.userId);
+    return {
+      ok: ownerId === robloxUserId,
+      reason: ownerId === robloxUserId ? "" : "The connected Roblox account is not the owner of the group that owns this universe.",
+      universeName: cleanString(universe.name, 120),
+      creatorType,
+      creatorId,
+      creatorName: creatorName || cleanString(group?.name, 120),
+      groupOwnerId: ownerId,
+    };
+  }
+
+  return { ok: false, reason: "Roblox returned an unknown universe creator type." };
+}
+
+async function getRobloxUniverseDetails(universeId) {
+  const response = await fetch(`https://games.roblox.com/v1/games?universeIds=${encodeURIComponent(String(universeId))}`);
+  const payload = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(payload.errors?.[0]?.message || payload.error || "Roblox universe lookup failed");
+  }
+
+  return (payload.data || []).find((entry) => cleanInteger(entry.id) === universeId) || null;
+}
+
+async function getRobloxGroupDetails(groupId) {
+  if (groupId <= 0) return null;
+
+  const response = await fetch(`https://groups.roblox.com/v2/groups?groupIds=${encodeURIComponent(String(groupId))}`);
+  const payload = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(payload.errors?.[0]?.message || payload.error || "Roblox group lookup failed");
+  }
+
+  return (payload.data || []).find((entry) => cleanInteger(entry.id) === groupId) || null;
+}
+
+function normalizeRobloxCreatorType(value) {
+  if (typeof value === "number") return value === 1 ? "Group" : "User";
+  const normalized = cleanString(value, 32).toLowerCase();
+  if (normalized === "group") return "Group";
+  if (normalized === "user") return "User";
+  return "";
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text.slice(0, 240) };
+  }
+}
+
+async function getProjectByUniverseId(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (cleanUniverseId <= 0) return null;
+
+  const projects = await readProjects();
+  return projects.find((project) => cleanInteger(project.universeId) === cleanUniverseId) || null;
+}
+
 async function getUserProjects(ownerUserId) {
   const projects = await readProjects();
   return projects
@@ -3891,9 +4191,65 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function sendHtml(res, status, html) {
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(html);
+}
+
+function sendRobloxOAuthResult(res, result) {
+  const ok = Boolean(result.ok);
+  const secretHtml = result.secret
+    ? `<div class="secret"><span>Roblox secret</span><code>${escapeHtml(result.secret)}</code></div>`
+    : "";
+  const subtitle = result.universeName
+    ? `<p class="muted">${escapeHtml(result.universeName)} (${escapeHtml(result.universeId)})</p>`
+    : "";
+  return sendHtml(res, ok ? 200 : 400, `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(result.title || "Roblox verification")}</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #020617; color: #f8fafc; font-family: Arial, sans-serif; }
+      main { width: min(560px, calc(100% - 32px)); border: 1px solid #1e293b; border-radius: 10px; background: #0f172a; padding: 24px; }
+      h1 { margin: 0 0 10px; font-size: 24px; }
+      p { color: #cbd5e1; line-height: 1.5; }
+      a { display: inline-block; margin-top: 18px; border-radius: 7px; background: #7c3aed; color: white; padding: 10px 14px; text-decoration: none; font-weight: 700; }
+      .muted { color: #94a3b8; }
+      .secret { display: grid; gap: 8px; margin-top: 16px; border: 1px solid #164e63; border-radius: 8px; background: rgba(34, 211, 238, 0.08); padding: 12px; }
+      .secret span { color: #a5f3fc; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+      code { overflow-wrap: anywhere; border-radius: 6px; background: rgba(2, 6, 23, 0.75); color: #a5f3fc; padding: 10px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(result.title || "Roblox verification")}</h1>
+      ${subtitle}
+      <p>${escapeHtml(result.message || "")}</p>
+      ${secretHtml}
+      <a href="/">Back to dashboard</a>
+    </main>
+  </body>
+</html>`);
+}
+
 function redirect(res, location) {
   res.writeHead(302, { Location: location });
   res.end();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  })[char]);
 }
 
 function contentType(filePath) {

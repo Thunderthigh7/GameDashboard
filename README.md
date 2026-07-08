@@ -21,6 +21,21 @@ The dashboard uses username/password accounts. After signing in:
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
+New universe connections use Roblox OAuth owner verification. The Roblox account that authorizes must either own the universe directly or own the group that owns the universe. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
+
+```env
+ROBLOX_OAUTH_CLIENT_ID=your-roblox-oauth-client-id
+ROBLOX_OAUTH_CLIENT_SECRET=your-roblox-oauth-client-secret
+ROBLOX_OAUTH_REDIRECT_URI=https://game-dashboard-zaya.onrender.com/api/roblox/oauth/callback
+ROBLOX_OAUTH_SCOPES=openid profile
+```
+
+For local testing, use:
+
+```env
+ROBLOX_OAUTH_REDIRECT_URI=http://localhost:3000/api/roblox/oauth/callback
+```
+
 To show the Admin user monitor, set this environment variable on Render:
 
 ```env

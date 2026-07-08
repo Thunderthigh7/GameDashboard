@@ -483,29 +483,11 @@ async function createProject() {
   }
 
   createProjectButton.disabled = true;
-  universesStatus.textContent = "Connecting game...";
+  universesStatus.textContent = "Opening Roblox verification...";
 
-  try {
-    const data = await request("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ universeId, name }),
-    });
-
-    projectUniverseId.value = "";
-    projectName.value = "";
-    selectedUniverseId = String(data.project?.universeId || universeId);
-    if (projectSecretBox && projectSecretValue) {
-      projectSecretBox.hidden = false;
-      projectSecretValue.textContent = data.ingestSecret || "";
-    }
-    universesStatus.textContent = "Game connected. Add the secret to your Roblox script.";
-    await loadUniverses();
-  } catch (error) {
-    universesStatus.textContent = error.message;
-  } finally {
-    createProjectButton.disabled = false;
-  }
+  const params = new URLSearchParams({ universeId });
+  if (name) params.set("name", name);
+  window.location.href = `/api/roblox/oauth/start?${params.toString()}`;
 }
 
 function renderUniverseOption(universe) {
