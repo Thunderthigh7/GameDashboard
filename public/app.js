@@ -1,9 +1,14 @@
 const accountBox = document.querySelector("#accountBox");
 const loginPanel = document.querySelector("#loginPanel");
 const loginForm = document.querySelector("#loginForm");
+const dashboardUsername = document.querySelector("#dashboardUsername");
 const dashboardPassword = document.querySelector("#dashboardPassword");
 const loginButton = document.querySelector("#loginButton");
 const loginStatus = document.querySelector("#loginStatus");
+const signInModeButton = document.querySelector("#signInModeButton");
+const signUpModeButton = document.querySelector("#signUpModeButton");
+const authFormTitle = document.querySelector("#authFormTitle");
+const authFormSubtitle = document.querySelector("#authFormSubtitle");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const authError = document.querySelector("#authError");
@@ -43,6 +48,8 @@ let selectedUniverseId = "";
 let selectedChatLogId = "";
 let knownUniverses = [];
 let authenticated = false;
+let authenticatedUser = null;
+let authMode = "signin";
 let activeView = getViewFromHash();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
@@ -57,6 +64,7 @@ init();
 
 async function init() {
   showAuthError();
+  setAuthMode("signin");
   bindEvents();
   await checkAuth();
 }
@@ -64,8 +72,11 @@ async function init() {
 function bindEvents() {
   loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    login();
+    authenticate();
   });
+
+  signInModeButton?.addEventListener("click", () => setAuthMode("signin"));
+  signUpModeButton?.addEventListener("click", () => setAuthMode("signup"));
 
   logoutButton.addEventListener("click", async () => {
     await request("/api/auth/logout", { method: "POST" });
@@ -150,37 +161,60 @@ function bindEvents() {
 async function checkAuth() {
   try {
     const data = await request("/api/auth/status");
-    setAuthenticated(Boolean(data.authenticated));
+    setAuthenticated(Boolean(data.authenticated), data.user || null);
   } catch {
-    setAuthenticated(false);
+    setAuthenticated(false, null);
   }
 }
 
-async function login() {
+async function authenticate() {
   loginButton.disabled = true;
-  loginStatus.textContent = "Checking password...";
+  loginStatus.textContent = authMode === "signup" ? "Creating account..." : "Signing in...";
+  const username = dashboardUsername.value.trim();
 
   try {
-    await request("/api/auth/login", {
+    const data = await request(authMode === "signup" ? "/api/auth/signup" : "/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: dashboardPassword.value }),
+      body: JSON.stringify({
+        username,
+        password: dashboardPassword.value,
+      }),
     });
+    dashboardUsername.value = "";
     dashboardPassword.value = "";
     loginStatus.textContent = "";
-    setAuthenticated(true);
+    setAuthenticated(true, data.user || { username });
   } catch (error) {
     loginStatus.textContent = error.message;
-    setAuthenticated(false);
+    setAuthenticated(false, null);
   } finally {
     loginButton.disabled = false;
   }
 }
 
-function setAuthenticated(value) {
+function setAuthMode(mode) {
+  authMode = mode === "signup" ? "signup" : "signin";
+  signInModeButton?.classList.toggle("active", authMode === "signin");
+  signUpModeButton?.classList.toggle("active", authMode === "signup");
+  if (authFormTitle) authFormTitle.textContent = authMode === "signup" ? "Create account" : "Sign in";
+  if (authFormSubtitle) {
+    authFormSubtitle.textContent = authMode === "signup"
+      ? "Choose a username and password for dashboard access."
+      : "Use your RoAnalytics username and password.";
+  }
+  if (loginButton) loginButton.textContent = authMode === "signup" ? "Sign up" : "Sign in";
+  if (dashboardPassword) {
+    dashboardPassword.autocomplete = authMode === "signup" ? "new-password" : "current-password";
+  }
+  if (loginStatus) loginStatus.textContent = "";
+}
+
+function setAuthenticated(value, user = null) {
   authenticated = value;
+  authenticatedUser = authenticated ? user : null;
   document.body.classList.toggle("isLocked", !authenticated);
-  accountBox.textContent = authenticated ? "Unlocked" : "Locked";
+  accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
   runChatInsightsButton.hidden = !authenticated;
@@ -190,7 +224,7 @@ function setAuthenticated(value) {
   renderActiveView();
 
   window.dispatchEvent(new CustomEvent("dashboard:authChanged", {
-    detail: { authenticated },
+    detail: { authenticated, user: authenticatedUser },
   }));
 
   if (!authenticated) {
@@ -206,10 +240,10 @@ function setAuthenticated(value) {
     universeTotalMetric.textContent = "0";
     selectedUniverseId = "";
     selectedUniverseLabel.textContent = "No universe selected";
-    universeSelect.innerHTML = `<option value="">Unlock dashboard</option>`;
+    universeSelect.innerHTML = `<option value="">Sign in to load universes</option>`;
     universeSelect.disabled = true;
-    chatLogsStatus.textContent = "Unlock the dashboard to view chat logs.";
-    chatInsightsStatus.textContent = "Unlock the dashboard to view chat insights.";
+    chatLogsStatus.textContent = "Sign in to view chat logs.";
+    chatInsightsStatus.textContent = "Sign in to view chat insights.";
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");

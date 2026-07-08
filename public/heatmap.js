@@ -230,7 +230,7 @@ function initScene() {
 
 async function loadHeatmap(options = {}) {
   if (window.isDashboardAuthenticated?.() === false) {
-    statusLine.textContent = "Unlock the dashboard to view heatmap samples.";
+    statusLine.textContent = "Sign in to view heatmap samples.";
     return;
   }
 

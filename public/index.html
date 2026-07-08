@@ -68,16 +68,45 @@
         <section class="notice error" id="authError" hidden></section>
 
         <section class="loginPanel panel" id="loginPanel" hidden>
-          <h2>Unlock dashboard</h2>
-          <p>Enter the dashboard password to view analytics.</p>
-          <form class="authForm" id="loginForm">
-            <div class="fieldGroup">
-              <label for="dashboardPassword">Password</label>
-              <input id="dashboardPassword" type="password" autocomplete="current-password">
+          <div class="authLanding">
+            <div class="authIntro">
+              <div class="brand authBrand">
+                <div class="brandMark" aria-hidden="true"></div>
+                <div>
+                  <strong>RoAnalytics <span>BETA</span></strong>
+                  <small>Roblox analytics for live games</small>
+                </div>
+              </div>
+              <h2>Understand where players get stuck.</h2>
+              <p>Track movement, deaths, leaves, chat locations, and saved AI reports from your Roblox experiences without keeping a live database open.</p>
+              <div class="authFeatureGrid" aria-label="RoAnalytics features">
+                <span>Map heatmaps</span>
+                <span>Top death areas</span>
+                <span>Drop-off points</span>
+                <span>Saved AI analysis</span>
+              </div>
             </div>
-            <button class="button compact" id="loginButton" type="submit">Unlock</button>
-          </form>
-          <p class="status" id="loginStatus"></p>
+            <div class="authCard">
+              <div class="authModeTabs" aria-label="Authentication mode">
+                <button class="miniButton active" id="signInModeButton" type="button">Sign in</button>
+                <button class="miniButton" id="signUpModeButton" type="button">Sign up</button>
+              </div>
+              <h3 id="authFormTitle">Sign in</h3>
+              <p id="authFormSubtitle">Use your RoAnalytics username and password.</p>
+              <form class="authForm" id="loginForm">
+                <div class="fieldGroup">
+                  <label for="dashboardUsername">Username</label>
+                  <input id="dashboardUsername" type="text" autocomplete="username" maxlength="24">
+                </div>
+                <div class="fieldGroup">
+                  <label for="dashboardPassword">Password</label>
+                  <input id="dashboardPassword" type="password" autocomplete="current-password">
+                </div>
+                <button class="button compact" id="loginButton" type="submit">Sign in</button>
+              </form>
+              <p class="status" id="loginStatus"></p>
+            </div>
+          </div>
         </section>
 
         <section class="viewPage" data-view-panel="overview" hidden>

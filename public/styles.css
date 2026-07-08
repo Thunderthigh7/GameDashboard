@@ -372,12 +372,81 @@ small,
 }
 
 .loginPanel {
-  max-width: 560px;
-  margin: 80px auto;
+  max-width: 980px;
+  margin: 72px auto;
 }
 
 .isLocked .loginPanel {
-  margin: 12vh auto 0;
+  margin: 8vh auto 0;
+}
+
+.authLanding {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 28px;
+  align-items: center;
+}
+
+.authIntro {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.authBrand {
+  margin-bottom: 6px;
+}
+
+.authIntro h2 {
+  max-width: 620px;
+  font-size: clamp(34px, 5vw, 58px);
+  line-height: 0.98;
+}
+
+.authIntro p {
+  max-width: 620px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.authFeatureGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 560px;
+}
+
+.authFeatureGrid span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.42);
+  color: var(--nav-text);
+  padding: 12px 13px;
+  font-weight: 750;
+}
+
+.authCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+  padding: 18px;
+}
+
+.authModeTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.authCard h3 {
+  font-size: 22px;
+}
+
+.authCard p {
+  margin-top: 6px;
+  color: var(--muted);
 }
 
 .authControls {
@@ -476,8 +545,7 @@ small,
 
 .authForm {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
-  align-items: end;
+  grid-template-columns: 1fr;
   gap: 12px;
   margin-top: 16px;
 }
@@ -1082,6 +1150,19 @@ small,
 @media (max-width: 860px) {
   .appShell {
     grid-template-columns: 1fr;
+  }
+
+  .loginPanel {
+    margin: 24px auto;
+  }
+
+  .authLanding,
+  .authFeatureGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .authIntro h2 {
+    font-size: 36px;
   }
 
   .sidebar {

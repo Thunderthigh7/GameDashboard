@@ -8,7 +8,7 @@ npm start
 
 Open `http://localhost:3000`.
 
-Copy `.env.example` to `.env` and fill in the dashboard password, Roblox presence secret, and optional OpenAI values before starting the server.
+Copy `.env.example` to `.env` and fill in the dashboard session secret, Roblox presence secret, and optional OpenAI values before starting the server.
 
 For Backblaze B2 raw analytics storage, add the values from your B2 bucket and application key:
 

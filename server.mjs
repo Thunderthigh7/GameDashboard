@@ -9,6 +9,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const mapSnapshotDir = path.join(__dirname, "data", "map-snapshots");
+const userStorePath = path.join(__dirname, "data", "users.json");
 
 loadLocalEnv();
 
@@ -114,7 +115,11 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", appBaseUrl);
 
     if (url.pathname === "/api/auth/status" && req.method === "GET") {
-      return sendJson(res, 200, { authenticated: isDashboardAuthenticated(req) });
+      const auth = getDashboardAuth(req);
+      return sendJson(res, 200, {
+        authenticated: Boolean(auth),
+        user: auth ? { username: auth.username } : null,
+      });
     }
 
     if (url.pathname === "/api/health" && req.method === "GET") {
@@ -123,6 +128,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/auth/login" && req.method === "POST") {
       return handleDashboardLogin(req, res);
+    }
+
+    if (url.pathname === "/api/auth/signup" && req.method === "POST") {
+      return handleDashboardSignup(req, res);
     }
 
     if (url.pathname === "/api/auth/logout" && req.method === "POST") {
@@ -151,7 +160,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname.startsWith("/api/") && !isDashboardAuthenticated(req)) {
-      return sendJson(res, 401, { error: "Enter the dashboard password first" });
+      return sendJson(res, 401, { error: "Sign in first" });
     }
 
     if (url.pathname === "/api/universes" && req.method === "GET") {
@@ -388,6 +397,7 @@ async function ensureMongoIndexes(db) {
     ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
     db.collection("map_snapshots").createIndex({ universeId: 1 }, { unique: true }),
     db.collection("map_snapshot_chunks").createIndex({ universeId: 1, chunkIndex: 1 }, { unique: true }),
+    db.collection("users").createIndex({ usernameLower: 1 }, { unique: true }),
   ]);
 }
 
@@ -708,13 +718,69 @@ async function handleDashboardLogin(req, res) {
     return sendJson(res, 400, { error: error.message });
   }
 
+  const username = cleanUsername(body.username);
   const password = typeof body.password === "string" ? body.password : "";
-  if (!isMatchingSecret(password, DASHBOARD_PASSWORD)) {
-    return sendJson(res, 401, { error: "Incorrect dashboard password" });
+  if (!username || !password) {
+    return sendJson(res, 400, { error: "Enter your username and password" });
   }
 
-  setDashboardAuthCookie(res);
-  return sendJson(res, 200, { ok: true, authenticated: true });
+  const users = await readUsers();
+  const user = users.find((entry) => entry.usernameLower === username.toLowerCase());
+  if (!user || !verifyPassword(password, user.password)) {
+    return sendJson(res, 401, { error: "Incorrect username or password" });
+  }
+
+  setDashboardAuthCookie(res, user);
+  return sendJson(res, 200, {
+    ok: true,
+    authenticated: true,
+    user: { username: user.username },
+  });
+}
+
+async function handleDashboardSignup(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const username = cleanUsername(body.username);
+  const password = typeof body.password === "string" ? body.password : "";
+  const validationError = getSignupValidationError(username, password);
+  if (validationError) {
+    return sendJson(res, 400, { error: validationError });
+  }
+
+  const users = await readUsers();
+  if (users.some((entry) => entry.usernameLower === username.toLowerCase())) {
+    return sendJson(res, 409, { error: "That username is already taken" });
+  }
+
+  const user = {
+    id: crypto.randomUUID(),
+    username,
+    usernameLower: username.toLowerCase(),
+    password: hashPassword(password),
+    createdAt: Date.now(),
+  };
+  try {
+    await createUser(user);
+  } catch (error) {
+    if (error.code === 11000) {
+      return sendJson(res, 409, { error: "That username is already taken" });
+    }
+
+    throw error;
+  }
+
+  setDashboardAuthCookie(res, user);
+  return sendJson(res, 201, {
+    ok: true,
+    authenticated: true,
+    user: { username: user.username },
+  });
 }
 
 async function handlePresenceHeartbeat(req, res) {
@@ -3370,27 +3436,41 @@ async function readJsonBody(req, maxBytes) {
 }
 
 function isDashboardAuthenticated(req) {
+  return Boolean(getDashboardAuth(req));
+}
+
+function getDashboardAuth(req) {
   const value = getCookieValue(req, DASHBOARD_AUTH_COOKIE);
-  if (!value) return false;
+  if (!value) return null;
 
   const [payload, signature] = value.split(".");
-  if (!payload || !signature) return false;
+  if (!payload || !signature) return null;
 
   const expected = signDashboardValue(payload);
-  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return false;
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return false;
+  if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
 
   try {
     const auth = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     const issuedAt = Number(auth?.issuedAt || 0);
-    return Boolean(issuedAt && Date.now() - issuedAt <= DASHBOARD_AUTH_MAX_AGE_MS);
+    const username = cleanUsername(auth?.username);
+    const userId = typeof auth?.userId === "string" ? auth.userId : "";
+    if (!issuedAt || Date.now() - issuedAt > DASHBOARD_AUTH_MAX_AGE_MS || !username || !userId) {
+      return null;
+    }
+
+    return { username, userId, issuedAt };
   } catch {
-    return false;
+    return null;
   }
 }
 
-function setDashboardAuthCookie(res) {
-  const payload = Buffer.from(JSON.stringify({ issuedAt: Date.now() })).toString("base64url");
+function setDashboardAuthCookie(res, user) {
+  const payload = Buffer.from(JSON.stringify({
+    issuedAt: Date.now(),
+    userId: user.id,
+    username: user.username,
+  })).toString("base64url");
   const cookieValue = `${payload}.${signDashboardValue(payload)}`;
   appendSetCookie(res, `${DASHBOARD_AUTH_COOKIE}=${encodeURIComponent(cookieValue)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.ceil(DASHBOARD_AUTH_MAX_AGE_MS / 1000)}`);
 }
@@ -3401,6 +3481,78 @@ function clearDashboardAuthCookie(res) {
 
 function signDashboardValue(value) {
   return crypto.createHmac("sha256", DASHBOARD_PASSWORD).update(value).digest("base64url");
+}
+
+function cleanUsername(value) {
+  return String(value || "").trim().replace(/\s+/g, "");
+}
+
+function getSignupValidationError(username, password) {
+  if (!username || !password) return "Enter a username and password";
+  if (!/^[A-Za-z0-9_]{3,24}$/.test(username)) {
+    return "Username must be 3-24 letters, numbers, or underscores";
+  }
+  if (password.length < 8) return "Password must be at least 8 characters";
+  if (password.length > 128) return "Password is too long";
+  return "";
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const hash = crypto.scryptSync(password, salt, 64).toString("base64url");
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedValue) {
+  const [scheme, salt, hash] = String(storedValue || "").split(":");
+  if (scheme !== "scrypt" || !salt || !hash) return false;
+
+  const candidate = crypto.scryptSync(password, salt, 64).toString("base64url");
+  if (Buffer.byteLength(candidate) !== Buffer.byteLength(hash)) return false;
+  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(hash));
+}
+
+async function readUsers() {
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("users")
+      .find({})
+      .project({ _id: 0 })
+      .toArray();
+  }
+
+  try {
+    const content = await fs.readFile(userStorePath, "utf8");
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.users) ? parsed.users : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeUsers(users) {
+  await fs.mkdir(path.dirname(userStorePath), { recursive: true });
+  const payload = JSON.stringify({ users }, null, 2);
+  await fs.writeFile(userStorePath, payload);
+}
+
+async function createUser(user) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("users").insertOne(user);
+    return;
+  }
+
+  const users = await readUsers();
+  if (users.some((entry) => entry.usernameLower === user.usernameLower)) {
+    const error = new Error("Duplicate username");
+    error.code = 11000;
+    throw error;
+  }
+
+  users.push(user);
+  await writeUsers(users);
 }
 
 function getCookieValue(req, name) {
