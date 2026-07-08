@@ -1593,19 +1593,21 @@ function renderMapSnapshot(snapshot, center, entries = []) {
   mapGroup.name = "UploadedMapSnapshot";
 
   const parts = snapshot.parts.slice(0, 8000);
-  const heatContext = activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis"
-    ? createObjectHeatContext(parts, entries, snapshot)
-    : null;
 
   for (let index = 0; index < parts.length; index += 1) {
-    const mesh = createMapMesh(parts[index], center, heatContext?.scores[index] || null);
+    const mesh = createMapMesh(parts[index], center);
     if (mesh) mapGroup.add(mesh);
+  }
+
+  if (activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis") {
+    const heatSpots = createLocalizedHeatSpots(entries, center, snapshot);
+    if (heatSpots) mapGroup.add(heatSpots);
   }
 
   scene.add(mapGroup);
 }
 
-function createMapMesh(part, center, heatScore = null) {
+function createMapMesh(part, center) {
   const size = part.size || [];
   const cframe = part.cframe || [];
   if (size.length < 3 || cframe.length < 12) return null;
@@ -1618,18 +1620,10 @@ function createMapMesh(part, center, heatScore = null) {
     clamp((Number(color[1]) || 0) / 255, 0, 1),
     clamp((Number(color[2]) || 0) / 255, 0, 1),
   );
-  const heat = heatScore ? clamp(heatScore.value, 0, 1) : 0;
-  const heatColor = getHeatmapThreeColor(heat);
-  const materialColor = heatScore
-    ? baseColor.clone().lerp(heatColor, clamp(0.38 + heat * 0.58, 0, 0.92))
-    : baseColor;
   const material = new THREE.MeshStandardMaterial({
-    color: materialColor,
-    emissive: heatScore ? heatColor.clone().multiplyScalar(clamp(heat * 0.72, 0, 0.72)) : new THREE.Color(0x000000),
+    color: baseColor,
     transparent: true,
-    opacity: heatScore
-      ? clamp(0.34 + heat * 0.3 - (Number(part.transparency) || 0) * 0.1, 0.2, 0.68)
-      : clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24),
+    opacity: clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24),
     roughness: 0.85,
     metalness: 0,
     depthWrite: false,
@@ -1652,80 +1646,100 @@ function createMapMesh(part, center, heatScore = null) {
     0, 0, 0, 1,
   );
 
-  if (heatScore && heat > 0.16) {
-    const group = new THREE.Group();
-    group.add(mesh);
-
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: heatColor,
-      transparent: true,
-      opacity: clamp(heat * 0.2, 0.04, 0.2),
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-    const glow = new THREE.Mesh(geometry, glowMaterial);
-    glow.matrixAutoUpdate = false;
-    glow.matrix.copy(mesh.matrix);
-    glow.renderOrder = 2;
-    group.add(glow);
-    return group;
-  }
-
   return mesh;
 }
 
-function createObjectHeatContext(parts, entries, snapshot) {
+function createLocalizedHeatSpots(entries, center, snapshot) {
   const sourceEntries = entries.filter((entry) => (
     Number.isFinite(Number(entry.x))
+    && Number.isFinite(Number(entry.y))
     && Number.isFinite(Number(entry.z))
   ));
   if (!sourceEntries.length) return null;
 
   const bounds = snapshot?.bounds;
   const span = Math.max(Number(bounds?.width) || 0, Number(bounds?.depth) || 0, 1);
-  const radius = clamp(span / 13, 24, 95);
-  const twoSigmaSquared = 2 * (radius * 0.58) ** 2;
-  const rawScores = parts.map((part) => getObjectHeatScore(part, sourceEntries, radius, twoSigmaSquared));
-  const maxScore = rawScores.reduce((max, score) => Math.max(max, score), 0);
-  if (maxScore <= 0) return null;
+  const binSize = clamp(span / 56, 8, 24);
+  const bins = getDensityBins(sourceEntries, binSize)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 220);
+  if (!bins.length) return null;
 
-  return {
-    scores: rawScores.map((score) => ({
-      raw: score,
-      value: score <= 0 ? 0 : Math.pow(score / maxScore, 0.58),
-    })),
-  };
-}
+  const maxCount = bins.reduce((max, bin) => Math.max(max, bin.count), 1);
+  const group = new THREE.Group();
+  group.name = "LocalizedHeatSpots";
+  const texture = getLocalizedHeatTexture();
 
-function getObjectHeatScore(part, entries, radius, twoSigmaSquared) {
-  const cframe = part.cframe || [];
-  const size = part.size || [];
-  if (cframe.length < 3) return 0;
+  for (const bin of bins) {
+    const heat = clamp(bin.count / maxCount, 0, 1);
+    if (heat <= 0.025) continue;
 
-  const x = Number(cframe[0]) || 0;
-  const z = Number(cframe[2]) || 0;
-  const footprint = Math.max(Number(size[0]) || 1, Number(size[2]) || 1, 1);
-  const effectiveRadius = radius + footprint * 0.42;
-  const effectiveRadiusSq = effectiveRadius * effectiveRadius;
-  let score = 0;
+    const color = getHeatmapThreeColor(Math.pow(heat, 0.55));
+    const radius = clamp(binSize * (0.9 + Math.pow(heat, 0.55) * 1.25), 7, 34);
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      map: texture,
+      transparent: true,
+      opacity: clamp(0.08 + heat * 0.16, 0.08, 0.24),
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    const spot = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), material);
+    spot.position.set(bin.x - center.x, bin.y - center.y + 1.1, bin.z - center.z);
+    spot.rotation.x = -Math.PI / 2;
+    spot.renderOrder = 3;
+    group.add(spot);
 
-  for (const entry of entries) {
-    const dx = Number(entry.x) - x;
-    const dz = Number(entry.z) - z;
-    const distanceSquared = dx * dx + dz * dz;
-    if (distanceSquared > effectiveRadiusSq) continue;
-    score += getSampleWeight(entry) * Math.exp(-distanceSquared / twoSigmaSquared);
+    if (heat > 0.62) {
+      const coreMaterial = material.clone();
+      coreMaterial.opacity = clamp(0.08 + heat * 0.1, 0.08, 0.18);
+      const core = new THREE.Mesh(new THREE.PlaneGeometry(radius * 0.86, radius * 0.86), coreMaterial);
+      core.position.copy(spot.position);
+      core.position.y += 0.05;
+      core.rotation.x = -Math.PI / 2;
+      core.renderOrder = 4;
+      group.add(core);
+    }
   }
 
-  return score;
+  return group.children.length ? group : null;
 }
 
 function getHeatmapThreeColor(value) {
   const color = getHeatmapRampColor(clamp(value, 0, 1));
   return new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
+}
+
+function getLocalizedHeatTexture() {
+  if (getLocalizedHeatTexture.texture) return getLocalizedHeatTexture.texture;
+
+  const size = 96;
+  const heatCanvas = document.createElement("canvas");
+  heatCanvas.width = size;
+  heatCanvas.height = size;
+  const context = heatCanvas.getContext("2d");
+  const gradient = context.createRadialGradient(
+    size / 2,
+    size / 2,
+    0,
+    size / 2,
+    size / 2,
+    size / 2,
+  );
+  gradient.addColorStop(0, "rgba(255,255,255,0.92)");
+  gradient.addColorStop(0.42, "rgba(255,255,255,0.46)");
+  gradient.addColorStop(0.72, "rgba(255,255,255,0.13)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(heatCanvas);
+  texture.needsUpdate = true;
+  getLocalizedHeatTexture.texture = texture;
+  return texture;
 }
 
 function getMapGeometry(shape) {
