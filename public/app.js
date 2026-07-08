@@ -478,15 +478,19 @@ function renderSignalAreas(container, areas, mode) {
   if (!container) return;
 
   const label = getSignalAreaTitleText(mode);
-  const rows = areas.length ? areas : getSignalPlaceholderAreas(mode);
-  const totalCount = rows.reduce((sum, area) => sum + Math.max(Number(area.count) || 0, 0), 0);
+  const realRows = areas.slice(0, MAX_SIGNAL_AREAS);
+  const rows = [
+    ...realRows,
+    ...getSignalPlaceholderAreas(mode, realRows.length, MAX_SIGNAL_AREAS),
+  ];
+  const totalCount = realRows.reduce((sum, area) => sum + Math.max(Number(area.count) || 0, 0), 0);
 
   container.innerHTML = rows.map((area) => renderSignalAreaRow({
     area,
     label,
     mode,
     percent: getSignalAreaPercent(area, totalCount),
-    isPlaceholder: !areas.length,
+    isPlaceholder: Boolean(area.placeholder),
   })).join("");
 }
 
@@ -509,7 +513,7 @@ function renderSignalAreaRow({ area, label, mode, percent, isPlaceholder }) {
       <span class="signalBar" aria-hidden="true">
         <i style="width: ${escapeHtml(String(percent))}%"></i>
       </span>
-      <b>${escapeHtml(String(percent))}%</b>
+      <b>${isPlaceholder ? "No data" : `${escapeHtml(String(percent))}%`}</b>
     </${itemTag}>
   `;
 }
@@ -527,26 +531,21 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }
 
-function getSignalPlaceholderAreas(mode) {
-  const namesByMode = {
-    movement: ["Spawn Plaza", "Main Path", "Shop Corner", "Boss Gate", "Cave Bend"],
-    leaves: ["Tutorial Cave", "Old Ruins", "Dark Forest", "Castle Gate", "Lava Pit"],
-    deaths: ["Lava Pit", "Boss Gate", "Trap Hall", "Dark Forest", "Bridge Edge"],
-  };
-  const percentsByMode = {
-    movement: [62, 45, 39, 28, 24],
-    leaves: [62, 45, 39, 28, 24],
-    deaths: [58, 47, 36, 31, 22],
-  };
-  const names = namesByMode[mode] || namesByMode.leaves;
-  const percents = percentsByMode[mode] || percentsByMode.leaves;
+function getSignalPlaceholderAreas(mode, filledCount, maxCount) {
+  const label = getSignalAreaTitleText(mode);
+  const rows = [];
 
-  return names.map((name, index) => ({
-    rank: index + 1,
-    name,
-    percent: percents[index],
-    count: percents[index],
-  }));
+  for (let index = filledCount; index < maxCount; index += 1) {
+    rows.push({
+      rank: index + 1,
+      name: `${label} area ${index + 1}`,
+      percent: 0,
+      count: 0,
+      placeholder: true,
+    });
+  }
+
+  return rows;
 }
 
 function focusSignalAreaFromElement(item) {

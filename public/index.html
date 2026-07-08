@@ -174,20 +174,19 @@
               </article>
 
               <article class="panel dataCard placeholderFeature">
-                <h2>Most common death areas</h2>
+                <h2>Top death areas</h2>
                 <p>Highest death share from raw event locations.</p>
                 <div class="signalAreaList" id="deathAreaList">
                   <p class="status">Waiting for death samples...</p>
                 </div>
               </article>
 
-              <article class="panel chatInsights">
+              <article class="panel aiRunControls">
                 <div class="sectionHeader">
                   <div>
-                    <h2>Most Common Questions</h2>
-                    <p>Grouped from recent player chat.</p>
+                    <h2>AI Runs</h2>
+                    <p>Automation and saved analysis history.</p>
                   </div>
-                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
                 </div>
                 <div class="aiAutomationControls">
                   <label class="toggleControl" for="aiAutomationToggle">
@@ -201,6 +200,16 @@
                   <select id="aiReportSelect" disabled>
                     <option value="">Latest saved report</option>
                   </select>
+                </div>
+              </article>
+
+              <article class="panel chatInsights">
+                <div class="sectionHeader">
+                  <div>
+                    <h2>Top common questions</h2>
+                    <p>Grouped from recent player chat.</p>
+                  </div>
+                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
                 </div>
                 <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
                 <div class="commonQuestionList" id="commonQuestionList"></div>
