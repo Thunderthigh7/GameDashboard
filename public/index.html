@@ -143,6 +143,40 @@
                   </div>
                 </div>
               </section>
+
+              <article class="panel aiRunControls">
+                <div class="sectionHeader">
+                  <div>
+                    <h2>AI Runs</h2>
+                    <p>Automation and saved analysis history.</p>
+                  </div>
+                </div>
+                <div class="aiAutomationControls">
+                  <label class="toggleControl" for="aiAutomationToggle">
+                    <input id="aiAutomationToggle" type="checkbox" checked />
+                    <span>Auto hourly</span>
+                  </label>
+                  <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
+                </div>
+                <div class="aiReportHistory">
+                  <label for="aiReportSelect">Saved runs</label>
+                  <select id="aiReportSelect" disabled>
+                    <option value="">Latest saved report</option>
+                  </select>
+                </div>
+              </article>
+
+              <article class="panel chatInsights">
+                <div class="sectionHeader">
+                  <div>
+                    <h2>Top common questions</h2>
+                    <p>Grouped from recent player chat.</p>
+                  </div>
+                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
+                </div>
+                <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
+                <div class="commonQuestionList" id="commonQuestionList"></div>
+              </article>
             </div>
 
             <aside class="insightRail">
@@ -179,40 +213,6 @@
                 <div class="signalAreaList" id="deathAreaList">
                   <p class="status">Waiting for death samples...</p>
                 </div>
-              </article>
-
-              <article class="panel aiRunControls">
-                <div class="sectionHeader">
-                  <div>
-                    <h2>AI Runs</h2>
-                    <p>Automation and saved analysis history.</p>
-                  </div>
-                </div>
-                <div class="aiAutomationControls">
-                  <label class="toggleControl" for="aiAutomationToggle">
-                    <input id="aiAutomationToggle" type="checkbox" checked />
-                    <span>Auto hourly</span>
-                  </label>
-                  <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
-                </div>
-                <div class="aiReportHistory">
-                  <label for="aiReportSelect">Saved runs</label>
-                  <select id="aiReportSelect" disabled>
-                    <option value="">Latest saved report</option>
-                  </select>
-                </div>
-              </article>
-
-              <article class="panel chatInsights">
-                <div class="sectionHeader">
-                  <div>
-                    <h2>Top common questions</h2>
-                    <p>Grouped from recent player chat.</p>
-                  </div>
-                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
-                </div>
-                <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
-                <div class="commonQuestionList" id="commonQuestionList"></div>
               </article>
             </aside>
           </div>
