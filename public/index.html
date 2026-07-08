@@ -144,39 +144,41 @@
                 </div>
               </section>
 
-              <article class="panel aiRunControls">
-                <div class="sectionHeader">
-                  <div>
-                    <h2>AI Runs</h2>
-                    <p>Automation and saved analysis history.</p>
+              <div class="aiCardRow">
+                <article class="panel aiRunControls">
+                  <div class="sectionHeader">
+                    <div>
+                      <h2>AI Runs</h2>
+                      <p>Automation and saved analysis history.</p>
+                    </div>
                   </div>
-                </div>
-                <div class="aiAutomationControls">
-                  <label class="toggleControl" for="aiAutomationToggle">
-                    <input id="aiAutomationToggle" type="checkbox" checked />
-                    <span>Auto hourly</span>
-                  </label>
-                  <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
-                </div>
-                <div class="aiReportHistory">
-                  <label for="aiReportSelect">Saved runs</label>
-                  <select id="aiReportSelect" disabled>
-                    <option value="">Latest saved report</option>
-                  </select>
-                </div>
-              </article>
+                  <div class="aiAutomationControls">
+                    <label class="toggleControl" for="aiAutomationToggle">
+                      <input id="aiAutomationToggle" type="checkbox" checked />
+                      <span>Auto hourly</span>
+                    </label>
+                    <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
+                  </div>
+                  <div class="aiReportHistory">
+                    <label for="aiReportSelect">Saved runs</label>
+                    <select id="aiReportSelect" disabled>
+                      <option value="">Latest saved report</option>
+                    </select>
+                  </div>
+                </article>
 
-              <article class="panel chatInsights">
-                <div class="sectionHeader">
-                  <div>
-                    <h2>Top common questions</h2>
-                    <p>Grouped from recent player chat.</p>
+                <article class="panel chatInsights">
+                  <div class="sectionHeader">
+                    <div>
+                      <h2>Top common questions</h2>
+                      <p>Grouped from recent player chat.</p>
+                    </div>
+                    <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
                   </div>
-                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
-                </div>
-                <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
-                <div class="commonQuestionList" id="commonQuestionList"></div>
-              </article>
+                  <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
+                  <div class="commonQuestionList" id="commonQuestionList"></div>
+                </article>
+              </div>
             </div>
 
             <aside class="insightRail">
