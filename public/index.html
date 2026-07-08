@@ -103,11 +103,6 @@
                 <div class="sectionHeader">
                   <div>
                     <h2>Where players are going</h2>
-                    <p>Movement, death, leave, and chat samples rendered on the exported map.</p>
-                  </div>
-                  <div class="sectionActions">
-                    <button class="button secondary compact" id="centerMovementButton" type="button">Center</button>
-                    <button class="button secondary compact" id="refreshMovementButton" type="button">Refresh</button>
                   </div>
                 </div>
                 <div class="heatmapToolbar">
@@ -119,8 +114,9 @@
                     <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
                   </div>
                   <div class="heatmapPresets" aria-label="Heatmap render style">
-                    <button class="miniButton active" type="button" data-heatmap-render="points">Points</button>
+                    <button class="miniButton active" type="button" data-heatmap-render="points">Areas</button>
                     <button class="miniButton" type="button" data-heatmap-render="heatmap">Heatmap</button>
+                    <button class="miniButton" id="refreshMovementButton" type="button">Refresh</button>
                   </div>
                 </div>
                 <div class="heatmapShell">
