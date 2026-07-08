@@ -533,6 +533,10 @@ small,
   font-size: 11px;
 }
 
+.projectSecretBox .button {
+  margin-top: 10px;
+}
+
 .connectedGamesManager {
   display: grid;
   gap: 12px;

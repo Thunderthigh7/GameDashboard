@@ -703,6 +703,59 @@ async function getObjectStorageRollup(universeId) {
   }
 }
 
+async function deleteObjectStoragePrefix(prefix) {
+  if (!OBJECT_STORAGE_CONFIGURED || !prefix) return 0;
+
+  const { DeleteObjectsCommand, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  let ContinuationToken;
+  let deletedCount = 0;
+
+  do {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: B2_BUCKET_NAME,
+      Prefix: prefix,
+      ContinuationToken,
+      MaxKeys: 1000,
+    }));
+    const objects = (response.Contents || [])
+      .map((object) => ({ Key: object.Key }))
+      .filter((object) => object.Key);
+
+    if (objects.length) {
+      await client.send(new DeleteObjectsCommand({
+        Bucket: B2_BUCKET_NAME,
+        Delete: {
+          Objects: objects,
+          Quiet: true,
+        },
+      }));
+      deletedCount += objects.length;
+    }
+
+    ContinuationToken = response.NextContinuationToken;
+  } while (ContinuationToken);
+
+  return deletedCount;
+}
+
+async function deleteObjectStorageKey(objectKey) {
+  if (!OBJECT_STORAGE_CONFIGURED || !objectKey) return 0;
+
+  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  try {
+    await client.send(new DeleteObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+    }));
+  } catch (error) {
+    if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return 0;
+    throw error;
+  }
+  return 1;
+}
+
 async function readObjectStorageJson(objectKey) {
   const { GetObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
@@ -946,12 +999,15 @@ async function handleProjectUnlink(req, res, auth, projectId) {
   const cleanProjectId = cleanString(projectId, 120);
   if (!cleanProjectId) return sendJson(res, 400, { error: "Missing project ID." });
 
-  const project = await deleteProject(cleanProjectId, auth.userId);
+  const project = await getProjectByIdForOwner(cleanProjectId, auth.userId);
   if (!project) return sendJson(res, 404, { error: "Connected game not found." });
+  const deletedData = await deleteUniverseAnalyticsData(project.universeId);
+  await deleteProject(cleanProjectId, auth.userId);
 
   return sendJson(res, 200, {
     ok: true,
     project: serializeProject(project),
+    deletedData,
   });
 }
 
@@ -4436,6 +4492,14 @@ async function getProjectByUniverseId(universeId) {
   return projects.find((project) => cleanInteger(project.universeId) === cleanUniverseId) || null;
 }
 
+async function getProjectByIdForOwner(projectId, ownerUserId) {
+  const cleanProjectId = cleanString(projectId, 120);
+  if (!cleanProjectId || !ownerUserId) return null;
+
+  const projects = await readProjects();
+  return projects.find((project) => project.id === cleanProjectId && project.ownerUserId === ownerUserId) || null;
+}
+
 async function getUserProjects(ownerUserId) {
   const projects = await readProjects();
   return projects
@@ -4581,6 +4645,106 @@ async function deleteProject(projectId, ownerUserId) {
   const [project] = projects.splice(projectIndex, 1);
   await writeProjects(projects);
   return project;
+}
+
+async function deleteUniverseAnalyticsData(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (cleanUniverseId <= 0) return { universeId: null, deleted: false };
+
+  const universeKey = String(cleanUniverseId);
+  const memoryDeleted = clearUniverseRuntimeData(universeKey);
+  const [mongoDeleted, localDeleted, objectStorageDeleted] = await Promise.all([
+    deleteMongoUniverseData(cleanUniverseId),
+    deleteLocalUniverseData(cleanUniverseId),
+    deleteObjectStorageUniverseData(cleanUniverseId),
+  ]);
+
+  return {
+    universeId: cleanUniverseId,
+    deleted: true,
+    memoryDeleted,
+    mongoDeleted,
+    localDeleted,
+    objectStorageDeleted,
+  };
+}
+
+function clearUniverseRuntimeData(universeKey) {
+  let deleted = 0;
+  for (const map of [
+    chatLogsByUniverseId,
+    chatLogIdsByUniverseId,
+    movementSamplesByUniverseId,
+    movementSampleIdsByUniverseId,
+    movementRollupsByUniverseId,
+    movementRollupIdsByUniverseId,
+    deathSamplesByUniverseId,
+    deathSampleIdsByUniverseId,
+    leaveSamplesByUniverseId,
+    leaveSampleIdsByUniverseId,
+    mapSnapshotsByUniverseId,
+    chatInsightsByScope,
+    areaInsightsByScope,
+    aiAutomationSettingsCache,
+    objectStorageRollupCache,
+  ]) {
+    if (map.delete(universeKey)) deleted += 1;
+  }
+
+  for (const sessionKey of [...mapUploadSessions.keys()]) {
+    if (String(sessionKey).startsWith(`${universeKey}:`)) {
+      mapUploadSessions.delete(sessionKey);
+      deleted += 1;
+    }
+  }
+
+  return deleted;
+}
+
+async function deleteMongoUniverseData(universeId) {
+  const db = await getMongoDb();
+  if (!db) return {};
+
+  const result = {};
+  for (const collectionName of [
+    "chat_logs",
+    "movement_samples",
+    "movement_rollups",
+    "death_samples",
+    "leave_samples",
+    "map_snapshots",
+    "map_snapshot_chunks",
+  ]) {
+    const response = await db.collection(collectionName).deleteMany({ universeId });
+    result[collectionName] = response.deletedCount || 0;
+  }
+  return result;
+}
+
+async function deleteLocalUniverseData(universeId) {
+  try {
+    await fs.unlink(getMapSnapshotPath(universeId));
+    return { mapSnapshot: 1 };
+  } catch (error) {
+    if (error.code === "ENOENT") return { mapSnapshot: 0 };
+    throw error;
+  }
+}
+
+async function deleteObjectStorageUniverseData(universeId) {
+  if (!OBJECT_STORAGE_CONFIGURED) return {};
+
+  const result = {};
+  for (const prefix of [
+    `raw/${universeId}/`,
+    `maps/${universeId}/`,
+    `rollups/${universeId}/`,
+    `reports/${universeId}/`,
+  ]) {
+    result[prefix] = await deleteObjectStoragePrefix(prefix);
+  }
+  result[getObjectStorageAiAutomationSettingsKey(universeId)] = await deleteObjectStorageKey(getObjectStorageAiAutomationSettingsKey(universeId));
+  return result;
 }
 
 function getCookieValue(req, name) {

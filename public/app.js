@@ -25,6 +25,7 @@ const createProjectButton = document.querySelector("#createProjectButton");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
 const projectSecretTarget = document.querySelector("#projectSecretTarget");
+const copyProjectSecretButton = document.querySelector("#copyProjectSecretButton");
 const connectedGameList = document.querySelector("#connectedGameList");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const refreshMovementButton = document.querySelector("#refreshMovementButton");
@@ -97,6 +98,7 @@ function bindEvents() {
     event.preventDefault();
     createProject();
   });
+  copyProjectSecretButton?.addEventListener("click", copyProjectSecret);
   connectedGameList?.addEventListener("click", (event) => {
     const regenerateButton = event.target.closest("[data-regenerate-project-secret]");
     if (regenerateButton) {
@@ -537,7 +539,7 @@ async function unlinkProject(projectId, button) {
 
   const universe = knownUniverses.find((entry) => String(entry.projectId || "") === String(projectId));
   const label = universe?.name || "this game";
-  const confirmed = window.confirm(`Unlink ${label}? Roblox analytics requests using this game's secret will stop working.`);
+  const confirmed = window.confirm(`Unlink ${label}? This will delete this game's stored analytics data from the dashboard and Roblox analytics requests using this game's secret will stop working.`);
   if (!confirmed) return;
 
   const originalText = button?.textContent || "Unlink";
@@ -549,7 +551,7 @@ async function unlinkProject(projectId, button) {
 
   try {
     await request(`/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
-    if (ownedGamesStatus) ownedGamesStatus.textContent = `${label} was unlinked.`;
+    if (ownedGamesStatus) ownedGamesStatus.textContent = `${label} was unlinked and its stored analytics data was deleted.`;
     await loadUniverses();
     await loadOwnedGames();
   } catch (error) {
@@ -560,6 +562,21 @@ async function unlinkProject(projectId, button) {
       button.disabled = false;
       button.textContent = originalText;
     }
+  }
+}
+
+async function copyProjectSecret() {
+  const secret = projectSecretValue?.textContent || "";
+  if (!secret) return;
+
+  try {
+    await navigator.clipboard.writeText(secret);
+    if (copyProjectSecretButton) copyProjectSecretButton.textContent = "Copied";
+    window.setTimeout(() => {
+      if (copyProjectSecretButton) copyProjectSecretButton.textContent = "Copy secret";
+    }, 1400);
+  } catch {
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Copy failed. Select the secret text and copy it manually.";
   }
 }
 
