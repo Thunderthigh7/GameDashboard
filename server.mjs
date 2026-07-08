@@ -10,6 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const mapSnapshotDir = path.join(__dirname, "data", "map-snapshots");
 const userStorePath = path.join(__dirname, "data", "users.json");
+const projectStorePath = path.join(__dirname, "data", "projects.json");
 
 loadLocalEnv();
 
@@ -84,7 +85,7 @@ const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
 const areaInsightsByScope = new Map();
-let aiAutomationSettingsCache = null;
+const aiAutomationSettingsCache = new Map();
 let mongoClientPromise = null;
 let b2S3ClientPromise = null;
 const mongoStatus = {
@@ -152,7 +153,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/roblox/heatmap" && req.method === "GET") {
-      if (!isValidDashboardToolSecret(req)) {
+      const project = await getProjectFromRequestSecret(req, url.searchParams.get("universeId"));
+      if (!project && !isValidDashboardToolSecret(req)) {
         return sendJson(res, 401, { error: "Invalid dashboard secret" });
       }
 
@@ -163,37 +165,54 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 401, { error: "Sign in first" });
     }
 
+    const auth = getDashboardAuth(req);
+
+    if (url.pathname === "/api/projects" && req.method === "GET") {
+      return sendJson(res, 200, { projects: await getUserProjects(auth.userId) });
+    }
+
+    if (url.pathname === "/api/projects" && req.method === "POST") {
+      return handleProjectCreate(req, res, auth);
+    }
+
     if (url.pathname === "/api/universes" && req.method === "GET") {
-      return sendJson(res, 200, await getUniverseSummaries());
+      return sendJson(res, 200, await getUniverseSummaries(auth.userId));
     }
 
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getChatLogsFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getStoredChatInsights({
         universeId: url.searchParams.get("universeId"),
       }));
     }
 
     if (url.pathname === "/api/ai-insights/reports" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getAiInsightReportsFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/ai-insights/report" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getAiInsightReportFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/ai-insights/settings" && req.method === "GET") {
-      return sendJson(res, 200, await getAiAutomationSettings());
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      return sendJson(res, 200, await getAiAutomationSettings(url.searchParams.get("universeId")));
     }
 
     if (url.pathname === "/api/ai-insights/settings" && req.method === "POST") {
-      return handleAiAutomationSettingsUpdate(req, res);
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      return handleAiAutomationSettingsUpdate(req, res, url.searchParams);
     }
 
     if (url.pathname === "/api/ai-insights/analyze" && req.method === "POST") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
         return sendJson(res, 200, await analyzeAllAiInsights({
           universeId: url.searchParams.get("universeId"),
@@ -207,6 +226,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/chat-insights/analyze" && req.method === "POST") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
         return sendJson(res, 200, await analyzeChatInsights({
           universeId: url.searchParams.get("universeId"),
@@ -217,22 +237,27 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getMovementHeatmapFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/death-heatmap" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getDeathHeatmapFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/leave-heatmap" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getLeaveHeatmapFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/ai-area-analysis" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getAiAreaAnalysisFromQuery(url.searchParams));
     }
 
     if (url.pathname === "/api/ai-area-analysis/analyze" && req.method === "POST") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
         return sendJson(res, 200, await analyzeAiAreaInsights({
           universeId: url.searchParams.get("universeId"),
@@ -246,6 +271,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/map-snapshot" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getMapSnapshot({
         universeId: url.searchParams.get("universeId"),
       }));
@@ -398,6 +424,9 @@ async function ensureMongoIndexes(db) {
     db.collection("map_snapshots").createIndex({ universeId: 1 }, { unique: true }),
     db.collection("map_snapshot_chunks").createIndex({ universeId: 1, chunkIndex: 1 }, { unique: true }),
     db.collection("users").createIndex({ usernameLower: 1 }, { unique: true }),
+    db.collection("projects").createIndex({ universeId: 1 }, { unique: true }),
+    db.collection("projects").createIndex({ ownerUserId: 1 }),
+    db.collection("projects").createIndex({ secretHash: 1 }, { unique: true }),
   ]);
 }
 
@@ -783,11 +812,47 @@ async function handleDashboardSignup(req, res) {
   });
 }
 
-async function handlePresenceHeartbeat(req, res) {
-  if (!isValidPresenceSecret(req)) {
-    return sendJson(res, 401, { error: "Invalid presence secret" });
+async function handleProjectCreate(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
   }
 
+  const universeId = cleanInteger(body.universeId);
+  if (universeId <= 0) {
+    return sendJson(res, 400, { error: "Enter a valid universe ID" });
+  }
+
+  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+  const project = {
+    id: crypto.randomUUID(),
+    ownerUserId: auth.userId,
+    universeId,
+    name: cleanString(body.name, 80) || `Universe ${universeId}`,
+    secretHash: hashProjectSecret(projectSecret),
+    createdAt: Date.now(),
+  };
+
+  try {
+    await createProject(project);
+  } catch (error) {
+    if (error.code === 11000) {
+      return sendJson(res, 409, { error: "This universe is already connected to an account" });
+    }
+
+    throw error;
+  }
+
+  return sendJson(res, 201, {
+    ok: true,
+    project: serializeProject(project),
+    ingestSecret: projectSecret,
+  });
+}
+
+async function handlePresenceHeartbeat(req, res) {
   let body;
   try {
     body = await readJsonBody(req, MAX_PRESENCE_BODY_BYTES);
@@ -799,6 +864,16 @@ async function handlePresenceHeartbeat(req, res) {
 
   if (!presence.ok) {
     return sendJson(res, 400, { error: presence.error });
+  }
+
+  const project = await getProjectFromRequestSecret(req, presence.value.universeId);
+  if (!project && !isValidPresenceSecret(req)) {
+    return sendJson(res, 401, { error: "Invalid presence secret" });
+  }
+
+  if (project) {
+    presence.value.ownerUserId = project.ownerUserId;
+    presence.value.projectId = project.id;
   }
 
   const savedChatCount = saveChatLogs(presence.value);
@@ -828,10 +903,6 @@ async function handlePresenceHeartbeat(req, res) {
 }
 
 async function handleMapSnapshotUpload(req, res) {
-  if (!isValidDashboardToolSecret(req)) {
-    return sendJson(res, 401, { error: "Invalid dashboard secret" });
-  }
-
   let body;
   try {
     body = await readJsonBody(req, MAX_MAP_SNAPSHOT_BODY_BYTES);
@@ -842,6 +913,11 @@ async function handleMapSnapshotUpload(req, res) {
   const chunk = normalizeMapSnapshotChunk(body);
   if (!chunk.ok) {
     return sendJson(res, 400, { error: chunk.error });
+  }
+
+  const project = await getProjectFromRequestSecret(req, chunk.value.universeId);
+  if (!project && !isValidDashboardToolSecret(req)) {
+    return sendJson(res, 401, { error: "Invalid dashboard secret" });
   }
 
   const result = await saveMapSnapshotChunk(chunk.value);
@@ -861,7 +937,7 @@ async function handleScheduledAiInsightsRun(req, res) {
   }
 }
 
-async function handleAiAutomationSettingsUpdate(req, res) {
+async function handleAiAutomationSettingsUpdate(req, res, searchParams) {
   let body;
   try {
     body = await readJsonBody(req, 8 * 1024);
@@ -874,7 +950,13 @@ async function handleAiAutomationSettingsUpdate(req, res) {
     return sendJson(res, 400, { error: "mode must be auto or manual" });
   }
 
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (universeId <= 0) {
+    return sendJson(res, 400, { error: "Enter a valid universe ID" });
+  }
+
   const settings = await saveAiAutomationSettings({
+    universeId,
     mode,
     intervalHours: 1,
     updatedAt: Date.now(),
@@ -1616,8 +1698,10 @@ function getObjectStorageMapSnapshotVersionKey(snapshot) {
   return `maps/${cleanInteger(snapshot.universeId)}/${receivedAt}.json.gz`;
 }
 
-async function getUniverseSummaries() {
-  const universeIds = new Set();
+async function getUniverseSummaries(ownerUserId = null) {
+  const projects = ownerUserId ? await getUserProjects(ownerUserId) : (await readProjects()).map(serializeProject);
+  const projectsByUniverseId = new Map(projects.map((project) => [String(project.universeId), project]));
+  const universeIds = new Set(projects.map((project) => String(project.universeId)));
   addUniverseKeys(universeIds, chatLogsByUniverseId);
   addUniverseKeys(universeIds, movementSamplesByUniverseId);
   addUniverseKeys(universeIds, movementRollupsByUniverseId);
@@ -1639,13 +1723,23 @@ async function getUniverseSummaries() {
   for (const id of universeIds) {
     const universeId = cleanInteger(id);
     if (universeId <= 0) continue;
+    const project = projectsByUniverseId.get(String(universeId));
+    if (!project) continue;
 
     const summary = buildUniverseSummary(universeId, persistedMapUniverseIds.has(String(universeId)));
     const rollup = await getObjectStorageRollup(universeId);
     if (rollup && rollupTotalSamples(rollup) > summary.totalSamples) {
-      universes.push(buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot));
+      universes.push({
+        ...buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot),
+        projectId: project.id,
+        name: project.name,
+      });
     } else {
-      universes.push(summary);
+      universes.push({
+        ...summary,
+        projectId: project.id,
+        name: project.name,
+      });
     }
   }
 
@@ -2659,17 +2753,6 @@ async function analyzeAllAiInsights(rawFilters = {}) {
 }
 
 async function runScheduledAiInsights() {
-  const settings = await getAiAutomationSettings();
-  if (settings.mode !== "auto") {
-    return {
-      ok: true,
-      skipped: true,
-      reason: "AI automation is set to manual.",
-      settings,
-      results: [],
-    };
-  }
-
   if (!OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
@@ -2682,6 +2765,17 @@ async function runScheduledAiInsights() {
     if (universeId <= 0 || cleanInteger(universe.totalSamples) <= 0) continue;
 
     try {
+      const settings = await getAiAutomationSettings(universeId);
+      if (settings.mode !== "auto") {
+        results.push({
+          universeId,
+          ok: true,
+          skipped: true,
+          reason: "AI automation is set to manual.",
+        });
+        continue;
+      }
+
       const report = await analyzeAllAiInsights({ universeId, source: "auto" });
       results.push({
         universeId,
@@ -2702,7 +2796,6 @@ async function runScheduledAiInsights() {
   return {
     ok: true,
     skipped: false,
-    settings,
     universeCount: results.length,
     results,
   };
@@ -2877,14 +2970,18 @@ function normalizeAiReportSummary(value) {
   };
 }
 
-async function getAiAutomationSettings() {
-  if (aiAutomationSettingsCache) return aiAutomationSettingsCache;
+async function getAiAutomationSettings(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (cleanUniverseId <= 0) return { ...DEFAULT_AI_AUTOMATION_SETTINGS };
+  const cacheKey = String(cleanUniverseId);
+  if (aiAutomationSettingsCache.has(cacheKey)) return aiAutomationSettingsCache.get(cacheKey);
 
   if (OBJECT_STORAGE_CONFIGURED) {
     try {
-      const stored = await readObjectStorageJson(getObjectStorageAiAutomationSettingsKey());
-      aiAutomationSettingsCache = normalizeAiAutomationSettings(stored);
-      return aiAutomationSettingsCache;
+      const stored = await readObjectStorageJson(getObjectStorageAiAutomationSettingsKey(cleanUniverseId));
+      const settings = normalizeAiAutomationSettings({ ...stored, universeId: cleanUniverseId });
+      aiAutomationSettingsCache.set(cacheKey, settings);
+      return settings;
     } catch (error) {
       if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
         objectStorageStatus.lastError = error.message || String(error);
@@ -2892,30 +2989,37 @@ async function getAiAutomationSettings() {
     }
   }
 
-  aiAutomationSettingsCache = { ...DEFAULT_AI_AUTOMATION_SETTINGS };
-  return aiAutomationSettingsCache;
+  const settings = { ...DEFAULT_AI_AUTOMATION_SETTINGS, universeId: cleanUniverseId };
+  aiAutomationSettingsCache.set(cacheKey, settings);
+  return settings;
 }
 
 async function saveAiAutomationSettings(settings) {
-  aiAutomationSettingsCache = normalizeAiAutomationSettings(settings);
+  const cleanUniverseId = cleanInteger(settings?.universeId);
+  if (cleanUniverseId <= 0) throw new Error("Enter a valid universe ID");
+
+  const normalized = normalizeAiAutomationSettings({ ...settings, universeId: cleanUniverseId });
+  const cacheKey = String(cleanUniverseId);
+  aiAutomationSettingsCache.set(cacheKey, normalized);
 
   if (OBJECT_STORAGE_CONFIGURED) {
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await getB2S3Client();
     await client.send(new PutObjectCommand({
       Bucket: B2_BUCKET_NAME,
-      Key: getObjectStorageAiAutomationSettingsKey(),
-      Body: JSON.stringify(aiAutomationSettingsCache),
+      Key: getObjectStorageAiAutomationSettingsKey(cleanUniverseId),
+      Body: JSON.stringify(normalized),
       ContentType: "application/json",
     }));
   }
 
-  return aiAutomationSettingsCache;
+  return normalized;
 }
 
 function normalizeAiAutomationSettings(value) {
   const mode = cleanString(value?.mode, 24).toLowerCase() === "manual" ? "manual" : "auto";
   return {
+    universeId: cleanInteger(value?.universeId) || null,
     mode,
     intervalHours: 1,
     updatedAt: cleanInteger(value?.updatedAt) || null,
@@ -2935,8 +3039,8 @@ function getObjectStorageAiReportManifestKey(universeId) {
   return `reports/${cleanInteger(universeId)}/manifest.json`;
 }
 
-function getObjectStorageAiAutomationSettingsKey() {
-  return "settings/ai-automation.json";
+function getObjectStorageAiAutomationSettingsKey(universeId) {
+  return `settings/ai-automation/${cleanInteger(universeId)}.json`;
 }
 
 async function getAiChatInsights(chatPayload, candidateLogs) {
@@ -3553,6 +3657,106 @@ async function createUser(user) {
 
   users.push(user);
   await writeUsers(users);
+}
+
+async function getUserProjects(ownerUserId) {
+  const projects = await readProjects();
+  return projects
+    .filter((project) => project.ownerUserId === ownerUserId)
+    .sort((a, b) => cleanInteger(b.createdAt) - cleanInteger(a.createdAt))
+    .map(serializeProject);
+}
+
+function serializeProject(project) {
+  return {
+    id: project.id,
+    universeId: cleanInteger(project.universeId),
+    name: project.name || `Universe ${cleanInteger(project.universeId)}`,
+    createdAt: cleanInteger(project.createdAt),
+  };
+}
+
+async function canAccessUniverseFromQuery(ownerUserId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (universeId <= 0) return false;
+  return userOwnsUniverse(ownerUserId, universeId);
+}
+
+async function userOwnsUniverse(ownerUserId, universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!ownerUserId || cleanUniverseId <= 0) return false;
+
+  const projects = await readProjects();
+  return projects.some((project) => (
+    project.ownerUserId === ownerUserId
+    && cleanInteger(project.universeId) === cleanUniverseId
+  ));
+}
+
+async function getProjectFromRequestSecret(req, universeId) {
+  const secret = req.headers["x-dashboard-secret"];
+  if (typeof secret !== "string" || !secret) return null;
+
+  const cleanUniverseId = cleanInteger(universeId);
+  if (cleanUniverseId <= 0) return null;
+
+  const projects = await readProjects();
+  return projects.find((project) => (
+    cleanInteger(project.universeId) === cleanUniverseId
+    && verifyProjectSecret(secret, project.secretHash)
+  )) || null;
+}
+
+function hashProjectSecret(secret) {
+  return crypto.createHash("sha256").update(String(secret || "")).digest("base64url");
+}
+
+function verifyProjectSecret(secret, storedHash) {
+  const candidate = hashProjectSecret(secret);
+  if (Buffer.byteLength(candidate) !== Buffer.byteLength(String(storedHash || ""))) return false;
+  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(String(storedHash || "")));
+}
+
+async function readProjects() {
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("projects")
+      .find({})
+      .project({ _id: 0 })
+      .toArray();
+  }
+
+  try {
+    const content = await fs.readFile(projectStorePath, "utf8");
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.projects) ? parsed.projects : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeProjects(projects) {
+  await fs.mkdir(path.dirname(projectStorePath), { recursive: true });
+  await fs.writeFile(projectStorePath, JSON.stringify({ projects }, null, 2));
+}
+
+async function createProject(project) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("projects").insertOne(project);
+    return;
+  }
+
+  const projects = await readProjects();
+  if (projects.some((entry) => cleanInteger(entry.universeId) === cleanInteger(project.universeId))) {
+    const error = new Error("Duplicate project");
+    error.code = 11000;
+    throw error;
+  }
+
+  projects.push(project);
+  await writeProjects(projects);
 }
 
 function getCookieValue(req, name) {

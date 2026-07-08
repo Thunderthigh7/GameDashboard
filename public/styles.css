@@ -460,6 +460,47 @@ small,
   width: 100%;
 }
 
+.projectForm {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.projectForm .button {
+  width: 100%;
+}
+
+.projectSecretBox {
+  width: 100%;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.08);
+  padding: 10px;
+}
+
+.projectSecretBox strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.projectSecretBox p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.projectSecretBox code {
+  display: block;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.55);
+  color: #a5f3fc;
+  padding: 8px;
+  font-size: 11px;
+}
+
 .metricCard {
   display: grid;
   gap: 8px;

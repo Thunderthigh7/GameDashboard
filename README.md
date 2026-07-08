@@ -10,6 +10,17 @@ Open `http://localhost:3000`.
 
 Copy `.env.example` to `.env` and fill in the dashboard session secret, Roblox presence secret, and optional OpenAI values before starting the server.
 
+## User Accounts And Roblox Setup
+
+The dashboard uses username/password accounts. After signing in:
+
+1. Add your Roblox universe ID in the sidebar.
+2. Copy the Roblox secret that appears once.
+3. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
+4. Use the same secret in the Studio heatmap plugin when exporting a map.
+
+Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
+
 For Backblaze B2 raw analytics storage, add the values from your B2 bucket and application key:
 
 ```env
@@ -123,7 +134,7 @@ The command calls the dashboard service, which checks the website automation set
 reports/{universeId}/latest.json
 reports/{universeId}/{generatedAt}.json
 reports/{universeId}/manifest.json
-settings/ai-automation.json
+settings/ai-automation/{universeId}.json
 ```
 
 Use a Render cron job with this command for hourly reports:
@@ -145,6 +156,6 @@ AI_REPORT_BASE_URL=https://game-dashboard-zaya.onrender.com
 AI_REPORT_SECRET=your-presence-secret
 ```
 
-The dashboard AI panel includes an Auto hourly toggle. Turning it off stores manual mode in B2 and causes the cron job to skip AI calls.
+The dashboard AI panel includes an Auto hourly toggle for the selected game. Turning it off stores manual mode in B2 for that universe and causes the cron job to skip AI calls for that universe.
 
 Every manual or scheduled AI run is saved. Use the Saved runs dropdown in the AI panel to reload an older report without paying for another AI call.

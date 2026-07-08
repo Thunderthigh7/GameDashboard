@@ -8,7 +8,7 @@ roblox-plugin/DashboardHeatmap.plugin.lua
 
 Install it as a local Roblox Studio plugin by copying that `.lua` file into your local Roblox `Plugins` folder, then restart Studio or reload plugins.
 
-The plugin adds a `Dashboard` toolbar with a `Heatmap` button. It fetches heatmap data with the dashboard secret. Use either `PRESENCE_SECRET` or the dashboard password:
+The plugin adds a `Dashboard` toolbar with a `Heatmap` button. It fetches heatmap data with your project Roblox secret from the dashboard:
 
 ```txt
 https://game-dashboard-zaya.onrender.com/api/roblox/heatmap?universeId=<your universe id>
@@ -24,7 +24,8 @@ Blue means low traffic, yellow means medium traffic, and red means high traffic.
 
 Map export:
 
-- Enter the dashboard URL, universe ID, and dashboard secret. The secret must match the server's `PRESENCE_SECRET`.
+- Sign in to the dashboard, add your universe ID, and copy the Roblox secret that appears once.
+- Enter the dashboard URL, universe ID, and that Roblox secret.
 - Click `Export Map To Dashboard` from Studio to upload the current Workspace map snapshot.
 - The export sends visible `BasePart` geometry in throttled chunks so large maps can finish over multiple HTTPS requests.
 - The website heatmap loads the latest uploaded map snapshot for the selected universe and draws translucent geometry behind the movement points.

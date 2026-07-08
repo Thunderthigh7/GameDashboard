@@ -110,7 +110,7 @@ createLabel("Dashboard URL", 1)
 local urlInput = createInput(DEFAULT_BASE_URL, "https://game-dashboard-zaya.onrender.com", 2)
 
 createLabel("Dashboard secret", 3)
-local secretInput = createInput("", "PRESENCE_SECRET or dashboard password", 4)
+local secretInput = createInput("", "Project Roblox secret", 4)
 
 createLabel("Universe ID", 5)
 local universeInput = createInput(game.GameId > 0 and tostring(game.GameId) or "", "Universe ID", 6)
@@ -287,7 +287,7 @@ end
 local function getDashboardSecret()
 	local secret = secretInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
 	if secret == "" then
-		error("Enter the dashboard secret before exporting the map.")
+		error("Enter the project Roblox secret before exporting the map.")
 	end
 
 	return secret

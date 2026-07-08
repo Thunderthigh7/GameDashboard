@@ -15,6 +15,12 @@ const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
+const projectForm = document.querySelector("#projectForm");
+const projectUniverseId = document.querySelector("#projectUniverseId");
+const projectName = document.querySelector("#projectName");
+const createProjectButton = document.querySelector("#createProjectButton");
+const projectSecretBox = document.querySelector("#projectSecretBox");
+const projectSecretValue = document.querySelector("#projectSecretValue");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const refreshMovementButton = document.querySelector("#refreshMovementButton");
 const chatLogCount = document.querySelector("#chatLogCount");
@@ -84,6 +90,10 @@ function bindEvents() {
   });
 
   refreshUniversesButton.addEventListener("click", loadUniverses);
+  projectForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    createProject();
+  });
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
@@ -242,6 +252,8 @@ function setAuthenticated(value, user = null) {
     selectedUniverseLabel.textContent = "No universe selected";
     universeSelect.innerHTML = `<option value="">Sign in to load universes</option>`;
     universeSelect.disabled = true;
+    if (projectSecretBox) projectSecretBox.hidden = true;
+    if (projectSecretValue) projectSecretValue.textContent = "";
     chatLogsStatus.textContent = "Sign in to view chat logs.";
     chatInsightsStatus.textContent = "Sign in to view chat insights.";
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
@@ -344,8 +356,8 @@ async function loadUniverses() {
     if (!knownUniverses.length) {
       selectedUniverseId = "";
       universeSelect.disabled = true;
-      universeSelect.innerHTML = `<option value="">No universe data yet</option>`;
-      universesStatus.textContent = "No universe IDs are sending data yet.";
+      universeSelect.innerHTML = `<option value="">Add your first game</option>`;
+      universesStatus.textContent = "Add a universe ID to connect your Roblox game.";
       updateSelectedUniverse();
       loadSignalAreaCards();
       return;
@@ -359,7 +371,7 @@ async function loadUniverses() {
 
     universeSelect.disabled = false;
     universeSelect.innerHTML = knownUniverses.map(renderUniverseOption).join("");
-    universesStatus.textContent = `${knownUniverses.length} universe${knownUniverses.length === 1 ? "" : "s"} sending data.`;
+    universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.`;
     updateSelectedUniverse();
 
     if (previousUniverseId !== selectedUniverseId) {
@@ -372,11 +384,46 @@ async function loadUniverses() {
   }
 }
 
+async function createProject() {
+  const universeId = projectUniverseId?.value.trim() || "";
+  const name = projectName?.value.trim() || "";
+  if (!universeId) {
+    universesStatus.textContent = "Enter your Roblox universe ID.";
+    return;
+  }
+
+  createProjectButton.disabled = true;
+  universesStatus.textContent = "Connecting game...";
+
+  try {
+    const data = await request("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId, name }),
+    });
+
+    projectUniverseId.value = "";
+    projectName.value = "";
+    selectedUniverseId = String(data.project?.universeId || universeId);
+    if (projectSecretBox && projectSecretValue) {
+      projectSecretBox.hidden = false;
+      projectSecretValue.textContent = data.ingestSecret || "";
+    }
+    universesStatus.textContent = "Game connected. Add the secret to your Roblox script.";
+    await loadUniverses();
+  } catch (error) {
+    universesStatus.textContent = error.message;
+  } finally {
+    createProjectButton.disabled = false;
+  }
+}
+
 function renderUniverseOption(universe) {
   const id = String(universe.id || "");
+  const label = String(universe.name || `Universe ${id}`);
   const totalSamples = Number(universe.totalSamples || 0);
   const selected = id === selectedUniverseId ? " selected" : "";
-  return `<option value="${escapeHtml(id)}"${selected}>Universe ${escapeHtml(id)} (${escapeHtml(String(totalSamples))} samples)</option>`;
+  return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label)} (${escapeHtml(String(totalSamples))} samples)</option>`;
 }
 
 function selectUniverse(value) {
@@ -385,6 +432,7 @@ function selectUniverse(value) {
   selectedUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
   selectedChatLogId = "";
   updateSelectedUniverse();
+  loadAiAutomationSettings();
   loadChatLogs();
   loadSignalAreaCards();
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
@@ -619,7 +667,8 @@ function getSignalAreaClass(mode) {
 
 function updateSelectedUniverse() {
   if (selectedUniverseId) {
-    selectedUniverseLabel.textContent = `Universe ${selectedUniverseId}`;
+    const selectedUniverse = knownUniverses.find((universe) => String(universe.id || "") === selectedUniverseId);
+    selectedUniverseLabel.textContent = selectedUniverse?.name || `Universe ${selectedUniverseId}`;
     universeSelect.value = selectedUniverseId;
   } else {
     selectedUniverseLabel.textContent = "No universe selected";
@@ -753,9 +802,14 @@ function renderAiReport(report) {
 
 async function loadAiAutomationSettings() {
   if (!authenticated || !aiAutomationToggle) return;
+  if (!selectedUniverseId) {
+    aiAutomationToggle.checked = false;
+    aiAutomationStatus.textContent = "Select a game";
+    return;
+  }
 
   try {
-    const data = await request("/api/ai-insights/settings");
+    const data = await request(`/api/ai-insights/settings?universeId=${encodeURIComponent(selectedUniverseId)}`);
     const isAuto = data.mode !== "manual";
     aiAutomationToggle.checked = isAuto;
     aiAutomationStatus.textContent = isAuto
@@ -769,13 +823,18 @@ async function loadAiAutomationSettings() {
 
 async function saveAiAutomationSettings() {
   if (!authenticated || !aiAutomationToggle) return;
+  if (!selectedUniverseId) {
+    aiAutomationToggle.checked = false;
+    aiAutomationStatus.textContent = "Select a game";
+    return;
+  }
 
   aiAutomationToggle.disabled = true;
   aiAutomationStatus.textContent = "Saving...";
 
   try {
     const mode = aiAutomationToggle.checked ? "auto" : "manual";
-    const data = await request("/api/ai-insights/settings", {
+    const data = await request(`/api/ai-insights/settings?universeId=${encodeURIComponent(selectedUniverseId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
