@@ -571,7 +571,7 @@ function getSampleEntries(samples, mapSnapshot = null, options = {}) {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
 
-  if (activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
+  if ((activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") && activeRenderMode === "points") {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
 
@@ -606,12 +606,13 @@ function getSampleBins(samples) {
     const z = Number(sample.z);
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
 
+    const weight = getSampleWeight(sample);
     const key = `${Math.round(x / 8) * 8}:${Math.round(y / 8) * 8}:${Math.round(z / 8) * 8}`;
     const existing = bins.get(key);
     if (existing) {
-      existing.count += 1;
+      existing.count += weight;
     } else {
-      bins.set(key, { x, y, z, count: 1 });
+      bins.set(key, { x, y, z, count: weight });
     }
   }
 
@@ -653,10 +654,14 @@ function getSignalAreaEntries(samples, mode) {
     }
   }
 
+  for (const cluster of clusters) {
+    cluster.densityScore = getSignalAreaDensityScore(cluster, samples, radius);
+  }
+
   const topClusters = clusters
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => (b.densityScore - a.densityScore) || (b.count - a.count))
     .slice(0, 5);
-  const maxCount = topClusters.reduce((max, area) => Math.max(max, area.count), 1);
+  const maxScore = topClusters.reduce((max, area) => Math.max(max, area.densityScore || area.count), 1);
   const labelPrefix = getSignalAreaLabelPrefix(mode);
 
   return topClusters.map((area, index) => ({
@@ -664,9 +669,28 @@ function getSignalAreaEntries(samples, mode) {
     id: `${mode}-area-${index + 1}`,
     label: `${labelPrefix} ${index + 1}`,
     rank: index + 1,
-    score: clamp(area.count / maxCount, 0.12, 1),
+    score: clamp((area.densityScore || area.count) / maxScore, 0.12, 1),
     signalMode: mode,
   }));
+}
+
+function getSignalAreaDensityScore(area, samples, radius) {
+  const sigma = Math.max(radius * 0.72, 1);
+  const twoSigmaSquared = 2 * sigma * sigma;
+  let score = 0;
+
+  for (const sample of samples) {
+    const x = Number(sample.x);
+    const z = Number(sample.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+
+    const dx = x - area.x;
+    const dz = z - area.z;
+    const distanceSquared = dx * dx + dz * dz;
+    score += getSampleWeight(sample) * Math.exp(-distanceSquared / twoSigmaSquared);
+  }
+
+  return score;
 }
 
 function getSampleWeight(sample) {
