@@ -449,6 +449,11 @@ small,
   color: var(--muted);
 }
 
+.robloxLoginButton {
+  width: 100%;
+  margin-top: 16px;
+}
+
 .authControls {
   display: flex;
   align-items: center;

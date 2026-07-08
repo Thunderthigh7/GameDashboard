@@ -142,6 +142,14 @@ const server = http.createServer(async (req, res) => {
       return handleDashboardSignup(req, res);
     }
 
+    if (url.pathname === "/api/auth/roblox/start" && req.method === "GET") {
+      return handleRobloxLoginStart(req, res);
+    }
+
+    if (url.pathname === "/api/roblox/oauth/callback" && req.method === "GET") {
+      return handleRobloxOAuthCallback(req, res, getDashboardAuth(req), url.searchParams);
+    }
+
     if (url.pathname === "/api/auth/logout" && req.method === "POST") {
       clearDashboardAuthCookie(res);
       return sendJson(res, 200, { ok: true });
@@ -184,10 +192,6 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/roblox/oauth/start" && req.method === "GET") {
       return handleRobloxOAuthStart(req, res, auth, url.searchParams);
-    }
-
-    if (url.pathname === "/api/roblox/oauth/callback" && req.method === "GET") {
-      return handleRobloxOAuthCallback(req, res, auth, url.searchParams);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -447,6 +451,7 @@ async function ensureMongoIndexes(db) {
     db.collection("map_snapshots").createIndex({ universeId: 1 }, { unique: true }),
     db.collection("map_snapshot_chunks").createIndex({ universeId: 1, chunkIndex: 1 }, { unique: true }),
     db.collection("users").createIndex({ usernameLower: 1 }, { unique: true }),
+    db.collection("users").createIndex({ robloxUserId: 1 }, { unique: true, sparse: true }),
     db.collection("projects").createIndex({ universeId: 1 }, { unique: true }),
     db.collection("projects").createIndex({ ownerUserId: 1 }),
     db.collection("projects").createIndex({ secretHash: 1 }, { unique: true }),
@@ -843,6 +848,34 @@ async function handleProjectCreate(req, res, auth) {
   return sendJson(res, 400, { error: "Use Roblox owner verification to connect a universe." });
 }
 
+async function handleRobloxLoginStart(req, res) {
+  if (!isRobloxOAuthConfigured()) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox OAuth is not configured",
+      message: "Add ROBLOX_OAUTH_CLIENT_ID, ROBLOX_OAUTH_CLIENT_SECRET, and ROBLOX_OAUTH_REDIRECT_URI on Render, then redeploy.",
+    });
+  }
+
+  const state = crypto.randomBytes(24).toString("base64url");
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  const codeVerifier = crypto.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+  setRobloxOAuthStateCookie(res, {
+    purpose: "login",
+    state,
+    nonce,
+    codeVerifier,
+    createdAt: Date.now(),
+  });
+
+  return redirect(res, getRobloxAuthorizeUrl({
+    state,
+    nonce,
+    codeChallenge,
+  }));
+}
+
 async function handleRobloxOAuthStart(req, res, auth, searchParams) {
   if (!isRobloxOAuthConfigured()) {
     return sendRobloxOAuthResult(res, {
@@ -874,6 +907,7 @@ async function handleRobloxOAuthStart(req, res, auth, searchParams) {
   const codeVerifier = crypto.randomBytes(32).toString("base64url");
   const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
   setRobloxOAuthStateCookie(res, {
+    purpose: "project",
     state,
     nonce,
     codeVerifier,
@@ -883,24 +917,18 @@ async function handleRobloxOAuthStart(req, res, auth, searchParams) {
     createdAt: Date.now(),
   });
 
-  const authorizeUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
-  authorizeUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
-  authorizeUrl.searchParams.set("redirect_uri", ROBLOX_OAUTH_REDIRECT_URI);
-  authorizeUrl.searchParams.set("scope", ROBLOX_OAUTH_SCOPES);
-  authorizeUrl.searchParams.set("response_type", "code");
-  authorizeUrl.searchParams.set("state", state);
-  authorizeUrl.searchParams.set("nonce", nonce);
-  authorizeUrl.searchParams.set("code_challenge", codeChallenge);
-  authorizeUrl.searchParams.set("code_challenge_method", "S256");
-
-  return redirect(res, authorizeUrl.toString());
+  return redirect(res, getRobloxAuthorizeUrl({
+    state,
+    nonce,
+    codeChallenge,
+  }));
 }
 
 async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
   clearRobloxOAuthStateCookie(res);
 
   const oauthState = getRobloxOAuthState(req);
-  if (!oauthState || oauthState.userId !== auth.userId) {
+  if (!oauthState) {
     return sendRobloxOAuthResult(res, {
       ok: false,
       title: "Roblox verification expired",
@@ -935,18 +963,36 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
     });
   }
 
-  const universeId = cleanInteger(oauthState.universeId);
-  if (universeId <= 0) {
-    return sendRobloxOAuthResult(res, {
-      ok: false,
-      title: "Invalid universe",
-      message: "Start the universe connection again with a valid universe ID.",
-    });
-  }
-
   try {
     const tokens = await exchangeRobloxOAuthCode(code, oauthState.codeVerifier);
     const robloxUser = await getRobloxOAuthUser(tokens.access_token);
+
+    if (oauthState.purpose === "login") {
+      const user = await findOrCreateRobloxUser(robloxUser);
+      const lastLoginAt = Date.now();
+      await updateUserLogin(user.id, lastLoginAt);
+      user.lastLoginAt = lastLoginAt;
+      setDashboardAuthCookie(res, user);
+      return redirect(res, "/");
+    }
+
+    if (oauthState.purpose !== "project" || !auth || oauthState.userId !== auth.userId) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Roblox verification expired",
+        message: "Start the universe connection again from the dashboard.",
+      });
+    }
+
+    const universeId = cleanInteger(oauthState.universeId);
+    if (universeId <= 0) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Invalid universe",
+        message: "Start the universe connection again with a valid universe ID.",
+      });
+    }
+
     const ownership = await verifyRobloxUniverseOwnership(universeId, cleanInteger(robloxUser.sub));
     if (!ownership.ok) {
       return sendRobloxOAuthResult(res, {
@@ -1125,6 +1171,19 @@ function isValidDashboardToolSecret(req) {
 
 function isRobloxOAuthConfigured() {
   return Boolean(ROBLOX_OAUTH_CLIENT_ID && ROBLOX_OAUTH_CLIENT_SECRET && ROBLOX_OAUTH_REDIRECT_URI);
+}
+
+function getRobloxAuthorizeUrl({ state, nonce, codeChallenge }) {
+  const authorizeUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
+  authorizeUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
+  authorizeUrl.searchParams.set("redirect_uri", ROBLOX_OAUTH_REDIRECT_URI);
+  authorizeUrl.searchParams.set("scope", ROBLOX_OAUTH_SCOPES);
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("state", state);
+  authorizeUrl.searchParams.set("nonce", nonce);
+  authorizeUrl.searchParams.set("code_challenge", codeChallenge);
+  authorizeUrl.searchParams.set("code_challenge_method", "S256");
+  return authorizeUrl.toString();
 }
 
 function isMatchingSecret(value, expectedValue) {
@@ -3846,8 +3905,81 @@ async function createUser(user) {
     throw error;
   }
 
+  const robloxUserId = cleanInteger(user.robloxUserId);
+  if (robloxUserId > 0 && users.some((entry) => cleanInteger(entry.robloxUserId) === robloxUserId)) {
+    const error = new Error("Duplicate Roblox user");
+    error.code = 11000;
+    throw error;
+  }
+
   users.push(user);
   await writeUsers(users);
+}
+
+async function findOrCreateRobloxUser(robloxUser) {
+  const robloxUserId = cleanInteger(robloxUser?.sub);
+  if (robloxUserId <= 0) throw new Error("Roblox user lookup did not return a valid user ID.");
+
+  const existing = await findUserByRobloxId(robloxUserId);
+  if (existing) return existing;
+
+  const username = await getAvailableRobloxDashboardUsername(robloxUser, robloxUserId);
+  const user = {
+    id: crypto.randomUUID(),
+    username,
+    usernameLower: username.toLowerCase(),
+    password: "",
+    authProvider: "roblox",
+    robloxUserId,
+    robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
+    robloxDisplayName: cleanString(robloxUser.name || robloxUser.nickname || robloxUser.preferred_username, 80),
+    robloxProfile: cleanString(robloxUser.profile, 240),
+    robloxPicture: cleanString(robloxUser.picture, 500),
+    createdAt: Date.now(),
+    lastLoginAt: Date.now(),
+  };
+
+  try {
+    await createUser(user);
+    return user;
+  } catch (error) {
+    if (error.code === 11000) {
+      const raceWinner = await findUserByRobloxId(robloxUserId);
+      if (raceWinner) return raceWinner;
+    }
+
+    throw error;
+  }
+}
+
+async function findUserByRobloxId(robloxUserId) {
+  const cleanRobloxUserId = cleanInteger(robloxUserId);
+  if (cleanRobloxUserId <= 0) return null;
+
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("users").findOne({ robloxUserId: cleanRobloxUserId }, { projection: { _id: 0 } });
+  }
+
+  const users = await readUsers();
+  return users.find((user) => cleanInteger(user.robloxUserId) === cleanRobloxUserId) || null;
+}
+
+async function getAvailableRobloxDashboardUsername(robloxUser, robloxUserId) {
+  const baseName = cleanUsername(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname || `Roblox${robloxUserId}`)
+    .replace(/[^A-Za-z0-9_]/g, "")
+    .slice(0, 24) || `Roblox${robloxUserId}`;
+  const users = await readUsers();
+  const taken = new Set(users.map((user) => cleanUsername(user.username).toLowerCase()).filter(Boolean));
+
+  if (!taken.has(baseName.toLowerCase())) return baseName;
+
+  const suffix = String(robloxUserId).slice(-6);
+  const maxBaseLength = Math.max(1, 24 - suffix.length - 1);
+  const withSuffix = `${baseName.slice(0, maxBaseLength)}_${suffix}`;
+  if (!taken.has(withSuffix.toLowerCase())) return withSuffix;
+
+  return `Roblox${String(robloxUserId).slice(0, 18)}`;
 }
 
 async function updateUserLogin(userId, lastLoginAt) {

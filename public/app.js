@@ -1,12 +1,7 @@
 const accountBox = document.querySelector("#accountBox");
 const loginPanel = document.querySelector("#loginPanel");
-const loginForm = document.querySelector("#loginForm");
-const dashboardUsername = document.querySelector("#dashboardUsername");
-const dashboardPassword = document.querySelector("#dashboardPassword");
-const loginButton = document.querySelector("#loginButton");
+const robloxLoginButton = document.querySelector("#robloxLoginButton");
 const loginStatus = document.querySelector("#loginStatus");
-const signInModeButton = document.querySelector("#signInModeButton");
-const signUpModeButton = document.querySelector("#signUpModeButton");
 const authFormTitle = document.querySelector("#authFormTitle");
 const authFormSubtitle = document.querySelector("#authFormSubtitle");
 const authControls = document.querySelector("#authControls");
@@ -61,7 +56,6 @@ let selectedChatLogId = "";
 let knownUniverses = [];
 let authenticated = false;
 let authenticatedUser = null;
-let authMode = "signin";
 let activeView = getViewFromHash();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
@@ -76,19 +70,16 @@ init();
 
 async function init() {
   showAuthError();
-  setAuthMode("signin");
   bindEvents();
   await checkAuth();
 }
 
 function bindEvents() {
-  loginForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    authenticate();
+  robloxLoginButton?.addEventListener("click", () => {
+    if (loginStatus) loginStatus.textContent = "Opening Roblox...";
+    robloxLoginButton.disabled = true;
+    window.location.href = "/api/auth/roblox/start";
   });
-
-  signInModeButton?.addEventListener("click", () => setAuthMode("signin"));
-  signUpModeButton?.addEventListener("click", () => setAuthMode("signup"));
 
   logoutButton.addEventListener("click", async () => {
     await request("/api/auth/logout", { method: "POST" });
@@ -182,49 +173,6 @@ async function checkAuth() {
   } catch {
     setAuthenticated(false, null);
   }
-}
-
-async function authenticate() {
-  loginButton.disabled = true;
-  loginStatus.textContent = authMode === "signup" ? "Creating account..." : "Signing in...";
-  const username = dashboardUsername.value.trim();
-
-  try {
-    const data = await request(authMode === "signup" ? "/api/auth/signup" : "/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username,
-        password: dashboardPassword.value,
-      }),
-    });
-    dashboardUsername.value = "";
-    dashboardPassword.value = "";
-    loginStatus.textContent = "";
-    setAuthenticated(true, data.user || { username });
-  } catch (error) {
-    loginStatus.textContent = error.message;
-    setAuthenticated(false, null);
-  } finally {
-    loginButton.disabled = false;
-  }
-}
-
-function setAuthMode(mode) {
-  authMode = mode === "signup" ? "signup" : "signin";
-  signInModeButton?.classList.toggle("active", authMode === "signin");
-  signUpModeButton?.classList.toggle("active", authMode === "signup");
-  if (authFormTitle) authFormTitle.textContent = authMode === "signup" ? "Create account" : "Sign in";
-  if (authFormSubtitle) {
-    authFormSubtitle.textContent = authMode === "signup"
-      ? "Choose a username and password for dashboard access."
-      : "Use your RoAnalytics username and password.";
-  }
-  if (loginButton) loginButton.textContent = authMode === "signup" ? "Sign up" : "Sign in";
-  if (dashboardPassword) {
-    dashboardPassword.autocomplete = authMode === "signup" ? "new-password" : "current-password";
-  }
-  if (loginStatus) loginStatus.textContent = "";
 }
 
 function setAuthenticated(value, user = null) {

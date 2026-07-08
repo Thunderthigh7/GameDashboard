@@ -10,18 +10,19 @@ Open `http://localhost:3000`.
 
 Copy `.env.example` to `.env` and fill in the dashboard session secret, Roblox presence secret, and optional OpenAI values before starting the server.
 
-## User Accounts And Roblox Setup
+## Roblox Login And Roblox Setup
 
-The dashboard uses username/password accounts. After signing in:
+The dashboard uses Roblox OAuth login for user accounts. After signing in with Roblox:
 
 1. Add your Roblox universe ID in the sidebar.
-2. Copy the Roblox secret that appears once.
-3. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
-4. Use the same secret in the Studio heatmap plugin when exporting a map.
+2. Verify ownership with Roblox.
+3. Copy the Roblox secret that appears once.
+4. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
+5. Use the same secret in the Studio heatmap plugin when exporting a map.
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
-New universe connections use Roblox OAuth owner verification. The Roblox account that authorizes must either own the universe directly or own the group that owns the universe. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
+New accounts and universe connections use Roblox OAuth. The Roblox account that authorizes a universe must either own the universe directly or own the group that owns the universe. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
 
 ```env
 ROBLOX_OAUTH_CLIENT_ID=your-roblox-oauth-client-id
