@@ -82,21 +82,6 @@
         </section>
 
         <section class="viewPage" data-view-panel="overview" hidden>
-          <section class="summaryBand panel">
-            <div class="aiSummary">
-              <strong>AI Summary</strong>
-              <p>Run AI analysis to group player questions. Heatmaps, leave points, death points, and chat locations are already tracked.</p>
-            </div>
-            <div class="metricCard">
-              <span>Chat Messages</span>
-              <strong id="chatLogCount">0</strong>
-            </div>
-            <div class="metricCard">
-              <span>Universes</span>
-              <strong id="universeTotalMetric">0</strong>
-            </div>
-          </section>
-
           <div class="dashboardGrid">
             <div class="dashboardContentColumn">
               <section class="panel movementHeatmap mapPanel" id="heatmaps">
@@ -161,6 +146,17 @@
             </div>
 
             <aside class="insightRail">
+              <div class="metricRail">
+                <article class="panel metricCard">
+                  <span>Chat Messages</span>
+                  <strong id="chatLogCount">0</strong>
+                </article>
+                <article class="panel metricCard">
+                  <span>Universes</span>
+                  <strong id="universeTotalMetric">0</strong>
+                </article>
+              </div>
+
               <article class="panel dataCard">
                 <h2>Top movement areas</h2>
                 <p>Highest traffic clusters from raw player movement locations.</p>
