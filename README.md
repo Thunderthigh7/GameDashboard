@@ -14,15 +14,16 @@ Copy `.env.example` to `.env` and fill in the dashboard session secret, Roblox p
 
 The dashboard uses Roblox OAuth login for user accounts. After signing in with Roblox:
 
-1. Add your Roblox universe ID in the sidebar.
-2. Verify ownership with Roblox.
-3. Copy the Roblox secret that appears once.
-4. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
-5. Use the same secret in the Studio heatmap plugin when exporting a map.
+1. Open the Connect Universe tab.
+2. Pick one of the public games owned by your Roblox account or by a group you own.
+3. Click Connect game.
+4. Copy the Roblox secret that appears once.
+5. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
+6. Use the same secret in the Studio heatmap plugin when exporting a map.
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
-New accounts and universe connections use Roblox OAuth. The Roblox account that authorizes a universe must either own the universe directly or own the group that owns the universe. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
+New accounts use Roblox OAuth. Universe connection uses the logged-in Roblox account and only allows public experiences owned by that account or by a group that account owns. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
 
 ```env
 ROBLOX_OAUTH_CLIENT_ID=your-roblox-oauth-client-id
@@ -43,7 +44,7 @@ To show the Admin user monitor, set this environment variable on Render:
 ADMIN_USERNAMES=your_dashboard_username
 ```
 
-Use commas for multiple admins. Admins can see usernames, sign-up times, last login times, and connected universes. Passwords are stored as hashes and cannot be viewed.
+Use Roblox user IDs when possible, and use commas for multiple admins. Admins can see usernames, Roblox identities, sign-up times, last login times, and connected universes. Legacy passwords are stored as hashes and cannot be viewed.
 
 For Backblaze B2 raw analytics storage, add the values from your B2 bucket and application key:
 

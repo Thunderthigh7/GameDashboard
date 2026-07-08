@@ -480,7 +480,7 @@ small,
 }
 
 .connectUniverseForm {
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
+  grid-template-columns: minmax(280px, 1fr) auto;
   align-items: end;
   gap: 14px;
 }
@@ -643,6 +643,27 @@ small,
   background: var(--field-bg);
   color: var(--text);
   padding: 0 10px;
+}
+
+.fieldGroup select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field-bg);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.connectUniverseActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.connectUniverseActions .status {
+  margin-top: 0;
 }
 
 .dashboardGrid {

@@ -195,6 +195,10 @@ const server = http.createServer(async (req, res) => {
       return handleRobloxOAuthStart(req, res, auth, url.searchParams);
     }
 
+    if (url.pathname === "/api/roblox/owned-games" && req.method === "GET") {
+      return handleOwnedRobloxGames(req, res, auth);
+    }
+
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
       const user = await findUserById(auth.userId);
       if (!isAdminUser(user)) {
@@ -847,7 +851,63 @@ async function handleDashboardSignup(req, res) {
 }
 
 async function handleProjectCreate(req, res, auth) {
-  return sendJson(res, 400, { error: "Use Roblox owner verification to connect a universe." });
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body.universeId);
+  if (universeId <= 0) return sendJson(res, 400, { error: "Pick a Roblox game to connect." });
+
+  const user = await findUserById(auth.userId);
+  const robloxUserId = cleanInteger(user?.robloxUserId);
+  if (robloxUserId <= 0) {
+    return sendJson(res, 400, { error: "Log in with Roblox before connecting a universe." });
+  }
+
+  if (await getProjectByUniverseId(universeId)) {
+    return sendJson(res, 409, { error: "This universe is already connected to an account." });
+  }
+
+  const ownership = await verifyRobloxUniverseOwnership(universeId, robloxUserId);
+  if (!ownership.ok) {
+    return sendJson(res, 403, { error: ownership.reason || "The logged-in Roblox account does not own this universe." });
+  }
+
+  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+  const project = {
+    id: crypto.randomUUID(),
+    ownerUserId: auth.userId,
+    universeId,
+    name: ownership.universeName || `Universe ${universeId}`,
+    secretHash: hashProjectSecret(projectSecret),
+    createdAt: Date.now(),
+    ownershipVerifiedAt: Date.now(),
+    ownershipMethod: "roblox-login",
+    robloxUserId,
+    robloxUsername: cleanString(user.robloxUsername || user.username, 80),
+    creatorType: ownership.creatorType,
+    creatorId: ownership.creatorId,
+    creatorName: ownership.creatorName,
+  };
+
+  try {
+    await createProject(project);
+  } catch (error) {
+    if (error.code === 11000) {
+      return sendJson(res, 409, { error: "This universe is already connected to an account." });
+    }
+
+    throw error;
+  }
+
+  return sendJson(res, 201, {
+    ok: true,
+    project: serializeProject(project),
+    secret: projectSecret,
+  });
 }
 
 async function handleRobloxLoginStart(req, res) {
@@ -924,6 +984,27 @@ async function handleRobloxOAuthStart(req, res, auth, searchParams) {
     nonce,
     codeChallenge,
   }));
+}
+
+async function handleOwnedRobloxGames(req, res, auth) {
+  const user = await findUserById(auth.userId);
+  const robloxUserId = cleanInteger(user?.robloxUserId);
+  if (robloxUserId <= 0) {
+    return sendJson(res, 400, { error: "Log in with Roblox before connecting a universe." });
+  }
+
+  const [games, projects] = await Promise.all([
+    getOwnedRobloxGames(robloxUserId),
+    readProjects(),
+  ]);
+  const connectedUniverseIds = new Set(projects.map((project) => String(cleanInteger(project.universeId))).filter((id) => id !== "0"));
+
+  return sendJson(res, 200, {
+    games: games.map((game) => ({
+      ...game,
+      connected: connectedUniverseIds.has(String(cleanInteger(game.id))),
+    })),
+  });
 }
 
 async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
@@ -4117,6 +4198,105 @@ async function getRobloxOAuthUser(accessToken) {
   }
 
   return payload;
+}
+
+async function getOwnedRobloxGames(robloxUserId) {
+  const cleanRobloxUserId = cleanInteger(robloxUserId);
+  if (cleanRobloxUserId <= 0) return [];
+
+  const gamesByUniverseId = new Map();
+  const userGames = await getRobloxUserPublicGames(cleanRobloxUserId);
+  for (const game of userGames) {
+    addOwnedRobloxGame(gamesByUniverseId, {
+      ...game,
+      ownerType: "User",
+      creatorId: cleanRobloxUserId,
+    });
+  }
+
+  const groups = await getRobloxOwnedGroups(cleanRobloxUserId);
+  for (const group of groups) {
+    const groupGames = await getRobloxGroupPublicGames(group.id);
+    for (const game of groupGames) {
+      addOwnedRobloxGame(gamesByUniverseId, {
+        ...game,
+        ownerType: "Group",
+        creatorId: group.id,
+        creatorName: group.name,
+      });
+    }
+  }
+
+  return [...gamesByUniverseId.values()]
+    .sort((a, b) => a.name.localeCompare(b.name) || cleanInteger(a.id) - cleanInteger(b.id));
+}
+
+function addOwnedRobloxGame(target, game) {
+  const universeId = cleanInteger(game.id || game.universeId);
+  if (universeId <= 0) return;
+
+  target.set(String(universeId), {
+    id: universeId,
+    name: cleanString(game.name, 120) || `Universe ${universeId}`,
+    description: cleanString(game.description, 240),
+    rootPlaceId: cleanInteger(game.rootPlace?.id || game.rootPlaceId || game.placeId) || null,
+    creatorType: game.ownerType || normalizeRobloxCreatorType(game.creator?.type),
+    creatorId: cleanInteger(game.creatorId || game.creator?.id) || null,
+    creatorName: cleanString(game.creatorName || game.creator?.name, 120),
+  });
+}
+
+async function getRobloxUserPublicGames(robloxUserId) {
+  const url = new URL(`https://games.roblox.com/v2/users/${encodeURIComponent(String(robloxUserId))}/games`);
+  url.searchParams.set("accessFilter", "Public");
+  url.searchParams.set("sortOrder", "Asc");
+  url.searchParams.set("limit", "50");
+  return fetchRobloxPagedData(url, 4);
+}
+
+async function getRobloxOwnedGroups(robloxUserId) {
+  const url = new URL(`https://groups.roblox.com/v1/users/${encodeURIComponent(String(robloxUserId))}/groups/roles`);
+  const groups = await fetchRobloxPagedData(url, 4);
+  return groups
+    .map((entry) => ({
+      id: cleanInteger(entry.group?.id || entry.id),
+      name: cleanString(entry.group?.name || entry.name, 120),
+      rank: cleanInteger(entry.role?.rank || entry.rank),
+    }))
+    .filter((group) => group.id > 0 && group.rank >= 255);
+}
+
+async function getRobloxGroupPublicGames(groupId) {
+  const cleanGroupId = cleanInteger(groupId);
+  if (cleanGroupId <= 0) return [];
+
+  const url = new URL(`https://games.roblox.com/v2/groups/${encodeURIComponent(String(cleanGroupId))}/games`);
+  url.searchParams.set("accessFilter", "Public");
+  url.searchParams.set("sortOrder", "Asc");
+  url.searchParams.set("limit", "50");
+  return fetchRobloxPagedData(url, 4);
+}
+
+async function fetchRobloxPagedData(baseUrl, maxPages = 4) {
+  const items = [];
+  let cursor = "";
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const url = new URL(baseUrl.toString());
+    if (cursor) url.searchParams.set("cursor", cursor);
+
+    const response = await fetch(url);
+    const payload = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(payload.errors?.[0]?.message || payload.error || "Roblox lookup failed");
+    }
+
+    if (Array.isArray(payload.data)) items.push(...payload.data);
+    cursor = cleanString(payload.nextPageCursor, 256);
+    if (!cursor) break;
+  }
+
+  return items;
 }
 
 async function verifyRobloxUniverseOwnership(universeId, robloxUserId) {

@@ -18,8 +18,9 @@ const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
 const projectForm = document.querySelector("#projectForm");
-const projectUniverseId = document.querySelector("#projectUniverseId");
-const projectName = document.querySelector("#projectName");
+const ownedGameSelect = document.querySelector("#ownedGameSelect");
+const refreshOwnedGamesButton = document.querySelector("#refreshOwnedGamesButton");
+const ownedGamesStatus = document.querySelector("#ownedGamesStatus");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
@@ -55,6 +56,7 @@ let signalRefreshTimer;
 let selectedUniverseId = "";
 let selectedChatLogId = "";
 let knownUniverses = [];
+let ownedGames = [];
 let authenticated = false;
 let authenticatedUser = null;
 let activeView = getViewFromHash();
@@ -88,6 +90,7 @@ function bindEvents() {
   });
 
   refreshUniversesButton.addEventListener("click", loadUniverses);
+  refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     createProject();
@@ -211,6 +214,11 @@ function setAuthenticated(value, user = null) {
     universeSelect.disabled = true;
     if (projectSecretBox) projectSecretBox.hidden = true;
     if (projectSecretValue) projectSecretValue.textContent = "";
+    if (ownedGameSelect) {
+      ownedGameSelect.innerHTML = `<option value="">Sign in to load games</option>`;
+      ownedGameSelect.disabled = true;
+    }
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Sign in to load Roblox games.";
     chatLogsStatus.textContent = "Sign in to view chat logs.";
     chatInsightsStatus.textContent = "Sign in to view chat insights.";
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
@@ -231,6 +239,7 @@ function setAuthenticated(value, user = null) {
 
 async function loadDashboardData() {
   await loadUniverses();
+  await loadOwnedGames();
   await loadAiAutomationSettings();
   await loadChatLogs();
   await loadSignalAreaCards();
@@ -317,6 +326,10 @@ function renderActiveView() {
 
   if (authenticated && activeView === "admin" && authenticatedUser?.isAdmin) {
     loadAdminUsers();
+  }
+
+  if (authenticated && activeView === "connect") {
+    loadOwnedGames();
   }
 }
 
@@ -444,19 +457,77 @@ async function loadUniverses() {
 }
 
 async function createProject() {
-  const universeId = projectUniverseId?.value.trim() || "";
-  const name = projectName?.value.trim() || "";
+  const universeId = ownedGameSelect?.value.trim() || "";
   if (!universeId) {
-    universesStatus.textContent = "Enter your Roblox universe ID.";
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Pick a Roblox game to connect.";
     return;
   }
 
   createProjectButton.disabled = true;
-  universesStatus.textContent = "Opening Roblox verification...";
+  if (ownedGamesStatus) ownedGamesStatus.textContent = "Verifying ownership and connecting game...";
+  if (projectSecretBox) projectSecretBox.hidden = true;
+  if (projectSecretValue) projectSecretValue.textContent = "";
 
-  const params = new URLSearchParams({ universeId });
-  if (name) params.set("name", name);
-  window.location.href = `/api/roblox/oauth/start?${params.toString()}`;
+  try {
+    const data = await request("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId }),
+    });
+    if (projectSecretValue) projectSecretValue.textContent = data.secret || "";
+    if (projectSecretBox) projectSecretBox.hidden = !data.secret;
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Copy the Roblox secret now.";
+    await loadUniverses();
+    await loadOwnedGames();
+  } catch (error) {
+    handleAuthError(error);
+    if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
+  } finally {
+    createProjectButton.disabled = !ownedGames.some((game) => !game.connected);
+  }
+}
+
+async function loadOwnedGames() {
+  if (!authenticated || !ownedGameSelect) return;
+
+  ownedGameSelect.disabled = true;
+  if (refreshOwnedGamesButton) refreshOwnedGamesButton.disabled = true;
+  if (ownedGamesStatus) ownedGamesStatus.textContent = "Loading Roblox games you own...";
+
+  try {
+    const data = await request("/api/roblox/owned-games");
+    ownedGames = Array.isArray(data.games) ? data.games : [];
+    const connectableGames = ownedGames.filter((game) => !game.connected);
+    ownedGameSelect.innerHTML = ownedGames.length
+      ? [
+        `<option value="">Pick a game...</option>`,
+        ...ownedGames.map(renderOwnedGameOption),
+      ].join("")
+      : `<option value="">No owned public games found</option>`;
+    ownedGameSelect.disabled = !connectableGames.length;
+    if (createProjectButton) createProjectButton.disabled = !connectableGames.length;
+    if (ownedGamesStatus) {
+      ownedGamesStatus.textContent = connectableGames.length
+        ? `${connectableGames.length} game${connectableGames.length === 1 ? "" : "s"} ready to connect.`
+        : ownedGames.length
+          ? "All owned public games found are already connected."
+        : "No public user-owned or owner-group games were found for this Roblox account.";
+    }
+  } catch (error) {
+    handleAuthError(error);
+    ownedGameSelect.innerHTML = `<option value="">Unable to load games</option>`;
+    if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
+  } finally {
+    if (refreshOwnedGamesButton) refreshOwnedGamesButton.disabled = false;
+  }
+}
+
+function renderOwnedGameOption(game) {
+  const id = String(game.id || "");
+  const name = String(game.name || `Universe ${id}`);
+  const creator = game.creatorName ? ` - ${game.creatorName}` : "";
+  const status = game.connected ? " - already connected" : "";
+  return `<option value="${escapeHtml(id)}"${game.connected ? " disabled" : ""}>${escapeHtml(name)} (${escapeHtml(id)})${escapeHtml(creator)}${escapeHtml(status)}</option>`;
 }
 
 function renderUniverseOption(universe) {

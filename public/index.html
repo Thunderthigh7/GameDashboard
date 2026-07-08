@@ -262,15 +262,17 @@
             </div>
             <form class="projectForm connectUniverseForm" id="projectForm">
               <div class="fieldGroup">
-                <label for="projectUniverseId">Universe ID</label>
-                <input id="projectUniverseId" type="text" inputmode="numeric" placeholder="1234567890">
+                <label for="ownedGameSelect">Owned game</label>
+                <select id="ownedGameSelect" disabled>
+                  <option value="">Loading owned games...</option>
+                </select>
               </div>
-              <div class="fieldGroup">
-                <label for="projectName">Display name</label>
-                <input id="projectName" type="text" maxlength="80" placeholder="My Roblox game">
-              </div>
-              <button class="button compact" id="createProjectButton" type="submit">Verify with Roblox</button>
+              <button class="button compact" id="createProjectButton" type="submit">Connect game</button>
             </form>
+            <div class="connectUniverseActions">
+              <button class="button secondary compact" id="refreshOwnedGamesButton" type="button">Refresh games</button>
+              <p class="status" id="ownedGamesStatus">Loading Roblox games...</p>
+            </div>
             <div class="projectSecretBox" id="projectSecretBox" hidden>
               <strong>Roblox secret</strong>
               <p>Use this in your Roblox analytics config. It is shown once.</p>
