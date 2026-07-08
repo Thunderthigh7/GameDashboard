@@ -1,18 +1,16 @@
 local HttpService = game:GetService("HttpService")
 local Workspace = game:GetService("Workspace")
 
-local DEFAULT_BASE_URL = "https://game-dashboard-zaya.onrender.com"
+local DASHBOARD_BASE_URL = "https://game-dashboard-zaya.onrender.com"
 local FOLDER_NAME = "DashboardStudioHeatmap"
-local DEFAULT_POINT_SIZE = 4
-local DEFAULT_MAX_POINTS = 700
 local MAP_CHUNK_TARGET_BYTES = 100000
 local MAP_CHUNK_COOLDOWN_SECONDS = 0.45
 local MAP_MAX_PARTS_PER_CHUNK = 750
 
 local toolbar = plugin:CreateToolbar("Dashboard")
 local toggleButton = toolbar:CreateButton(
-	"Heatmap",
-	"Fetch movement heatmap data from the dashboard and draw it in Workspace.",
+	"Dashboard",
+	"Export the current map snapshot to the dashboard.",
 	""
 )
 
@@ -21,9 +19,9 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	false,
 	false,
 	360,
-	680,
+	220,
 	300,
-	360
+	180
 )
 
 local widget = plugin:CreateDockWidgetPluginGui("DashboardHeatmapWidget", widgetInfo)
@@ -99,51 +97,18 @@ local function createButton(text, order)
 	}, root)
 end
 
-local function createPresetButton(text, seconds, order)
-	local button = createButton(text, order)
-	button.BackgroundColor3 = Color3.fromRGB(42, 48, 60)
-	button:SetAttribute("PresetSeconds", seconds)
-	return button
-end
+createLabel("Dashboard secret", 1)
+local secretInput = createInput("", "Paste this game's secret from the website", 2)
 
-createLabel("Dashboard URL", 1)
-local urlInput = createInput(DEFAULT_BASE_URL, "https://game-dashboard-zaya.onrender.com", 2)
-
-createLabel("Dashboard secret", 3)
-local secretInput = createInput("", "Project Roblox secret", 4)
-
-createLabel("Universe ID", 5)
-local universeInput = createInput(game.GameId > 0 and tostring(game.GameId) or "", "Universe ID", 6)
-
-createLabel("Player filter", 7)
-local playerInput = createInput("", "Username or user ID", 8)
-
-createLabel("From time", 9)
-local fromInput = createInput("", "ISO time, epoch, or blank", 10)
-
-createLabel("To time", 11)
-local toInput = createInput("", "ISO time, epoch, or blank", 12)
-
-local tenMinuteButton = createPresetButton("Last 10 minutes", 600, 13)
-local hourButton = createPresetButton("Last 1 hour", 3600, 14)
-local dayButton = createPresetButton("Last 1 day", 86400, 15)
-
-createLabel("Max points", 16)
-local maxPointsInput = createInput(tostring(DEFAULT_MAX_POINTS), "700", 17)
-
-local exportMapButton = createButton("Export Map To Dashboard", 18)
+local exportMapButton = createButton("Export Map To Dashboard", 3)
 exportMapButton.BackgroundColor3 = Color3.fromRGB(55, 121, 82)
-
-local fetchButton = createButton("Fetch Heatmap", 19)
-local clearButton = createButton("Clear Heatmap", 20)
-clearButton.BackgroundColor3 = Color3.fromRGB(63, 68, 78)
 
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 21,
+	LayoutOrder = 4,
 	Size = UDim2.new(1, 0, 0, 70),
-	Text = "Ready.",
+	Text = "Paste the secret for this game, then export the current Workspace map.",
 	TextColor3 = Color3.fromRGB(139, 148, 158),
 	TextSize = 13,
 	TextWrapped = true,
@@ -156,132 +121,16 @@ local function setStatus(text, isError)
 	statusLabel.TextColor3 = isError and Color3.fromRGB(255, 167, 167) or Color3.fromRGB(139, 148, 158)
 end
 
-local function getHeatmapFolder()
-	local folder = Workspace:FindFirstChild(FOLDER_NAME)
-	if folder then
-		folder.Archivable = false
-		return folder
-	end
-
-	folder = Instance.new("Folder")
-	folder.Name = FOLDER_NAME
-	folder.Archivable = false
-	folder.Parent = Workspace
-	return folder
-end
-
-local function clearHeatmap()
-	local folder = Workspace:FindFirstChild(FOLDER_NAME)
-	if folder then
-		folder:ClearAllChildren()
-	end
-end
-
-local function getHeatmapColor(intensity)
-	local alpha = math.clamp(tonumber(intensity) or 0, 0, 1)
-	local cold = Color3.fromRGB(34, 132, 255)
-	local warm = Color3.fromRGB(255, 231, 76)
-	local hot = Color3.fromRGB(255, 65, 54)
-
-	if alpha < 0.5 then
-		return cold:Lerp(warm, alpha / 0.5)
-	end
-
-	return warm:Lerp(hot, (alpha - 0.5) / 0.5)
-end
-
-local function renderHeatmap(heatmap)
-	local points = heatmap.points
-	if typeof(points) ~= "table" then
-		error("Dashboard response did not include heatmap points.")
-	end
-
-	clearHeatmap()
-
-	local folder = getHeatmapFolder()
-	local maxPoints = tonumber(maxPointsInput.Text) or DEFAULT_MAX_POINTS
-	local baseSize = DEFAULT_POINT_SIZE
-	local rendered = 0
-
-	for index = 1, math.min(#points, maxPoints) do
-		local point = points[index]
-		local x = tonumber(point.x)
-		local y = tonumber(point.y)
-		local z = tonumber(point.z)
-
-		if x and y and z then
-			local intensity = math.clamp(tonumber(point.intensity) or 0, 0, 1)
-			local marker = Instance.new("Part")
-			marker.Name = "HeatPoint_" .. tostring(index)
-			marker.Archivable = false
-			marker.Shape = Enum.PartType.Ball
-			marker.Anchored = true
-			marker.CanCollide = false
-			marker.CanTouch = false
-			marker.CanQuery = false
-			marker.Material = Enum.Material.Neon
-			marker.Color = getHeatmapColor(intensity)
-			marker.Transparency = 0.12
-			marker.Size = Vector3.new(1, 1, 1) * (baseSize + intensity * baseSize * 2)
-			marker.Position = Vector3.new(x, y, z)
-			marker:SetAttribute("SampleCount", tonumber(point.count) or 0)
-			marker:SetAttribute("Intensity", intensity)
-			marker.Parent = folder
-			rendered += 1
-		end
-	end
-
-	return rendered
-end
-
-local function buildHeatmapUrl()
-	local baseUrl = urlInput.Text:gsub("%s+", "")
-	baseUrl = baseUrl:gsub("/+$", "")
-	local universeId = universeInput.Text:gsub("%s+", "")
-	local player = playerInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
-	local from = fromInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
-	local to = toInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
-
-	if baseUrl == "" then
-		error("Enter a dashboard URL.")
-	end
-
-	if universeId == "" then
-		error("Enter a universe ID.")
-	end
-
-	local url = baseUrl .. "/api/roblox/heatmap?universeId=" .. HttpService:UrlEncode(universeId)
-	if player ~= "" then
-		url ..= "&target=" .. HttpService:UrlEncode(player)
-	end
-	if from ~= "" then
-		url ..= "&from=" .. HttpService:UrlEncode(from)
-	end
-	if to ~= "" then
-		url ..= "&to=" .. HttpService:UrlEncode(to)
-	end
-
-	return url
-end
-
 local function buildMapUploadUrl()
-	local baseUrl = urlInput.Text:gsub("%s+", "")
-	baseUrl = baseUrl:gsub("/+$", "")
-
-	if baseUrl == "" then
-		error("Enter a dashboard URL.")
-	end
-
-	return baseUrl .. "/api/roblox/map-snapshot"
+	return DASHBOARD_BASE_URL:gsub("/+$", "") .. "/api/roblox/map-snapshot"
 end
 
 local function getUniverseId()
-	local universeId = universeInput.Text:gsub("%s+", "")
-	if universeId == "" then
-		error("Enter a universe ID.")
+	if game.GameId <= 0 then
+		error("Publish/open the Roblox experience first so Studio can read the universe ID.")
 	end
 
-	return universeId
+	return tostring(game.GameId)
 end
 
 local function getDashboardSecret()
@@ -291,50 +140,6 @@ local function getDashboardSecret()
 	end
 
 	return secret
-end
-
-local function applyPreset(seconds)
-	local now = os.time()
-	fromInput.Text = os.date("!%Y-%m-%dT%H:%M:%SZ", now - seconds)
-	toInput.Text = os.date("!%Y-%m-%dT%H:%M:%SZ", now)
-end
-
-local function fetchHeatmap()
-	setStatus("Fetching heatmap...", false)
-
-	local ok, result = pcall(function()
-		local response = HttpService:RequestAsync({
-			Url = buildHeatmapUrl(),
-			Method = "GET",
-			Headers = {
-				["X-Dashboard-Secret"] = getDashboardSecret(),
-			},
-		})
-		if not response.Success then
-			error("HTTP " .. tostring(response.StatusCode) .. ": " .. tostring(response.Body))
-		end
-
-		local heatmap = HttpService:JSONDecode(response.Body)
-		local rendered = renderHeatmap(heatmap)
-		return {
-			rendered = rendered,
-			sampleCount = tonumber(heatmap.sampleCount) or 0,
-			pointCount = tonumber(heatmap.pointCount) or 0,
-			filters = heatmap.filters,
-		}
-	end)
-
-	if not ok then
-		setStatus("Fetch failed: " .. tostring(result), true)
-		return
-	end
-
-	setStatus(
-		"Rendered " .. tostring(result.rendered)
-			.. " points from " .. tostring(result.sampleCount)
-			.. " movement samples.",
-		false
-	)
 end
 
 local function serializeCFrame(cframe)
@@ -540,27 +345,7 @@ local function exportMap()
 	)
 end
 
-tenMinuteButton.MouseButton1Click:Connect(function()
-	applyPreset(tenMinuteButton:GetAttribute("PresetSeconds"))
-	fetchHeatmap()
-end)
-
-hourButton.MouseButton1Click:Connect(function()
-	applyPreset(hourButton:GetAttribute("PresetSeconds"))
-	fetchHeatmap()
-end)
-
-dayButton.MouseButton1Click:Connect(function()
-	applyPreset(dayButton:GetAttribute("PresetSeconds"))
-	fetchHeatmap()
-end)
-
 exportMapButton.MouseButton1Click:Connect(exportMap)
-fetchButton.MouseButton1Click:Connect(fetchHeatmap)
-clearButton.MouseButton1Click:Connect(function()
-	clearHeatmap()
-	setStatus("Cleared heatmap markers.", false)
-end)
 
 toggleButton.Click:Connect(function()
 	widget.Enabled = not widget.Enabled

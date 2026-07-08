@@ -1,4 +1,4 @@
-# Dashboard Heatmap Studio Plugin
+# Dashboard Studio Plugin
 
 Studio plugin source:
 
@@ -8,37 +8,24 @@ roblox-plugin/DashboardHeatmap.plugin.lua
 
 Install it as a local Roblox Studio plugin by copying that `.lua` file into your local Roblox `Plugins` folder, then restart Studio or reload plugins.
 
-The plugin adds a `Dashboard` toolbar with a `Heatmap` button. It fetches heatmap data with your project Roblox secret from the dashboard:
+The plugin adds a `Dashboard` toolbar button. It uploads the current Workspace map snapshot to:
 
 ```txt
-https://game-dashboard-zaya.onrender.com/api/roblox/heatmap?universeId=<your universe id>
+https://game-dashboard-zaya.onrender.com/api/roblox/map-snapshot
 ```
-
-and renders colored Neon sphere markers into:
-
-```txt
-Workspace/DashboardStudioHeatmap
-```
-
-Blue means low traffic, yellow means medium traffic, and red means high traffic.
 
 Map export:
 
-- Sign in to the dashboard, add your universe ID, and copy the Roblox secret that appears once.
-- Enter the dashboard URL, universe ID, and that Roblox secret.
-- Click `Export Map To Dashboard` from Studio to upload the current Workspace map snapshot.
-- The export sends visible `BasePart` geometry in throttled chunks so large maps can finish over multiple HTTPS requests.
-- The website heatmap loads the latest uploaded map snapshot for the selected universe and draws translucent geometry behind the movement points.
+- Sign in to the dashboard.
+- Connect your Roblox game.
+- Copy that game's Roblox secret from the website.
+- Paste the secret into the Studio plugin.
+- Click `Export Map To Dashboard`.
 
-Filters:
-
-- `Player filter` accepts a Roblox username or user ID.
-- `From time` and `To time` accept ISO timestamps, epoch seconds, epoch milliseconds, or blank values.
-- Preset buttons fill `From time` and `To time` for the last 10 minutes, 1 hour, or 1 day.
-- `Max points` limits how many heatmap markers Studio creates.
+The plugin automatically uses the current experience universe ID from `game.GameId`. The export sends visible `BasePart` geometry in throttled chunks so large maps can finish over multiple HTTPS requests.
 
 Requirements:
 
 - Studio must allow HTTP requests for the experience.
-- The dashboard must already have movement samples from Roblox heartbeats.
-- Enter the correct universe ID if `game.GameId` is `0` in an unpublished/local place.
+- The place must be published/opened under the correct Roblox experience so `game.GameId` is available.
+- The pasted secret must belong to the same connected game.
