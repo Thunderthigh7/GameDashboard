@@ -114,9 +114,9 @@ small,
 }
 
 .isLocked .dashboardMain {
-  max-width: 620px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 56px 18px;
+  padding: 56px 24px;
 }
 
 .sidebar {
@@ -372,18 +372,19 @@ small,
 }
 
 .loginPanel {
+  width: 100%;
   max-width: 980px;
   margin: 72px auto;
 }
 
 .isLocked .loginPanel {
-  margin: 8vh auto 0;
+  margin: 6vh auto 0;
 }
 
 .authLanding {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 36px;
   align-items: center;
 }
 
@@ -399,8 +400,8 @@ small,
 
 .authIntro h2 {
   max-width: 620px;
-  font-size: clamp(34px, 5vw, 58px);
-  line-height: 0.98;
+  font-size: clamp(38px, 5vw, 56px);
+  line-height: 1;
 }
 
 .authIntro p {
@@ -427,6 +428,7 @@ small,
 }
 
 .authCard {
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.58);
@@ -1326,6 +1328,10 @@ small,
 
   .loginPanel {
     margin: 24px auto;
+  }
+
+  .isLocked .dashboardMain {
+    padding: 24px 14px;
   }
 
   .authLanding,
