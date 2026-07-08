@@ -191,6 +191,11 @@ const server = http.createServer(async (req, res) => {
       return handleProjectCreate(req, res, auth);
     }
 
+    const projectSecretMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/secret$/);
+    if (projectSecretMatch && req.method === "POST") {
+      return handleProjectSecretRegenerate(req, res, auth, projectSecretMatch[1]);
+    }
+
     if (url.pathname === "/api/roblox/oauth/start" && req.method === "GET") {
       return handleRobloxOAuthStart(req, res, auth, url.searchParams);
     }
@@ -906,6 +911,27 @@ async function handleProjectCreate(req, res, auth) {
   return sendJson(res, 201, {
     ok: true,
     project: serializeProject(project),
+    secret: projectSecret,
+  });
+}
+
+async function handleProjectSecretRegenerate(req, res, auth, projectId) {
+  const cleanProjectId = cleanString(projectId, 120);
+  if (!cleanProjectId) return sendJson(res, 400, { error: "Missing project ID." });
+
+  const projects = await readProjects();
+  const project = projects.find((entry) => entry.id === cleanProjectId && entry.ownerUserId === auth.userId);
+  if (!project) return sendJson(res, 404, { error: "Connected game not found." });
+
+  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+  const updatedAt = Date.now();
+  await updateProjectSecretHash(project.id, auth.userId, hashProjectSecret(projectSecret), updatedAt);
+
+  return sendJson(res, 200, {
+    ok: true,
+    projectId: project.id,
+    universeId: cleanInteger(project.universeId),
+    regeneratedAt: updatedAt,
     secret: projectSecret,
   });
 }
@@ -4488,6 +4514,34 @@ async function createProject(project) {
   }
 
   projects.push(project);
+  await writeProjects(projects);
+}
+
+async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotatedAt) {
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("projects").updateOne(
+      { id: projectId, ownerUserId },
+      { $set: { secretHash, secretRotatedAt: rotatedAt } }
+    );
+    if (!result.matchedCount) {
+      const error = new Error("Project not found");
+      error.code = "PROJECT_NOT_FOUND";
+      throw error;
+    }
+    return;
+  }
+
+  const projects = await readProjects();
+  const project = projects.find((entry) => entry.id === projectId && entry.ownerUserId === ownerUserId);
+  if (!project) {
+    const error = new Error("Project not found");
+    error.code = "PROJECT_NOT_FOUND";
+    throw error;
+  }
+
+  project.secretHash = secretHash;
+  project.secretRotatedAt = rotatedAt;
   await writeProjects(projects);
 }
 

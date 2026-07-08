@@ -525,6 +525,55 @@ small,
   font-size: 11px;
 }
 
+.connectedGamesManager {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.connectedGamesManager h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.connectedGamesManager p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.connectedGameList {
+  display: grid;
+  gap: 10px;
+}
+
+.connectedGameItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 12px;
+}
+
+.connectedGameItem div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.connectedGameItem strong,
+.connectedGameItem span {
+  overflow-wrap: anywhere;
+}
+
+.connectedGameItem span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .metricCard {
   display: grid;
   gap: 8px;
@@ -1422,7 +1471,8 @@ small,
   }
 
   .adminUserHeader,
-  .adminUniverseList li {
+  .adminUniverseList li,
+  .connectedGameItem {
     align-items: flex-start;
     flex-direction: column;
   }

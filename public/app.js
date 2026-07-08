@@ -24,6 +24,7 @@ const ownedGamesStatus = document.querySelector("#ownedGamesStatus");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
+const connectedGameList = document.querySelector("#connectedGameList");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const refreshMovementButton = document.querySelector("#refreshMovementButton");
 const chatLogCount = document.querySelector("#chatLogCount");
@@ -94,6 +95,11 @@ function bindEvents() {
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     createProject();
+  });
+  connectedGameList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-regenerate-project-secret]");
+    if (!button) return;
+    regenerateProjectSecret(button.dataset.regenerateProjectSecret || "", button);
   });
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
@@ -214,6 +220,7 @@ function setAuthenticated(value, user = null) {
     universeSelect.disabled = true;
     if (projectSecretBox) projectSecretBox.hidden = true;
     if (projectSecretValue) projectSecretValue.textContent = "";
+    if (connectedGameList) connectedGameList.innerHTML = "";
     if (ownedGameSelect) {
       ownedGameSelect.innerHTML = `<option value="">Sign in to load games</option>`;
       ownedGameSelect.disabled = true;
@@ -430,6 +437,7 @@ async function loadUniverses() {
       universeSelect.disabled = true;
       universeSelect.innerHTML = `<option value="">Add your first game</option>`;
       universesStatus.textContent = "Add a universe ID to connect your Roblox game.";
+      renderConnectedGames();
       updateSelectedUniverse();
       loadSignalAreaCards();
       return;
@@ -444,6 +452,7 @@ async function loadUniverses() {
     universeSelect.disabled = false;
     universeSelect.innerHTML = knownUniverses.map(renderUniverseOption).join("");
     universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.`;
+    renderConnectedGames();
     updateSelectedUniverse();
 
     if (previousUniverseId !== selectedUniverseId) {
@@ -484,6 +493,33 @@ async function createProject() {
     if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
   } finally {
     createProjectButton.disabled = !ownedGames.some((game) => !game.connected);
+  }
+}
+
+async function regenerateProjectSecret(projectId, button) {
+  if (!projectId) return;
+
+  const originalText = button?.textContent || "Regenerate secret";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Regenerating...";
+  }
+  if (projectSecretBox) projectSecretBox.hidden = true;
+  if (projectSecretValue) projectSecretValue.textContent = "";
+
+  try {
+    const data = await request(`/api/projects/${encodeURIComponent(projectId)}/secret`, { method: "POST" });
+    if (projectSecretValue) projectSecretValue.textContent = data.secret || "";
+    if (projectSecretBox) projectSecretBox.hidden = !data.secret;
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Secret regenerated. Update your Roblox config with this new key.";
+  } catch (error) {
+    handleAuthError(error);
+    if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
   }
 }
 
@@ -536,6 +572,28 @@ function renderUniverseOption(universe) {
   const totalSamples = Number(universe.totalSamples || 0);
   const selected = id === selectedUniverseId ? " selected" : "";
   return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label)} (${escapeHtml(String(totalSamples))} samples)</option>`;
+}
+
+function renderConnectedGames() {
+  if (!connectedGameList) return;
+  connectedGameList.innerHTML = knownUniverses.length
+    ? knownUniverses.map(renderConnectedGame).join("")
+    : `<p class="status">No games connected yet.</p>`;
+}
+
+function renderConnectedGame(universe) {
+  const id = String(universe.id || "");
+  const projectId = String(universe.projectId || "");
+  const name = String(universe.name || `Universe ${id}`);
+  return `
+    <article class="connectedGameItem">
+      <div>
+        <strong>${escapeHtml(name)}</strong>
+        <span>Universe ${escapeHtml(id)}</span>
+      </div>
+      <button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
+    </article>
+  `;
 }
 
 function selectUniverse(value) {

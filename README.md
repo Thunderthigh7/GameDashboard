@@ -21,6 +21,8 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 5. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
 6. Use the same secret in the Studio heatmap plugin when exporting a map.
 
+The original secret is not shown again because only its hash is stored. Use Connect Universe -> Connected games -> Regenerate secret to replace the key for a connected game.
+
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
 New accounts use Roblox OAuth. Universe connection uses the logged-in Roblox account and only allows public experiences owned by that account or by a group that account owns. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
