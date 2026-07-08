@@ -1235,20 +1235,9 @@ function renderDensityHeatmap(entries, center) {
   if (!field?.vertices.length) return;
 
   const pointCloud = createDensityPointCloud(field, center, cellSize);
-  const footprintGeometry = createDensityFootprintGeometry(field, center);
-  const footprintMaterial = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.18,
-    depthWrite: false,
-    vertexColors: true,
-    side: THREE.DoubleSide,
-  });
-  const footprint = new THREE.Mesh(footprintGeometry, footprintMaterial);
-  footprint.renderOrder = 2;
 
   heatmapMesh = new THREE.Group();
   heatmapMesh.name = "DensityHeatmap";
-  heatmapMesh.add(footprint);
   heatmapMesh.add(pointCloud);
   scene.add(heatmapMesh);
 }
@@ -1358,7 +1347,7 @@ function createDensitySurfaceGeometry(field, center, isBaseLayer) {
 
 function createDensityPointCloud(field, center, cellSize) {
   const pointRows = [];
-  const pointSize = clamp(cellSize * 0.38, 2.2, 6);
+  const pointSize = clamp(cellSize * 0.46, 2.6, 7);
 
   field.vertices.forEach((vertex, index) => {
     const normalized = clamp(vertex.normalized || 0, 0, 1);
@@ -1367,13 +1356,14 @@ function createDensityPointCloud(field, center, cellSize) {
     const baseY = vertex.y + 1.2;
     const topY = vertex.surfaceY;
     const height = Math.max(topY - baseY, 2);
-    const levels = Math.round(clamp(2 + Math.pow(normalized, 0.62) * 20, 2, 22));
-    const lateralPoints = Math.round(clamp(1 + normalized * 2, 1, 3));
+    const levels = Math.round(clamp(3 + Math.pow(normalized, 0.66) * 21, 3, 24));
+    const lateralPoints = Math.round(clamp(2 + normalized * 3, 2, 5));
 
     for (let level = 0; level < levels; level += 1) {
       const verticalT = levels === 1 ? 1 : level / (levels - 1);
       const y = baseY + height * verticalT;
-      const colorValue = clamp((verticalT * 0.88) + (normalized * 0.12), 0, 1);
+      const hotness = Math.pow(normalized, 0.58);
+      const colorValue = clamp(hotness * (0.42 + verticalT * 0.58), 0, 1);
       const color = getHeatmapRampColor(colorValue);
 
       for (let dot = 0; dot < lateralPoints; dot += 1) {
@@ -1410,6 +1400,8 @@ function createDensityPointCloud(field, center, cellSize) {
     vertexColors: true,
     transparent: true,
     opacity: 0.96,
+    alphaMap: getDensityPointTexture(),
+    alphaTest: 0.08,
     depthWrite: false,
   });
 
@@ -1419,49 +1411,42 @@ function createDensityPointCloud(field, center, cellSize) {
   return pointCloud;
 }
 
-function createDensityFootprintGeometry(field, center) {
-  const positions = new Float32Array(field.vertices.length * 3);
-  const colors = new Float32Array(field.vertices.length * 3);
-
-  field.vertices.forEach((vertex, index) => {
-    const normalized = clamp(vertex.normalized || 0, 0, 1);
-    const color = getHeatmapRampColor(Math.pow(normalized, 0.54));
-
-    positions[index * 3] = vertex.x - center.x;
-    positions[index * 3 + 1] = vertex.y - center.y + 0.6;
-    positions[index * 3 + 2] = vertex.z - center.z;
-    colors[index * 3] = color.r / 255;
-    colors[index * 3 + 1] = color.g / 255;
-    colors[index * 3 + 2] = color.b / 255;
-  });
-
-  const indices = [];
-  const stride = field.columns + 1;
-  for (let row = 0; row < field.rows; row += 1) {
-    for (let column = 0; column < field.columns; column += 1) {
-      const a = row * stride + column;
-      const b = a + 1;
-      const c = a + stride;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
-  return geometry;
-}
-
 function getDensityPointJitter(index, level, dot, cellSize, normalized) {
-  const radius = cellSize * clamp(0.08 + normalized * 0.24, 0.08, 0.28);
+  const radius = cellSize * clamp(0.14 + normalized * 0.42, 0.14, 0.48);
   const angle = ((index * 37 + level * 17 + dot * 101) % 360) * Math.PI / 180;
   const distance = radius * (0.35 + (((index + level * 3 + dot * 7) % 11) / 10) * 0.65);
   return {
     x: Math.cos(angle) * distance,
     z: Math.sin(angle) * distance,
   };
+}
+
+function getDensityPointTexture() {
+  if (getDensityPointTexture.texture) return getDensityPointTexture.texture;
+
+  const size = 64;
+  const pointCanvas = document.createElement("canvas");
+  pointCanvas.width = size;
+  pointCanvas.height = size;
+  const context = pointCanvas.getContext("2d");
+  const gradient = context.createRadialGradient(
+    size / 2,
+    size / 2,
+    0,
+    size / 2,
+    size / 2,
+    size / 2,
+  );
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.48, "rgba(255,255,255,0.92)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(pointCanvas);
+  texture.needsUpdate = true;
+  getDensityPointTexture.texture = texture;
+  return texture;
 }
 
 function getDensityBins(entries, binSize) {
