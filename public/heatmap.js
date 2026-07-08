@@ -518,7 +518,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
   }
 
   if (mapSnapshot?.parts?.length) {
-    renderMapSnapshot(mapSnapshot, sceneCenter);
+    renderMapSnapshot(mapSnapshot, sceneCenter, entries);
   }
 
   if (entries.length) {
@@ -772,6 +772,7 @@ function renderSamples(entries, center) {
   if (!entries.length) return;
 
   if (activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis") {
+    if (mapGroup) return;
     renderDensityHeatmap(entries, center);
     return;
   }
@@ -1587,20 +1588,24 @@ function getFocusedSignalColor(mode) {
   return 0xf59e0b;
 }
 
-function renderMapSnapshot(snapshot, center) {
+function renderMapSnapshot(snapshot, center, entries = []) {
   mapGroup = new THREE.Group();
   mapGroup.name = "UploadedMapSnapshot";
 
   const parts = snapshot.parts.slice(0, 8000);
-  for (const part of parts) {
-    const mesh = createMapMesh(part, center);
+  const heatContext = activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis"
+    ? createObjectHeatContext(parts, entries, snapshot)
+    : null;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const mesh = createMapMesh(parts[index], center, heatContext?.scores[index] || null);
     if (mesh) mapGroup.add(mesh);
   }
 
   scene.add(mapGroup);
 }
 
-function createMapMesh(part, center) {
+function createMapMesh(part, center, heatScore = null) {
   const size = part.size || [];
   const cframe = part.cframe || [];
   if (size.length < 3 || cframe.length < 12) return null;
@@ -1608,14 +1613,23 @@ function createMapMesh(part, center) {
   const shape = String(part.shape || part.className || "");
   const geometry = getMapGeometry(shape);
   const color = Array.isArray(part.color) ? part.color : [110, 122, 140];
+  const baseColor = new THREE.Color(
+    clamp((Number(color[0]) || 0) / 255, 0, 1),
+    clamp((Number(color[1]) || 0) / 255, 0, 1),
+    clamp((Number(color[2]) || 0) / 255, 0, 1),
+  );
+  const heat = heatScore ? clamp(heatScore.value, 0, 1) : 0;
+  const heatColor = getHeatmapThreeColor(heat);
+  const materialColor = heatScore
+    ? baseColor.clone().lerp(heatColor, clamp(0.38 + heat * 0.58, 0, 0.92))
+    : baseColor;
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(
-      clamp((Number(color[0]) || 0) / 255, 0, 1),
-      clamp((Number(color[1]) || 0) / 255, 0, 1),
-      clamp((Number(color[2]) || 0) / 255, 0, 1),
-    ),
+    color: materialColor,
+    emissive: heatScore ? heatColor.clone().multiplyScalar(clamp(heat * 0.72, 0, 0.72)) : new THREE.Color(0x000000),
     transparent: true,
-    opacity: clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24),
+    opacity: heatScore
+      ? clamp(0.34 + heat * 0.3 - (Number(part.transparency) || 0) * 0.1, 0.2, 0.68)
+      : clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24),
     roughness: 0.85,
     metalness: 0,
     depthWrite: false,
@@ -1638,7 +1652,80 @@ function createMapMesh(part, center) {
     0, 0, 0, 1,
   );
 
+  if (heatScore && heat > 0.16) {
+    const group = new THREE.Group();
+    group.add(mesh);
+
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: heatColor,
+      transparent: true,
+      opacity: clamp(heat * 0.2, 0.04, 0.2),
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    const glow = new THREE.Mesh(geometry, glowMaterial);
+    glow.matrixAutoUpdate = false;
+    glow.matrix.copy(mesh.matrix);
+    glow.renderOrder = 2;
+    group.add(glow);
+    return group;
+  }
+
   return mesh;
+}
+
+function createObjectHeatContext(parts, entries, snapshot) {
+  const sourceEntries = entries.filter((entry) => (
+    Number.isFinite(Number(entry.x))
+    && Number.isFinite(Number(entry.z))
+  ));
+  if (!sourceEntries.length) return null;
+
+  const bounds = snapshot?.bounds;
+  const span = Math.max(Number(bounds?.width) || 0, Number(bounds?.depth) || 0, 1);
+  const radius = clamp(span / 13, 24, 95);
+  const twoSigmaSquared = 2 * (radius * 0.58) ** 2;
+  const rawScores = parts.map((part) => getObjectHeatScore(part, sourceEntries, radius, twoSigmaSquared));
+  const maxScore = rawScores.reduce((max, score) => Math.max(max, score), 0);
+  if (maxScore <= 0) return null;
+
+  return {
+    scores: rawScores.map((score) => ({
+      raw: score,
+      value: score <= 0 ? 0 : Math.pow(score / maxScore, 0.58),
+    })),
+  };
+}
+
+function getObjectHeatScore(part, entries, radius, twoSigmaSquared) {
+  const cframe = part.cframe || [];
+  const size = part.size || [];
+  if (cframe.length < 3) return 0;
+
+  const x = Number(cframe[0]) || 0;
+  const z = Number(cframe[2]) || 0;
+  const footprint = Math.max(Number(size[0]) || 1, Number(size[2]) || 1, 1);
+  const effectiveRadius = radius + footprint * 0.42;
+  const effectiveRadiusSq = effectiveRadius * effectiveRadius;
+  let score = 0;
+
+  for (const entry of entries) {
+    const dx = Number(entry.x) - x;
+    const dz = Number(entry.z) - z;
+    const distanceSquared = dx * dx + dz * dz;
+    if (distanceSquared > effectiveRadiusSq) continue;
+    score += getSampleWeight(entry) * Math.exp(-distanceSquared / twoSigmaSquared);
+  }
+
+  return score;
+}
+
+function getHeatmapThreeColor(value) {
+  const color = getHeatmapRampColor(clamp(value, 0, 1));
+  return new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
 }
 
 function getMapGeometry(shape) {
