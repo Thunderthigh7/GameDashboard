@@ -1593,21 +1593,19 @@ function renderMapSnapshot(snapshot, center, entries = []) {
   mapGroup.name = "UploadedMapSnapshot";
 
   const parts = snapshot.parts.slice(0, 8000);
+  const heatContext = activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis"
+    ? createSurfaceHeatContext(entries, center, snapshot)
+    : null;
 
   for (let index = 0; index < parts.length; index += 1) {
-    const mesh = createMapMesh(parts[index], center);
+    const mesh = createMapMesh(parts[index], center, heatContext);
     if (mesh) mapGroup.add(mesh);
-  }
-
-  if (activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis") {
-    const heatSpots = createLocalizedHeatSpots(entries, center, snapshot);
-    if (heatSpots) mapGroup.add(heatSpots);
   }
 
   scene.add(mapGroup);
 }
 
-function createMapMesh(part, center) {
+function createMapMesh(part, center, heatContext = null) {
   const size = part.size || [];
   const cframe = part.cframe || [];
   if (size.length < 3 || cframe.length < 12) return null;
@@ -1620,14 +1618,17 @@ function createMapMesh(part, center) {
     clamp((Number(color[1]) || 0) / 255, 0, 1),
     clamp((Number(color[2]) || 0) / 255, 0, 1),
   );
-  const material = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    transparent: true,
-    opacity: clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24),
-    roughness: 0.85,
-    metalness: 0,
-    depthWrite: false,
-  });
+  const opacity = clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24);
+  const material = heatContext
+    ? createSurfaceHeatMaterial(baseColor, opacity, heatContext)
+    : new THREE.MeshStandardMaterial({
+      color: baseColor,
+      transparent: true,
+      opacity,
+      roughness: 0.85,
+      metalness: 0,
+      depthWrite: false,
+    });
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.matrixAutoUpdate = false;
@@ -1649,7 +1650,7 @@ function createMapMesh(part, center) {
   return mesh;
 }
 
-function createLocalizedHeatSpots(entries, center, snapshot) {
+function createSurfaceHeatContext(entries, center, snapshot) {
   const sourceEntries = entries.filter((entry) => (
     Number.isFinite(Number(entry.x))
     && Number.isFinite(Number(entry.y))
@@ -1662,84 +1663,97 @@ function createLocalizedHeatSpots(entries, center, snapshot) {
   const binSize = clamp(span / 56, 8, 24);
   const bins = getDensityBins(sourceEntries, binSize)
     .sort((a, b) => b.count - a.count)
-    .slice(0, 220);
+    .slice(0, 80);
   if (!bins.length) return null;
 
   const maxCount = bins.reduce((max, bin) => Math.max(max, bin.count), 1);
-  const group = new THREE.Group();
-  group.name = "LocalizedHeatSpots";
-  const texture = getLocalizedHeatTexture();
+  const spots = bins.map((bin) => {
+    const heat = Math.pow(clamp(bin.count / maxCount, 0, 1), 0.58);
+    return new THREE.Vector4(
+      bin.x - center.x,
+      bin.y - center.y,
+      bin.z - center.z,
+      heat,
+    );
+  });
 
-  for (const bin of bins) {
-    const heat = clamp(bin.count / maxCount, 0, 1);
-    if (heat <= 0.025) continue;
-
-    const color = getHeatmapThreeColor(Math.pow(heat, 0.55));
-    const radius = clamp(binSize * (0.9 + Math.pow(heat, 0.55) * 1.25), 7, 34);
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      map: texture,
-      transparent: true,
-      opacity: clamp(0.08 + heat * 0.16, 0.08, 0.24),
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-    const spot = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), material);
-    spot.position.set(bin.x - center.x, bin.y - center.y + 1.1, bin.z - center.z);
-    spot.rotation.x = -Math.PI / 2;
-    spot.renderOrder = 3;
-    group.add(spot);
-
-    if (heat > 0.62) {
-      const coreMaterial = material.clone();
-      coreMaterial.opacity = clamp(0.08 + heat * 0.1, 0.08, 0.18);
-      const core = new THREE.Mesh(new THREE.PlaneGeometry(radius * 0.86, radius * 0.86), coreMaterial);
-      core.position.copy(spot.position);
-      core.position.y += 0.05;
-      core.rotation.x = -Math.PI / 2;
-      core.renderOrder = 4;
-      group.add(core);
-    }
+  while (spots.length < 80) {
+    spots.push(new THREE.Vector4(0, 0, 0, 0));
   }
 
-  return group.children.length ? group : null;
+  return {
+    radius: clamp(binSize * 2.25, 16, 54),
+    spots,
+    spotCount: bins.length,
+  };
 }
 
-function getHeatmapThreeColor(value) {
-  const color = getHeatmapRampColor(clamp(value, 0, 1));
-  return new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
-}
+function createSurfaceHeatMaterial(baseColor, opacity, heatContext) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: baseColor },
+      uOpacity: { value: opacity },
+      uRadius: { value: heatContext.radius },
+      uSpotCount: { value: heatContext.spotCount },
+      uSpots: { value: heatContext.spots },
+    },
+    vertexShader: `
+      varying vec3 vSurfacePosition;
 
-function getLocalizedHeatTexture() {
-  if (getLocalizedHeatTexture.texture) return getLocalizedHeatTexture.texture;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vSurfacePosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      #define MAX_HEAT_SPOTS 80
 
-  const size = 96;
-  const heatCanvas = document.createElement("canvas");
-  heatCanvas.width = size;
-  heatCanvas.height = size;
-  const context = heatCanvas.getContext("2d");
-  const gradient = context.createRadialGradient(
-    size / 2,
-    size / 2,
-    0,
-    size / 2,
-    size / 2,
-    size / 2,
-  );
-  gradient.addColorStop(0, "rgba(255,255,255,0.92)");
-  gradient.addColorStop(0.42, "rgba(255,255,255,0.46)");
-  gradient.addColorStop(0.72, "rgba(255,255,255,0.13)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, size, size);
+      uniform vec3 uBaseColor;
+      uniform float uOpacity;
+      uniform float uRadius;
+      uniform int uSpotCount;
+      uniform vec4 uSpots[MAX_HEAT_SPOTS];
+      varying vec3 vSurfacePosition;
 
-  const texture = new THREE.CanvasTexture(heatCanvas);
-  texture.needsUpdate = true;
-  getLocalizedHeatTexture.texture = texture;
-  return texture;
+      vec3 heatRamp(float value) {
+        value = clamp(value, 0.0, 1.0);
+        vec3 blue = vec3(0.10, 0.44, 1.0);
+        vec3 green = vec3(0.08, 0.77, 0.50);
+        vec3 yellow = vec3(1.0, 0.90, 0.30);
+        vec3 orange = vec3(1.0, 0.48, 0.14);
+        vec3 red = vec3(0.92, 0.14, 0.14);
+
+        if (value < 0.28) return mix(blue, green, value / 0.28);
+        if (value < 0.54) return mix(green, yellow, (value - 0.28) / 0.26);
+        if (value < 0.78) return mix(yellow, orange, (value - 0.54) / 0.24);
+        return mix(orange, red, (value - 0.78) / 0.22);
+      }
+
+      void main() {
+        float heat = 0.0;
+        for (int index = 0; index < MAX_HEAT_SPOTS; index += 1) {
+          if (index >= uSpotCount) break;
+          vec4 spot = uSpots[index];
+          vec3 delta = vSurfacePosition - spot.xyz;
+          float distanceSq = dot(delta.xz, delta.xz) + delta.y * delta.y * 0.18;
+          float influence = exp(-distanceSq / (2.0 * uRadius * uRadius)) * spot.w;
+          heat += influence;
+        }
+
+        heat = clamp(heat, 0.0, 1.0);
+        float visibleHeat = smoothstep(0.05, 0.72, heat);
+        vec3 heatColor = heatRamp(pow(heat, 0.72));
+        vec3 color = mix(uBaseColor, heatColor, visibleHeat * 0.86);
+        color += heatColor * visibleHeat * 0.14;
+        float alpha = clamp(uOpacity + visibleHeat * 0.16, uOpacity, 0.48);
+
+        gl_FragColor = vec4(color, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+  });
 }
 
 function getMapGeometry(shape) {
