@@ -51,7 +51,7 @@ window.isDashboardAuthenticated = () => authenticated;
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
 const SIGNAL_CLUSTER_RADIUS = 44;
-const MAX_SIGNAL_AREAS = 3;
+const MAX_SIGNAL_AREAS = 5;
 
 init();
 
@@ -477,24 +477,76 @@ function renderSignalError(container, message) {
 function renderSignalAreas(container, areas, mode) {
   if (!container) return;
 
-  if (!areas.length) {
-    const label = getSignalAreaTypeText(mode);
-    container.innerHTML = `<p class="status">No ${label} areas tracked yet.</p>`;
-    return;
-  }
-
   const label = getSignalAreaTitleText(mode);
-  container.innerHTML = areas.map((area) => `
-    <button class="signalAreaItem ${getSignalAreaClass(mode)}" type="button"
+  const rows = areas.length ? areas : getSignalPlaceholderAreas(mode);
+  const totalCount = rows.reduce((sum, area) => sum + Math.max(Number(area.count) || 0, 0), 0);
+
+  container.innerHTML = rows.map((area) => renderSignalAreaRow({
+    area,
+    label,
+    mode,
+    percent: getSignalAreaPercent(area, totalCount),
+    isPlaceholder: !areas.length,
+  })).join("");
+}
+
+function renderSignalAreaRow({ area, label, mode, percent, isPlaceholder }) {
+  const itemTag = isPlaceholder ? "div" : "button";
+  const itemAttrs = isPlaceholder
+    ? `aria-hidden="true"`
+    : `type="button"
       data-signal-area-index="${escapeHtml(String(area.rank - 1))}"
       data-signal-mode="${escapeHtml(mode)}"
       data-signal-x="${escapeHtml(String(area.x))}"
       data-signal-y="${escapeHtml(String(area.y))}"
-      data-signal-z="${escapeHtml(String(area.z))}">
-      <span>${escapeHtml(label)} area ${area.rank}</span>
-      <b>${escapeHtml(String(area.count))}</b>
-    </button>
-  `).join("");
+      data-signal-z="${escapeHtml(String(area.z))}"`;
+  const areaName = area.name || `${label} area ${area.rank}`;
+
+  return `
+    <${itemTag} class="signalAreaItem ${getSignalAreaClass(mode)}${isPlaceholder ? " placeholderSignal" : ""}" ${itemAttrs}>
+      <span class="signalRank">${escapeHtml(String(area.rank))}</span>
+      <span class="signalName">${escapeHtml(areaName)}</span>
+      <span class="signalBar" aria-hidden="true">
+        <i style="width: ${escapeHtml(String(percent))}%"></i>
+      </span>
+      <b>${escapeHtml(String(percent))}%</b>
+    </${itemTag}>
+  `;
+}
+
+function getSignalAreaPercent(area, totalCount) {
+  if (Number.isFinite(area.percent)) {
+    return clampPercent(area.percent);
+  }
+
+  if (!totalCount) return 0;
+  return clampPercent(Math.round((Math.max(Number(area.count) || 0, 0) / totalCount) * 100));
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+function getSignalPlaceholderAreas(mode) {
+  const namesByMode = {
+    movement: ["Spawn Plaza", "Main Path", "Shop Corner", "Boss Gate", "Cave Bend"],
+    leaves: ["Tutorial Cave", "Old Ruins", "Dark Forest", "Castle Gate", "Lava Pit"],
+    deaths: ["Lava Pit", "Boss Gate", "Trap Hall", "Dark Forest", "Bridge Edge"],
+  };
+  const percentsByMode = {
+    movement: [62, 45, 39, 28, 24],
+    leaves: [62, 45, 39, 28, 24],
+    deaths: [58, 47, 36, 31, 22],
+  };
+  const names = namesByMode[mode] || namesByMode.leaves;
+  const percents = percentsByMode[mode] || percentsByMode.leaves;
+
+  return names.map((name, index) => ({
+    rank: index + 1,
+    name,
+    percent: percents[index],
+    count: percents[index],
+  }));
 }
 
 function focusSignalAreaFromElement(item) {

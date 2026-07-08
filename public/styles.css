@@ -927,46 +927,127 @@ small,
 
 .signalAreaList {
   display: grid;
-  gap: 10px;
+  gap: 9px;
   margin-top: 16px;
 }
 
 .signalAreaItem {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 24px minmax(0, 1fr) 76px 42px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--text);
-  padding: 10px 12px;
+  padding: 2px 0;
   text-align: left;
   cursor: pointer;
 }
 
 .signalAreaItem:hover {
-  border-color: var(--purple);
-  background: var(--surface-strong);
+  color: var(--purple);
 }
 
-.signalAreaItem span {
-  color: var(--muted);
-  font-weight: 750;
+.signalAreaItem.placeholderSignal {
+  cursor: default;
 }
 
-.signalAreaItem b {
-  color: var(--red);
+.signalAreaItem.placeholderSignal:hover {
+  color: var(--text);
 }
 
-.signalAreaItem.movementSignal b {
+.signalRank {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--purple-soft);
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.signalAreaItem:nth-child(1) .signalRank {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+}
+
+.signalAreaItem:nth-child(2) .signalRank {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.signalAreaItem:nth-child(3) .signalRank {
+  background: rgba(109, 66, 232, 0.16);
+  color: #a78bfa;
+}
+
+.signalAreaItem:nth-child(4) .signalRank {
+  background: rgba(34, 211, 238, 0.14);
   color: #22d3ee;
 }
 
+.signalAreaItem:nth-child(5) .signalRank {
+  background: rgba(53, 208, 131, 0.14);
+  color: var(--green);
+}
+
+.signalName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signalBar {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.signalBar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: #fb7185;
+}
+
+.signalAreaItem b {
+  color: #fb7185;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.signalAreaItem.movementSignal .signalBar i,
+.signalAreaItem.movementSignal b {
+  color: #22d3ee;
+  background: #22d3ee;
+}
+
+.signalAreaItem.leaveSignal .signalBar i,
 .signalAreaItem.leaveSignal b {
   color: #f59e0b;
+  background: #f59e0b;
+}
+
+.signalAreaItem.deathSignal .signalBar i,
+.signalAreaItem.deathSignal b {
+  color: #fb7185;
+  background: #fb7185;
+}
+
+.signalAreaItem b {
+  background: transparent !important;
 }
 
 .status {
