@@ -12,6 +12,7 @@ const adminUserList = document.querySelector("#adminUserList");
 const adminUsersStatus = document.querySelector("#adminUsersStatus");
 const adminTotalUsers = document.querySelector("#adminTotalUsers");
 const adminTotalProjects = document.querySelector("#adminTotalProjects");
+const adminRobloxUsers = document.querySelector("#adminRobloxUsers");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -218,6 +219,7 @@ function setAuthenticated(value, user = null) {
     if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
     if (adminTotalUsers) adminTotalUsers.textContent = "0";
     if (adminTotalProjects) adminTotalProjects.textContent = "0";
+    if (adminRobloxUsers) adminRobloxUsers.textContent = "0";
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
@@ -248,15 +250,22 @@ async function loadDashboardData() {
 
 function getViewFromHash() {
   if (window.location.hash === "#chat") return "chat";
+  if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#admin") return "admin";
   return "overview";
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "chat" || view === "admin" ? view : "overview";
+  const requestedView = view === "chat" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
-    const nextHash = activeView === "chat" ? "#chat" : activeView === "admin" ? "#admin" : "#overview";
+    const nextHash = activeView === "chat"
+      ? "#chat"
+      : activeView === "connect"
+        ? "#connect"
+        : activeView === "admin"
+          ? "#admin"
+          : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -287,6 +296,10 @@ function renderActiveView() {
     chat: {
       title: "Chat Analysis",
       subtitle: "Player messages and grouped question insights.",
+    },
+    connect: {
+      title: "Connect Universe",
+      subtitle: "Add a Roblox game after verifying ownership with Roblox.",
     },
     admin: {
       title: "Admin",
@@ -341,6 +354,7 @@ async function loadAdminUsers() {
     const data = await request("/api/admin/users");
     adminTotalUsers.textContent = String(data.totalUsers || 0);
     adminTotalProjects.textContent = String(data.totalProjects || 0);
+    if (adminRobloxUsers) adminRobloxUsers.textContent = String(data.totalRobloxUsers || 0);
     adminUsersStatus.textContent = data.passwordVisibility || "Passwords are hashed and cannot be viewed.";
     adminUserList.innerHTML = Array.isArray(data.users) && data.users.length
       ? data.users.map(renderAdminUser).join("")
@@ -355,6 +369,9 @@ async function loadAdminUsers() {
 }
 
 function renderAdminUser(user) {
+  const robloxId = user.robloxUserId ? String(user.robloxUserId) : "";
+  const robloxName = user.robloxUsername || user.robloxDisplayName || "";
+  const provider = user.authProvider === "roblox" || robloxId ? "Roblox" : "Legacy";
   const universes = Array.isArray(user.universes) && user.universes.length
     ? user.universes.map((universe) => `
       <li>
@@ -370,6 +387,7 @@ function renderAdminUser(user) {
         <div>
           <strong>${escapeHtml(user.username || "Unknown user")}</strong>
           ${user.isAdmin ? `<span>Admin</span>` : ""}
+          <span>${escapeHtml(provider)}</span>
         </div>
         <code>${escapeHtml(user.id || "")}</code>
       </div>
@@ -377,6 +395,9 @@ function renderAdminUser(user) {
         <div><span>Created</span><strong>${escapeHtml(formatFullDate(user.createdAt))}</strong></div>
         <div><span>Last login</span><strong>${escapeHtml(formatFullDate(user.lastLoginAt))}</strong></div>
         <div><span>Games</span><strong>${escapeHtml(String(user.projectCount || 0))}</strong></div>
+        <div><span>Roblox username</span><strong>${escapeHtml(robloxName || "Not linked")}</strong></div>
+        <div><span>Roblox user ID</span><strong>${escapeHtml(robloxId || "Not linked")}</strong></div>
+        <div><span>Provider</span><strong>${escapeHtml(provider)}</strong></div>
       </div>
       <ul class="adminUniverseList">${universes}</ul>
     </article>

@@ -471,8 +471,25 @@ small,
   width: 100%;
 }
 
+.connectUniversePanel {
+  display: grid;
+  gap: 18px;
+  max-width: 720px;
+}
+
+.connectUniverseForm {
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
 .projectForm .button {
   width: 100%;
+}
+
+.connectUniverseForm .button {
+  min-height: 43px;
+  white-space: nowrap;
 }
 
 .projectSecretBox {
@@ -949,7 +966,7 @@ small,
 
 .adminStats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 180px));
+  grid-template-columns: repeat(3, minmax(0, 180px));
   gap: 12px;
 }
 
@@ -1021,7 +1038,7 @@ small,
 
 .adminUserMeta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1296,6 +1313,10 @@ small,
   .chatAnalysisPage {
     grid-template-columns: 1fr;
   }
+
+  .adminUserMeta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
@@ -1361,6 +1382,7 @@ small,
   }
 
   .authForm,
+  .connectUniverseForm,
   .topbarFilters,
   .aiCardRow,
   .heatmapFilters {

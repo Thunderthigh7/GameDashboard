@@ -124,9 +124,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/auth/status" && req.method === "GET") {
       const auth = getDashboardAuth(req);
+      const user = auth ? await findUserById(auth.userId) : null;
       return sendJson(res, 200, {
-        authenticated: Boolean(auth),
-        user: auth ? { username: auth.username, isAdmin: isAdminAuth(auth) } : null,
+        authenticated: Boolean(auth && user),
+        user: auth && user ? { username: user.username || auth.username, isAdmin: isAdminUser(user) } : null,
       });
     }
 
@@ -195,7 +196,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
-      if (!isAdminAuth(auth)) {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
         return sendJson(res, 403, { error: "Admin access required" });
       }
 
@@ -794,7 +796,7 @@ async function handleDashboardLogin(req, res) {
   return sendJson(res, 200, {
     ok: true,
     authenticated: true,
-    user: { username: user.username, isAdmin: isAdminAuth(user) },
+    user: { username: user.username, isAdmin: isAdminUser(user) },
   });
 }
 
@@ -840,7 +842,7 @@ async function handleDashboardSignup(req, res) {
   return sendJson(res, 201, {
     ok: true,
     authenticated: true,
-    user: { username: user.username, isAdmin: isAdminAuth(user) },
+    user: { username: user.username, isAdmin: isAdminUser(user) },
   });
 }
 
@@ -3841,6 +3843,20 @@ function isAdminAuth(auth) {
   return Boolean(username && ADMIN_USERNAMES.has(username));
 }
 
+function isAdminUser(user) {
+  if (!user) return false;
+  const dashboardUsername = cleanUsername(user.username).toLowerCase();
+  const robloxUsername = cleanUsername(user.robloxUsername).toLowerCase();
+  const robloxDisplayName = cleanUsername(user.robloxDisplayName).toLowerCase();
+  const robloxUserId = cleanInteger(user.robloxUserId);
+  return Boolean(
+    (dashboardUsername && ADMIN_USERNAMES.has(dashboardUsername))
+    || (robloxUsername && ADMIN_USERNAMES.has(robloxUsername))
+    || (robloxDisplayName && ADMIN_USERNAMES.has(robloxDisplayName))
+    || (robloxUserId > 0 && ADMIN_USERNAMES.has(String(robloxUserId)))
+  );
+}
+
 function getSignupValidationError(username, password) {
   if (!username || !password) return "Enter a username and password";
   if (!/^[A-Za-z0-9_]{3,24}$/.test(username)) {
@@ -3965,6 +3981,19 @@ async function findUserByRobloxId(robloxUserId) {
   return users.find((user) => cleanInteger(user.robloxUserId) === cleanRobloxUserId) || null;
 }
 
+async function findUserById(userId) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  if (!cleanUserId) return null;
+
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("users").findOne({ id: cleanUserId }, { projection: { _id: 0 } });
+  }
+
+  const users = await readUsers();
+  return users.find((user) => user.id === cleanUserId) || null;
+}
+
 async function getAvailableRobloxDashboardUsername(robloxUser, robloxUserId) {
   const baseName = cleanUsername(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname || `Roblox${robloxUserId}`)
     .replace(/[^A-Za-z0-9_]/g, "")
@@ -4022,7 +4051,11 @@ async function getAdminUserSummaries() {
       return {
         id: user.id,
         username: user.username,
-        isAdmin: isAdminAuth(user),
+        authProvider: user.authProvider || (cleanInteger(user.robloxUserId) > 0 ? "roblox" : "legacy"),
+        robloxUserId: cleanInteger(user.robloxUserId) || null,
+        robloxUsername: user.robloxUsername || "",
+        robloxDisplayName: user.robloxDisplayName || "",
+        isAdmin: isAdminUser(user),
         createdAt: cleanInteger(user.createdAt),
         lastLoginAt: cleanInteger(user.lastLoginAt) || null,
         projectCount: userProjects.length,
@@ -4038,8 +4071,9 @@ async function getAdminUserSummaries() {
   return {
     users: sanitizedUsers,
     totalUsers: sanitizedUsers.length,
+    totalRobloxUsers: sanitizedUsers.filter((user) => cleanInteger(user.robloxUserId) > 0 || user.authProvider === "roblox").length,
     totalProjects: projects.length,
-    passwordVisibility: "Passwords are hashed and cannot be viewed.",
+    passwordVisibility: "Roblox OAuth users are linked by Roblox user ID. Legacy passwords are hashed and cannot be viewed.",
   };
 }
 

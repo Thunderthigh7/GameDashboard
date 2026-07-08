@@ -20,6 +20,7 @@
         <nav class="sideNav" aria-label="Dashboard sections">
           <a class="active" href="#overview" data-dashboard-view="overview"><span>Overview</span></a>
           <a href="#chat" data-dashboard-view="chat"><span>Chat Analysis</span></a>
+          <a href="#connect" data-dashboard-view="connect"><span>Connect Universe</span></a>
           <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden><span>Admin</span></a>
         </nav>
 
@@ -36,22 +37,6 @@
             </select>
             <button class="button secondary compact" id="refreshUniversesButton" type="button">Refresh</button>
             <p class="status" id="universesStatus">Loading...</p>
-            <form class="projectForm" id="projectForm">
-              <div class="fieldGroup">
-                <label for="projectUniverseId">Connect universe</label>
-                <input id="projectUniverseId" type="text" inputmode="numeric" placeholder="Universe ID">
-              </div>
-              <div class="fieldGroup">
-                <label for="projectName">Display name</label>
-                <input id="projectName" type="text" maxlength="80" placeholder="My Roblox game">
-              </div>
-              <button class="button compact" id="createProjectButton" type="submit">Verify with Roblox</button>
-            </form>
-            <div class="projectSecretBox" id="projectSecretBox" hidden>
-              <strong>Roblox secret</strong>
-              <p>Use this in your Roblox analytics config. It is shown once.</p>
-              <code id="projectSecretValue"></code>
-            </div>
           </div>
           <section class="authControls" id="authControls" hidden>
             <button class="button secondary compact" id="logoutButton" type="button">Log out</button>
@@ -267,12 +252,39 @@
           </article>
         </section>
 
+        <section class="viewPage" data-view-panel="connect" hidden>
+          <section class="panel connectUniversePanel">
+            <div class="sectionHeader">
+              <div>
+                <h2>Connect Universe</h2>
+                <p>Verify a Roblox universe with the Roblox account that owns it.</p>
+              </div>
+            </div>
+            <form class="projectForm connectUniverseForm" id="projectForm">
+              <div class="fieldGroup">
+                <label for="projectUniverseId">Universe ID</label>
+                <input id="projectUniverseId" type="text" inputmode="numeric" placeholder="1234567890">
+              </div>
+              <div class="fieldGroup">
+                <label for="projectName">Display name</label>
+                <input id="projectName" type="text" maxlength="80" placeholder="My Roblox game">
+              </div>
+              <button class="button compact" id="createProjectButton" type="submit">Verify with Roblox</button>
+            </form>
+            <div class="projectSecretBox" id="projectSecretBox" hidden>
+              <strong>Roblox secret</strong>
+              <p>Use this in your Roblox analytics config. It is shown once.</p>
+              <code id="projectSecretValue"></code>
+            </div>
+          </section>
+        </section>
+
         <section class="viewPage" data-view-panel="admin" hidden>
           <section class="panel adminPanel">
             <div class="sectionHeader">
               <div>
                 <h2>User Monitor</h2>
-                <p>Accounts, last logins, and connected universes. Passwords are hashed and cannot be viewed.</p>
+                <p>Website users, Roblox identities, last logins, and connected universes.</p>
               </div>
               <button class="button secondary compact" id="refreshAdminUsersButton" type="button">Refresh</button>
             </div>
@@ -284,6 +296,10 @@
               <div>
                 <span>Connected games</span>
                 <strong id="adminTotalProjects">0</strong>
+              </div>
+              <div>
+                <span>Roblox users</span>
+                <strong id="adminRobloxUsers">0</strong>
               </div>
             </div>
             <div class="adminUserList" id="adminUserList"></div>
