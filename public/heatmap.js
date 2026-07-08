@@ -352,13 +352,7 @@ function setHeatmapMode(mode, options = {}) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
 
-  if (
-    options.forcePoints
-    || activeHeatmapMode === "ai-analysis"
-    || activeHeatmapMode === "movement"
-    || activeHeatmapMode === "deaths"
-    || activeHeatmapMode === "leaves"
-  ) {
+  if (options.forcePoints || activeHeatmapMode === "ai-analysis") {
     activeRenderMode = "points";
     for (const button of renderButtons) {
       button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
@@ -371,11 +365,12 @@ function setHeatmapMode(mode, options = {}) {
 function setRenderMode(mode) {
   activeRenderMode = mode === "heatmap" ? "heatmap" : "points";
 
-  if (activeRenderMode === "heatmap") {
+  if (activeRenderMode === "heatmap" && activeHeatmapMode === "ai-analysis") {
     activeHeatmapMode = "movement";
-    for (const button of modeButtons) {
-      button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
-    }
+  }
+
+  for (const button of modeButtons) {
+    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
 
   for (const button of renderButtons) {
@@ -752,6 +747,11 @@ function getAiAnalysisAreaEntries(samples, mapSnapshot) {
 function renderSamples(entries, center) {
   if (!entries.length) return;
 
+  if (activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis") {
+    renderDensityHeatmap(entries, center);
+    return;
+  }
+
   if (activeHeatmapMode === "ai-analysis") {
     renderAiAnalysisAreas(entries, center);
     return;
@@ -763,11 +763,6 @@ function renderSamples(entries, center) {
     || (activeHeatmapMode === "movement" && activeRenderMode === "points")
   ) {
     renderSignalAreas(entries, center, activeHeatmapMode);
-    return;
-  }
-
-  if (activeRenderMode === "heatmap") {
-    renderDensityHeatmap(entries, center);
     return;
   }
 
@@ -1250,20 +1245,20 @@ function renderDensityHeatmap(entries, center) {
 
   const baseGlow = createDensityGlowMesh(field, center, {
     name: "DensityBaseGlow",
-    yOffset: 0.55,
-    heightMultiplier: 0.06,
+    yOffset: 0.45,
+    heightMultiplier: 0,
     colorPower: 0.44,
     alphaPower: 0.55,
-    opacity: 0.42,
+    opacity: 0.5,
     renderOrder: 3,
   });
   const raisedGlow = createDensityGlowMesh(field, center, {
     name: "DensityRaisedGlow",
-    yOffset: 2.8,
-    heightMultiplier: 1,
+    yOffset: 1.25,
+    heightMultiplier: 0,
     colorPower: 0.34,
     alphaPower: 0.48,
-    opacity: 0.74,
+    opacity: 0.62,
     renderOrder: 4,
   });
 
@@ -1292,7 +1287,6 @@ function buildDensitySurfaceField(extents, bins, cellSize) {
   const startZ = ((extents.minZ + extents.maxZ) / 2) - depth / 2;
   const baseY = Number.isFinite(extents.minY) ? extents.minY : 0;
   const twoSigmaSquared = 2 * (radius * 0.5) ** 2;
-  const heightScale = clamp(Math.max(extents.width, extents.depth) * 0.14, 28, 150);
   const vertices = [];
   let maxDensity = 0;
 
@@ -1329,7 +1323,6 @@ function buildDensitySurfaceField(extents, bins, cellSize) {
   for (const vertex of vertices) {
     const normalized = vertex.density / maxDensity;
     vertex.normalized = normalized;
-    vertex.surfaceY = vertex.y + 2 + Math.pow(normalized, 0.72) * heightScale;
   }
 
   return {
@@ -1347,7 +1340,7 @@ function createDensityGlowMesh(field, center, options) {
   field.vertices.forEach((vertex, index) => {
     const normalized = clamp(vertex.normalized || 0, 0, 1);
     const color = getHeatmapRampColor(Math.pow(normalized, options.colorPower));
-    const height = Math.max(vertex.surfaceY - vertex.y, 0) * options.heightMultiplier;
+    const height = Math.pow(normalized, 0.85) * options.heightMultiplier;
     const y = vertex.y + options.yOffset + height;
 
     positions[index * 3] = vertex.x - center.x;
