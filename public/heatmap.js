@@ -250,9 +250,10 @@ async function loadHeatmap(options = {}) {
 
   const query = buildHeatmapQuery(universeId);
   const modeLabel = getModeLabel();
+  const modeText = getModeText(modeLabel);
 
   setHeatmapEmptyState(false);
-  statusLine.textContent = `Loading ${modeLabel.toLowerCase()} samples for universe ${universeId}...`;
+  statusLine.textContent = `Loading ${modeText} samples for universe ${universeId}...`;
 
   try {
     const samplePromise = fetch(`${getHeatmapEndpoint()}${query}`, {
@@ -276,15 +277,19 @@ async function loadHeatmap(options = {}) {
 
     const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
-    sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeLabel.toLowerCase()} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
+    sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
     if (samplePayload.returnedCount || mapSnapshot?.partCount) {
       statusLine.textContent = `${getStatusText(samplePayload)}${mapText}${mapErrorText}`;
     } else {
-      statusLine.textContent = `No ${modeLabel.toLowerCase()} samples received yet.${mapErrorText}`;
+      statusLine.textContent = `No ${modeText} samples received yet.${mapErrorText}`;
     }
   } catch (error) {
     statusLine.textContent = error.message;
   }
+}
+
+function getModeText(label) {
+  return label === "AI Analysis" ? "AI analysis" : label.toLowerCase();
 }
 
 function setHeatmapEmptyState(isEmpty) {
@@ -1368,8 +1373,8 @@ function createDensityPointCloud(field, center, cellSize) {
     for (let level = 0; level < levels; level += 1) {
       const verticalT = levels === 1 ? 1 : level / (levels - 1);
       const y = baseY + height * verticalT;
-      const colorValue = clamp(normalized * (0.26 + verticalT * 0.78), 0, 1);
-      const color = getHeatmapRampColor(Math.pow(colorValue, 0.78));
+      const colorValue = clamp((verticalT * 0.88) + (normalized * 0.12), 0, 1);
+      const color = getHeatmapRampColor(colorValue);
 
       for (let dot = 0; dot < lateralPoints; dot += 1) {
         const jitter = getDensityPointJitter(index, level, dot, cellSize, normalized);
@@ -1404,9 +1409,8 @@ function createDensityPointCloud(field, center, cellSize) {
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.96,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
   });
 
   const pointCloud = new THREE.Points(geometry, material);
