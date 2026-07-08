@@ -20,6 +20,7 @@ const appBaseUrl = cleanBaseUrl(process.env.PUBLIC_BASE_URL || localBaseUrl);
 
 const DASHBOARD_PASSWORD = getRequiredEnv("DASHBOARD_PASSWORD");
 const PRESENCE_SECRET = getRequiredEnv("PRESENCE_SECRET");
+const ADMIN_USERNAMES = parseAdminUsernames(process.env.ADMIN_USERNAMES || process.env.ADMIN_USERNAME || "");
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -119,7 +120,7 @@ const server = http.createServer(async (req, res) => {
       const auth = getDashboardAuth(req);
       return sendJson(res, 200, {
         authenticated: Boolean(auth),
-        user: auth ? { username: auth.username } : null,
+        user: auth ? { username: auth.username, isAdmin: isAdminAuth(auth) } : null,
       });
     }
 
@@ -173,6 +174,14 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/projects" && req.method === "POST") {
       return handleProjectCreate(req, res, auth);
+    }
+
+    if (url.pathname === "/api/admin/users" && req.method === "GET") {
+      if (!isAdminAuth(auth)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      return sendJson(res, 200, await getAdminUserSummaries());
     }
 
     if (url.pathname === "/api/universes" && req.method === "GET") {
@@ -759,11 +768,14 @@ async function handleDashboardLogin(req, res) {
     return sendJson(res, 401, { error: "Incorrect username or password" });
   }
 
+  const lastLoginAt = Date.now();
+  await updateUserLogin(user.id, lastLoginAt);
+  user.lastLoginAt = lastLoginAt;
   setDashboardAuthCookie(res, user);
   return sendJson(res, 200, {
     ok: true,
     authenticated: true,
-    user: { username: user.username },
+    user: { username: user.username, isAdmin: isAdminAuth(user) },
   });
 }
 
@@ -793,6 +805,7 @@ async function handleDashboardSignup(req, res) {
     usernameLower: username.toLowerCase(),
     password: hashPassword(password),
     createdAt: Date.now(),
+    lastLoginAt: Date.now(),
   };
   try {
     await createUser(user);
@@ -808,7 +821,7 @@ async function handleDashboardSignup(req, res) {
   return sendJson(res, 201, {
     ok: true,
     authenticated: true,
-    user: { username: user.username },
+    user: { username: user.username, isAdmin: isAdminAuth(user) },
   });
 }
 
@@ -3591,6 +3604,18 @@ function cleanUsername(value) {
   return String(value || "").trim().replace(/\s+/g, "");
 }
 
+function parseAdminUsernames(value) {
+  return new Set(String(value || "")
+    .split(",")
+    .map((entry) => cleanUsername(entry).toLowerCase())
+    .filter(Boolean));
+}
+
+function isAdminAuth(auth) {
+  const username = cleanUsername(auth?.username).toLowerCase();
+  return Boolean(username && ADMIN_USERNAMES.has(username));
+}
+
 function getSignupValidationError(username, password) {
   if (!username || !password) return "Enter a username and password";
   if (!/^[A-Za-z0-9_]{3,24}$/.test(username)) {
@@ -3657,6 +3682,67 @@ async function createUser(user) {
 
   users.push(user);
   await writeUsers(users);
+}
+
+async function updateUserLogin(userId, lastLoginAt) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("users").updateOne(
+      { id: userId },
+      { $set: { lastLoginAt } }
+    );
+    return;
+  }
+
+  const users = await readUsers();
+  const user = users.find((entry) => entry.id === userId);
+  if (!user) return;
+
+  user.lastLoginAt = lastLoginAt;
+  await writeUsers(users);
+}
+
+async function getAdminUserSummaries() {
+  const [users, projects] = await Promise.all([
+    readUsers(),
+    readProjects(),
+  ]);
+  const projectsByOwner = new Map();
+
+  for (const project of projects) {
+    const ownerUserId = project.ownerUserId || "";
+    if (!ownerUserId) continue;
+
+    const ownerProjects = projectsByOwner.get(ownerUserId) || [];
+    ownerProjects.push(serializeProject(project));
+    projectsByOwner.set(ownerUserId, ownerProjects);
+  }
+
+  const sanitizedUsers = users
+    .map((user) => {
+      const userProjects = projectsByOwner.get(user.id) || [];
+      return {
+        id: user.id,
+        username: user.username,
+        isAdmin: isAdminAuth(user),
+        createdAt: cleanInteger(user.createdAt),
+        lastLoginAt: cleanInteger(user.lastLoginAt) || null,
+        projectCount: userProjects.length,
+        universes: userProjects.map((project) => ({
+          id: project.universeId,
+          name: project.name,
+          createdAt: project.createdAt,
+        })),
+      };
+    })
+    .sort((a, b) => (b.lastLoginAt || b.createdAt || 0) - (a.lastLoginAt || a.createdAt || 0));
+
+  return {
+    users: sanitizedUsers,
+    totalUsers: sanitizedUsers.length,
+    totalProjects: projects.length,
+    passwordVisibility: "Passwords are hashed and cannot be viewed.",
+  };
 }
 
 async function getUserProjects(ownerUserId) {

@@ -21,6 +21,14 @@ The dashboard uses username/password accounts. After signing in:
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
+To show the Admin user monitor, set this environment variable on Render:
+
+```env
+ADMIN_USERNAMES=your_dashboard_username
+```
+
+Use commas for multiple admins. Admins can see usernames, sign-up times, last login times, and connected universes. Passwords are stored as hashes and cannot be viewed.
+
 For Backblaze B2 raw analytics storage, add the values from your B2 bucket and application key:
 
 ```env

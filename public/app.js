@@ -11,6 +11,12 @@ const authFormTitle = document.querySelector("#authFormTitle");
 const authFormSubtitle = document.querySelector("#authFormSubtitle");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
+const adminNavLink = document.querySelector("#adminNavLink");
+const refreshAdminUsersButton = document.querySelector("#refreshAdminUsersButton");
+const adminUserList = document.querySelector("#adminUserList");
+const adminUsersStatus = document.querySelector("#adminUsersStatus");
+const adminTotalUsers = document.querySelector("#adminTotalUsers");
+const adminTotalProjects = document.querySelector("#adminTotalProjects");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -100,6 +106,7 @@ function bindEvents() {
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
+  refreshAdminUsersButton?.addEventListener("click", loadAdminUsers);
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
 
@@ -225,6 +232,7 @@ function setAuthenticated(value, user = null) {
   authenticatedUser = authenticated ? user : null;
   document.body.classList.toggle("isLocked", !authenticated);
   accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
+  if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
   runChatInsightsButton.hidden = !authenticated;
@@ -257,6 +265,11 @@ function setAuthenticated(value, user = null) {
     chatLogsStatus.textContent = "Sign in to view chat logs.";
     chatInsightsStatus.textContent = "Sign in to view chat insights.";
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
+    if (adminNavLink) adminNavLink.hidden = true;
+    if (adminUserList) adminUserList.innerHTML = "";
+    if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
+    if (adminTotalUsers) adminTotalUsers.textContent = "0";
+    if (adminTotalProjects) adminTotalProjects.textContent = "0";
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
@@ -271,6 +284,9 @@ async function loadDashboardData() {
   await loadAiAutomationSettings();
   await loadChatLogs();
   await loadSignalAreaCards();
+  if (authenticatedUser?.isAdmin) {
+    await loadAdminUsers();
+  }
   renderActiveView();
   startChatRefresh();
   startSignalRefresh();
@@ -283,13 +299,16 @@ async function loadDashboardData() {
 }
 
 function getViewFromHash() {
-  return window.location.hash === "#chat" ? "chat" : "overview";
+  if (window.location.hash === "#chat") return "chat";
+  if (window.location.hash === "#admin") return "admin";
+  return "overview";
 }
 
 function setActiveView(view, options = {}) {
-  activeView = view === "chat" ? "chat" : "overview";
+  const requestedView = view === "chat" || view === "admin" ? view : "overview";
+  activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
-    const nextHash = activeView === "chat" ? "#chat" : "#overview";
+    const nextHash = activeView === "chat" ? "#chat" : activeView === "admin" ? "#admin" : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -304,20 +323,39 @@ function renderActiveView() {
   }
 
   for (const link of viewNavLinks) {
+    if (link.dataset.dashboardView === "admin") {
+      link.hidden = !authenticatedUser?.isAdmin;
+    }
     const isActive = link.dataset.dashboardView === activeView;
     link.classList.toggle("active", isActive);
     link.setAttribute("aria-current", isActive ? "page" : "false");
   }
 
-  pageTitle.textContent = activeView === "chat" ? "Chat Analysis" : "Overview";
-  pageSubtitle.textContent = activeView === "chat"
-    ? "Player messages and grouped question insights."
-    : "Roblox game analytics powered by live heartbeat data.";
+  const viewCopy = {
+    overview: {
+      title: "Overview",
+      subtitle: "Roblox game analytics powered by live heartbeat data.",
+    },
+    chat: {
+      title: "Chat Analysis",
+      subtitle: "Player messages and grouped question insights.",
+    },
+    admin: {
+      title: "Admin",
+      subtitle: "Monitor RoAnalytics accounts and connected universes.",
+    },
+  };
+  pageTitle.textContent = viewCopy[activeView]?.title || viewCopy.overview.title;
+  pageSubtitle.textContent = viewCopy[activeView]?.subtitle || viewCopy.overview.subtitle;
 
   if (authenticated && activeView === "overview") {
     window.dispatchEvent(new CustomEvent("dashboard:overviewShown", {
       detail: { universeId: selectedUniverseId },
     }));
+  }
+
+  if (authenticated && activeView === "admin" && authenticatedUser?.isAdmin) {
+    loadAdminUsers();
   }
 }
 
@@ -343,6 +381,58 @@ function stopSignalRefresh() {
     window.clearInterval(signalRefreshTimer);
     signalRefreshTimer = null;
   }
+}
+
+async function loadAdminUsers() {
+  if (!authenticatedUser?.isAdmin || !adminUserList) return;
+
+  adminUsersStatus.textContent = "Loading users...";
+  refreshAdminUsersButton.disabled = true;
+
+  try {
+    const data = await request("/api/admin/users");
+    adminTotalUsers.textContent = String(data.totalUsers || 0);
+    adminTotalProjects.textContent = String(data.totalProjects || 0);
+    adminUsersStatus.textContent = data.passwordVisibility || "Passwords are hashed and cannot be viewed.";
+    adminUserList.innerHTML = Array.isArray(data.users) && data.users.length
+      ? data.users.map(renderAdminUser).join("")
+      : `<p class="status">No users yet.</p>`;
+  } catch (error) {
+    handleAuthError(error);
+    adminUsersStatus.textContent = error.message;
+    adminUserList.innerHTML = "";
+  } finally {
+    refreshAdminUsersButton.disabled = false;
+  }
+}
+
+function renderAdminUser(user) {
+  const universes = Array.isArray(user.universes) && user.universes.length
+    ? user.universes.map((universe) => `
+      <li>
+        <span>${escapeHtml(universe.name || `Universe ${universe.id}`)}</span>
+        <code>${escapeHtml(universe.id || "")}</code>
+      </li>
+    `).join("")
+    : `<li><span>No connected universes</span></li>`;
+
+  return `
+    <article class="adminUserCard">
+      <div class="adminUserHeader">
+        <div>
+          <strong>${escapeHtml(user.username || "Unknown user")}</strong>
+          ${user.isAdmin ? `<span>Admin</span>` : ""}
+        </div>
+        <code>${escapeHtml(user.id || "")}</code>
+      </div>
+      <div class="adminUserMeta">
+        <div><span>Created</span><strong>${escapeHtml(formatFullDate(user.createdAt))}</strong></div>
+        <div><span>Last login</span><strong>${escapeHtml(formatFullDate(user.lastLoginAt))}</strong></div>
+        <div><span>Games</span><strong>${escapeHtml(String(user.projectCount || 0))}</strong></div>
+      </div>
+      <ul class="adminUniverseList">${universes}</ul>
+    </article>
+  `;
 }
 
 async function loadUniverses() {
@@ -1015,6 +1105,18 @@ function formatDateTime(timestamp) {
     hour: "numeric",
     minute: "2-digit",
     second: "2-digit",
+  });
+}
+
+function formatFullDate(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) return "Never";
+
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
 }
 

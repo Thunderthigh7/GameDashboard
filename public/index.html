@@ -20,6 +20,7 @@
         <nav class="sideNav" aria-label="Dashboard sections">
           <a class="active" href="#overview" data-dashboard-view="overview"><span>Overview</span></a>
           <a href="#chat" data-dashboard-view="chat"><span>Chat Analysis</span></a>
+          <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden><span>Admin</span></a>
         </nav>
 
         <div class="sidebarFooter">
@@ -278,6 +279,30 @@
             <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
             <div class="chatLogList" id="chatLogList"></div>
           </article>
+        </section>
+
+        <section class="viewPage" data-view-panel="admin" hidden>
+          <section class="panel adminPanel">
+            <div class="sectionHeader">
+              <div>
+                <h2>User Monitor</h2>
+                <p>Accounts, last logins, and connected universes. Passwords are hashed and cannot be viewed.</p>
+              </div>
+              <button class="button secondary compact" id="refreshAdminUsersButton" type="button">Refresh</button>
+            </div>
+            <div class="adminStats">
+              <div>
+                <span>Total users</span>
+                <strong id="adminTotalUsers">0</strong>
+              </div>
+              <div>
+                <span>Connected games</span>
+                <strong id="adminTotalProjects">0</strong>
+              </div>
+            </div>
+            <div class="adminUserList" id="adminUserList"></div>
+            <p class="status" id="adminUsersStatus">Admin access required.</p>
+          </section>
         </section>
       </main>
     </div>

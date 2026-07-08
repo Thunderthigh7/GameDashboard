@@ -937,6 +937,111 @@ small,
   padding: 12px;
 }
 
+.adminPanel {
+  display: grid;
+  gap: 16px;
+}
+
+.adminStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 180px));
+  gap: 12px;
+}
+
+.adminStats div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 12px;
+}
+
+.adminStats span,
+.adminUserMeta span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.adminStats strong {
+  font-size: 1.45rem;
+}
+
+.adminUserList {
+  display: grid;
+  gap: 12px;
+}
+
+.adminUserCard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 14px;
+}
+
+.adminUserHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adminUserHeader div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminUserHeader span {
+  border: 1px solid rgba(124, 58, 237, 0.5);
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.14);
+  color: #c4b5fd;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.adminUserHeader code,
+.adminUniverseList code {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.adminUserMeta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adminUserMeta div {
+  display: grid;
+  gap: 4px;
+}
+
+.adminUniverseList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminUniverseList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.13);
+  padding-top: 8px;
+}
+
 .commonQuestionItem {
   display: grid;
   grid-template-columns: 30px 1fr;
@@ -1255,6 +1360,17 @@ small,
   .aiCardRow,
   .heatmapFilters {
     grid-template-columns: 1fr;
+  }
+
+  .adminStats,
+  .adminUserMeta {
+    grid-template-columns: 1fr;
+  }
+
+  .adminUserHeader,
+  .adminUniverseList li {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .heatmapShell {
