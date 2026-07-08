@@ -1621,11 +1621,13 @@ function createMapMesh(part, center, heatContext = null) {
     clamp((Number(color[1]) || 0) / 255, 0, 1),
     clamp((Number(color[2]) || 0) / 255, 0, 1),
   );
-  const opacity = clamp(0.22 - (Number(part.transparency) || 0) * 0.12, 0.08, 0.24);
+  const displayColor = getReadableMapColor(baseColor);
+  const opacity = clamp(0.34 - (Number(part.transparency) || 0) * 0.18, 0.14, 0.42);
   const material = heatContext && canApplySurfaceHeat(part, sx, sy, sz, heatContext)
-    ? createSurfaceHeatMaterial(baseColor, opacity, heatContext)
+    ? createSurfaceHeatMaterial(displayColor, opacity, heatContext)
     : new THREE.MeshStandardMaterial({
-      color: baseColor,
+      color: displayColor,
+      emissive: displayColor.clone().multiplyScalar(0.045),
       transparent: true,
       opacity,
       roughness: 0.85,
@@ -1648,6 +1650,14 @@ function createMapMesh(part, center, heatContext = null) {
   );
 
   return mesh;
+}
+
+function getReadableMapColor(color) {
+  const hsl = {};
+  color.getHSL(hsl);
+  const saturation = clamp(hsl.s * 1.28 + 0.05, 0, 0.72);
+  const lightness = clamp((hsl.l - 0.5) * 1.16 + 0.55, 0.22, 0.78);
+  return new THREE.Color().setHSL(hsl.h, saturation, lightness);
 }
 
 function canApplySurfaceHeat(part, sx, sy, sz, heatContext) {
