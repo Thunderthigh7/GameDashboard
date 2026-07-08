@@ -352,7 +352,13 @@ function setHeatmapMode(mode, options = {}) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
 
-  if (options.forcePoints || activeHeatmapMode === "movement" || activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") {
+  if (
+    options.forcePoints
+    || activeHeatmapMode === "ai-analysis"
+    || activeHeatmapMode === "movement"
+    || activeHeatmapMode === "deaths"
+    || activeHeatmapMode === "leaves"
+  ) {
     activeRenderMode = "points";
     for (const button of renderButtons) {
       button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
@@ -363,14 +369,22 @@ function setHeatmapMode(mode, options = {}) {
 }
 
 function setRenderMode(mode) {
-  activeRenderMode = mode === "heatmap" && activeHeatmapMode !== "deaths" && activeHeatmapMode !== "leaves"
-    ? "heatmap"
-    : "points";
+  activeRenderMode = mode === "heatmap" ? "heatmap" : "points";
+
+  if (activeRenderMode === "heatmap") {
+    activeHeatmapMode = "movement";
+    for (const button of modeButtons) {
+      button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
+    }
+  }
+
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
 
-  if (latestSamples.length || latestMapSnapshot) {
+  if (activeRenderMode === "heatmap") {
+    loadHeatmap();
+  } else if (latestSamples.length || latestMapSnapshot) {
     renderScene(latestSamples, latestMapSnapshot);
   }
 }
@@ -1234,32 +1248,50 @@ function renderDensityHeatmap(entries, center) {
   const field = buildDensitySurfaceField(extents, bins, cellSize);
   if (!field?.vertices.length) return;
 
-  const pointCloud = createDensityPointCloud(field, center, cellSize);
+  const baseGlow = createDensityGlowMesh(field, center, {
+    name: "DensityBaseGlow",
+    yOffset: 0.55,
+    heightMultiplier: 0.06,
+    colorPower: 0.44,
+    alphaPower: 0.55,
+    opacity: 0.42,
+    renderOrder: 3,
+  });
+  const raisedGlow = createDensityGlowMesh(field, center, {
+    name: "DensityRaisedGlow",
+    yOffset: 2.8,
+    heightMultiplier: 1,
+    colorPower: 0.34,
+    alphaPower: 0.48,
+    opacity: 0.74,
+    renderOrder: 4,
+  });
 
   heatmapMesh = new THREE.Group();
   heatmapMesh.name = "DensityHeatmap";
-  heatmapMesh.add(pointCloud);
+  heatmapMesh.add(baseGlow);
+  heatmapMesh.add(raisedGlow);
   scene.add(heatmapMesh);
 }
 
 function getDensityCellSize(extents) {
   const span = Math.max(extents.width, extents.depth, 1);
-  return clamp(span / 48, 6, 30);
+  return clamp(span / 66, 4, 22);
 }
 
 function buildDensitySurfaceField(extents, bins, cellSize) {
-  const radius = cellSize * 3.2;
+  const radius = cellSize * 4.8;
   const margin = radius * 1.15;
   const width = Math.max(extents.width + margin * 2, cellSize * 8);
   const depth = Math.max(extents.depth + margin * 2, cellSize * 8);
-  const columns = Math.round(clamp(Math.ceil(width / cellSize), 8, 72));
-  const rows = Math.round(clamp(Math.ceil(depth / cellSize), 8, 72));
+  const columns = Math.round(clamp(Math.ceil(width / cellSize), 14, 96));
+  const rows = Math.round(clamp(Math.ceil(depth / cellSize), 14, 96));
   const stepX = width / columns;
   const stepZ = depth / rows;
   const startX = ((extents.minX + extents.maxX) / 2) - width / 2;
   const startZ = ((extents.minZ + extents.maxZ) / 2) - depth / 2;
   const baseY = Number.isFinite(extents.minY) ? extents.minY : 0;
-  const twoSigmaSquared = 2 * (radius * 0.42) ** 2;
+  const twoSigmaSquared = 2 * (radius * 0.5) ** 2;
   const heightScale = clamp(Math.max(extents.width, extents.depth) * 0.14, 28, 150);
   const vertices = [];
   let maxDensity = 0;
@@ -1307,16 +1339,16 @@ function buildDensitySurfaceField(extents, bins, cellSize) {
   };
 }
 
-function createDensitySurfaceGeometry(field, center, isBaseLayer) {
+function createDensityGlowMesh(field, center, options) {
   const positions = new Float32Array(field.vertices.length * 3);
   const colors = new Float32Array(field.vertices.length * 3);
+  const alphas = new Float32Array(field.vertices.length);
 
   field.vertices.forEach((vertex, index) => {
     const normalized = clamp(vertex.normalized || 0, 0, 1);
-    const color = getHeatmapRampColor(Math.pow(normalized, isBaseLayer ? 0.52 : 0.38));
-    const y = isBaseLayer
-      ? vertex.y + 0.8 + Math.pow(normalized, 0.9) * 3
-      : vertex.surfaceY;
+    const color = getHeatmapRampColor(Math.pow(normalized, options.colorPower));
+    const height = Math.max(vertex.surfaceY - vertex.y, 0) * options.heightMultiplier;
+    const y = vertex.y + options.yOffset + height;
 
     positions[index * 3] = vertex.x - center.x;
     positions[index * 3 + 1] = y - center.y;
@@ -1324,6 +1356,7 @@ function createDensitySurfaceGeometry(field, center, isBaseLayer) {
     colors[index * 3] = color.r / 255;
     colors[index * 3 + 1] = color.g / 255;
     colors[index * 3 + 2] = color.b / 255;
+    alphas[index] = normalized <= 0.01 ? 0 : Math.pow(normalized, options.alphaPower);
   });
 
   const indices = [];
@@ -1341,112 +1374,46 @@ function createDensitySurfaceGeometry(field, center, isBaseLayer) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute("alpha", new THREE.BufferAttribute(alphas, 1));
   geometry.setIndex(indices);
-  return geometry;
-}
 
-function createDensityPointCloud(field, center, cellSize) {
-  const pointRows = [];
-  const pointSize = clamp(cellSize * 0.46, 2.6, 7);
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uOpacity: { value: options.opacity },
+    },
+    vertexShader: `
+      attribute float alpha;
+      varying vec3 vColor;
+      varying float vAlpha;
 
-  field.vertices.forEach((vertex, index) => {
-    const normalized = clamp(vertex.normalized || 0, 0, 1);
-    if (normalized <= 0.015) return;
-
-    const baseY = vertex.y + 1.2;
-    const topY = vertex.surfaceY;
-    const height = Math.max(topY - baseY, 2);
-    const levels = Math.round(clamp(3 + Math.pow(normalized, 0.66) * 21, 3, 24));
-    const lateralPoints = Math.round(clamp(2 + normalized * 3, 2, 5));
-
-    for (let level = 0; level < levels; level += 1) {
-      const verticalT = levels === 1 ? 1 : level / (levels - 1);
-      const y = baseY + height * verticalT;
-      const hotness = Math.pow(normalized, 0.58);
-      const colorValue = clamp(hotness * (0.42 + verticalT * 0.58), 0, 1);
-      const color = getHeatmapRampColor(colorValue);
-
-      for (let dot = 0; dot < lateralPoints; dot += 1) {
-        const jitter = getDensityPointJitter(index, level, dot, cellSize, normalized);
-        pointRows.push({
-          x: vertex.x + jitter.x,
-          y,
-          z: vertex.z + jitter.z,
-          color,
-        });
+      void main() {
+        vColor = color;
+        vAlpha = alpha;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
-    }
-  });
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform float uOpacity;
 
-  const positions = new Float32Array(pointRows.length * 3);
-  const colors = new Float32Array(pointRows.length * 3);
-
-  pointRows.forEach((point, index) => {
-    positions[index * 3] = point.x - center.x;
-    positions[index * 3 + 1] = point.y - center.y;
-    positions[index * 3 + 2] = point.z - center.z;
-    colors[index * 3] = point.color.r / 255;
-    colors[index * 3 + 1] = point.color.g / 255;
-    colors[index * 3 + 2] = point.color.b / 255;
-  });
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-  const material = new THREE.PointsMaterial({
-    size: pointSize,
-    sizeAttenuation: true,
+      void main() {
+        float alpha = smoothstep(0.0, 1.0, vAlpha) * uOpacity;
+        if (alpha <= 0.01) discard;
+        gl_FragColor = vec4(vColor, alpha);
+      }
+    `,
     vertexColors: true,
     transparent: true,
-    opacity: 0.96,
-    alphaMap: getDensityPointTexture(),
-    alphaTest: 0.08,
     depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
   });
 
-  const pointCloud = new THREE.Points(geometry, material);
-  pointCloud.name = "DensityPointCloud";
-  pointCloud.renderOrder = 4;
-  return pointCloud;
-}
-
-function getDensityPointJitter(index, level, dot, cellSize, normalized) {
-  const radius = cellSize * clamp(0.14 + normalized * 0.42, 0.14, 0.48);
-  const angle = ((index * 37 + level * 17 + dot * 101) % 360) * Math.PI / 180;
-  const distance = radius * (0.35 + (((index + level * 3 + dot * 7) % 11) / 10) * 0.65);
-  return {
-    x: Math.cos(angle) * distance,
-    z: Math.sin(angle) * distance,
-  };
-}
-
-function getDensityPointTexture() {
-  if (getDensityPointTexture.texture) return getDensityPointTexture.texture;
-
-  const size = 64;
-  const pointCanvas = document.createElement("canvas");
-  pointCanvas.width = size;
-  pointCanvas.height = size;
-  const context = pointCanvas.getContext("2d");
-  const gradient = context.createRadialGradient(
-    size / 2,
-    size / 2,
-    0,
-    size / 2,
-    size / 2,
-    size / 2,
-  );
-  gradient.addColorStop(0, "rgba(255,255,255,1)");
-  gradient.addColorStop(0.48, "rgba(255,255,255,0.92)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, size, size);
-
-  const texture = new THREE.CanvasTexture(pointCanvas);
-  texture.needsUpdate = true;
-  getDensityPointTexture.texture = texture;
-  return texture;
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = options.name;
+  mesh.renderOrder = options.renderOrder;
+  return mesh;
 }
 
 function getDensityBins(entries, binSize) {
