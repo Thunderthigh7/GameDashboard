@@ -27,9 +27,6 @@
   --placeholder-badge-bg: rgba(154, 167, 189, 0.14);
   --overlay-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-  --content-max: 1680px;
-  --rail-width: clamp(320px, 24vw, 380px);
-  --page-pad-x: clamp(18px, 2vw, 32px);
 }
 
 :root[data-theme="light"] {
@@ -268,11 +265,8 @@ small,
 }
 
 .dashboardMain {
-  width: 100%;
-  max-width: var(--content-max);
   min-width: 0;
-  margin: 0 auto;
-  padding: 20px var(--page-pad-x) 34px;
+  padding: 20px 28px 34px;
 }
 
 .topbar {
@@ -520,7 +514,7 @@ small,
 
 .dashboardGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: minmax(0, 2.1fr) minmax(320px, 0.9fr);
   gap: 18px;
   align-items: start;
 }
@@ -543,7 +537,7 @@ small,
 
 .aiCardRow {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr);
   gap: 18px;
   align-items: start;
 }
@@ -575,7 +569,7 @@ small,
 
 .heatmapShell {
   position: relative;
-  min-height: clamp(460px, 58vh, 680px);
+  min-height: clamp(480px, 56vh, 700px);
   margin-top: 14px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -586,7 +580,7 @@ small,
 #movementHeatmapCanvas {
   display: block;
   width: 100%;
-  height: clamp(460px, 58vh, 680px);
+  height: clamp(480px, 56vh, 700px);
 }
 
 #movementHeatmapCanvas.isEmpty {
@@ -1078,18 +1072,10 @@ small,
   display: none;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1180px) {
   .dashboardGrid,
   .chatAnalysisPage {
     grid-template-columns: 1fr;
-  }
-
-  .insightRail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .metricRail {
-    grid-column: 1 / -1;
   }
 }
 
@@ -1145,14 +1131,8 @@ small,
   .authForm,
   .topbarFilters,
   .aiCardRow,
-  .heatmapFilters,
-  .insightRail,
-  .metricRail {
+  .heatmapFilters {
     grid-template-columns: 1fr;
-  }
-
-  .metricRail {
-    grid-column: auto;
   }
 
   .heatmapShell {
