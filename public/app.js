@@ -24,6 +24,7 @@ const ownedGamesStatus = document.querySelector("#ownedGamesStatus");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
+const projectSecretTarget = document.querySelector("#projectSecretTarget");
 const connectedGameList = document.querySelector("#connectedGameList");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const refreshMovementButton = document.querySelector("#refreshMovementButton");
@@ -97,9 +98,16 @@ function bindEvents() {
     createProject();
   });
   connectedGameList?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-regenerate-project-secret]");
-    if (!button) return;
-    regenerateProjectSecret(button.dataset.regenerateProjectSecret || "", button);
+    const regenerateButton = event.target.closest("[data-regenerate-project-secret]");
+    if (regenerateButton) {
+      regenerateProjectSecret(regenerateButton.dataset.regenerateProjectSecret || "", regenerateButton);
+      return;
+    }
+
+    const unlinkButton = event.target.closest("[data-unlink-project]");
+    if (unlinkButton) {
+      unlinkProject(unlinkButton.dataset.unlinkProject || "", unlinkButton);
+    }
   });
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
@@ -220,6 +228,7 @@ function setAuthenticated(value, user = null) {
     universeSelect.disabled = true;
     if (projectSecretBox) projectSecretBox.hidden = true;
     if (projectSecretValue) projectSecretValue.textContent = "";
+    if (projectSecretTarget) projectSecretTarget.textContent = "";
     if (connectedGameList) connectedGameList.innerHTML = "";
     if (ownedGameSelect) {
       ownedGameSelect.innerHTML = `<option value="">Sign in to load games</option>`;
@@ -474,8 +483,7 @@ async function createProject() {
 
   createProjectButton.disabled = true;
   if (ownedGamesStatus) ownedGamesStatus.textContent = "Verifying ownership and connecting game...";
-  if (projectSecretBox) projectSecretBox.hidden = true;
-  if (projectSecretValue) projectSecretValue.textContent = "";
+  clearProjectSecretBox();
 
   try {
     const data = await request("/api/projects", {
@@ -483,8 +491,7 @@ async function createProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ universeId }),
     });
-    if (projectSecretValue) projectSecretValue.textContent = data.secret || "";
-    if (projectSecretBox) projectSecretBox.hidden = !data.secret;
+    showProjectSecret(data.secret || "", data.project);
     if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Copy the Roblox secret now.";
     await loadUniverses();
     await loadOwnedGames();
@@ -498,20 +505,22 @@ async function createProject() {
 
 async function regenerateProjectSecret(projectId, button) {
   if (!projectId) return;
+  const universe = knownUniverses.find((entry) => String(entry.projectId || "") === String(projectId));
 
   const originalText = button?.textContent || "Regenerate secret";
   if (button) {
     button.disabled = true;
     button.textContent = "Regenerating...";
   }
-  if (projectSecretBox) projectSecretBox.hidden = true;
-  if (projectSecretValue) projectSecretValue.textContent = "";
+  clearProjectSecretBox();
 
   try {
     const data = await request(`/api/projects/${encodeURIComponent(projectId)}/secret`, { method: "POST" });
-    if (projectSecretValue) projectSecretValue.textContent = data.secret || "";
-    if (projectSecretBox) projectSecretBox.hidden = !data.secret;
-    if (ownedGamesStatus) ownedGamesStatus.textContent = "Secret regenerated. Update your Roblox config with this new key.";
+    showProjectSecret(data.secret || "", {
+      name: data.name || universe?.name,
+      universeId: data.universeId || universe?.id,
+    });
+    if (ownedGamesStatus) ownedGamesStatus.textContent = `Secret regenerated for ${universe?.name || "this game"}. Update that Roblox config with this new key.`;
   } catch (error) {
     handleAuthError(error);
     if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
@@ -521,6 +530,55 @@ async function regenerateProjectSecret(projectId, button) {
       button.textContent = originalText;
     }
   }
+}
+
+async function unlinkProject(projectId, button) {
+  if (!projectId) return;
+
+  const universe = knownUniverses.find((entry) => String(entry.projectId || "") === String(projectId));
+  const label = universe?.name || "this game";
+  const confirmed = window.confirm(`Unlink ${label}? Roblox analytics requests using this game's secret will stop working.`);
+  if (!confirmed) return;
+
+  const originalText = button?.textContent || "Unlink";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Unlinking...";
+  }
+  clearProjectSecretBox();
+
+  try {
+    await request(`/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+    if (ownedGamesStatus) ownedGamesStatus.textContent = `${label} was unlinked.`;
+    await loadUniverses();
+    await loadOwnedGames();
+  } catch (error) {
+    handleAuthError(error);
+    if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+function clearProjectSecretBox() {
+  if (projectSecretBox) projectSecretBox.hidden = true;
+  if (projectSecretValue) projectSecretValue.textContent = "";
+  if (projectSecretTarget) projectSecretTarget.textContent = "";
+}
+
+function showProjectSecret(secret, project) {
+  if (projectSecretValue) projectSecretValue.textContent = secret || "";
+  if (projectSecretTarget) {
+    const universeId = project?.universeId || project?.id || "";
+    const name = project?.name || (universeId ? `Universe ${universeId}` : "Selected game");
+    projectSecretTarget.textContent = universeId
+      ? `For: ${name} (Universe ${universeId})`
+      : `For: ${name}`;
+  }
+  if (projectSecretBox) projectSecretBox.hidden = !secret;
 }
 
 async function loadOwnedGames() {
@@ -591,7 +649,10 @@ function renderConnectedGame(universe) {
         <strong>${escapeHtml(name)}</strong>
         <span>Universe ${escapeHtml(id)}</span>
       </div>
-      <button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
+      <div class="connectedGameActions">
+        <button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
+        <button class="button danger compact" type="button" data-unlink-project="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Unlink</button>
+      </div>
     </article>
   `;
 }

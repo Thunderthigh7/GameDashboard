@@ -508,6 +508,14 @@ small,
   font-size: 12px;
 }
 
+.projectSecretBox span {
+  display: block;
+  margin-bottom: 8px;
+  color: #a5f3fc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .projectSecretBox p {
   margin: 0 0 8px;
   color: var(--muted);
@@ -562,6 +570,14 @@ small,
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.connectedGameActions {
+  display: flex !important;
+  grid-template-columns: none;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: auto !important;
 }
 
 .connectedGameItem strong,
@@ -634,6 +650,12 @@ small,
   border: 1px solid var(--line);
   background: var(--control-bg);
   color: var(--nav-text);
+}
+
+.button.danger {
+  border: 1px solid var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .button.compact {
@@ -1475,6 +1497,14 @@ small,
   .connectedGameItem {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .connectedGameActions {
+    width: 100%;
+  }
+
+  .connectedGameActions .button {
+    flex: 1 1 0;
   }
 
   .heatmapShell {

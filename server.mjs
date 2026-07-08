@@ -191,6 +191,11 @@ const server = http.createServer(async (req, res) => {
       return handleProjectCreate(req, res, auth);
     }
 
+    const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+    if (projectMatch && req.method === "DELETE") {
+      return handleProjectUnlink(req, res, auth, projectMatch[1]);
+    }
+
     const projectSecretMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/secret$/);
     if (projectSecretMatch && req.method === "POST") {
       return handleProjectSecretRegenerate(req, res, auth, projectSecretMatch[1]);
@@ -931,8 +936,22 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
     ok: true,
     projectId: project.id,
     universeId: cleanInteger(project.universeId),
+    name: project.name || `Universe ${cleanInteger(project.universeId)}`,
     regeneratedAt: updatedAt,
     secret: projectSecret,
+  });
+}
+
+async function handleProjectUnlink(req, res, auth, projectId) {
+  const cleanProjectId = cleanString(projectId, 120);
+  if (!cleanProjectId) return sendJson(res, 400, { error: "Missing project ID." });
+
+  const project = await deleteProject(cleanProjectId, auth.userId);
+  if (!project) return sendJson(res, 404, { error: "Connected game not found." });
+
+  return sendJson(res, 200, {
+    ok: true,
+    project: serializeProject(project),
   });
 }
 
@@ -4543,6 +4562,25 @@ async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotat
   project.secretHash = secretHash;
   project.secretRotatedAt = rotatedAt;
   await writeProjects(projects);
+}
+
+async function deleteProject(projectId, ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    const project = await db.collection("projects").findOneAndDelete(
+      { id: projectId, ownerUserId },
+      { projection: { _id: 0 } }
+    );
+    return project?.value || project || null;
+  }
+
+  const projects = await readProjects();
+  const projectIndex = projects.findIndex((entry) => entry.id === projectId && entry.ownerUserId === ownerUserId);
+  if (projectIndex === -1) return null;
+
+  const [project] = projects.splice(projectIndex, 1);
+  await writeProjects(projects);
+  return project;
 }
 
 function getCookieValue(req, name) {
