@@ -64,6 +64,9 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-mini";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || DEFAULT_OPENAI_INSIGHTS_MODEL;
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
+const OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS", 1600);
+const OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS", 1800);
+const OPENAI_TOKEN_ESTIMATE_CHARS_PER_TOKEN = cleanEnvInteger("OPENAI_TOKEN_ESTIMATE_CHARS_PER_TOKEN", 3);
 const USAGE_LIMITS = {
   aiRequestsPerMonth: cleanEnvInteger("USAGE_AI_REQUESTS_PER_MONTH", 25),
   openAiTokensPerMonth: cleanEnvInteger("USAGE_OPENAI_TOKENS_PER_MONTH", 500_000),
@@ -544,6 +547,7 @@ const server = http.createServer(async (req, res) => {
 
     return serveStatic(res, url.pathname === "/" ? "index.html" : url.pathname.slice(1));
   } catch (error) {
+    if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
     console.error(error);
     sendJson(res, 500, { error: "Internal server error" });
   }
@@ -1114,6 +1118,7 @@ async function getObjectStorageRollup(universeId) {
     objectStorageStatus.lastError = "";
     return rollup;
   } catch (error) {
+    if (error.code === "USAGE_LIMIT") throw error;
     if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
       objectStorageStatus.lastError = error.message || String(error);
     }
@@ -1214,6 +1219,7 @@ async function deleteObjectStorageKey(objectKey) {
 }
 
 async function readObjectStorageJson(objectKey) {
+  await assertObjectStorageReadAvailable(objectKey);
   const { GetObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
   const response = await client.send(new GetObjectCommand({
@@ -1226,6 +1232,7 @@ async function readObjectStorageJson(objectKey) {
 }
 
 async function readObjectStorageGzipJson(objectKey) {
+  await assertObjectStorageReadAvailable(objectKey);
   const { GetObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
   const response = await client.send(new GetObjectCommand({
@@ -3824,10 +3831,8 @@ async function analyzeChatInsights(filters = {}, usageContext = {}) {
 
 async function analyzeAllAiInsights(rawFilters = {}, usageContext = {}) {
   const filters = await normalizeMovementFilters(rawFilters);
-  const [chatResult, areaResult] = await Promise.allSettled([
-    analyzeChatInsights(filters, usageContext),
-    analyzeAiAreaInsights(filters, usageContext),
-  ]);
+  const chatResult = await settleAsync(() => analyzeChatInsights(filters, usageContext));
+  const areaResult = await settleAsync(() => analyzeAiAreaInsights(filters, usageContext));
   const errors = [];
 
   if (chatResult.status === "rejected") {
@@ -3864,6 +3869,20 @@ async function analyzeAllAiInsights(rawFilters = {}, usageContext = {}) {
 
   await persistAiInsightsReport(report);
   return report;
+}
+
+async function settleAsync(callback) {
+  try {
+    return {
+      status: "fulfilled",
+      value: await callback(),
+    };
+  } catch (error) {
+    return {
+      status: "rejected",
+      reason: error,
+    };
+  }
 }
 
 async function runScheduledAiInsights() {
@@ -3957,6 +3976,11 @@ async function persistAiInsightsReport(report) {
   const versionedKey = getObjectStorageAiReportVersionKey(report);
   const body = JSON.stringify(report);
   const byteLength = Buffer.byteLength(body, "utf8");
+  await assertObjectStorageWriteAvailable(usageContext, [
+    { objectKey: latestKey, byteLength },
+    { objectKey: versionedKey, byteLength },
+  ]);
+
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
   const putOptions = {
@@ -4019,6 +4043,7 @@ async function readObjectStorageAiReport(universeId) {
     }
     return report;
   } catch (error) {
+    if (error.code === "USAGE_LIMIT") throw error;
     if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
       objectStorageStatus.lastError = error.message || String(error);
     }
@@ -4039,6 +4064,7 @@ async function readObjectStorageAiReportVersion(universeId, generatedAt) {
     if (cleanInteger(report?.universeId) !== cleanUniverseId) return null;
     return report;
   } catch (error) {
+    if (error.code === "USAGE_LIMIT") throw error;
     if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
       objectStorageStatus.lastError = error.message || String(error);
     }
@@ -4064,6 +4090,9 @@ async function appendAiReportManifest(universeId, reportSummary) {
     reports: nextReports,
   });
   const objectKey = getObjectStorageAiReportManifestKey(universeId);
+  const byteLength = Buffer.byteLength(body, "utf8");
+  await assertObjectStorageWriteAvailable(usageContext, { objectKey, byteLength });
+
   await client.send(new PutObjectCommand({
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
@@ -4094,6 +4123,7 @@ async function readAiReportManifest(universeId) {
       .filter((entry) => entry.generatedAt > 0)
       .sort((a, b) => b.generatedAt - a.generatedAt);
   } catch (error) {
+    if (error.code === "USAGE_LIMIT") throw error;
     if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
       objectStorageStatus.lastError = error.message || String(error);
     }
@@ -4126,6 +4156,7 @@ async function getAiAutomationSettings(universeId) {
       aiAutomationSettingsCache.set(cacheKey, settings);
       return settings;
     } catch (error) {
+      if (error.code === "USAGE_LIMIT") throw error;
       if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
         objectStorageStatus.lastError = error.message || String(error);
       }
@@ -4149,6 +4180,9 @@ async function saveAiAutomationSettings(settings) {
     const usageContext = await getUsageContextForUniverse(null, cleanUniverseId);
     const body = JSON.stringify(normalized);
     const objectKey = getObjectStorageAiAutomationSettingsKey(cleanUniverseId);
+    const byteLength = Buffer.byteLength(body, "utf8");
+    await assertObjectStorageWriteAvailable(usageContext, { objectKey, byteLength });
+
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await getB2S3Client();
     await client.send(new PutObjectCommand({
@@ -4160,7 +4194,7 @@ async function saveAiAutomationSettings(settings) {
     await recordObjectStorageWrite({
       usageContext,
       objectKey,
-      byteLength: Buffer.byteLength(body, "utf8"),
+      byteLength,
       feature: "ai_automation_settings",
       contentType: "application/json",
     });
@@ -4205,56 +4239,60 @@ async function getAiChatInsights(chatPayload, candidateLogs, usageContext = {}) 
     userId: log.userId,
   }));
   const logById = new Map(candidateMessages.map((entry) => [entry.id, candidateLogs[Number(entry.id.slice(1))]]));
+  const requestBody = {
+    model: OPENAI_CHAT_INSIGHTS_MODEL,
+    store: false,
+    reasoning: { effort: "low" },
+    max_output_tokens: OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS,
+    text: {
+      verbosity: "low",
+      format: {
+        type: "json_schema",
+        name: "chat_question_insights",
+        strict: true,
+        schema: getChatInsightsJsonSchema(),
+      },
+    },
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: "Group Roblox player chat into the top repeated semantic questions. Treat typos, shorthand, pronouns, and different wording as the same question when the intent is the same. Do not invent questions unsupported by the messages. Return concise canonical player-facing questions.",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              task: "Return the top 5 common player questions.",
+              rules: [
+                "Use only the provided message ids.",
+                "Group messages by meaning, not by exact words.",
+                "Examples: 'when do i get ugc', 'how do get ugc', and 'where do i get it' can be one question if they refer to getting UGC.",
+                "Ignore greetings, spam, and messages that are not questions or player confusion.",
+                "Canonical titles should be grammatical, short, and end with a question mark.",
+              ],
+              messages: candidateMessages,
+            }),
+          },
+        ],
+      },
+    ],
+  };
+  await assertOpenAiRequestTokenBudget(usageContext, requestBody, OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS);
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: OPENAI_CHAT_INSIGHTS_MODEL,
-      store: false,
-      reasoning: { effort: "low" },
-      text: {
-        verbosity: "low",
-        format: {
-          type: "json_schema",
-          name: "chat_question_insights",
-          strict: true,
-          schema: getChatInsightsJsonSchema(),
-        },
-      },
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: "Group Roblox player chat into the top repeated semantic questions. Treat typos, shorthand, pronouns, and different wording as the same question when the intent is the same. Do not invent questions unsupported by the messages. Return concise canonical player-facing questions.",
-            },
-          ],
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify({
-                task: "Return the top 5 common player questions.",
-                rules: [
-                  "Use only the provided message ids.",
-                  "Group messages by meaning, not by exact words.",
-                  "Examples: 'when do i get ugc', 'how do get ugc', and 'where do i get it' can be one question if they refer to getting UGC.",
-                  "Ignore greetings, spam, and messages that are not questions or player confusion.",
-                  "Canonical titles should be grammatical, short, and end with a question mark.",
-                ],
-                messages: candidateMessages,
-              }),
-            },
-          ],
-        },
-      ],
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -4301,61 +4339,65 @@ async function getAiAreaInsights(areaPayload, usageContext = {}) {
     evidence: area.evidence,
   }));
 
+  const requestBody = {
+    model: OPENAI_AREA_INSIGHTS_MODEL,
+    store: false,
+    reasoning: { effort: "low" },
+    max_output_tokens: OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS,
+    text: {
+      verbosity: "low",
+      format: {
+        type: "json_schema",
+        name: "map_area_insights",
+        strict: true,
+        schema: getAreaInsightsJsonSchema(),
+      },
+    },
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: "Name and summarize Roblox map analytics areas. Use only the provided counts and messages. Do not invent map-specific place names unless the chat text supports them. Prefer concise product analytics language.",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              task: "Return player-facing area insights for the provided clustered map areas.",
+              rules: [
+                "Keep titles short, 2 to 5 words.",
+                "Use neutral names like Spawn Path or Confusing Corner when no specific place name is supported.",
+                "summary should explain what the signals suggest.",
+                "recommendation should be a concrete design or analytics follow-up.",
+                "Use evidence.chatBeforeLeaveCount and evidence.chatBeforeDeathCount when explaining likely causes.",
+                "If evidence shows chat shortly before a leave or death, treat that as stronger than generic nearby traffic.",
+                "Use evidence.notes as the compact explanation of supporting signals.",
+                "Use topMessages as player testimony, especially messages with beforeLeaveCount or beforeDeathCount.",
+                "Mention timing only when the evidence fields support it.",
+                "insightType must be one of traffic, dropoff, danger, confusion, mixed.",
+              ],
+              areas: candidateAreas,
+            }),
+          },
+        ],
+      },
+    ],
+  };
+  await assertOpenAiRequestTokenBudget(usageContext, requestBody, OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS);
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: OPENAI_AREA_INSIGHTS_MODEL,
-      store: false,
-      reasoning: { effort: "low" },
-      text: {
-        verbosity: "low",
-        format: {
-          type: "json_schema",
-          name: "map_area_insights",
-          strict: true,
-          schema: getAreaInsightsJsonSchema(),
-        },
-      },
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: "Name and summarize Roblox map analytics areas. Use only the provided counts and messages. Do not invent map-specific place names unless the chat text supports them. Prefer concise product analytics language.",
-            },
-          ],
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify({
-                task: "Return player-facing area insights for the provided clustered map areas.",
-                rules: [
-                  "Keep titles short, 2 to 5 words.",
-                  "Use neutral names like Spawn Path or Confusing Corner when no specific place name is supported.",
-                  "summary should explain what the signals suggest.",
-                  "recommendation should be a concrete design or analytics follow-up.",
-                  "Use evidence.chatBeforeLeaveCount and evidence.chatBeforeDeathCount when explaining likely causes.",
-                  "If evidence shows chat shortly before a leave or death, treat that as stronger than generic nearby traffic.",
-                  "Use evidence.notes as the compact explanation of supporting signals.",
-                  "Use topMessages as player testimony, especially messages with beforeLeaveCount or beforeDeathCount.",
-                  "Mention timing only when the evidence fields support it.",
-                  "insightType must be one of traffic, dropoff, danger, confusion, mixed.",
-                ],
-                areas: candidateAreas,
-              }),
-            },
-          ],
-        },
-      ],
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -4913,6 +4955,20 @@ async function assertUsageAvailable(context, metric, quantity = 1) {
   throw error;
 }
 
+async function assertOpenAiRequestTokenBudget(usageContext = {}, requestBody = {}, maxOutputTokens = 0) {
+  if (!usageContext?.userId) return;
+
+  const estimatedInputTokens = estimateOpenAiRequestInputTokens(requestBody);
+  const reservedTokens = estimatedInputTokens + Math.max(cleanFiniteInteger(maxOutputTokens), 1);
+  await assertUsageAvailable(usageContext, "openAiTokens", reservedTokens);
+}
+
+function estimateOpenAiRequestInputTokens(requestBody = {}) {
+  const charsPerToken = Math.max(cleanFiniteInteger(OPENAI_TOKEN_ESTIMATE_CHARS_PER_TOKEN), 1);
+  const byteLength = Buffer.byteLength(JSON.stringify(requestBody || {}), "utf8");
+  return Math.max(Math.ceil(byteLength / charsPerToken), 1);
+}
+
 function sendUsageLimitError(res, error) {
   const limit = createUsageLimitDetails(error.metric, error.used, error.limit, error.requested, error.label);
   return sendJson(res, 403, {
@@ -5173,6 +5229,20 @@ async function assertObjectStorageWriteAvailable(usageContext = {}, objects = []
   if (storedDeltaBytes > 0) {
     await assertUsageAvailable(usageContext, "backblazeStoredBytes", storedDeltaBytes);
   }
+}
+
+async function assertObjectStorageReadAvailable(objectKey) {
+  const cleanObjectKey = cleanString(objectKey, 512);
+  if (!cleanObjectKey) return;
+
+  const object = await getObjectStorageObject(cleanObjectKey);
+  if (!object?.userId) return;
+
+  await assertUsageAvailable({
+    userId: object.userId,
+    projectId: object.projectId || null,
+    universeId: cleanInteger(object.universeId) || null,
+  }, "backblazeDownloadedBytes", Math.max(cleanFiniteInteger(object.byteLength), 1));
 }
 
 async function recordObjectStorageRead(objectKey, byteLength) {
