@@ -66,8 +66,9 @@ const USAGE_LIMITS = {
   eventsPerMonth: cleanEnvInteger("USAGE_EVENTS_PER_MONTH", 500_000),
   mapUploadsPerMonth: cleanEnvInteger("USAGE_MAP_UPLOADS_PER_MONTH", 200),
 };
-const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 1.25);
-const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 10);
+const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.75);
+const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.075);
+const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 4.5);
 const ANALYTICS_STORAGE_MODE = cleanAnalyticsStorageMode(process.env.ANALYTICS_STORAGE_MODE || "");
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
@@ -4244,6 +4245,7 @@ async function recordOpenAiUsage({ usageContext, feature, model, payload }) {
 
   const usage = payload?.usage || {};
   const inputTokens = cleanInteger(usage.input_tokens || usage.prompt_tokens);
+  const cachedInputTokens = getOpenAiCachedInputTokens(usage, inputTokens);
   const outputTokens = cleanInteger(usage.output_tokens || usage.completion_tokens);
   const totalTokens = cleanInteger(usage.total_tokens) || inputTokens + outputTokens;
   const quantity = totalTokens > 0 ? totalTokens : 1;
@@ -4255,21 +4257,32 @@ async function recordOpenAiUsage({ usageContext, feature, model, payload }) {
     feature,
     quantity,
     unit,
-    estimatedCostUsd: estimateOpenAiCost(inputTokens, outputTokens),
+    estimatedCostUsd: estimateOpenAiCost(inputTokens, cachedInputTokens, outputTokens),
     metadata: {
       model,
       requestId: cleanString(payload?.id, 120),
       inputTokens,
+      cachedInputTokens,
       outputTokens,
       totalTokens,
     },
   });
 }
 
-function estimateOpenAiCost(inputTokens, outputTokens) {
-  const inputCost = (Math.max(cleanInteger(inputTokens), 0) / 1_000_000) * OPENAI_INPUT_USD_PER_1M;
+function getOpenAiCachedInputTokens(usage, inputTokens) {
+  const details = usage?.input_tokens_details || usage?.prompt_tokens_details || {};
+  const cachedTokens = cleanInteger(details.cached_tokens || details.cached_input_tokens);
+  return Math.min(Math.max(cachedTokens, 0), Math.max(cleanInteger(inputTokens), 0));
+}
+
+function estimateOpenAiCost(inputTokens, cachedInputTokens, outputTokens) {
+  const cleanInputTokens = Math.max(cleanInteger(inputTokens), 0);
+  const cleanCachedInputTokens = Math.min(Math.max(cleanInteger(cachedInputTokens), 0), cleanInputTokens);
+  const billableInputTokens = Math.max(cleanInputTokens - cleanCachedInputTokens, 0);
+  const inputCost = (billableInputTokens / 1_000_000) * OPENAI_INPUT_USD_PER_1M;
+  const cachedInputCost = (cleanCachedInputTokens / 1_000_000) * OPENAI_CACHED_INPUT_USD_PER_1M;
   const outputCost = (Math.max(cleanInteger(outputTokens), 0) / 1_000_000) * OPENAI_OUTPUT_USD_PER_1M;
-  return roundMoney(inputCost + outputCost);
+  return roundMoney(inputCost + cachedInputCost + outputCost);
 }
 
 async function recordUsage(entry) {
@@ -4374,9 +4387,20 @@ async function getAccountUsageSummary(userId) {
 
 function getUsageMetrics(usage) {
   const limits = usage?.limits || USAGE_LIMITS;
+  const cachedInputTokens = cleanFiniteInteger(usage?.cachedOpenAiInputTokens);
+  const openAiTokens = createUsageMetric(
+    "openAiTokens",
+    "OpenAI tokens",
+    cleanFiniteInteger(usage?.openAiTokens),
+    cleanFiniteInteger(limits.openAiTokensPerMonth),
+    "tokens",
+  );
+  openAiTokens.note = cachedInputTokens > 0
+    ? `${formatUsageNumber(cachedInputTokens)} cached input tokens priced at cached rate`
+    : "Cached input tokens are tracked when OpenAI returns them.";
   return [
     createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
-    createUsageMetric("openAiTokens", "OpenAI tokens", cleanFiniteInteger(usage?.openAiTokens), cleanFiniteInteger(limits.openAiTokensPerMonth), "tokens"),
+    openAiTokens,
     createUsageMetric("events", "Roblox events", cleanFiniteInteger(usage?.events), cleanFiniteInteger(limits.eventsPerMonth), "events"),
     createUsageMetric("mapUploads", "Map uploads", cleanFiniteInteger(usage?.mapUploads), cleanFiniteInteger(limits.mapUploadsPerMonth), "uploads"),
   ];
@@ -4396,6 +4420,10 @@ function createUsageMetric(key, label, used, limit, unit) {
   };
 }
 
+function formatUsageNumber(value) {
+  return new Intl.NumberFormat("en-US").format(cleanFiniteInteger(value));
+}
+
 function aggregateUsageEvents(events, month) {
   const summary = createEmptyUsageSummary(month);
 
@@ -4404,6 +4432,7 @@ function aggregateUsageEvents(events, month) {
     if (event.provider === "openai") {
       summary.aiRequests += 1;
       if (event.unit === "tokens") summary.openAiTokens += quantity;
+      summary.cachedOpenAiInputTokens += cleanFiniteInteger(event.metadata?.cachedInputTokens);
     }
     if (event.feature === "presence_ingest" && event.unit === "events") summary.events += quantity;
     if (event.feature === "map_snapshot_upload") summary.mapUploads += quantity;
@@ -4419,6 +4448,7 @@ function createEmptyUsageSummary(month) {
     month,
     aiRequests: 0,
     openAiTokens: 0,
+    cachedOpenAiInputTokens: 0,
     events: 0,
     mapUploads: 0,
     estimatedCostUsd: 0,
@@ -4431,6 +4461,7 @@ function aggregateUsageSummaries(summaries) {
     month: summary.month || total.month,
     aiRequests: total.aiRequests + cleanFiniteInteger(summary.aiRequests),
     openAiTokens: total.openAiTokens + cleanFiniteInteger(summary.openAiTokens),
+    cachedOpenAiInputTokens: total.cachedOpenAiInputTokens + cleanFiniteInteger(summary.cachedOpenAiInputTokens),
     events: total.events + cleanFiniteInteger(summary.events),
     mapUploads: total.mapUploads + cleanFiniteInteger(summary.mapUploads),
     estimatedCostUsd: roundMoney(total.estimatedCostUsd + Number(summary.estimatedCostUsd || 0)),

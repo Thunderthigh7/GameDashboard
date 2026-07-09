@@ -20,6 +20,7 @@ const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
 const usageEstimatedCost = document.querySelector("#usageEstimatedCost");
+const usageCachedInputTokens = document.querySelector("#usageCachedInputTokens");
 const usageResetDate = document.querySelector("#usageResetDate");
 const usageStatus = document.querySelector("#usageStatus");
 const usageMetricGrid = document.querySelector("#usageMetricGrid");
@@ -454,6 +455,7 @@ function resetUsageView() {
   if (usagePlanName) usagePlanName.textContent = "Free";
   if (usageConnectedGames) usageConnectedGames.textContent = "0";
   if (usageEstimatedCost) usageEstimatedCost.textContent = "$0.00";
+  if (usageCachedInputTokens) usageCachedInputTokens.textContent = "0";
   if (usageResetDate) usageResetDate.textContent = "--";
   if (usageStatus) usageStatus.textContent = "Sign in to view usage.";
   if (usageMetricGrid) usageMetricGrid.innerHTML = "";
@@ -471,6 +473,7 @@ function renderAccountUsage(data) {
   if (usagePlanName) usagePlanName.textContent = data.plan || "Free";
   if (usageConnectedGames) usageConnectedGames.textContent = formatCompactNumber(data.connectedGameCount || 0);
   if (usageEstimatedCost) usageEstimatedCost.textContent = formatCurrency(usage.estimatedCostUsd || 0);
+  if (usageCachedInputTokens) usageCachedInputTokens.textContent = formatCompactNumber(usage.cachedOpenAiInputTokens || 0);
   if (usageResetDate) usageResetDate.textContent = formatShortDate(period.resetsAt);
   if (usageStatus) {
     usageStatus.textContent = `Current period: ${formatShortDate(period.startsAt)} to ${formatShortDate(period.endsAt)}.`;
@@ -504,6 +507,7 @@ function renderUsageMetricCard(metric) {
         <span>${escapeHtml(String(percent))}% used</span>
         <span>${escapeHtml(remainingText)}</span>
       </div>
+      ${metric.note ? `<p class="usageMetricNote">${escapeHtml(metric.note)}</p>` : ""}
     </article>
   `;
 }
@@ -542,6 +546,7 @@ function renderAdminUser(user) {
         <div><span>AI calls</span><strong>${escapeHtml(formatCompactNumber(usage.aiRequests || 0))}</strong></div>
         <div><span>Events</span><strong>${escapeHtml(formatCompactNumber(usage.events || 0))}</strong></div>
         <div><span>OpenAI tokens</span><strong>${escapeHtml(formatCompactNumber(usage.openAiTokens || 0))}</strong></div>
+        <div><span>Cached input</span><strong>${escapeHtml(formatCompactNumber(usage.cachedOpenAiInputTokens || 0))}</strong></div>
         <div><span>Est. cost</span><strong>${escapeHtml(formatCurrency(usage.estimatedCostUsd || 0))}</strong></div>
       </div>
       <ul class="adminUniverseList">${universes}</ul>

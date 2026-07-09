@@ -1143,6 +1143,13 @@ small,
   background: #ef4444;
 }
 
+.usageMetricNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .usageUpgradePanel {
   display: flex;
   align-items: center;
