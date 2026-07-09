@@ -5159,6 +5159,106 @@ async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.n
   return summaries;
 }
 
+async function refreshMonthlyUserUsageSnapshot(userId, month = getUsageMonthKey(Date.now())) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
+  if (!cleanUserId) return null;
+
+  const usage = (await getUsageSummaryByUserIds([cleanUserId], cleanMonth)).get(cleanUserId)
+    || createEmptyUsageSummary(cleanMonth);
+  const record = {
+    userId: cleanUserId,
+    month: cleanMonth,
+    usage,
+    updatedAt: Date.now(),
+  };
+
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("monthly_user_usage").replaceOne(
+      { userId: cleanUserId, month: cleanMonth },
+      record,
+      { upsert: true },
+    );
+    return record;
+  }
+
+  const records = await readMonthlyUserUsageRecords();
+  const nextRecords = records.filter((entry) => !(entry.userId === cleanUserId && entry.month === cleanMonth));
+  nextRecords.push(record);
+  await writeMonthlyUserUsageRecords(nextRecords);
+  return record;
+}
+
+async function ensureMonthlyUsageSnapshotsForUserIds(userIds, months = [getUsageMonthKey(Date.now())]) {
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const cleanMonths = [...new Set((Array.isArray(months) ? months : [months])
+    .map((month) => cleanUsageMonth(month))
+    .filter(Boolean))];
+  if (!ids.length || !cleanMonths.length) return;
+
+  for (const month of cleanMonths) {
+    for (const userId of ids) {
+      await refreshMonthlyUserUsageSnapshot(userId, month);
+    }
+  }
+}
+
+async function getMonthlyUsageSnapshotSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now())) {
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
+  const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(cleanMonth)]));
+  if (!ids.length) return summaries;
+
+  const db = await getMongoDb();
+  const records = db
+    ? await db.collection("monthly_user_usage").find({ userId: { $in: ids }, month: cleanMonth }).project({ _id: 0 }).toArray()
+    : (await readMonthlyUserUsageRecords()).filter((record) => ids.includes(record.userId) && record.month === cleanMonth);
+
+  const users = await readUsers();
+  const usersById = new Map(users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user]));
+  for (const record of records) {
+    const userId = cleanString(record?.userId, 120);
+    if (!ids.includes(userId)) continue;
+    summaries.set(userId, applyPlanToUsageSummary(record.usage || createEmptyUsageSummary(cleanMonth), usersById.get(userId)));
+  }
+
+  return summaries;
+}
+
+async function getLifetimeUsageSummaryByUserIds(userIds) {
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary("lifetime")]));
+  if (!ids.length) return summaries;
+
+  const users = await readUsers();
+  const usersById = new Map(users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user]));
+  const db = await getMongoDb();
+  const events = db
+    ? await db.collection("usage_events").find({ userId: { $in: ids } }).project({ _id: 0 }).toArray()
+    : (await readUsageEvents()).filter((event) => ids.includes(event.userId));
+
+  const eventsByUser = new Map();
+  for (const event of events) {
+    const userEvents = eventsByUser.get(event.userId) || [];
+    userEvents.push(event);
+    eventsByUser.set(event.userId, userEvents);
+  }
+
+  const storageByUser = await getObjectStorageUsageByUserIds(ids);
+  for (const id of ids) {
+    summaries.set(id, applyPlanToUsageSummary(
+      mergeObjectStorageUsage(
+        aggregateUsageEvents(eventsByUser.get(id) || [], "lifetime"),
+        storageByUser.get(id) || createEmptyObjectStorageUsage(),
+      ),
+      usersById.get(id),
+    ));
+  }
+
+  return summaries;
+}
+
 async function getAccountUsageSummary(userId) {
   const [usage, projects, user] = await Promise.all([
     getMonthlyUsage(userId),
@@ -5425,6 +5525,22 @@ async function readUsageEvents() {
 async function writeUsageEvents(events) {
   await fs.mkdir(path.dirname(usageStorePath), { recursive: true });
   await fs.writeFile(usageStorePath, JSON.stringify({ events }, null, 2));
+}
+
+async function readMonthlyUserUsageRecords() {
+  try {
+    const content = await fs.readFile(monthlyUserUsageStorePath, "utf8");
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.records) ? parsed.records : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeMonthlyUserUsageRecords(records) {
+  await fs.mkdir(path.dirname(monthlyUserUsageStorePath), { recursive: true });
+  await fs.writeFile(monthlyUserUsageStorePath, JSON.stringify({ records }, null, 2));
 }
 
 function sanitizeUsageMetadata(value) {
