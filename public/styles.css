@@ -1430,6 +1430,25 @@ small,
   gap: 4px;
 }
 
+.adminPlanControl > div {
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.adminPlanControl select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #111827;
+  color: var(--text);
+  padding: 7px 8px;
+  font: inherit;
+  font-weight: 800;
+}
+
 .adminUniverseList {
   display: grid;
   gap: 8px;

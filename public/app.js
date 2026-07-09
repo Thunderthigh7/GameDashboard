@@ -93,6 +93,7 @@ let knownUniverses = [];
 let ownedGames = [];
 let authenticated = false;
 let authenticatedUser = null;
+let lastAdminPlans = [];
 let activeView = getViewFromHash();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
@@ -164,7 +165,13 @@ function bindEvents() {
   });
   adminUserList?.addEventListener("click", (event) => {
     const resetButton = event.target.closest("[data-reset-usage-user]");
-    if (resetButton) resetAdminUsage(resetButton);
+    if (resetButton) {
+      resetAdminUsage(resetButton);
+      return;
+    }
+
+    const planButton = event.target.closest("[data-admin-save-plan-user]");
+    if (planButton) saveAdminUserPlan(planButton);
   });
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
@@ -495,7 +502,37 @@ async function resetAdminUsage(button) {
   }
 }
 
+async function saveAdminUserPlan(button) {
+  if (!authenticatedUser?.isAdmin || !adminUserList) return;
+
+  const userId = button.dataset.adminSavePlanUser || "";
+  const card = button.closest(".adminUserCard");
+  const select = card?.querySelector("[data-admin-plan-user]");
+  const planKey = select?.value || "";
+  const username = button.dataset.adminPlanUsername || "user";
+  if (!userId || !planKey) return;
+
+  const controls = card?.querySelectorAll("[data-admin-plan-user], [data-admin-save-plan-user]") || [];
+  for (const control of controls) control.disabled = true;
+  adminUsersStatus.textContent = `Changing plan for ${username}...`;
+
+  try {
+    const data = await request("/api/admin/users/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, planKey }),
+    });
+    renderAdminUsers(data);
+    adminUsersStatus.textContent = `${data.planChange?.targetUsername || username} is now on ${data.planChange?.planName || "the selected plan"}.`;
+  } catch (error) {
+    handleAuthError(error);
+    adminUsersStatus.textContent = formatRequestError(error);
+    for (const control of controls) control.disabled = false;
+  }
+}
+
 function renderAdminUsers(data) {
+  lastAdminPlans = Array.isArray(data.plans) ? data.plans : [];
   adminTotalUsers.textContent = String(data.totalUsers || 0);
   adminTotalProjects.textContent = String(data.totalProjects || 0);
   if (adminRobloxUsers) adminRobloxUsers.textContent = String(data.totalRobloxUsers || 0);
@@ -814,6 +851,7 @@ function renderAdminUser(user) {
   const provider = user.authProvider === "roblox" || robloxId ? "Roblox" : "Legacy";
   const usage = user.usage || {};
   const resetLabel = user.username || user.robloxUsername || user.id || "user";
+  const adminPlanOptions = getAdminPlanOptions(user.planKey);
   const universes = Array.isArray(user.universes) && user.universes.length
     ? user.universes.map((universe) => `
       <li>
@@ -844,7 +882,20 @@ function renderAdminUser(user) {
       <div class="adminUserMeta">
         <div><span>Created</span><strong>${escapeHtml(formatFullDate(user.createdAt))}</strong></div>
         <div><span>Last login</span><strong>${escapeHtml(formatFullDate(user.lastLoginAt))}</strong></div>
-        <div><span>Plan</span><strong>${escapeHtml(user.planName || "Free")}</strong></div>
+        <div class="adminPlanControl">
+          <span>Plan</span>
+          <div>
+            <select data-admin-plan-user="${escapeHtml(user.id || "")}" aria-label="Plan for ${escapeHtml(user.username || "user")}">
+              ${adminPlanOptions}
+            </select>
+            <button
+              class="miniButton"
+              type="button"
+              data-admin-save-plan-user="${escapeHtml(user.id || "")}"
+              data-admin-plan-username="${escapeHtml(resetLabel)}"
+            >Save</button>
+          </div>
+        </div>
         <div><span>Games</span><strong>${escapeHtml(String(user.projectCount || 0))}</strong></div>
         <div><span>Roblox username</span><strong>${escapeHtml(robloxName || "Not linked")}</strong></div>
         <div><span>Roblox user ID</span><strong>${escapeHtml(robloxId || "Not linked")}</strong></div>
@@ -867,6 +918,19 @@ function renderAdminUser(user) {
       <ul class="adminUniverseList">${universes}</ul>
     </article>
   `;
+}
+
+function getAdminPlanOptions(selectedPlanKey) {
+  const plans = Array.isArray(lastAdminPlans) ? lastAdminPlans : [];
+  if (!plans.length) {
+    return `<option value="${escapeHtml(selectedPlanKey || "free")}">${escapeHtml(selectedPlanKey || "Free")}</option>`;
+  }
+
+  return plans.map((plan) => `
+    <option value="${escapeHtml(plan.key || "")}"${plan.key === selectedPlanKey ? " selected" : ""}>
+      ${escapeHtml(plan.name || plan.key || "Plan")}
+    </option>
+  `).join("");
 }
 
 async function loadUniverses() {

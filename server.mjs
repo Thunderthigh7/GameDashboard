@@ -352,6 +352,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await getAdminUserSummaries());
     }
 
+    if (url.pathname === "/api/admin/users/plan" && req.method === "POST") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      return handleAdminUserPlanUpdate(req, res, user);
+    }
+
     if (url.pathname === "/api/admin/reconciliations" && req.method === "GET") {
       const user = await findUserById(auth.userId);
       if (!isAdminUser(user)) {
@@ -1398,6 +1407,39 @@ async function handleAccountPlanUpdate(req, res, auth) {
   if (!updated) return sendJson(res, 404, { error: "Account not found." });
 
   return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+}
+
+async function handleAdminUserPlanUpdate(req, res, adminUser) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const targetUserId = cleanString(body?.userId, 120);
+  const planKey = cleanPlanKey(body?.planKey || body?.plan);
+  const plan = getPlanByKey(planKey);
+  if (!targetUserId) return sendJson(res, 400, { error: "Pick a user." });
+  if (!plan) return sendJson(res, 400, { error: "Pick a valid plan." });
+
+  const targetUser = await findUserById(targetUserId);
+  if (!targetUser) return sendJson(res, 404, { error: "User not found." });
+
+  const updated = await updateUserPlan(targetUser.id, plan.key);
+  if (!updated) return sendJson(res, 404, { error: "User not found." });
+
+  return sendJson(res, 200, {
+    ...await getAdminUserSummaries(),
+    planChange: {
+      targetUserId: targetUser.id,
+      targetUsername: targetUser.username || targetUser.robloxUsername || targetUser.id,
+      planKey: plan.key,
+      planName: plan.name,
+      updatedBy: getAdminResetLabel(adminUser),
+      updatedAt: Date.now(),
+    },
+  });
 }
 
 async function handleProjectCreate(req, res, auth) {
@@ -6221,6 +6263,7 @@ async function getAdminUserSummaries() {
 
   return {
     users: sanitizedUsers,
+    plans: getPlanOptionsForUser(null),
     totalUsers: sanitizedUsers.length,
     totalRobloxUsers: sanitizedUsers.filter((user) => cleanInteger(user.robloxUserId) > 0 || user.authProvider === "roblox").length,
     totalProjects: projects.length,
