@@ -58,7 +58,7 @@ let selectedChatLogId = "";
 let hoveredAiAreaMarker = null;
 let selectedAiAreaMarker = null;
 let selectedAiArea = null;
-let latestAreaAnalysisMode = "computed";
+let latestAreaAnalysisMode = "none";
 let focusedSignalArea = null;
 let heatmapRefreshTimer = null;
 const movementKeys = new Set();
@@ -123,11 +123,6 @@ if (canvas) {
     }
 
     if (activeHeatmapMode === "ai-analysis") loadHeatmap();
-  });
-  window.addEventListener("dashboard:computedAreaClusters", (event) => {
-    if (event.detail?.analysis) {
-      renderAreaAnalysisPayload(event.detail.analysis, { statusPrefix: "Computed clusters" });
-    }
   });
   window.addEventListener("dashboard:focusHeatmapArea", (event) => {
     const mode = event.detail?.mode || "";
@@ -282,19 +277,19 @@ async function loadHeatmap(options = {}) {
     latestSamples = samplePayload.samples;
     latestMapSnapshot = mapSnapshot;
     if (activeHeatmapMode === "ai-analysis") {
-      latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "computed";
-      window.dispatchEvent(new CustomEvent("dashboard:areaClustersLoaded", {
-        detail: { universeId, analysis: payload },
-      }));
+      latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "none";
     }
     renderScene(latestSamples, latestMapSnapshot, {
       resetView: Boolean(options.resetView),
+      suppressFallbackAreas: activeHeatmapMode === "ai-analysis" && payload.mode !== "ai",
     });
 
     const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
     sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
-    if (samplePayload.returnedCount || mapSnapshot?.partCount) {
+    if (activeHeatmapMode === "ai-analysis" && payload.mode !== "ai") {
+      statusLine.textContent = `${payload.message || "Run AI Insights to generate AI area analysis."}${mapErrorText}`;
+    } else if (samplePayload.returnedCount || mapSnapshot?.partCount) {
       statusLine.textContent = `${getStatusText(samplePayload)}${mapText}${mapErrorText}`;
     } else {
       statusLine.textContent = `No ${modeText} samples received yet.${mapErrorText}`;
@@ -318,7 +313,7 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
 
   const universeId = window.getSelectedUniverseId?.() || payload.universeId || "";
   setHeatmapEmptyState(false);
-  statusLine.textContent = "Rendering computed clusters...";
+  statusLine.textContent = "Rendering AI area analysis...";
 
   let mapSnapshot = latestMapSnapshot;
   if (universeId && (!mapSnapshot || String(mapSnapshot.universeId || "") !== String(universeId))) {
@@ -335,24 +330,22 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
   const samplePayload = normalizeHeatmapPayload(payload);
   latestSamples = samplePayload.samples;
   latestMapSnapshot = mapSnapshot;
-  latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "computed";
-  window.dispatchEvent(new CustomEvent("dashboard:areaClustersLoaded", {
-    detail: { universeId, analysis: payload },
-  }));
+  latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "none";
   renderScene(latestSamples, latestMapSnapshot, {
     resetView: true,
+    suppressFallbackAreas: payload.mode !== "ai",
   });
 
-  const clusterCount = samplePayload.returnedCount || 0;
+  const areaCount = samplePayload.returnedCount || 0;
   const eventCount = payload.eventCount || 0;
-  sampleCount.textContent = `${clusterCount} cluster${clusterCount === 1 ? "" : "s"}`;
-  statusLine.textContent = clusterCount
-    ? `${options.statusPrefix || "Computed clusters"} from ${eventCount} local signal${eventCount === 1 ? "" : "s"}. OpenAI cost: $0.`
-    : "No clusters found for the selected filters. OpenAI cost: $0.";
+  sampleCount.textContent = `${areaCount} AI area${areaCount === 1 ? "" : "s"}`;
+  statusLine.textContent = areaCount
+    ? `${options.statusPrefix || "Loaded AI area analysis"} from ${eventCount} signal${eventCount === 1 ? "" : "s"}.`
+    : payload.message || "Run AI Insights to generate AI area analysis.";
 }
 
 function getModeText(label) {
-  return label === "Clusters" ? "clusters" : label.toLowerCase();
+  return label === "AI Analysis" ? "AI analysis" : label.toLowerCase();
 }
 
 function setHeatmapEmptyState(isEmpty) {
@@ -448,7 +441,7 @@ function setRenderMode(mode) {
 }
 
 function getHeatmapEndpoint() {
-  if (activeHeatmapMode === "ai-analysis") return "/api/area-clusters";
+  if (activeHeatmapMode === "ai-analysis") return "/api/ai-area-analysis";
   if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
   if (activeHeatmapMode === "chat") return "/api/chat-logs";
@@ -456,7 +449,7 @@ function getHeatmapEndpoint() {
 }
 
 function getModeLabel() {
-  if (activeHeatmapMode === "ai-analysis") return "Clusters";
+  if (activeHeatmapMode === "ai-analysis") return "AI Analysis";
   if (activeHeatmapMode === "deaths") return "Death";
   if (activeHeatmapMode === "leaves") return "Leave";
   if (activeHeatmapMode === "chat") return "Chat";

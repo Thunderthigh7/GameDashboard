@@ -2966,11 +2966,24 @@ async function getAiAreaAnalysisFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const storedReport = await readObjectStorageAiReport(filters.universeId);
-  if (storedReport?.areaAnalysis) {
+  if (storedReport?.areaAnalysis?.mode === "ai") {
     return storedReport.areaAnalysis;
   }
 
-  return getAiAreaAnalysis(filters);
+  return getEmptyAiAreaAnalysis(filters);
+}
+
+function getEmptyAiAreaAnalysis(filters = {}) {
+  return {
+    universeId: cleanInteger(filters.universeId) || null,
+    mode: "none",
+    radius: AI_ANALYSIS_CLUSTER_RADIUS,
+    eventCount: 0,
+    areaCount: 0,
+    filters: getMovementFilterSummary(filters),
+    areas: [],
+    message: "Run AI Insights to generate AI area analysis.",
+  };
 }
 
 async function getComputedAreaClustersFromQuery(searchParams) {
