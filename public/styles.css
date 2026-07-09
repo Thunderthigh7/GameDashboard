@@ -1171,13 +1171,6 @@ small,
   gap: 16px;
 }
 
-.adminActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .adminStats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1226,11 +1219,16 @@ small,
   gap: 12px;
 }
 
-.adminUserHeader div {
+.adminUserHeader > div:first-child,
+.adminUserActions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.adminUserActions {
+  justify-content: flex-end;
 }
 
 .adminUserHeader span {
@@ -1248,6 +1246,12 @@ small,
   overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.miniButton.danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .adminUserMeta {

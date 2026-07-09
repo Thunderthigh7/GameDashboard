@@ -238,7 +238,19 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 403, { error: "Admin access required" });
       }
 
-      const reset = await resetStoredUsageEvents(user);
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
+
+      const targetUser = await findUserById(cleanString(body?.userId, 120));
+      if (!targetUser) {
+        return sendJson(res, 404, { error: "User not found" });
+      }
+
+      const reset = await resetStoredUsageEventsForUser(targetUser, user);
       return sendJson(res, 200, {
         ...await getAdminUserSummaries(),
         reset,
@@ -4298,26 +4310,42 @@ function estimateOpenAiCost(inputTokens, cachedInputTokens, outputTokens) {
   return roundMoney(inputCost + cachedInputCost + outputCost);
 }
 
-async function resetStoredUsageEvents(adminUser) {
+async function resetStoredUsageEventsForUser(targetUser, adminUser) {
+  const userId = cleanString(targetUser?.id, 120);
+  if (!userId) {
+    return {
+      resetAt: Date.now(),
+      deletedEvents: 0,
+      resetBy: getAdminResetLabel(adminUser),
+      targetUserId: "",
+      targetUsername: "",
+    };
+  }
+
   const resetAt = Date.now();
   const db = await getMongoDb();
 
   if (db) {
-    const result = await db.collection("usage_events").deleteMany({});
+    const result = await db.collection("usage_events").deleteMany({ userId });
     return {
       resetAt,
       deletedEvents: cleanFiniteInteger(result.deletedCount),
       resetBy: getAdminResetLabel(adminUser),
+      targetUserId: userId,
+      targetUsername: getAdminResetLabel(targetUser),
     };
   }
 
   const events = await readUsageEvents();
-  await writeUsageEvents([]);
+  const remainingEvents = events.filter((event) => event?.userId !== userId);
+  await writeUsageEvents(remainingEvents);
 
   return {
     resetAt,
-    deletedEvents: events.length,
+    deletedEvents: events.length - remainingEvents.length,
     resetBy: getAdminResetLabel(adminUser),
+    targetUserId: userId,
+    targetUsername: getAdminResetLabel(targetUser),
   };
 }
 

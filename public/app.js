@@ -8,7 +8,6 @@ const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const adminNavLink = document.querySelector("#adminNavLink");
 const refreshAdminUsersButton = document.querySelector("#refreshAdminUsersButton");
-const resetAdminUsageButton = document.querySelector("#resetAdminUsageButton");
 const adminUserList = document.querySelector("#adminUserList");
 const adminUsersStatus = document.querySelector("#adminUsersStatus");
 const adminTotalUsers = document.querySelector("#adminTotalUsers");
@@ -134,7 +133,10 @@ function bindEvents() {
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
   refreshAdminUsersButton?.addEventListener("click", loadAdminUsers);
-  resetAdminUsageButton?.addEventListener("click", resetAdminUsage);
+  adminUserList?.addEventListener("click", (event) => {
+    const resetButton = event.target.closest("[data-reset-usage-user]");
+    if (resetButton) resetAdminUsage(resetButton);
+  });
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
 
@@ -266,7 +268,6 @@ function setAuthenticated(value, user = null) {
     if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = "0";
     if (adminMonthlyEvents) adminMonthlyEvents.textContent = "0";
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
-    if (resetAdminUsageButton) resetAdminUsageButton.disabled = true;
     resetUsageView();
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
@@ -427,19 +428,27 @@ async function loadAdminUsers() {
   }
 }
 
-async function resetAdminUsage() {
+async function resetAdminUsage(button) {
   if (!authenticatedUser?.isAdmin || !adminUserList) return;
-  const confirmed = window.confirm("Reset all usage for every user? This clears the usage ledger and cannot be undone.");
+  const userId = button?.dataset.resetUsageUser || "";
+  const username = button?.dataset.resetUsageUsername || "this user";
+  if (!userId) return;
+
+  const confirmed = window.confirm(`Reset usage for ${username}? This clears that user's usage ledger and cannot be undone.`);
   if (!confirmed) return;
 
-  adminUsersStatus.textContent = "Resetting usage...";
+  adminUsersStatus.textContent = `Resetting usage for ${username}...`;
   setAdminButtonsDisabled(true);
 
   try {
-    const data = await request("/api/admin/usage/reset", { method: "POST" });
+    const data = await request("/api/admin/usage/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
     renderAdminUsers(data);
     const deletedEvents = data.reset?.deletedEvents || 0;
-    adminUsersStatus.textContent = `Usage reset complete. Deleted ${formatCompactNumber(deletedEvents)} usage events.`;
+    adminUsersStatus.textContent = `Usage reset for ${data.reset?.targetUsername || username}. Deleted ${formatCompactNumber(deletedEvents)} usage events.`;
     if (activeView === "usage") loadAccountUsage();
   } catch (error) {
     handleAuthError(error);
@@ -464,7 +473,9 @@ function renderAdminUsers(data) {
 
 function setAdminButtonsDisabled(disabled) {
   if (refreshAdminUsersButton) refreshAdminUsersButton.disabled = disabled;
-  if (resetAdminUsageButton) resetAdminUsageButton.disabled = disabled || !authenticatedUser?.isAdmin;
+  for (const button of document.querySelectorAll("[data-reset-usage-user]")) {
+    button.disabled = disabled || !authenticatedUser?.isAdmin;
+  }
 }
 
 async function loadAccountUsage() {
@@ -551,6 +562,7 @@ function renderAdminUser(user) {
   const robloxName = user.robloxUsername || user.robloxDisplayName || "";
   const provider = user.authProvider === "roblox" || robloxId ? "Roblox" : "Legacy";
   const usage = user.usage || {};
+  const resetLabel = user.username || user.robloxUsername || user.id || "user";
   const universes = Array.isArray(user.universes) && user.universes.length
     ? user.universes.map((universe) => `
       <li>
@@ -568,7 +580,15 @@ function renderAdminUser(user) {
           ${user.isAdmin ? `<span>Admin</span>` : ""}
           <span>${escapeHtml(provider)}</span>
         </div>
-        <code>${escapeHtml(user.id || "")}</code>
+        <div class="adminUserActions">
+          <code>${escapeHtml(user.id || "")}</code>
+          <button
+            class="miniButton danger"
+            type="button"
+            data-reset-usage-user="${escapeHtml(user.id || "")}"
+            data-reset-usage-username="${escapeHtml(resetLabel)}"
+          >Reset usage</button>
+        </div>
       </div>
       <div class="adminUserMeta">
         <div><span>Created</span><strong>${escapeHtml(formatFullDate(user.createdAt))}</strong></div>
