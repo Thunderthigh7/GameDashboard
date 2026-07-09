@@ -5599,34 +5599,26 @@ async function getAccountUsageSummary(userId) {
 
 function getUsageMetrics(usage, connectedGameCount = 0) {
   const limits = usage?.limits || USAGE_LIMITS;
-  const cachedInputTokens = cleanFiniteInteger(usage?.cachedOpenAiInputTokens);
-  const openAiTokens = createUsageMetric(
-    "openAiTokens",
-    "AI token budget",
-    cleanFiniteInteger(usage?.openAiTokens),
-    cleanFiniteInteger(limits.openAiTokensPerMonth),
-    "tokens",
-  );
-  openAiTokens.note = cachedInputTokens > 0
-    ? `${formatUsageNumber(cachedInputTokens)} cached input tokens priced at cached rate`
-    : "Backend safety budget for AI analysis size.";
   return [
     {
       ...createUsageMetric("connectedGames", "Connected games", connectedGameCount, cleanFiniteInteger(limits.connectedGames), "games"),
       note: "Each connected Roblox experience counts as one game.",
     },
     createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
-    openAiTokens,
-    {
-      ...createUsageMetric(
-        "backblazeStoredBytes",
-        "Raw analytics history",
-        cleanFiniteInteger(usage?.backblazeStoredBytes),
-        cleanFiniteInteger(limits.backblazeStoredBytes),
-        "bytes",
-      ),
-      note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} stored objects. Raw event history pauses at this cap; summarized dashboard rollups still work.`,
-    },
+    createUsageMetric(
+      "openAiTokens",
+      "AI token budget",
+      cleanFiniteInteger(usage?.openAiTokens),
+      cleanFiniteInteger(limits.openAiTokensPerMonth),
+      "tokens",
+    ),
+    createUsageMetric(
+      "backblazeStoredBytes",
+      "Raw analytics history",
+      cleanFiniteInteger(usage?.backblazeStoredBytes),
+      cleanFiniteInteger(limits.backblazeStoredBytes),
+      "bytes",
+    ),
     createUsageMetric(
       "backblazeUploadedBytes",
       "Raw data uploaded",
@@ -5634,16 +5626,13 @@ function getUsageMetrics(usage, connectedGameCount = 0) {
       cleanFiniteInteger(limits.backblazeUploadedBytesPerMonth),
       "bytes",
     ),
-    {
-      ...createUsageMetric(
-        "backblazeDownloadedBytes",
-        "Raw data read",
-        cleanFiniteInteger(usage?.backblazeDownloadedBytes),
-        cleanFiniteInteger(limits.backblazeDownloadedBytesPerMonth),
-        "bytes",
-      ),
-      note: "Internal reads for reports and rollups.",
-    },
+    createUsageMetric(
+      "backblazeDownloadedBytes",
+      "Raw data read",
+      cleanFiniteInteger(usage?.backblazeDownloadedBytes),
+      cleanFiniteInteger(limits.backblazeDownloadedBytesPerMonth),
+      "bytes",
+    ),
     createUsageMetric("mapUploads", "Map uploads", cleanFiniteInteger(usage?.mapUploads), cleanFiniteInteger(limits.mapUploadsPerMonth), "uploads"),
   ];
 }
