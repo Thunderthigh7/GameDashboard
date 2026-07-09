@@ -66,6 +66,7 @@ const USAGE_LIMITS = {
   openAiTokensPerMonth: cleanEnvInteger("USAGE_OPENAI_TOKENS_PER_MONTH", 500_000),
   eventsPerMonth: cleanEnvInteger("USAGE_EVENTS_PER_MONTH", 500_000),
   mapUploadsPerMonth: cleanEnvInteger("USAGE_MAP_UPLOADS_PER_MONTH", 200),
+  backblazeStoredBytes: cleanEnvInteger("USAGE_B2_STORAGE_BYTES", 1_000_000_000),
 };
 const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.75);
 const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.075);
@@ -73,6 +74,8 @@ const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 4.5)
 const B2_STORAGE_USD_PER_TB_MONTH = cleanEnvNumber("B2_STORAGE_USD_PER_TB_MONTH", 6.95);
 const B2_EGRESS_OVERAGE_USD_PER_GB = cleanEnvNumber("B2_EGRESS_OVERAGE_USD_PER_GB", 0.01);
 const B2_FREE_EGRESS_MULTIPLIER = cleanEnvNumber("B2_FREE_EGRESS_MULTIPLIER", 3);
+const B2_RAW_ANALYTICS_RETENTION_DAYS = cleanEnvInteger("B2_RAW_ANALYTICS_RETENTION_DAYS", 14);
+const B2_RAW_ANALYTICS_CLEANUP_INTERVAL_MS = cleanEnvInteger("B2_RAW_ANALYTICS_CLEANUP_INTERVAL_MS", 6 * 60 * 60 * 1000);
 const ANALYTICS_STORAGE_MODE = cleanAnalyticsStorageMode(process.env.ANALYTICS_STORAGE_MODE || "");
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
@@ -124,6 +127,7 @@ const objectStorageStatus = {
   lastObjectKey: "",
 };
 const objectStorageRollupCache = new Map();
+const rawObjectStorageCleanupByUniverse = new Map();
 const OBJECT_STORAGE_ROLLUP_CACHE_MS = 60 * 1000;
 const DEFAULT_AI_AUTOMATION_SETTINGS = {
   mode: "auto",
@@ -657,6 +661,13 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
     const client = await getB2S3Client();
     const objectKey = getPresenceBatchObjectKey(presence);
     const body = gzipSync(Buffer.from(createPresenceJsonLines(presence), "utf8"));
+    const storageCheck = await canWriteRawAnalyticsToObjectStorage(usageContext, body.length);
+    if (!storageCheck.allowed) {
+      await recordRawAnalyticsStorageCapSkip(usageContext, body.length, storageCheck);
+      objectStorageStatus.connected = true;
+      objectStorageStatus.lastError = "";
+      return;
+    }
 
     await client.send(new PutObjectCommand({
       Bucket: B2_BUCKET_NAME,
@@ -683,6 +694,7 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
     objectStorageStatus.lastError = "";
     objectStorageStatus.lastWriteAt = Date.now();
     objectStorageStatus.lastObjectKey = objectKey;
+    await cleanupRawObjectStorageForUniverse(presence.universeId);
   } catch (error) {
     objectStorageStatus.connected = false;
     objectStorageStatus.lastError = error.message || String(error);
@@ -790,6 +802,43 @@ async function deleteObjectStoragePrefix(prefix) {
     const objects = (response.Contents || [])
       .map((object) => ({ Key: object.Key }))
       .filter((object) => object.Key);
+
+    if (objects.length) {
+      await client.send(new DeleteObjectsCommand({
+        Bucket: B2_BUCKET_NAME,
+        Delete: {
+          Objects: objects,
+          Quiet: true,
+        },
+      }));
+      await deleteObjectStorageObjectRecords(objects.map((object) => object.Key));
+      deletedCount += objects.length;
+    }
+
+    ContinuationToken = response.NextContinuationToken;
+  } while (ContinuationToken);
+
+  return deletedCount;
+}
+
+async function deleteObjectStoragePrefixOlderThan(prefix, cutoffMs) {
+  if (!OBJECT_STORAGE_CONFIGURED || !prefix || cleanInteger(cutoffMs) <= 0) return 0;
+
+  const { DeleteObjectsCommand, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+  const client = await getB2S3Client();
+  let ContinuationToken;
+  let deletedCount = 0;
+
+  do {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: B2_BUCKET_NAME,
+      Prefix: prefix,
+      ContinuationToken,
+      MaxKeys: 1000,
+    }));
+    const objects = (response.Contents || [])
+      .filter((object) => object.Key && new Date(object.LastModified || 0).getTime() < cutoffMs)
+      .map((object) => ({ Key: object.Key }));
 
     if (objects.length) {
       await client.send(new DeleteObjectsCommand({
@@ -4501,6 +4550,59 @@ async function recordObjectStorageRead(objectKey, byteLength) {
   }
 }
 
+async function canWriteRawAnalyticsToObjectStorage(usageContext = {}, incomingBytes = 0) {
+  if (!usageContext?.userId || USAGE_LIMITS.backblazeStoredBytes <= 0) {
+    return { allowed: true, storedBytes: 0, limitBytes: USAGE_LIMITS.backblazeStoredBytes };
+  }
+
+  const storageUsage = await getObjectStorageUsageForUser(usageContext.userId);
+  const storedBytes = cleanFiniteInteger(storageUsage.storedBytes);
+  const limitBytes = cleanFiniteInteger(USAGE_LIMITS.backblazeStoredBytes);
+  const requestedBytes = cleanFiniteInteger(incomingBytes);
+  return {
+    allowed: storedBytes + requestedBytes <= limitBytes,
+    storedBytes,
+    requestedBytes,
+    limitBytes,
+  };
+}
+
+async function recordRawAnalyticsStorageCapSkip(usageContext = {}, byteLength = 0, storageCheck = {}) {
+  if (!usageContext?.userId) return;
+
+  await recordUsage({
+    ...usageContext,
+    provider: "backblaze",
+    feature: "raw_analytics_storage_cap_skip",
+    quantity: Math.max(cleanFiniteInteger(byteLength), 1),
+    unit: "bytes",
+    estimatedCostUsd: 0,
+    metadata: {
+      requestedBytes: cleanFiniteInteger(byteLength),
+      storedBytes: cleanFiniteInteger(storageCheck.storedBytes),
+      limitBytes: cleanFiniteInteger(storageCheck.limitBytes),
+    },
+  });
+}
+
+async function cleanupRawObjectStorageForUniverse(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!OBJECT_STORAGE_CONFIGURED || cleanUniverseId <= 0 || B2_RAW_ANALYTICS_RETENTION_DAYS <= 0) return;
+
+  const now = Date.now();
+  const lastCleanupAt = cleanInteger(rawObjectStorageCleanupByUniverse.get(String(cleanUniverseId)));
+  if (lastCleanupAt > 0 && now - lastCleanupAt < B2_RAW_ANALYTICS_CLEANUP_INTERVAL_MS) return;
+
+  rawObjectStorageCleanupByUniverse.set(String(cleanUniverseId), now);
+  const cutoffMs = now - (B2_RAW_ANALYTICS_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  try {
+    await deleteObjectStoragePrefixOlderThan(`raw/${cleanUniverseId}/`, cutoffMs);
+  } catch (error) {
+    objectStorageStatus.lastError = error.message || String(error);
+    console.warn("B2 raw analytics retention cleanup failed:", objectStorageStatus.lastError);
+  }
+}
+
 async function getObjectStorageObject(objectKey) {
   const cleanObjectKey = cleanString(objectKey, 512);
   if (!cleanObjectKey) return null;
@@ -4698,8 +4800,14 @@ function getUsageMetrics(usage) {
     createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
     openAiTokens,
     {
-      ...createUsageMetric("backblazeStoredBytes", "Backblaze storage", cleanFiniteInteger(usage?.backblazeStoredBytes), 0, "bytes"),
-      note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} B2 objects. Storage cost is estimated from current bytes stored.`,
+      ...createUsageMetric(
+        "backblazeStoredBytes",
+        "Backblaze storage",
+        cleanFiniteInteger(usage?.backblazeStoredBytes),
+        cleanFiniteInteger(limits.backblazeStoredBytes),
+        "bytes",
+      ),
+      note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} B2 objects. Raw analytics pauses at the storage cap; map uploads still work.`,
     },
     createUsageMetric("backblazeUploadedBytes", "Backblaze uploads", cleanFiniteInteger(usage?.backblazeUploadedBytes), 0, "bytes"),
     {
@@ -4742,6 +4850,7 @@ function aggregateUsageEvents(events, month) {
     if (event.provider === "backblaze") {
       if (event.feature === "object_storage_upload" && event.unit === "bytes") summary.backblazeUploadedBytes += quantity;
       if (event.feature === "object_storage_download" && event.unit === "bytes") summary.backblazeDownloadedBytes += quantity;
+      if (event.feature === "raw_analytics_storage_cap_skip" && event.unit === "bytes") summary.backblazeSkippedRawAnalyticsBytes += quantity;
     }
     if (event.feature === "presence_ingest" && event.unit === "events") summary.events += quantity;
     if (event.feature === "map_snapshot_upload") summary.mapUploads += quantity;
@@ -4762,6 +4871,7 @@ function createEmptyUsageSummary(month) {
     backblazeObjectCount: 0,
     backblazeUploadedBytes: 0,
     backblazeDownloadedBytes: 0,
+    backblazeSkippedRawAnalyticsBytes: 0,
     backblazeEstimatedMonthlyStorageCostUsd: 0,
     backblazeEstimatedEgressOverageCostUsd: 0,
     events: 0,
@@ -4781,6 +4891,7 @@ function aggregateUsageSummaries(summaries) {
     backblazeObjectCount: total.backblazeObjectCount + cleanFiniteInteger(summary.backblazeObjectCount),
     backblazeUploadedBytes: total.backblazeUploadedBytes + cleanFiniteInteger(summary.backblazeUploadedBytes),
     backblazeDownloadedBytes: total.backblazeDownloadedBytes + cleanFiniteInteger(summary.backblazeDownloadedBytes),
+    backblazeSkippedRawAnalyticsBytes: total.backblazeSkippedRawAnalyticsBytes + cleanFiniteInteger(summary.backblazeSkippedRawAnalyticsBytes),
     backblazeEstimatedMonthlyStorageCostUsd: roundMoney(total.backblazeEstimatedMonthlyStorageCostUsd + Number(summary.backblazeEstimatedMonthlyStorageCostUsd || 0)),
     backblazeEstimatedEgressOverageCostUsd: roundMoney(total.backblazeEstimatedEgressOverageCostUsd + Number(summary.backblazeEstimatedEgressOverageCostUsd || 0)),
     events: total.events + cleanFiniteInteger(summary.events),
@@ -5137,7 +5248,11 @@ async function getAdminUserSummaries() {
         })),
       };
     })
-    .sort((a, b) => (b.lastLoginAt || b.createdAt || 0) - (a.lastLoginAt || a.createdAt || 0));
+    .sort((a, b) => (
+      Number(b.usage?.estimatedCostUsd || 0) - Number(a.usage?.estimatedCostUsd || 0)
+      || cleanFiniteInteger(b.usage?.backblazeStoredBytes) - cleanFiniteInteger(a.usage?.backblazeStoredBytes)
+      || (b.lastLoginAt || b.createdAt || 0) - (a.lastLoginAt || a.createdAt || 0)
+    ));
 
   return {
     users: sanitizedUsers,

@@ -612,6 +612,7 @@ function renderAdminUser(user) {
         <div><span>B2 objects</span><strong>${escapeHtml(formatCompactNumber(usage.backblazeObjectCount || 0))}</strong></div>
         <div><span>B2 uploads</span><strong>${escapeHtml(formatBytes(usage.backblazeUploadedBytes || 0))}</strong></div>
         <div><span>B2 downloads</span><strong>${escapeHtml(formatBytes(usage.backblazeDownloadedBytes || 0))}</strong></div>
+        <div><span>Raw skipped</span><strong>${escapeHtml(formatBytes(usage.backblazeSkippedRawAnalyticsBytes || 0))}</strong></div>
         <div><span>B2 monthly</span><strong>${escapeHtml(formatCurrency(usage.backblazeEstimatedMonthlyStorageCostUsd || 0))}</strong></div>
         <div><span>Est. cost</span><strong>${escapeHtml(formatCurrency(usage.estimatedCostUsd || 0))}</strong></div>
       </div>
