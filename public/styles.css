@@ -1057,6 +1057,108 @@ small,
   padding: 12px;
 }
 
+.usageGrid {
+  display: grid;
+  gap: 16px;
+}
+
+.usageSummaryPanel {
+  display: grid;
+  gap: 16px;
+}
+
+.usageOverview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.usageOverview div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 12px;
+}
+
+.usageOverview span,
+.usageMetricHeader span,
+.usageMetricFooter span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.usageOverview strong {
+  font-size: 1.35rem;
+}
+
+.usageMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.usageMetricCard {
+  display: grid;
+  gap: 14px;
+}
+
+.usageMetricHeader,
+.usageMetricFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usageMetricHeader {
+  align-items: flex-start;
+}
+
+.usageMetricHeader strong {
+  text-align: right;
+}
+
+.usageProgress {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.usageProgress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #22c55e;
+}
+
+.usageMetricCard.warning .usageProgress span {
+  background: #f59e0b;
+}
+
+.usageMetricCard.blocked .usageProgress span {
+  background: #ef4444;
+}
+
+.usageUpgradePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.usageUpgradePanel h2 {
+  margin: 0 0 6px;
+}
+
+.usageUpgradePanel p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .adminPanel {
   display: grid;
   gap: 16px;
@@ -1498,7 +1600,8 @@ small,
 
   .adminUserHeader,
   .adminUniverseList li,
-  .connectedGameItem {
+  .connectedGameItem,
+  .usageUpgradePanel {
     align-items: flex-start;
     flex-direction: column;
   }

@@ -20,6 +20,7 @@
         <nav class="sideNav" aria-label="Dashboard sections">
           <a class="active" href="#overview" data-dashboard-view="overview"><span>Overview</span></a>
           <a href="#chat" data-dashboard-view="chat"><span>Chat Analysis</span></a>
+          <a href="#usage" data-dashboard-view="usage"><span>Usage</span></a>
           <a href="#connect" data-dashboard-view="connect"><span>Connect Universe</span></a>
           <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden><span>Admin</span></a>
         </nav>
@@ -250,6 +251,49 @@
             <p class="status" id="chatLogsStatus">Waiting for chat logs...</p>
             <div class="chatLogList" id="chatLogList"></div>
           </article>
+        </section>
+
+        <section class="viewPage usagePage" data-view-panel="usage" hidden>
+          <section class="usageGrid">
+            <article class="panel usageSummaryPanel">
+              <div class="sectionHeader">
+                <div>
+                  <h2>Usage</h2>
+                  <p>Your current plan limits and monthly usage.</p>
+                </div>
+                <button class="button secondary compact" id="refreshUsageButton" type="button">Refresh</button>
+              </div>
+              <div class="usageOverview">
+                <div>
+                  <span>Plan</span>
+                  <strong id="usagePlanName">Free</strong>
+                </div>
+                <div>
+                  <span>Connected games</span>
+                  <strong id="usageConnectedGames">0</strong>
+                </div>
+                <div>
+                  <span>Est. cost</span>
+                  <strong id="usageEstimatedCost">$0.00</strong>
+                </div>
+                <div>
+                  <span>Resets</span>
+                  <strong id="usageResetDate">--</strong>
+                </div>
+              </div>
+              <p class="status" id="usageStatus">Loading usage...</p>
+            </article>
+
+            <div class="usageMetricGrid" id="usageMetricGrid"></div>
+
+            <article class="panel usageUpgradePanel">
+              <div>
+                <h2 id="usageUpgradeTitle">Upgrade plans coming soon</h2>
+                <p id="usageUpgradeMessage">Usage limits are active now. Paid plan controls will connect to this page next.</p>
+              </div>
+              <button class="button compact" id="usageUpgradeButton" type="button" disabled>Upgrade</button>
+            </article>
+          </section>
         </section>
 
         <section class="viewPage" data-view-panel="connect" hidden>

@@ -16,6 +16,16 @@ const adminRobloxUsers = document.querySelector("#adminRobloxUsers");
 const adminMonthlyAiRequests = document.querySelector("#adminMonthlyAiRequests");
 const adminMonthlyEvents = document.querySelector("#adminMonthlyEvents");
 const adminMonthlyCost = document.querySelector("#adminMonthlyCost");
+const refreshUsageButton = document.querySelector("#refreshUsageButton");
+const usagePlanName = document.querySelector("#usagePlanName");
+const usageConnectedGames = document.querySelector("#usageConnectedGames");
+const usageEstimatedCost = document.querySelector("#usageEstimatedCost");
+const usageResetDate = document.querySelector("#usageResetDate");
+const usageStatus = document.querySelector("#usageStatus");
+const usageMetricGrid = document.querySelector("#usageMetricGrid");
+const usageUpgradeTitle = document.querySelector("#usageUpgradeTitle");
+const usageUpgradeMessage = document.querySelector("#usageUpgradeMessage");
+const usageUpgradeButton = document.querySelector("#usageUpgradeButton");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -96,6 +106,7 @@ function bindEvents() {
   });
 
   refreshUniversesButton.addEventListener("click", loadUniverses);
+  refreshUsageButton?.addEventListener("click", loadAccountUsage);
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -252,6 +263,7 @@ function setAuthenticated(value, user = null) {
     if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = "0";
     if (adminMonthlyEvents) adminMonthlyEvents.textContent = "0";
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
+    resetUsageView();
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
@@ -264,6 +276,7 @@ function setAuthenticated(value, user = null) {
 async function loadDashboardData() {
   await loadUniverses();
   await loadOwnedGames();
+  await loadAccountUsage();
   await loadAiAutomationSettings();
   await loadChatLogs();
   await loadSignalAreaCards();
@@ -283,22 +296,25 @@ async function loadDashboardData() {
 
 function getViewFromHash() {
   if (window.location.hash === "#chat") return "chat";
+  if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#admin") return "admin";
   return "overview";
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "chat" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
     const nextHash = activeView === "chat"
       ? "#chat"
-      : activeView === "connect"
-        ? "#connect"
-        : activeView === "admin"
-          ? "#admin"
-          : "#overview";
+      : activeView === "usage"
+        ? "#usage"
+        : activeView === "connect"
+          ? "#connect"
+          : activeView === "admin"
+            ? "#admin"
+            : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -330,6 +346,10 @@ function renderActiveView() {
       title: "Chat Analysis",
       subtitle: "Player messages and grouped question insights.",
     },
+    usage: {
+      title: "Usage",
+      subtitle: "Track monthly limits before paid plans go live.",
+    },
     connect: {
       title: "Connect Universe",
       subtitle: "Add a Roblox game after verifying ownership with Roblox.",
@@ -350,6 +370,10 @@ function renderActiveView() {
 
   if (authenticated && activeView === "admin" && authenticatedUser?.isAdmin) {
     loadAdminUsers();
+  }
+
+  if (authenticated && activeView === "usage") {
+    loadAccountUsage();
   }
 
   if (authenticated && activeView === "connect") {
@@ -406,6 +430,82 @@ async function loadAdminUsers() {
   } finally {
     refreshAdminUsersButton.disabled = false;
   }
+}
+
+async function loadAccountUsage() {
+  if (!authenticated || !usageMetricGrid) return;
+
+  usageStatus.textContent = "Loading usage...";
+  if (refreshUsageButton) refreshUsageButton.disabled = true;
+
+  try {
+    const data = await request("/api/account/usage");
+    renderAccountUsage(data);
+  } catch (error) {
+    handleAuthError(error);
+    usageStatus.textContent = error.message;
+    usageMetricGrid.innerHTML = "";
+  } finally {
+    if (refreshUsageButton) refreshUsageButton.disabled = false;
+  }
+}
+
+function resetUsageView() {
+  if (usagePlanName) usagePlanName.textContent = "Free";
+  if (usageConnectedGames) usageConnectedGames.textContent = "0";
+  if (usageEstimatedCost) usageEstimatedCost.textContent = "$0.00";
+  if (usageResetDate) usageResetDate.textContent = "--";
+  if (usageStatus) usageStatus.textContent = "Sign in to view usage.";
+  if (usageMetricGrid) usageMetricGrid.innerHTML = "";
+  if (usageUpgradeTitle) usageUpgradeTitle.textContent = "Upgrade plans coming soon";
+  if (usageUpgradeMessage) usageUpgradeMessage.textContent = "Usage limits are active now. Paid plan controls will connect to this page next.";
+  if (usageUpgradeButton) usageUpgradeButton.disabled = true;
+}
+
+function renderAccountUsage(data) {
+  const usage = data.usage || {};
+  const metrics = Array.isArray(data.metrics) ? data.metrics : [];
+  const period = data.period || {};
+  const upgrade = data.upgrade || {};
+
+  if (usagePlanName) usagePlanName.textContent = data.plan || "Free";
+  if (usageConnectedGames) usageConnectedGames.textContent = formatCompactNumber(data.connectedGameCount || 0);
+  if (usageEstimatedCost) usageEstimatedCost.textContent = formatCurrency(usage.estimatedCostUsd || 0);
+  if (usageResetDate) usageResetDate.textContent = formatShortDate(period.resetsAt);
+  if (usageStatus) {
+    usageStatus.textContent = `Current period: ${formatShortDate(period.startsAt)} to ${formatShortDate(period.endsAt)}.`;
+  }
+  if (usageMetricGrid) {
+    usageMetricGrid.innerHTML = metrics.length
+      ? metrics.map(renderUsageMetricCard).join("")
+      : `<p class="status">No usage has been recorded this month.</p>`;
+  }
+  if (usageUpgradeTitle) usageUpgradeTitle.textContent = upgrade.label || "Upgrade plans coming soon";
+  if (usageUpgradeMessage) usageUpgradeMessage.textContent = upgrade.message || "Paid plan controls will connect to this page next.";
+  if (usageUpgradeButton) usageUpgradeButton.disabled = !upgrade.available;
+}
+
+function renderUsageMetricCard(metric) {
+  const percent = clampPercent(metric.percent);
+  const status = metric.status === "blocked" || metric.status === "warning" ? metric.status : "ok";
+  const limitText = metric.limit > 0 ? formatCompactNumber(metric.limit) : "Unlimited";
+  const remainingText = metric.remaining === null ? "Unlimited remaining" : `${formatCompactNumber(metric.remaining || 0)} remaining`;
+
+  return `
+    <article class="panel usageMetricCard ${escapeHtml(status)}">
+      <div class="usageMetricHeader">
+        <span>${escapeHtml(metric.label || "Usage")}</span>
+        <strong>${escapeHtml(formatCompactNumber(metric.used || 0))} / ${escapeHtml(limitText)}</strong>
+      </div>
+      <div class="usageProgress" aria-label="${escapeHtml(metric.label || "Usage")} usage">
+        <span style="width: ${escapeHtml(String(percent))}%"></span>
+      </div>
+      <div class="usageMetricFooter">
+        <span>${escapeHtml(String(percent))}% used</span>
+        <span>${escapeHtml(remainingText)}</span>
+      </div>
+    </article>
+  `;
 }
 
 function renderAdminUser(user) {
@@ -1306,6 +1406,16 @@ function formatCurrency(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   }).format(Number(value) || 0);
+}
+
+function formatShortDate(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) return "--";
+
+  return new Date(value).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function formatChatLocation(log) {

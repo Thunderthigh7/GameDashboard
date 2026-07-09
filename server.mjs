@@ -218,6 +218,10 @@ const server = http.createServer(async (req, res) => {
       return handleOwnedRobloxGames(req, res, auth);
     }
 
+    if (url.pathname === "/api/account/usage" && req.method === "GET") {
+      return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+    }
+
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
       const user = await findUserById(auth.userId);
       if (!isAdminUser(user)) {
@@ -4341,6 +4345,57 @@ async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.n
   return summaries;
 }
 
+async function getAccountUsageSummary(userId) {
+  const [usage, projects] = await Promise.all([
+    getMonthlyUsage(userId),
+    getUserProjects(userId),
+  ]);
+  const now = Date.now();
+  const period = getUsagePeriod(now);
+
+  return {
+    plan: "Free",
+    period,
+    usage,
+    connectedGameCount: projects.length,
+    connectedGames: projects.map((project) => ({
+      id: project.universeId,
+      name: project.name,
+      createdAt: project.createdAt,
+    })),
+    metrics: getUsageMetrics(usage),
+    upgrade: {
+      available: false,
+      label: "Upgrade plans coming soon",
+      message: "Usage limits are active now. Paid plan controls will connect to this page next.",
+    },
+  };
+}
+
+function getUsageMetrics(usage) {
+  const limits = usage?.limits || USAGE_LIMITS;
+  return [
+    createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
+    createUsageMetric("openAiTokens", "OpenAI tokens", cleanFiniteInteger(usage?.openAiTokens), cleanFiniteInteger(limits.openAiTokensPerMonth), "tokens"),
+    createUsageMetric("events", "Roblox events", cleanFiniteInteger(usage?.events), cleanFiniteInteger(limits.eventsPerMonth), "events"),
+    createUsageMetric("mapUploads", "Map uploads", cleanFiniteInteger(usage?.mapUploads), cleanFiniteInteger(limits.mapUploadsPerMonth), "uploads"),
+  ];
+}
+
+function createUsageMetric(key, label, used, limit, unit) {
+  const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 1000) / 10) : 0;
+  return {
+    key,
+    label,
+    used,
+    limit,
+    unit,
+    percent,
+    remaining: limit > 0 ? Math.max(0, limit - used) : null,
+    status: percent >= 100 ? "blocked" : percent >= 80 ? "warning" : "ok",
+  };
+}
+
 function aggregateUsageEvents(events, month) {
   const summary = createEmptyUsageSummary(month);
 
@@ -4415,6 +4470,18 @@ function sanitizeUsageMetadata(value) {
 function getUsageMonthKey(timestamp) {
   const date = new Date(cleanInteger(timestamp) || Date.now());
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function getUsagePeriod(timestamp) {
+  const date = new Date(cleanInteger(timestamp) || Date.now());
+  const start = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  const resetAt = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+  return {
+    month: getUsageMonthKey(timestamp),
+    startsAt: start,
+    endsAt: resetAt - 1,
+    resetsAt: resetAt,
+  };
 }
 
 function cleanFiniteInteger(value) {
