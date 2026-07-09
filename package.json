@@ -8,6 +8,7 @@
     "dev": "node server.mjs",
     "start:all": "node scripts/start-all.mjs",
     "rollups": "node scripts/process-rollups.mjs",
+    "b2-maintenance": "node scripts/maintain-b2-analytics.mjs",
     "ai-report": "node scripts/run-ai-report.mjs"
   },
   "dependencies": {

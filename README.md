@@ -147,6 +147,43 @@ ROLLUP_UNIVERSE_IDS=
 
 For a large production setup, set `ROLLUP_UNIVERSE_IDS` on separate scheduled workers so each worker only scans its assigned universe ids.
 
+### Production B2 Maintenance
+
+Run the maintenance worker from cron instead of relying only on request-time cleanup:
+
+```bash
+npm run b2-maintenance
+```
+
+It enforces raw analytics retention, refreshes rollups, writes a maintenance report, and exits non-zero if the scan was capped or any object failed to process.
+
+Recommended schedule:
+
+```txt
+15 * * * *
+```
+
+Useful environment variables:
+
+```env
+B2_MAINTENANCE_RETENTION_DAYS=14
+B2_MAINTENANCE_LOOKBACK_HOURS=24
+B2_MAINTENANCE_MAX_RAW_OBJECTS=10000
+B2_MAINTENANCE_MAX_DELETE_OBJECTS=5000
+B2_MAINTENANCE_UNIVERSE_IDS=
+B2_MAINTENANCE_DRY_RUN=false
+B2_STORAGE_USD_PER_TB_MONTH=6.95
+```
+
+Reports are written to:
+
+```txt
+maintenance/b2/latest.json
+maintenance/b2/{yyyy}/{mm}/{dd}/{hour}-{generatedAt}.json
+```
+
+The report includes universes processed, raw objects scanned, raw objects deleted, rollups written, retained raw bytes, rollup bytes, and projected monthly B2 storage cost per universe.
+
 ### Generate Scheduled AI Reports
 
 Run the AI report trigger manually:

@@ -12,6 +12,7 @@ const mapSnapshotDir = path.join(__dirname, "data", "map-snapshots");
 const userStorePath = path.join(__dirname, "data", "users.json");
 const projectStorePath = path.join(__dirname, "data", "projects.json");
 const usageStorePath = path.join(__dirname, "data", "usage-events.json");
+const monthlyUserUsageStorePath = path.join(__dirname, "data", "monthly-user-usage.json");
 const objectStorageObjectStorePath = path.join(__dirname, "data", "object-storage-objects.json");
 const reconciliationStorePath = path.join(__dirname, "data", "reconciliations.json");
 
@@ -60,7 +61,8 @@ const ROBLOX_OAUTH_STATE_COOKIE = "roblox_oauth_state";
 const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const ROBLOX_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
+const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-mini";
+const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || DEFAULT_OPENAI_INSIGHTS_MODEL;
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
 const USAGE_LIMITS = {
   aiRequestsPerMonth: cleanEnvInteger("USAGE_AI_REQUESTS_PER_MONTH", 25),
@@ -72,6 +74,97 @@ const USAGE_LIMITS = {
 const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.75);
 const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.075);
 const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 4.5);
+const OPENAI_MODEL_PRICING = {
+  "gpt-5.4-mini": {
+    approved: true,
+    inputUsdPer1M: 0.75,
+    cachedInputUsdPer1M: 0.075,
+    outputUsdPer1M: 4.5,
+    notes: "Default low-cost AI insights model.",
+  },
+  "gpt-5.4 mini": {
+    approved: true,
+    canonicalModel: "gpt-5.4-mini",
+    inputUsdPer1M: 0.75,
+    cachedInputUsdPer1M: 0.075,
+    outputUsdPer1M: 4.5,
+    notes: "Human-readable alias for gpt-5.4-mini.",
+  },
+  "gpt-5.5": {
+    approved: false,
+    inputUsdPer1M: 5,
+    cachedInputUsdPer1M: 0.5,
+    outputUsdPer1M: 30,
+    notes: "Expensive fallback guard. Do not use for default scheduled insights.",
+  },
+};
+const DEFAULT_PLAN_KEY = "free";
+const PLAN_CONFIG = {
+  free: createPlanDefinition({
+    key: "free",
+    name: "Free",
+    priceUsd: 0,
+    description: "Try RoAnalytics on one game with conservative monthly limits.",
+    highlights: ["1 connected game", "Basic analytics", "Manual AI testing"],
+    limits: {
+      connectedGames: cleanEnvInteger("PLAN_FREE_CONNECTED_GAMES", 1),
+      aiRequestsPerMonth: cleanEnvInteger("PLAN_FREE_AI_REQUESTS_PER_MONTH", 25),
+      openAiTokensPerMonth: cleanEnvInteger("PLAN_FREE_OPENAI_TOKENS_PER_MONTH", 500_000),
+      eventsPerMonth: cleanEnvInteger("PLAN_FREE_EVENTS_PER_MONTH", 500_000),
+      mapUploadsPerMonth: cleanEnvInteger("PLAN_FREE_MAP_UPLOADS_PER_MONTH", 25),
+      backblazeStoredBytes: cleanEnvInteger("PLAN_FREE_RAW_STORAGE_BYTES", 1_000_000_000),
+      rawRetentionDays: cleanEnvInteger("PLAN_FREE_RAW_RETENTION_DAYS", 7),
+    },
+  }),
+  starter: createPlanDefinition({
+    key: "starter",
+    name: "Starter",
+    priceUsd: 0,
+    description: "For small live games that need regular dashboard checks.",
+    highlights: ["3 connected games", "More monthly events", "More AI runs"],
+    limits: {
+      connectedGames: cleanEnvInteger("PLAN_STARTER_CONNECTED_GAMES", 3),
+      aiRequestsPerMonth: cleanEnvInteger("PLAN_STARTER_AI_REQUESTS_PER_MONTH", 100),
+      openAiTokensPerMonth: cleanEnvInteger("PLAN_STARTER_OPENAI_TOKENS_PER_MONTH", 2_000_000),
+      eventsPerMonth: cleanEnvInteger("PLAN_STARTER_EVENTS_PER_MONTH", 2_500_000),
+      mapUploadsPerMonth: cleanEnvInteger("PLAN_STARTER_MAP_UPLOADS_PER_MONTH", 100),
+      backblazeStoredBytes: cleanEnvInteger("PLAN_STARTER_RAW_STORAGE_BYTES", 5_000_000_000),
+      rawRetentionDays: cleanEnvInteger("PLAN_STARTER_RAW_RETENTION_DAYS", 14),
+    },
+  }),
+  pro: createPlanDefinition({
+    key: "pro",
+    name: "Pro",
+    priceUsd: 0,
+    description: "For serious live games with steady traffic and weekly analysis.",
+    highlights: ["10 connected games", "High event volume", "Saved AI workflow"],
+    limits: {
+      connectedGames: cleanEnvInteger("PLAN_PRO_CONNECTED_GAMES", 10),
+      aiRequestsPerMonth: cleanEnvInteger("PLAN_PRO_AI_REQUESTS_PER_MONTH", 500),
+      openAiTokensPerMonth: cleanEnvInteger("PLAN_PRO_OPENAI_TOKENS_PER_MONTH", 10_000_000),
+      eventsPerMonth: cleanEnvInteger("PLAN_PRO_EVENTS_PER_MONTH", 15_000_000),
+      mapUploadsPerMonth: cleanEnvInteger("PLAN_PRO_MAP_UPLOADS_PER_MONTH", 500),
+      backblazeStoredBytes: cleanEnvInteger("PLAN_PRO_RAW_STORAGE_BYTES", 25_000_000_000),
+      rawRetentionDays: cleanEnvInteger("PLAN_PRO_RAW_RETENTION_DAYS", 30),
+    },
+  }),
+  studio: createPlanDefinition({
+    key: "studio",
+    name: "Studio",
+    priceUsd: 0,
+    description: "For teams running multiple active Roblox experiences.",
+    highlights: ["25 connected games", "Team-scale analytics", "Longer raw history"],
+    limits: {
+      connectedGames: cleanEnvInteger("PLAN_STUDIO_CONNECTED_GAMES", 25),
+      aiRequestsPerMonth: cleanEnvInteger("PLAN_STUDIO_AI_REQUESTS_PER_MONTH", 1500),
+      openAiTokensPerMonth: cleanEnvInteger("PLAN_STUDIO_OPENAI_TOKENS_PER_MONTH", 30_000_000),
+      eventsPerMonth: cleanEnvInteger("PLAN_STUDIO_EVENTS_PER_MONTH", 75_000_000),
+      mapUploadsPerMonth: cleanEnvInteger("PLAN_STUDIO_MAP_UPLOADS_PER_MONTH", 1500),
+      backblazeStoredBytes: cleanEnvInteger("PLAN_STUDIO_RAW_STORAGE_BYTES", 100_000_000_000),
+      rawRetentionDays: cleanEnvInteger("PLAN_STUDIO_RAW_RETENTION_DAYS", 60),
+    },
+  }),
+};
 const B2_STORAGE_USD_PER_TB_MONTH = cleanEnvNumber("B2_STORAGE_USD_PER_TB_MONTH", 6.95);
 const B2_EGRESS_OVERAGE_USD_PER_GB = cleanEnvNumber("B2_EGRESS_OVERAGE_USD_PER_GB", 0.01);
 const B2_FREE_EGRESS_MULTIPLIER = cleanEnvNumber("B2_FREE_EGRESS_MULTIPLIER", 3);
@@ -202,6 +295,12 @@ const server = http.createServer(async (req, res) => {
 
     const auth = getDashboardAuth(req);
 
+    if (url.pathname === "/api/health/admin" && req.method === "GET") {
+      const user = await findUserById(auth.userId);
+      if (!user || !isAdminUser(user)) return sendJson(res, 403, { error: "Admin access required" });
+      return sendJson(res, 200, getAdminHealthStatus());
+    }
+
     if (url.pathname === "/api/projects" && req.method === "GET") {
       return sendJson(res, 200, { projects: await getUserProjects(auth.userId) });
     }
@@ -230,6 +329,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/account/usage" && req.method === "GET") {
       return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+    }
+
+    if (url.pathname === "/api/account/plan" && req.method === "POST") {
+      return handleAccountPlanUpdate(req, res, auth);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -476,6 +579,54 @@ function getHealthStatus() {
   };
 }
 
+function getAdminHealthStatus() {
+  return {
+    ...getHealthStatus(),
+    ai: getAiHealthStatus(),
+  };
+}
+
+function getAiHealthStatus() {
+  return {
+    openAiConfigured: Boolean(OPENAI_API_KEY),
+    defaultModel: DEFAULT_OPENAI_INSIGHTS_MODEL,
+    chatInsights: getOpenAiModelHealth(OPENAI_CHAT_INSIGHTS_MODEL),
+    areaInsights: getOpenAiModelHealth(OPENAI_AREA_INSIGHTS_MODEL),
+    approvedModels: Object.entries(OPENAI_MODEL_PRICING)
+      .filter(([, pricing]) => pricing.approved)
+      .map(([model, pricing]) => ({
+        model,
+        canonicalModel: pricing.canonicalModel || model,
+        pricing: getOpenAiPricingPublic(pricing),
+      })),
+    envPricingFallback: {
+      inputUsdPer1M: OPENAI_INPUT_USD_PER_1M,
+      cachedInputUsdPer1M: OPENAI_CACHED_INPUT_USD_PER_1M,
+      outputUsdPer1M: OPENAI_OUTPUT_USD_PER_1M,
+    },
+  };
+}
+
+function getOpenAiModelHealth(model) {
+  const pricing = getOpenAiPricingForModel(model);
+  return {
+    model: pricing.model,
+    canonicalModel: pricing.canonicalModel,
+    approved: pricing.approved,
+    pricingSource: pricing.source,
+    pricing: getOpenAiPricingPublic(pricing),
+    warning: pricing.approved ? null : "Model is not in the approved low-cost AI pricing table.",
+  };
+}
+
+function getOpenAiPricingPublic(pricing) {
+  return {
+    inputUsdPer1M: pricing.inputUsdPer1M,
+    cachedInputUsdPer1M: pricing.cachedInputUsdPer1M,
+    outputUsdPer1M: pricing.outputUsdPer1M,
+  };
+}
+
 function getStorageHealthNote(storageMode) {
   if (storageMode === "b2") {
     return "B2 analytics mode is active. Incoming analytics are uploaded as raw compressed batches and dashboard reads prefer B2 rollups.";
@@ -512,6 +663,118 @@ function countMapEntries(map) {
     count += Array.isArray(entries) ? entries.length : 1;
   }
   return count;
+}
+
+function createPlanDefinition(plan) {
+  const limits = normalizePlanLimits(plan.limits);
+  return {
+    key: cleanPlanKey(plan.key) || DEFAULT_PLAN_KEY,
+    name: cleanString(plan.name, 80) || "Plan",
+    priceUsd: roundMoney(plan.priceUsd),
+    description: cleanString(plan.description, 240),
+    highlights: Array.isArray(plan.highlights)
+      ? plan.highlights.map((highlight) => cleanString(highlight, 80)).filter(Boolean).slice(0, 4)
+      : [],
+    limits,
+  };
+}
+
+function normalizePlanLimits(limits = {}) {
+  return {
+    connectedGames: cleanFiniteInteger(limits.connectedGames),
+    aiRequestsPerMonth: cleanFiniteInteger(limits.aiRequestsPerMonth),
+    openAiTokensPerMonth: cleanFiniteInteger(limits.openAiTokensPerMonth),
+    eventsPerMonth: cleanFiniteInteger(limits.eventsPerMonth),
+    mapUploadsPerMonth: cleanFiniteInteger(limits.mapUploadsPerMonth),
+    backblazeStoredBytes: cleanFiniteInteger(limits.backblazeStoredBytes),
+    rawRetentionDays: cleanFiniteInteger(limits.rawRetentionDays),
+  };
+}
+
+function getPlanByKey(planKey) {
+  return PLAN_CONFIG[cleanPlanKey(planKey)] || null;
+}
+
+function getUserPlan(user) {
+  return getPlanByKey(user?.planKey) || PLAN_CONFIG[DEFAULT_PLAN_KEY];
+}
+
+async function getUserPlanLimits(userId) {
+  const user = userId ? await findUserById(userId) : null;
+  return { ...getUserPlan(user).limits };
+}
+
+function cleanPlanKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+}
+
+function serializePlan(plan, selectedPlanKey = "") {
+  return {
+    key: plan.key,
+    name: plan.name,
+    priceUsd: plan.priceUsd,
+    priceLabel: plan.priceUsd > 0 ? `$${plan.priceUsd}/mo` : "Free for now",
+    description: plan.description,
+    highlights: plan.highlights,
+    selected: plan.key === selectedPlanKey,
+    limits: { ...plan.limits },
+    limitSummary: getPlanLimitSummary(plan.limits),
+  };
+}
+
+function getPlanLimitSummary(limits = {}) {
+  return [
+    `${formatUsageNumber(limits.connectedGames)} connected game${limits.connectedGames === 1 ? "" : "s"}`,
+    `${formatUsageNumber(limits.eventsPerMonth)} analytics events/month`,
+    `${formatUsageNumber(limits.aiRequestsPerMonth)} AI run${limits.aiRequestsPerMonth === 1 ? "" : "s"}/month`,
+    `${formatBytesForDisplay(limits.backblazeStoredBytes)} raw analytics history`,
+    `${formatUsageNumber(limits.rawRetentionDays)} day raw data retention`,
+  ];
+}
+
+function getPlanOptionsForUser(user) {
+  const selectedPlanKey = getUserPlan(user).key;
+  return Object.values(PLAN_CONFIG).map((plan) => serializePlan(plan, selectedPlanKey));
+}
+
+function applyPlanToUsageSummary(summary, user) {
+  const plan = getUserPlan(user);
+  return {
+    ...summary,
+    planKey: plan.key,
+    limits: { ...plan.limits },
+  };
+}
+
+async function getConnectedGameLimitStatus(userId) {
+  const [user, projects] = await Promise.all([
+    findUserById(userId),
+    getUserProjects(userId),
+  ]);
+  const plan = getUserPlan(user);
+  const limit = cleanFiniteInteger(plan.limits.connectedGames);
+  const used = projects.length;
+  return {
+    allowed: limit <= 0 || used + 1 <= limit,
+    used,
+    limit,
+    planKey: plan.key,
+    planName: plan.name,
+  };
+}
+
+function formatBytesForDisplay(value) {
+  const bytes = cleanFiniteInteger(value);
+  if (bytes <= 0) return "Unlimited";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1000 && unitIndex < units.length - 1) {
+    size /= 1000;
+    unitIndex += 1;
+  }
+  const rounded = size >= 10 || unitIndex === 0 ? Math.round(size) : Math.round(size * 10) / 10;
+  return `${rounded} ${units[unitIndex]}`;
 }
 
 async function initializeMongoStorage() {
@@ -576,6 +839,8 @@ async function ensureMongoIndexes(db) {
     db.collection("usage_events").createIndex({ projectId: 1, month: 1 }),
     db.collection("usage_events").createIndex({ universeId: 1, month: 1 }),
     db.collection("usage_events").createIndex({ createdAt: -1 }),
+    db.collection("monthly_user_usage").createIndex({ userId: 1, month: 1 }, { unique: true }),
+    db.collection("monthly_user_usage").createIndex({ month: 1 }),
     db.collection("object_storage_objects").createIndex({ objectKey: 1 }, { unique: true }),
     db.collection("object_storage_objects").createIndex({ userId: 1 }),
     db.collection("object_storage_objects").createIndex({ universeId: 1 }),
@@ -1058,6 +1323,7 @@ async function handleDashboardSignup(req, res) {
     username,
     usernameLower: username.toLowerCase(),
     password: hashPassword(password),
+    planKey: DEFAULT_PLAN_KEY,
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
   };
@@ -1079,6 +1345,26 @@ async function handleDashboardSignup(req, res) {
   });
 }
 
+async function handleAccountPlanUpdate(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const planKey = cleanPlanKey(body?.planKey || body?.plan);
+  const plan = getPlanByKey(planKey);
+  if (!plan) {
+    return sendJson(res, 400, { error: "Pick a valid plan." });
+  }
+
+  const updated = await updateUserPlan(auth.userId, plan.key);
+  if (!updated) return sendJson(res, 404, { error: "Account not found." });
+
+  return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+}
+
 async function handleProjectCreate(req, res, auth) {
   let body;
   try {
@@ -1098,6 +1384,18 @@ async function handleProjectCreate(req, res, auth) {
 
   if (await getProjectByUniverseId(universeId)) {
     return sendJson(res, 409, { error: "This universe is already connected to an account." });
+  }
+
+  const gameLimit = await getConnectedGameLimitStatus(auth.userId);
+  if (!gameLimit.allowed) {
+    return sendJson(res, 403, {
+      error: `Your ${gameLimit.planName} plan includes ${gameLimit.limit} connected game${gameLimit.limit === 1 ? "" : "s"}. Change plans before adding another game.`,
+      code: "USAGE_LIMIT",
+      metric: "connectedGames",
+      used: gameLimit.used,
+      limit: gameLimit.limit,
+      requested: 1,
+    });
   }
 
   const ownership = await verifyRobloxUniverseOwnership(universeId, robloxUserId);
@@ -1340,6 +1638,15 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         ok: false,
         title: "Invalid universe",
         message: "Start the universe connection again with a valid universe ID.",
+      });
+    }
+
+    const gameLimit = await getConnectedGameLimitStatus(auth.userId);
+    if (!gameLimit.allowed) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Plan limit reached",
+        message: `Your ${gameLimit.planName} plan includes ${gameLimit.limit} connected game${gameLimit.limit === 1 ? "" : "s"}. Change plans before adding another game.`,
       });
     }
 
@@ -4378,7 +4685,7 @@ async function assertUsageAvailable(context, metric, quantity = 1) {
 
   const amount = Math.max(cleanInteger(quantity), 1);
   const usage = await getMonthlyUsage(context.userId);
-  const limits = USAGE_LIMITS;
+  const limits = usage.limits || USAGE_LIMITS;
   const checks = {
     aiRequests: {
       used: usage.aiRequests,
@@ -4443,9 +4750,10 @@ async function recordOpenAiUsage({ usageContext, feature, model, payload }) {
     feature,
     quantity,
     unit,
-    estimatedCostUsd: estimateOpenAiCost(inputTokens, cachedInputTokens, outputTokens),
+    estimatedCostUsd: estimateOpenAiCost(model, inputTokens, cachedInputTokens, outputTokens),
     metadata: {
       model,
+      modelApproved: getOpenAiPricingForModel(model).approved,
       requestId: cleanString(payload?.id, 120),
       inputTokens,
       cachedInputTokens,
@@ -4461,14 +4769,47 @@ function getOpenAiCachedInputTokens(usage, inputTokens) {
   return Math.min(Math.max(cachedTokens, 0), Math.max(cleanInteger(inputTokens), 0));
 }
 
-function estimateOpenAiCost(inputTokens, cachedInputTokens, outputTokens) {
+function estimateOpenAiCost(model, inputTokens, cachedInputTokens, outputTokens) {
+  const pricing = getOpenAiPricingForModel(model);
   const cleanInputTokens = Math.max(cleanInteger(inputTokens), 0);
   const cleanCachedInputTokens = Math.min(Math.max(cleanInteger(cachedInputTokens), 0), cleanInputTokens);
   const billableInputTokens = Math.max(cleanInputTokens - cleanCachedInputTokens, 0);
-  const inputCost = (billableInputTokens / 1_000_000) * OPENAI_INPUT_USD_PER_1M;
-  const cachedInputCost = (cleanCachedInputTokens / 1_000_000) * OPENAI_CACHED_INPUT_USD_PER_1M;
-  const outputCost = (Math.max(cleanInteger(outputTokens), 0) / 1_000_000) * OPENAI_OUTPUT_USD_PER_1M;
+  const inputCost = (billableInputTokens / 1_000_000) * pricing.inputUsdPer1M;
+  const cachedInputCost = (cleanCachedInputTokens / 1_000_000) * pricing.cachedInputUsdPer1M;
+  const outputCost = (Math.max(cleanInteger(outputTokens), 0) / 1_000_000) * pricing.outputUsdPer1M;
   return roundMoney(inputCost + cachedInputCost + outputCost);
+}
+
+function getOpenAiPricingForModel(model) {
+  const cleanModel = cleanOpenAiModelName(model);
+  const configured = OPENAI_MODEL_PRICING[cleanModel];
+  if (configured) {
+    return {
+      model: cleanModel,
+      canonicalModel: configured.canonicalModel || cleanModel,
+      approved: Boolean(configured.approved),
+      source: "approved_model_config",
+      inputUsdPer1M: Number(configured.inputUsdPer1M || 0),
+      cachedInputUsdPer1M: Number(configured.cachedInputUsdPer1M || 0),
+      outputUsdPer1M: Number(configured.outputUsdPer1M || 0),
+      notes: configured.notes || "",
+    };
+  }
+
+  return {
+    model: cleanModel || "unknown",
+    canonicalModel: cleanModel || "unknown",
+    approved: false,
+    source: "env_fallback",
+    inputUsdPer1M: OPENAI_INPUT_USD_PER_1M,
+    cachedInputUsdPer1M: OPENAI_CACHED_INPUT_USD_PER_1M,
+    outputUsdPer1M: OPENAI_OUTPUT_USD_PER_1M,
+    notes: "Model is not in OPENAI_MODEL_PRICING; env pricing fallback was used.",
+  };
+}
+
+function cleanOpenAiModelName(model) {
+  return String(model || "").trim().toLowerCase();
 }
 
 async function resetStoredUsageEventsForUser(targetUser, adminUser) {
@@ -4487,10 +4828,14 @@ async function resetStoredUsageEventsForUser(targetUser, adminUser) {
   const db = await getMongoDb();
 
   if (db) {
-    const result = await db.collection("usage_events").deleteMany({ userId });
+    const [eventResult, monthlyResult] = await Promise.all([
+      db.collection("usage_events").deleteMany({ userId }),
+      db.collection("monthly_user_usage").deleteMany({ userId }),
+    ]);
     return {
       resetAt,
-      deletedEvents: cleanFiniteInteger(result.deletedCount),
+      deletedEvents: cleanFiniteInteger(eventResult.deletedCount),
+      deletedMonthlyUsageRecords: cleanFiniteInteger(monthlyResult.deletedCount),
       resetBy: getAdminResetLabel(adminUser),
       targetUserId: userId,
       targetUsername: getAdminResetLabel(targetUser),
@@ -4500,10 +4845,14 @@ async function resetStoredUsageEventsForUser(targetUser, adminUser) {
   const events = await readUsageEvents();
   const remainingEvents = events.filter((event) => event?.userId !== userId);
   await writeUsageEvents(remainingEvents);
+  const monthlyRecords = await readMonthlyUserUsageRecords();
+  const remainingMonthlyRecords = monthlyRecords.filter((record) => record?.userId !== userId);
+  await writeMonthlyUserUsageRecords(remainingMonthlyRecords);
 
   return {
     resetAt,
     deletedEvents: events.length - remainingEvents.length,
+    deletedMonthlyUsageRecords: monthlyRecords.length - remainingMonthlyRecords.length,
     resetBy: getAdminResetLabel(adminUser),
     targetUserId: userId,
     targetUsername: getAdminResetLabel(targetUser),
@@ -4595,13 +4944,14 @@ async function recordObjectStorageRead(objectKey, byteLength) {
 }
 
 async function canWriteRawAnalyticsToObjectStorage(usageContext = {}, incomingBytes = 0) {
-  if (!usageContext?.userId || USAGE_LIMITS.backblazeStoredBytes <= 0) {
-    return { allowed: true, storedBytes: 0, limitBytes: USAGE_LIMITS.backblazeStoredBytes };
+  const limits = await getUserPlanLimits(usageContext?.userId);
+  if (!usageContext?.userId || limits.backblazeStoredBytes <= 0) {
+    return { allowed: true, storedBytes: 0, limitBytes: limits.backblazeStoredBytes };
   }
 
   const storageUsage = await getObjectStorageUsageForUser(usageContext.userId);
   const storedBytes = cleanFiniteInteger(storageUsage.storedBytes);
-  const limitBytes = cleanFiniteInteger(USAGE_LIMITS.backblazeStoredBytes);
+  const limitBytes = cleanFiniteInteger(limits.backblazeStoredBytes);
   const requestedBytes = cleanFiniteInteger(incomingBytes);
   return {
     allowed: storedBytes + requestedBytes <= limitBytes,
@@ -4739,12 +5089,14 @@ async function recordUsage(entry) {
   const db = await getMongoDb();
   if (db) {
     await db.collection("usage_events").insertOne(event);
+    await refreshMonthlyUserUsageSnapshot(userId, event.month);
     return event;
   }
 
   const events = await readUsageEvents();
   events.push(event);
   await writeUsageEvents(events);
+  await refreshMonthlyUserUsageSnapshot(userId, event.month);
   return event;
 }
 
@@ -4753,6 +5105,7 @@ async function getMonthlyUsage(userId, month = getUsageMonthKey(Date.now())) {
   if (!cleanUserId) return createEmptyUsageSummary(month);
 
   let summary;
+  const user = await findUserById(cleanUserId);
   const db = await getMongoDb();
   if (db) {
     const events = await db.collection("usage_events")
@@ -4765,7 +5118,10 @@ async function getMonthlyUsage(userId, month = getUsageMonthKey(Date.now())) {
     summary = aggregateUsageEvents(events.filter((event) => event.userId === cleanUserId && event.month === month), month);
   }
 
-  return mergeObjectStorageUsage(summary, await getObjectStorageUsageForUser(cleanUserId));
+  return applyPlanToUsageSummary(
+    mergeObjectStorageUsage(summary, await getObjectStorageUsageForUser(cleanUserId)),
+    user,
+  );
 }
 
 async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now())) {
@@ -4773,6 +5129,8 @@ async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.n
   const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(month)]));
   if (!ids.length) return summaries;
 
+  const users = await readUsers();
+  const usersById = new Map(users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user]));
   const db = await getMongoDb();
   const events = db
     ? await db.collection("usage_events").find({ userId: { $in: ids }, month }).project({ _id: 0 }).toArray()
@@ -4795,21 +5153,27 @@ async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.n
       summaries.get(id) || createEmptyUsageSummary(month),
       storageByUser.get(id) || createEmptyObjectStorageUsage(),
     ));
+    summaries.set(id, applyPlanToUsageSummary(summaries.get(id), usersById.get(id)));
   }
 
   return summaries;
 }
 
 async function getAccountUsageSummary(userId) {
-  const [usage, projects] = await Promise.all([
+  const [usage, projects, user] = await Promise.all([
     getMonthlyUsage(userId),
     getUserProjects(userId),
+    findUserById(userId),
   ]);
   const now = Date.now();
   const period = getUsagePeriod(now);
+  const plan = getUserPlan(user);
 
   return {
-    plan: "Free",
+    plan: plan.name,
+    planKey: plan.key,
+    planDetails: serializePlan(plan, plan.key),
+    plans: getPlanOptionsForUser(user),
     period,
     usage,
     connectedGameCount: projects.length,
@@ -4818,47 +5182,51 @@ async function getAccountUsageSummary(userId) {
       name: project.name,
       createdAt: project.createdAt,
     })),
-    metrics: getUsageMetrics(usage),
+    metrics: getUsageMetrics(usage, projects.length),
     upgrade: {
-      available: false,
-      label: "Upgrade plans coming soon",
-      message: "Usage limits are active now. Paid plan controls will connect to this page next.",
+      available: true,
+      label: "Choose your plan",
+      message: "Plans are free while pricing is being finalized. Changing plans updates your limits immediately.",
     },
   };
 }
 
-function getUsageMetrics(usage) {
+function getUsageMetrics(usage, connectedGameCount = 0) {
   const limits = usage?.limits || USAGE_LIMITS;
   const cachedInputTokens = cleanFiniteInteger(usage?.cachedOpenAiInputTokens);
   const openAiTokens = createUsageMetric(
     "openAiTokens",
-    "OpenAI tokens",
+    "AI token budget",
     cleanFiniteInteger(usage?.openAiTokens),
     cleanFiniteInteger(limits.openAiTokensPerMonth),
     "tokens",
   );
   openAiTokens.note = cachedInputTokens > 0
     ? `${formatUsageNumber(cachedInputTokens)} cached input tokens priced at cached rate`
-    : "Cached input tokens are tracked when OpenAI returns them.";
+    : "Backend safety budget for AI analysis size.";
   return [
+    {
+      ...createUsageMetric("connectedGames", "Connected games", connectedGameCount, cleanFiniteInteger(limits.connectedGames), "games"),
+      note: "Each connected Roblox experience counts as one game.",
+    },
+    createUsageMetric("events", "Analytics events", cleanFiniteInteger(usage?.events), cleanFiniteInteger(limits.eventsPerMonth), "events"),
     createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
     openAiTokens,
     {
       ...createUsageMetric(
         "backblazeStoredBytes",
-        "Backblaze storage",
+        "Raw analytics history",
         cleanFiniteInteger(usage?.backblazeStoredBytes),
         cleanFiniteInteger(limits.backblazeStoredBytes),
         "bytes",
       ),
-      note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} B2 objects. Raw analytics pauses at the storage cap; map uploads still work.`,
+      note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} stored objects. Raw event history pauses at this cap; summarized dashboard rollups still work.`,
     },
-    createUsageMetric("backblazeUploadedBytes", "Backblaze uploads", cleanFiniteInteger(usage?.backblazeUploadedBytes), 0, "bytes"),
+    createUsageMetric("backblazeUploadedBytes", "Raw data uploaded", cleanFiniteInteger(usage?.backblazeUploadedBytes), 0, "bytes"),
     {
-      ...createUsageMetric("backblazeDownloadedBytes", "Backblaze downloads", cleanFiniteInteger(usage?.backblazeDownloadedBytes), 0, "bytes"),
-      note: "Tracked from app reads. Final egress billing uses Backblaze's account-level 3x free egress pool.",
+      ...createUsageMetric("backblazeDownloadedBytes", "Raw data read", cleanFiniteInteger(usage?.backblazeDownloadedBytes), 0, "bytes"),
+      note: "Internal reads for reports and rollups.",
     },
-    createUsageMetric("events", "Roblox events", cleanFiniteInteger(usage?.events), cleanFiniteInteger(limits.eventsPerMonth), "events"),
     createUsageMetric("mapUploads", "Map uploads", cleanFiniteInteger(usage?.mapUploads), cleanFiniteInteger(limits.mapUploadsPerMonth), "uploads"),
   ];
 }
@@ -5172,6 +5540,7 @@ async function findOrCreateRobloxUser(robloxUser) {
     usernameLower: username.toLowerCase(),
     password: "",
     authProvider: "roblox",
+    planKey: DEFAULT_PLAN_KEY,
     robloxUserId,
     robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
     robloxDisplayName: cleanString(robloxUser.name || robloxUser.nickname || robloxUser.preferred_username, 80),
@@ -5255,12 +5624,39 @@ async function updateUserLogin(userId, lastLoginAt) {
   await writeUsers(users);
 }
 
+async function updateUserPlan(userId, planKey) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  const cleanKey = cleanPlanKey(planKey);
+  if (!cleanUserId || !getPlanByKey(cleanKey)) return false;
+
+  const updatedAt = Date.now();
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("users").updateOne(
+      { id: cleanUserId },
+      { $set: { planKey: cleanKey, planUpdatedAt: updatedAt } }
+    );
+    return result.matchedCount > 0;
+  }
+
+  const users = await readUsers();
+  const user = users.find((entry) => entry.id === cleanUserId);
+  if (!user) return false;
+
+  user.planKey = cleanKey;
+  user.planUpdatedAt = updatedAt;
+  await writeUsers(users);
+  return true;
+}
+
 async function getAdminUserSummaries() {
   const [users, projects] = await Promise.all([
     readUsers(),
     readProjects(),
   ]);
+  await ensureMonthlyUsageSnapshotsForUserIds(users.map((user) => user.id));
   const usageByUser = await getUsageSummaryByUserIds(users.map((user) => user.id));
+  const lifetimeUsageByUser = await getLifetimeUsageSummaryByUserIds(users.map((user) => user.id));
   const projectsByOwner = new Map();
 
   for (const project of projects) {
@@ -5276,9 +5672,13 @@ async function getAdminUserSummaries() {
     .map((user) => {
       const userProjects = projectsByOwner.get(user.id) || [];
       const usage = usageByUser.get(user.id) || createEmptyUsageSummary(getUsageMonthKey(Date.now()));
+      const lifetimeUsage = lifetimeUsageByUser.get(user.id) || createEmptyUsageSummary("lifetime");
+      const plan = getUserPlan(user);
       return {
         id: user.id,
         username: user.username,
+        planKey: plan.key,
+        planName: plan.name,
         authProvider: user.authProvider || (cleanInteger(user.robloxUserId) > 0 ? "roblox" : "legacy"),
         robloxUserId: cleanInteger(user.robloxUserId) || null,
         robloxUsername: user.robloxUsername || "",
@@ -5288,6 +5688,7 @@ async function getAdminUserSummaries() {
         lastLoginAt: cleanInteger(user.lastLoginAt) || null,
         projectCount: userProjects.length,
         usage,
+        lifetimeUsage,
         universes: userProjects.map((project) => ({
           id: project.universeId,
           name: project.name,
@@ -5296,7 +5697,8 @@ async function getAdminUserSummaries() {
       };
     })
     .sort((a, b) => (
-      Number(b.usage?.estimatedCostUsd || 0) - Number(a.usage?.estimatedCostUsd || 0)
+      Number(b.lifetimeUsage?.estimatedCostUsd || 0) - Number(a.lifetimeUsage?.estimatedCostUsd || 0)
+      || Number(b.usage?.estimatedCostUsd || 0) - Number(a.usage?.estimatedCostUsd || 0)
       || cleanFiniteInteger(b.usage?.backblazeStoredBytes) - cleanFiniteInteger(a.usage?.backblazeStoredBytes)
       || (b.lastLoginAt || b.createdAt || 0) - (a.lastLoginAt || a.createdAt || 0)
     ));
@@ -5307,6 +5709,7 @@ async function getAdminUserSummaries() {
     totalRobloxUsers: sanitizedUsers.filter((user) => cleanInteger(user.robloxUserId) > 0 || user.authProvider === "roblox").length,
     totalProjects: projects.length,
     usageTotals: aggregateUsageSummaries([...usageByUser.values()]),
+    lifetimeUsageTotals: aggregateUsageSummaries([...lifetimeUsageByUser.values()]),
     passwordVisibility: "Roblox OAuth users are linked by Roblox user ID. Legacy passwords are hashed and cannot be viewed.",
   };
 }
@@ -5369,7 +5772,8 @@ async function saveAdminReconciliation(input, adminUser) {
 async function getUsageEstimateForMonth(month) {
   const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
   const users = await readUsers();
-  const usageByUser = await getUsageSummaryByUserIds(users.map((user) => user.id), cleanMonth);
+  await ensureMonthlyUsageSnapshotsForUserIds(users.map((user) => user.id), [cleanMonth]);
+  const usageByUser = await getMonthlyUsageSnapshotSummaryByUserIds(users.map((user) => user.id), cleanMonth);
   const summaries = [...usageByUser.values()];
   const totals = aggregateUsageSummaries(summaries);
   return {

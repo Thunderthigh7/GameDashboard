@@ -42,6 +42,7 @@ const usageMetricGrid = document.querySelector("#usageMetricGrid");
 const usageUpgradeTitle = document.querySelector("#usageUpgradeTitle");
 const usageUpgradeMessage = document.querySelector("#usageUpgradeMessage");
 const usageUpgradeButton = document.querySelector("#usageUpgradeButton");
+const usagePlanOptions = document.querySelector("#usagePlanOptions");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -123,6 +124,10 @@ function bindEvents() {
 
   refreshUniversesButton.addEventListener("click", loadUniverses);
   refreshUsageButton?.addEventListener("click", loadAccountUsage);
+  usagePlanOptions?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-select-plan]");
+    if (button) selectPlan(button.dataset.selectPlan || "");
+  });
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -688,6 +693,7 @@ function resetUsageView() {
   if (usageUpgradeTitle) usageUpgradeTitle.textContent = "Upgrade plans coming soon";
   if (usageUpgradeMessage) usageUpgradeMessage.textContent = "Usage limits are active now. Paid plan controls will connect to this page next.";
   if (usageUpgradeButton) usageUpgradeButton.disabled = true;
+  if (usagePlanOptions) usagePlanOptions.innerHTML = "";
 }
 
 function renderAccountUsage(data) {
@@ -695,6 +701,7 @@ function renderAccountUsage(data) {
   const metrics = Array.isArray(data.metrics) ? data.metrics : [];
   const period = data.period || {};
   const upgrade = data.upgrade || {};
+  const plans = Array.isArray(data.plans) ? data.plans : [];
 
   if (usagePlanName) usagePlanName.textContent = data.plan || "Free";
   if (usageConnectedGames) usageConnectedGames.textContent = formatCompactNumber(data.connectedGameCount || 0);
@@ -715,6 +722,59 @@ function renderAccountUsage(data) {
   if (usageUpgradeTitle) usageUpgradeTitle.textContent = upgrade.label || "Upgrade plans coming soon";
   if (usageUpgradeMessage) usageUpgradeMessage.textContent = upgrade.message || "Paid plan controls will connect to this page next.";
   if (usageUpgradeButton) usageUpgradeButton.disabled = !upgrade.available;
+  if (usagePlanOptions) {
+    usagePlanOptions.innerHTML = plans.length
+      ? plans.map(renderPlanOption).join("")
+      : `<p class="status">Plans are unavailable right now.</p>`;
+  }
+}
+
+function renderPlanOption(plan) {
+  const limits = Array.isArray(plan.limitSummary) ? plan.limitSummary : [];
+  const selected = Boolean(plan.selected);
+  return `
+    <article class="planOptionCard${selected ? " selected" : ""}">
+      <div class="planOptionHeader">
+        <div>
+          <strong>${escapeHtml(plan.name || "Plan")}</strong>
+          <span>${escapeHtml(plan.priceLabel || "Free for now")}</span>
+        </div>
+      </div>
+      <p>${escapeHtml(plan.description || "")}</p>
+      <ul class="planLimitList">
+        ${limits.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+      <button
+        class="miniButton${selected ? " active" : ""}"
+        type="button"
+        data-select-plan="${escapeHtml(plan.key || "")}"
+        ${selected ? "disabled" : ""}
+      >${selected ? "Current plan" : "Use this plan"}</button>
+    </article>
+  `;
+}
+
+async function selectPlan(planKey) {
+  if (!planKey || !usagePlanOptions) return;
+
+  const buttons = usagePlanOptions.querySelectorAll("[data-select-plan]");
+  for (const button of buttons) button.disabled = true;
+  if (usageStatus) usageStatus.textContent = "Updating plan...";
+
+  try {
+    const data = await request("/api/account/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planKey }),
+    });
+    renderAccountUsage(data);
+    if (usageStatus) usageStatus.textContent = `Plan changed to ${data.plan || "selected plan"}.`;
+    await loadOwnedGames();
+  } catch (error) {
+    handleAuthError(error);
+    if (usageStatus) usageStatus.textContent = error.message;
+    await loadAccountUsage();
+  }
 }
 
 function renderUsageMetricCard(metric) {
@@ -778,6 +838,7 @@ function renderAdminUser(user) {
       <div class="adminUserMeta">
         <div><span>Created</span><strong>${escapeHtml(formatFullDate(user.createdAt))}</strong></div>
         <div><span>Last login</span><strong>${escapeHtml(formatFullDate(user.lastLoginAt))}</strong></div>
+        <div><span>Plan</span><strong>${escapeHtml(user.planName || "Free")}</strong></div>
         <div><span>Games</span><strong>${escapeHtml(String(user.projectCount || 0))}</strong></div>
         <div><span>Roblox username</span><strong>${escapeHtml(robloxName || "Not linked")}</strong></div>
         <div><span>Roblox user ID</span><strong>${escapeHtml(robloxId || "Not linked")}</strong></div>
@@ -786,10 +847,10 @@ function renderAdminUser(user) {
         <div><span>Events</span><strong>${escapeHtml(formatCompactNumber(usage.events || 0))}</strong></div>
         <div><span>OpenAI tokens</span><strong>${escapeHtml(formatCompactNumber(usage.openAiTokens || 0))}</strong></div>
         <div><span>Cached input</span><strong>${escapeHtml(formatCompactNumber(usage.cachedOpenAiInputTokens || 0))}</strong></div>
-        <div><span>B2 storage</span><strong>${escapeHtml(formatBytes(usage.backblazeStoredBytes || 0))}</strong></div>
+        <div><span>Raw history</span><strong>${escapeHtml(formatBytes(usage.backblazeStoredBytes || 0))}</strong></div>
         <div><span>B2 objects</span><strong>${escapeHtml(formatCompactNumber(usage.backblazeObjectCount || 0))}</strong></div>
-        <div><span>B2 uploads</span><strong>${escapeHtml(formatBytes(usage.backblazeUploadedBytes || 0))}</strong></div>
-        <div><span>B2 downloads</span><strong>${escapeHtml(formatBytes(usage.backblazeDownloadedBytes || 0))}</strong></div>
+        <div><span>Raw uploads</span><strong>${escapeHtml(formatBytes(usage.backblazeUploadedBytes || 0))}</strong></div>
+        <div><span>Raw reads</span><strong>${escapeHtml(formatBytes(usage.backblazeDownloadedBytes || 0))}</strong></div>
         <div><span>Raw skipped</span><strong>${escapeHtml(formatBytes(usage.backblazeSkippedRawAnalyticsBytes || 0))}</strong></div>
         <div><span>AI cost</span><strong>${escapeHtml(formatCurrency(usage.aiEstimatedCostUsd || 0))}</strong></div>
         <div><span>B2 cost</span><strong>${escapeHtml(formatCurrency(getBackblazeEstimatedCost(usage)))}</strong></div>
