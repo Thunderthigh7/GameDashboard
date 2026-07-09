@@ -70,6 +70,8 @@ const USAGE_LIMITS = {
   eventsPerMonth: cleanEnvInteger("USAGE_EVENTS_PER_MONTH", 500_000),
   mapUploadsPerMonth: cleanEnvInteger("USAGE_MAP_UPLOADS_PER_MONTH", 200),
   backblazeStoredBytes: cleanEnvInteger("USAGE_B2_STORAGE_BYTES", 1_000_000_000),
+  backblazeUploadedBytesPerMonth: cleanEnvInteger("USAGE_B2_UPLOAD_BYTES_PER_MONTH", 2_000_000_000),
+  backblazeDownloadedBytesPerMonth: cleanEnvInteger("USAGE_B2_DOWNLOAD_BYTES_PER_MONTH", 5_000_000_000),
 };
 const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.75);
 const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.075);
@@ -113,6 +115,8 @@ const PLAN_CONFIG = {
       eventsPerMonth: cleanEnvInteger("PLAN_FREE_EVENTS_PER_MONTH", 500_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_FREE_MAP_UPLOADS_PER_MONTH", 25),
       backblazeStoredBytes: cleanEnvInteger("PLAN_FREE_RAW_STORAGE_BYTES", 1_000_000_000),
+      backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_FREE_RAW_UPLOAD_BYTES_PER_MONTH", 2_000_000_000),
+      backblazeDownloadedBytesPerMonth: cleanEnvInteger("PLAN_FREE_RAW_READ_BYTES_PER_MONTH", 5_000_000_000),
       rawRetentionDays: cleanEnvInteger("PLAN_FREE_RAW_RETENTION_DAYS", 7),
     },
   }),
@@ -129,6 +133,8 @@ const PLAN_CONFIG = {
       eventsPerMonth: cleanEnvInteger("PLAN_STARTER_EVENTS_PER_MONTH", 2_500_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_STARTER_MAP_UPLOADS_PER_MONTH", 100),
       backblazeStoredBytes: cleanEnvInteger("PLAN_STARTER_RAW_STORAGE_BYTES", 5_000_000_000),
+      backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_STARTER_RAW_UPLOAD_BYTES_PER_MONTH", 20_000_000_000),
+      backblazeDownloadedBytesPerMonth: cleanEnvInteger("PLAN_STARTER_RAW_READ_BYTES_PER_MONTH", 50_000_000_000),
       rawRetentionDays: cleanEnvInteger("PLAN_STARTER_RAW_RETENTION_DAYS", 14),
     },
   }),
@@ -145,6 +151,8 @@ const PLAN_CONFIG = {
       eventsPerMonth: cleanEnvInteger("PLAN_PRO_EVENTS_PER_MONTH", 15_000_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_PRO_MAP_UPLOADS_PER_MONTH", 500),
       backblazeStoredBytes: cleanEnvInteger("PLAN_PRO_RAW_STORAGE_BYTES", 25_000_000_000),
+      backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_PRO_RAW_UPLOAD_BYTES_PER_MONTH", 150_000_000_000),
+      backblazeDownloadedBytesPerMonth: cleanEnvInteger("PLAN_PRO_RAW_READ_BYTES_PER_MONTH", 300_000_000_000),
       rawRetentionDays: cleanEnvInteger("PLAN_PRO_RAW_RETENTION_DAYS", 30),
     },
   }),
@@ -161,6 +169,8 @@ const PLAN_CONFIG = {
       eventsPerMonth: cleanEnvInteger("PLAN_STUDIO_EVENTS_PER_MONTH", 75_000_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_STUDIO_MAP_UPLOADS_PER_MONTH", 1500),
       backblazeStoredBytes: cleanEnvInteger("PLAN_STUDIO_RAW_STORAGE_BYTES", 100_000_000_000),
+      backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_STUDIO_RAW_UPLOAD_BYTES_PER_MONTH", 750_000_000_000),
+      backblazeDownloadedBytesPerMonth: cleanEnvInteger("PLAN_STUDIO_RAW_READ_BYTES_PER_MONTH", 1_500_000_000_000),
       rawRetentionDays: cleanEnvInteger("PLAN_STUDIO_RAW_RETENTION_DAYS", 60),
     },
   }),
@@ -687,6 +697,8 @@ function normalizePlanLimits(limits = {}) {
     eventsPerMonth: cleanFiniteInteger(limits.eventsPerMonth),
     mapUploadsPerMonth: cleanFiniteInteger(limits.mapUploadsPerMonth),
     backblazeStoredBytes: cleanFiniteInteger(limits.backblazeStoredBytes),
+    backblazeUploadedBytesPerMonth: cleanFiniteInteger(limits.backblazeUploadedBytesPerMonth),
+    backblazeDownloadedBytesPerMonth: cleanFiniteInteger(limits.backblazeDownloadedBytesPerMonth),
     rawRetentionDays: cleanFiniteInteger(limits.rawRetentionDays),
   };
 }
@@ -728,6 +740,7 @@ function getPlanLimitSummary(limits = {}) {
     `${formatUsageNumber(limits.eventsPerMonth)} analytics events/month`,
     `${formatUsageNumber(limits.aiRequestsPerMonth)} AI run${limits.aiRequestsPerMonth === 1 ? "" : "s"}/month`,
     `${formatBytesForDisplay(limits.backblazeStoredBytes)} raw analytics history`,
+    `${formatBytesForDisplay(limits.backblazeUploadedBytesPerMonth)} raw upload/month`,
     `${formatUsageNumber(limits.rawRetentionDays)} day raw data retention`,
   ];
 }
@@ -4707,6 +4720,16 @@ async function assertUsageAvailable(context, metric, quantity = 1) {
       limit: limits.mapUploadsPerMonth,
       label: "map uploads",
     },
+    backblazeUploadedBytes: {
+      used: usage.backblazeUploadedBytes,
+      limit: limits.backblazeUploadedBytesPerMonth,
+      label: "raw data uploads",
+    },
+    backblazeDownloadedBytes: {
+      used: usage.backblazeDownloadedBytes,
+      limit: limits.backblazeDownloadedBytesPerMonth,
+      label: "raw data reads",
+    },
   };
   const check = checks[metric];
   if (!check || check.limit <= 0) return;
@@ -4945,19 +4968,42 @@ async function recordObjectStorageRead(objectKey, byteLength) {
 
 async function canWriteRawAnalyticsToObjectStorage(usageContext = {}, incomingBytes = 0) {
   const limits = await getUserPlanLimits(usageContext?.userId);
-  if (!usageContext?.userId || limits.backblazeStoredBytes <= 0) {
-    return { allowed: true, storedBytes: 0, limitBytes: limits.backblazeStoredBytes };
+  const requestedBytes = cleanFiniteInteger(incomingBytes);
+  const storageLimitBytes = cleanFiniteInteger(limits.backblazeStoredBytes);
+  const uploadLimitBytes = cleanFiniteInteger(limits.backblazeUploadedBytesPerMonth);
+
+  if (!usageContext?.userId) {
+    return {
+      allowed: true,
+      storageAllowed: true,
+      uploadAllowed: true,
+      storedBytes: 0,
+      limitBytes: storageLimitBytes,
+      uploadUsedBytes: 0,
+      uploadLimitBytes,
+      requestedBytes,
+      reason: "",
+    };
   }
 
-  const storageUsage = await getObjectStorageUsageForUser(usageContext.userId);
+  const [storageUsage, monthlyUsage] = await Promise.all([
+    getObjectStorageUsageForUser(usageContext.userId),
+    getMonthlyUsage(usageContext.userId),
+  ]);
   const storedBytes = cleanFiniteInteger(storageUsage.storedBytes);
-  const limitBytes = cleanFiniteInteger(limits.backblazeStoredBytes);
-  const requestedBytes = cleanFiniteInteger(incomingBytes);
+  const uploadUsedBytes = cleanFiniteInteger(monthlyUsage.backblazeUploadedBytes);
+  const storageAllowed = storageLimitBytes <= 0 || storedBytes + requestedBytes <= storageLimitBytes;
+  const uploadAllowed = uploadLimitBytes <= 0 || uploadUsedBytes + requestedBytes <= uploadLimitBytes;
   return {
-    allowed: storedBytes + requestedBytes <= limitBytes,
+    allowed: storageAllowed && uploadAllowed,
+    storageAllowed,
+    uploadAllowed,
     storedBytes,
     requestedBytes,
-    limitBytes,
+    limitBytes: storageLimitBytes,
+    uploadUsedBytes,
+    uploadLimitBytes,
+    reason: storageAllowed && uploadAllowed ? "" : storageAllowed ? "upload" : "storage",
   };
 }
 
@@ -4975,6 +5021,11 @@ async function recordRawAnalyticsStorageCapSkip(usageContext = {}, byteLength = 
       requestedBytes: cleanFiniteInteger(byteLength),
       storedBytes: cleanFiniteInteger(storageCheck.storedBytes),
       limitBytes: cleanFiniteInteger(storageCheck.limitBytes),
+      uploadUsedBytes: cleanFiniteInteger(storageCheck.uploadUsedBytes),
+      uploadLimitBytes: cleanFiniteInteger(storageCheck.uploadLimitBytes),
+      storageAllowed: storageCheck.storageAllowed !== false,
+      uploadAllowed: storageCheck.uploadAllowed !== false,
+      reason: cleanString(storageCheck.reason, 32),
     },
   });
 }
@@ -5322,9 +5373,21 @@ function getUsageMetrics(usage, connectedGameCount = 0) {
       ),
       note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} stored objects. Raw event history pauses at this cap; summarized dashboard rollups still work.`,
     },
-    createUsageMetric("backblazeUploadedBytes", "Raw data uploaded", cleanFiniteInteger(usage?.backblazeUploadedBytes), 0, "bytes"),
+    createUsageMetric(
+      "backblazeUploadedBytes",
+      "Raw data uploaded",
+      cleanFiniteInteger(usage?.backblazeUploadedBytes),
+      cleanFiniteInteger(limits.backblazeUploadedBytesPerMonth),
+      "bytes",
+    ),
     {
-      ...createUsageMetric("backblazeDownloadedBytes", "Raw data read", cleanFiniteInteger(usage?.backblazeDownloadedBytes), 0, "bytes"),
+      ...createUsageMetric(
+        "backblazeDownloadedBytes",
+        "Raw data read",
+        cleanFiniteInteger(usage?.backblazeDownloadedBytes),
+        cleanFiniteInteger(limits.backblazeDownloadedBytesPerMonth),
+        "bytes",
+      ),
       note: "Internal reads for reports and rollups.",
     },
     createUsageMetric("mapUploads", "Map uploads", cleanFiniteInteger(usage?.mapUploads), cleanFiniteInteger(limits.mapUploadsPerMonth), "uploads"),
