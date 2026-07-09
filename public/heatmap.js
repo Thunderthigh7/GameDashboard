@@ -283,6 +283,9 @@ async function loadHeatmap(options = {}) {
     latestMapSnapshot = mapSnapshot;
     if (activeHeatmapMode === "ai-analysis") {
       latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "computed";
+      window.dispatchEvent(new CustomEvent("dashboard:areaClustersLoaded", {
+        detail: { universeId, analysis: payload },
+      }));
     }
     renderScene(latestSamples, latestMapSnapshot, {
       resetView: Boolean(options.resetView),
@@ -333,6 +336,9 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
   latestSamples = samplePayload.samples;
   latestMapSnapshot = mapSnapshot;
   latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "computed";
+  window.dispatchEvent(new CustomEvent("dashboard:areaClustersLoaded", {
+    detail: { universeId, analysis: payload },
+  }));
   renderScene(latestSamples, latestMapSnapshot, {
     resetView: true,
   });
@@ -442,7 +448,7 @@ function setRenderMode(mode) {
 }
 
 function getHeatmapEndpoint() {
-  if (activeHeatmapMode === "ai-analysis") return "/api/ai-area-analysis";
+  if (activeHeatmapMode === "ai-analysis") return "/api/area-clusters";
   if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
   if (activeHeatmapMode === "chat") return "/api/chat-logs";

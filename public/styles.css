@@ -341,17 +341,7 @@ small,
 
 .aiRunButton {
   width: 100%;
-}
-
-.aiRunActions {
-  display: grid;
-  gap: 10px;
   margin-top: 14px;
-}
-
-.aiRunActions .button,
-.aiRunActions .aiButton {
-  width: 100%;
 }
 
 .account {

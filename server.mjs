@@ -2980,15 +2980,101 @@ async function getComputedAreaClustersFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  if (rollup) return getComputedAreaClustersFromRollup(rollup, filters);
+
   return {
     ...getAiAreaAnalysisWithoutStoredInsights(filters),
     mode: "computed",
+    signalAreas: getComputedSignalAreas(filters),
     cost: {
       openAiRequests: 0,
       estimatedOpenAiCostUsd: 0,
       note: "Computed on the dashboard server from stored movement, death, leave, and chat signals. No OpenAI request was made.",
     },
   };
+}
+
+function getComputedAreaClustersFromRollup(rollup, filters = {}) {
+  const events = getAiAnalysisEventsFromRollup(rollup, filters);
+  return {
+    ...getAiAreaAnalysisFromEvents(filters, events, "computed"),
+    source: "b2-rollup",
+    signalAreas: getComputedSignalAreasFromRollup(rollup, filters),
+    cost: {
+      openAiRequests: 0,
+      estimatedOpenAiCostUsd: 0,
+      note: "Computed on the dashboard server from B2 rollups. No OpenAI request was made.",
+    },
+  };
+}
+
+function getComputedSignalAreas(filters = {}) {
+  return {
+    movement: clusterSignalAreaSamples(getMovementAnalysisSamplesForFilters(filters), "movement"),
+    leaves: clusterSignalAreaSamples(getLeaveSamplesForFilters(filters), "leaves"),
+    deaths: clusterSignalAreaSamples(getDeathSamplesForFilters(filters), "deaths"),
+  };
+}
+
+function getComputedSignalAreasFromRollup(rollup, filters = {}) {
+  return {
+    movement: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.movement?.samples || [], filters, { allowUserFilter: false }), "movement"),
+    leaves: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.leaves?.samples || [], filters), "leaves"),
+    deaths: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.deaths?.samples || [], filters), "deaths"),
+  };
+}
+
+function clusterSignalAreaSamples(samples = [], mode = "movement") {
+  const clusters = [];
+  const radiusSq = AI_ANALYSIS_CLUSTER_RADIUS * AI_ANALYSIS_CLUSTER_RADIUS;
+
+  for (const sample of samples) {
+    const x = Number(sample?.x);
+    const y = Number(sample?.y);
+    const z = Number(sample?.z);
+    const weight = mode === "movement" ? getSampleWeight(sample) : 1;
+    if (![x, y, z].every(Number.isFinite)) continue;
+
+    let closestCluster = null;
+    let closestDistanceSq = Infinity;
+    for (const cluster of clusters) {
+      const dx = x - cluster.x;
+      const dz = z - cluster.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq <= radiusSq && distanceSq < closestDistanceSq) {
+        closestCluster = cluster;
+        closestDistanceSq = distanceSq;
+      }
+    }
+
+    if (closestCluster) {
+      const nextCount = closestCluster.count + weight;
+      closestCluster.x = (closestCluster.x * closestCluster.count + x * weight) / nextCount;
+      closestCluster.y = (closestCluster.y * closestCluster.count + y * weight) / nextCount;
+      closestCluster.z = (closestCluster.z * closestCluster.count + z * weight) / nextCount;
+      closestCluster.count = nextCount;
+      closestCluster.sampleCount += 1;
+    } else {
+      clusters.push({ x, y, z, count: weight, sampleCount: 1 });
+    }
+  }
+
+  const topClusters = clusters
+    .sort((a, b) => b.count - a.count)
+    .slice(0, MAX_AI_ANALYSIS_AREAS);
+  const totalCount = topClusters.reduce((sum, cluster) => sum + cleanFiniteInteger(cluster.count), 0);
+
+  return topClusters.map((cluster, index) => ({
+    id: `${mode}${index + 1}`,
+    rank: index + 1,
+    x: cluster.x,
+    y: cluster.y,
+    z: cluster.z,
+    count: cleanFiniteInteger(cluster.count),
+    sampleCount: cleanFiniteInteger(cluster.sampleCount),
+    percent: totalCount > 0 ? Math.round((cluster.count / totalCount) * 100) : 0,
+  }));
 }
 
 async function getRobloxHeatmapFromQuery(searchParams) {
@@ -3252,8 +3338,12 @@ async function analyzeAiAreaInsights(rawFilters = {}, usageContext = {}) {
 }
 
 function getAiAreaAnalysisWithoutStoredInsights(filters = {}) {
-  const universeIdFilter = cleanInteger(filters.universeId);
   const events = getAiAnalysisEvents(filters);
+  return getAiAreaAnalysisFromEvents(filters, events, "algorithm");
+}
+
+function getAiAreaAnalysisFromEvents(filters = {}, events = [], mode = "algorithm") {
+  const universeIdFilter = cleanInteger(filters.universeId);
   const clusters = clusterAiAnalysisEvents(events, AI_ANALYSIS_CLUSTER_RADIUS);
   const topClusters = scoreAiAnalysisClusters(clusters)
     .sort((a, b) => b.score - a.score)
@@ -3262,7 +3352,7 @@ function getAiAreaAnalysisWithoutStoredInsights(filters = {}) {
 
   return {
     universeId: universeIdFilter || null,
-    mode: "algorithm",
+    mode,
     radius: AI_ANALYSIS_CLUSTER_RADIUS,
     eventCount: events.length,
     areaCount: topClusters.length,
@@ -3330,6 +3420,29 @@ function getAiAnalysisEvents(filters = {}) {
   }
 
   for (const log of getChatLogs(filters).logs) {
+    if (!Number.isFinite(Number(log.x)) || !Number.isFinite(Number(log.y)) || !Number.isFinite(Number(log.z))) continue;
+    events.push(createAiAnalysisEvent("chat", log, isQuestionLikeMessage(log.message) ? 3 : 1.5));
+  }
+
+  return events.filter(Boolean);
+}
+
+function getAiAnalysisEventsFromRollup(rollup, filters = {}) {
+  const events = [];
+
+  for (const sample of getRollupSamplesForFilters(rollup.movement?.samples || [], filters, { allowUserFilter: false })) {
+    events.push(createAiAnalysisEvent("movement", sample, Math.max(1, Math.sqrt(getSampleWeight(sample)))));
+  }
+
+  for (const sample of getRollupSamplesForFilters(rollup.deaths?.samples || [], filters)) {
+    events.push(createAiAnalysisEvent("death", sample, 4));
+  }
+
+  for (const sample of getRollupSamplesForFilters(rollup.leaves?.samples || [], filters)) {
+    events.push(createAiAnalysisEvent("leave", sample, 5));
+  }
+
+  for (const log of getRollupSamplesForFilters(rollup.chatLogs || [], filters)) {
     if (!Number.isFinite(Number(log.x)) || !Number.isFinite(Number(log.y)) || !Number.isFinite(Number(log.z))) continue;
     events.push(createAiAnalysisEvent("chat", log, isQuestionLikeMessage(log.message) ? 3 : 1.5));
   }

@@ -67,7 +67,6 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
-const findClustersButton = document.querySelector("#findClustersButton");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const aiAutomationToggle = document.querySelector("#aiAutomationToggle");
 const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
@@ -101,7 +100,6 @@ window.isDashboardAuthenticated = () => authenticated;
 
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
-const SIGNAL_CLUSTER_RADIUS = 44;
 const MAX_SIGNAL_AREAS = 5;
 
 init();
@@ -151,7 +149,6 @@ function bindEvents() {
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
-  findClustersButton?.addEventListener("click", findAreaClusters);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
@@ -232,6 +229,10 @@ function bindEvents() {
     selectChatLog(event.detail?.id || "", { scroll: true });
   });
 
+  window.addEventListener("dashboard:areaClustersLoaded", (event) => {
+    renderSignalAreasFromComputedPayload(event.detail?.analysis);
+  });
+
   window.addEventListener("hashchange", () => {
     setActiveView(getViewFromHash(), { updateHash: false });
   });
@@ -291,7 +292,6 @@ function setAuthenticated(value, user = null) {
     chatLogsStatus.textContent = "Sign in to view chat logs.";
     chatInsightsStatus.textContent = "Sign in to view chat insights.";
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
-    if (findClustersButton) findClustersButton.disabled = false;
     if (adminNavLink) adminNavLink.hidden = true;
     if (adminUserList) adminUserList.innerHTML = "";
     if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
@@ -1136,32 +1136,22 @@ async function loadSignalAreaCards() {
   renderSignalLoading(deathAreaList, "death");
 
   const query = buildSignalAreaQuery();
-  const [movementResult, leaveResult, deathResult] = await Promise.allSettled([
-    request(`/api/movement-heatmap${query}`),
-    request(`/api/leave-heatmap${query}`),
-    request(`/api/death-heatmap${query}`),
-  ]);
-
-  if (movementResult.status === "fulfilled") {
-    renderSignalAreas(movementAreaList, clusterSignalSamples(movementResult.value.samples || []), "movement");
-  } else {
-    handleAuthError(movementResult.reason);
-    renderSignalError(movementAreaList, movementResult.reason.message);
+  try {
+    const data = await request(`/api/area-clusters${query}`);
+    renderSignalAreasFromComputedPayload(data);
+  } catch (error) {
+    handleAuthError(error);
+    renderSignalError(movementAreaList, error.message);
+    renderSignalError(dropOffAreaList, error.message);
+    renderSignalError(deathAreaList, error.message);
   }
+}
 
-  if (leaveResult.status === "fulfilled") {
-    renderSignalAreas(dropOffAreaList, clusterSignalSamples(leaveResult.value.samples || []), "leaves");
-  } else {
-    handleAuthError(leaveResult.reason);
-    renderSignalError(dropOffAreaList, leaveResult.reason.message);
-  }
-
-  if (deathResult.status === "fulfilled") {
-    renderSignalAreas(deathAreaList, clusterSignalSamples(deathResult.value.samples || []), "deaths");
-  } else {
-    handleAuthError(deathResult.reason);
-    renderSignalError(deathAreaList, deathResult.reason.message);
-  }
+function renderSignalAreasFromComputedPayload(payload) {
+  if (!payload?.signalAreas) return;
+  renderSignalAreas(movementAreaList, payload.signalAreas.movement || [], "movement");
+  renderSignalAreas(dropOffAreaList, payload.signalAreas.leaves || [], "leaves");
+  renderSignalAreas(deathAreaList, payload.signalAreas.deaths || [], "deaths");
 }
 
 function buildSignalAreaQuery() {
@@ -1176,55 +1166,6 @@ function buildSignalAreaQuery() {
 
   const query = params.toString();
   return query ? `?${query}` : "";
-}
-
-function clusterSignalSamples(samples) {
-  const clusters = [];
-  const radiusSq = SIGNAL_CLUSTER_RADIUS * SIGNAL_CLUSTER_RADIUS;
-
-  for (const sample of samples) {
-    const x = Number(sample.x);
-    const y = Number(sample.y);
-    const z = Number(sample.z);
-    const weight = getSampleWeight(sample);
-    if (![x, y, z].every(Number.isFinite)) continue;
-
-    let nearest = null;
-    let nearestDistanceSq = Infinity;
-    for (const cluster of clusters) {
-      const dx = x - cluster.x;
-      const dz = z - cluster.z;
-      const distanceSq = dx * dx + dz * dz;
-      if (distanceSq <= radiusSq && distanceSq < nearestDistanceSq) {
-        nearest = cluster;
-        nearestDistanceSq = distanceSq;
-      }
-    }
-
-    if (nearest) {
-      const nextCount = nearest.count + weight;
-      nearest.x = (nearest.x * nearest.count + x * weight) / nextCount;
-      nearest.y = (nearest.y * nearest.count + y * weight) / nextCount;
-      nearest.z = (nearest.z * nearest.count + z * weight) / nextCount;
-      nearest.count = nextCount;
-    } else {
-      clusters.push({ x, y, z, count: weight });
-    }
-  }
-
-  return clusters
-    .sort((a, b) => b.count - a.count)
-    .slice(0, MAX_SIGNAL_AREAS)
-    .map((cluster, index) => ({ ...cluster, rank: index + 1 }));
-}
-
-function getSampleWeight(sample) {
-  return Math.max(
-    Number(sample?.count) || 0,
-    Number(sample?.movementCount) || 0,
-    Number(sample?.sampleCount) || 0,
-    1,
-  );
 }
 
 function renderSignalLoading(container, label) {
@@ -1529,38 +1470,6 @@ async function saveAiAutomationSettings() {
     aiAutomationStatus.textContent = error.message;
   } finally {
     aiAutomationToggle.disabled = false;
-  }
-}
-
-async function findAreaClusters() {
-  if (!authenticated || !findClustersButton) return;
-
-  findClustersButton.disabled = true;
-  chatInsightsMode.textContent = "Computed";
-  chatInsightsStatus.textContent = "Finding clusters from movement, deaths, leaves, and chat. No AI request is being made.";
-
-  try {
-    if (!selectedUniverseId) {
-      chatInsightsStatus.textContent = "Select a universe with data before finding clusters.";
-      chatInsightsMode.textContent = "Not analyzed";
-      return;
-    }
-
-    const query = buildAiInsightsQuery();
-    const data = await request(`/api/area-clusters${query}`);
-    window.dispatchEvent(new CustomEvent("dashboard:computedAreaClusters", {
-      detail: { universeId: selectedUniverseId, analysis: data },
-    }));
-    chatInsightsMode.textContent = "Computed";
-    chatInsightsStatus.textContent = data.areaCount
-      ? `Found ${data.areaCount} cluster${data.areaCount === 1 ? "" : "s"} from ${formatCompactNumber(data.eventCount || 0)} local signal${data.eventCount === 1 ? "" : "s"}. OpenAI cost: $0.`
-      : "No clusters found for the selected filters. OpenAI cost: $0.";
-  } catch (error) {
-    handleAuthError(error);
-    chatInsightsStatus.textContent = formatRequestError(error);
-    chatInsightsMode.textContent = "Cluster failed";
-  } finally {
-    findClustersButton.disabled = false;
   }
 }
 
