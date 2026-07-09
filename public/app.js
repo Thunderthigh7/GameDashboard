@@ -16,6 +16,18 @@ const adminRobloxUsers = document.querySelector("#adminRobloxUsers");
 const adminMonthlyAiRequests = document.querySelector("#adminMonthlyAiRequests");
 const adminMonthlyEvents = document.querySelector("#adminMonthlyEvents");
 const adminMonthlyCost = document.querySelector("#adminMonthlyCost");
+const refreshReconciliationButton = document.querySelector("#refreshReconciliationButton");
+const reconciliationForm = document.querySelector("#reconciliationForm");
+const reconciliationMonth = document.querySelector("#reconciliationMonth");
+const reconciliationOpenAi = document.querySelector("#reconciliationOpenAi");
+const reconciliationBackblaze = document.querySelector("#reconciliationBackblaze");
+const reconciliationRender = document.querySelector("#reconciliationRender");
+const reconciliationOther = document.querySelector("#reconciliationOther");
+const reconciliationNotes = document.querySelector("#reconciliationNotes");
+const saveReconciliationButton = document.querySelector("#saveReconciliationButton");
+const reconciliationStats = document.querySelector("#reconciliationStats");
+const reconciliationList = document.querySelector("#reconciliationList");
+const reconciliationStatus = document.querySelector("#reconciliationStatus");
 const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
@@ -136,6 +148,11 @@ function bindEvents() {
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
   refreshAdminUsersButton?.addEventListener("click", loadAdminUsers);
+  refreshReconciliationButton?.addEventListener("click", loadReconciliations);
+  reconciliationForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveReconciliation();
+  });
   adminUserList?.addEventListener("click", (event) => {
     const resetButton = event.target.closest("[data-reset-usage-user]");
     if (resetButton) resetAdminUsage(resetButton);
@@ -271,6 +288,7 @@ function setAuthenticated(value, user = null) {
     if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = "0";
     if (adminMonthlyEvents) adminMonthlyEvents.textContent = "0";
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
+    resetReconciliationView();
     resetUsageView();
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
@@ -290,6 +308,7 @@ async function loadDashboardData() {
   await loadSignalAreaCards();
   if (authenticatedUser?.isAdmin) {
     await loadAdminUsers();
+    await loadReconciliations();
   }
   renderActiveView();
   startChatRefresh();
@@ -378,6 +397,7 @@ function renderActiveView() {
 
   if (authenticated && activeView === "admin" && authenticatedUser?.isAdmin) {
     loadAdminUsers();
+    loadReconciliations();
   }
 
   if (authenticated && activeView === "usage") {
@@ -478,6 +498,130 @@ function setAdminButtonsDisabled(disabled) {
   if (refreshAdminUsersButton) refreshAdminUsersButton.disabled = disabled;
   for (const button of document.querySelectorAll("[data-reset-usage-user]")) {
     button.disabled = disabled || !authenticatedUser?.isAdmin;
+  }
+}
+
+async function loadReconciliations() {
+  if (!authenticatedUser?.isAdmin || !reconciliationList) return;
+
+  if (reconciliationStatus) reconciliationStatus.textContent = "Loading reconciliation...";
+  setReconciliationFormDisabled(true);
+
+  try {
+    const data = await request("/api/admin/reconciliations");
+    renderReconciliations(data);
+  } catch (error) {
+    handleAuthError(error);
+    if (reconciliationStatus) reconciliationStatus.textContent = error.message;
+    if (reconciliationStats) reconciliationStats.innerHTML = "";
+    if (reconciliationList) reconciliationList.innerHTML = "";
+  } finally {
+    setReconciliationFormDisabled(false);
+  }
+}
+
+async function saveReconciliation() {
+  if (!authenticatedUser?.isAdmin) return;
+
+  if (reconciliationStatus) reconciliationStatus.textContent = "Saving reconciliation...";
+  setReconciliationFormDisabled(true);
+
+  try {
+    const data = await request("/api/admin/reconciliations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        month: reconciliationMonth?.value || "",
+        actualOpenAiCostUsd: reconciliationOpenAi?.value || 0,
+        actualBackblazeCostUsd: reconciliationBackblaze?.value || 0,
+        actualRenderCostUsd: reconciliationRender?.value || 0,
+        actualOtherCostUsd: reconciliationOther?.value || 0,
+        notes: reconciliationNotes?.value || "",
+      }),
+    });
+    renderReconciliations(data);
+    if (reconciliationStatus) reconciliationStatus.textContent = "Reconciliation saved.";
+  } catch (error) {
+    handleAuthError(error);
+    if (reconciliationStatus) reconciliationStatus.textContent = error.message;
+  } finally {
+    setReconciliationFormDisabled(false);
+  }
+}
+
+function resetReconciliationView() {
+  if (reconciliationStats) reconciliationStats.innerHTML = "";
+  if (reconciliationList) reconciliationList.innerHTML = "";
+  if (reconciliationStatus) reconciliationStatus.textContent = "Admin access required.";
+  if (reconciliationMonth) reconciliationMonth.value = "";
+  if (reconciliationOpenAi) reconciliationOpenAi.value = "";
+  if (reconciliationBackblaze) reconciliationBackblaze.value = "";
+  if (reconciliationRender) reconciliationRender.value = "";
+  if (reconciliationOther) reconciliationOther.value = "";
+  if (reconciliationNotes) reconciliationNotes.value = "";
+  setReconciliationFormDisabled(true);
+}
+
+function renderReconciliations(data) {
+  const records = Array.isArray(data.records) ? data.records : [];
+  const estimate = data.currentEstimate || {};
+  if (reconciliationMonth && !reconciliationMonth.value) reconciliationMonth.value = data.currentMonth || estimate.month || "";
+
+  if (reconciliationStats) {
+    reconciliationStats.innerHTML = `
+      <div><span>App AI estimate</span><strong>${escapeHtml(formatCurrency(estimate.estimatedOpenAiCostUsd || 0))}</strong></div>
+      <div><span>App B2 estimate</span><strong>${escapeHtml(formatCurrency(estimate.estimatedBackblazeCostUsd || 0))}</strong></div>
+      <div><span>App total estimate</span><strong>${escapeHtml(formatCurrency(estimate.estimatedTotalCostUsd || 0))}</strong></div>
+      <div><span>Active cost users</span><strong>${escapeHtml(formatCompactNumber(estimate.activeUserCount || 0))}</strong></div>
+    `;
+  }
+
+  if (reconciliationList) {
+    reconciliationList.innerHTML = records.length
+      ? records.map(renderReconciliationRecord).join("")
+      : `<p class="status">No reconciliation records yet.</p>`;
+  }
+  if (reconciliationStatus) reconciliationStatus.textContent = "Provider bills are the source of truth. Variance is actual cost minus app-estimated cost.";
+}
+
+function renderReconciliationRecord(record) {
+  const variance = Number(record.varianceUsd || 0);
+  const varianceClass = variance > 0 ? "warning" : variance < 0 ? "ok" : "";
+  const variancePercent = record.variancePercent === null || record.variancePercent === undefined
+    ? ""
+    : ` (${formatCompactNumber(record.variancePercent)}%)`;
+
+  return `
+    <article class="reconciliationRecord ${escapeHtml(varianceClass)}">
+      <div class="reconciliationRecordHeader">
+        <strong>${escapeHtml(record.month || "")}</strong>
+        <span>${escapeHtml(record.updatedBy ? `Updated by ${record.updatedBy}` : "Saved")}</span>
+      </div>
+      <div class="reconciliationRecordGrid">
+        <div><span>Actual OpenAI</span><strong>${escapeHtml(formatCurrency(record.actualOpenAiCostUsd || 0))}</strong></div>
+        <div><span>Actual B2</span><strong>${escapeHtml(formatCurrency(record.actualBackblazeCostUsd || 0))}</strong></div>
+        <div><span>Actual Render</span><strong>${escapeHtml(formatCurrency(record.actualRenderCostUsd || 0))}</strong></div>
+        <div><span>Actual total</span><strong>${escapeHtml(formatCurrency(record.actualTotalCostUsd || 0))}</strong></div>
+        <div><span>App estimate</span><strong>${escapeHtml(formatCurrency(record.estimatedTotalCostUsd || 0))}</strong></div>
+        <div><span>Variance</span><strong>${escapeHtml(formatCurrency(variance))}${escapeHtml(variancePercent)}</strong></div>
+      </div>
+      ${record.notes ? `<p>${escapeHtml(record.notes)}</p>` : ""}
+    </article>
+  `;
+}
+
+function setReconciliationFormDisabled(disabled) {
+  for (const element of [
+    refreshReconciliationButton,
+    reconciliationMonth,
+    reconciliationOpenAi,
+    reconciliationBackblaze,
+    reconciliationRender,
+    reconciliationOther,
+    reconciliationNotes,
+    saveReconciliationButton,
+  ]) {
+    if (element) element.disabled = disabled || !authenticatedUser?.isAdmin;
   }
 }
 

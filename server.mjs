@@ -13,6 +13,7 @@ const userStorePath = path.join(__dirname, "data", "users.json");
 const projectStorePath = path.join(__dirname, "data", "projects.json");
 const usageStorePath = path.join(__dirname, "data", "usage-events.json");
 const objectStorageObjectStorePath = path.join(__dirname, "data", "object-storage-objects.json");
+const reconciliationStorePath = path.join(__dirname, "data", "reconciliations.json");
 
 loadLocalEnv();
 
@@ -238,6 +239,35 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 200, await getAdminUserSummaries());
+    }
+
+    if (url.pathname === "/api/admin/reconciliations" && req.method === "GET") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      return sendJson(res, 200, await getAdminReconciliations());
+    }
+
+    if (url.pathname === "/api/admin/reconciliations" && req.method === "POST") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      let body;
+      try {
+        body = await readJsonBody(req, 16 * 1024);
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
+
+      try {
+        return sendJson(res, 200, await saveAdminReconciliation(body, user));
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message || "Could not save reconciliation." });
+      }
     }
 
     if (url.pathname === "/api/admin/usage/reset" && req.method === "POST") {
@@ -537,6 +567,8 @@ async function ensureMongoIndexes(db) {
     db.collection("object_storage_objects").createIndex({ objectKey: 1 }, { unique: true }),
     db.collection("object_storage_objects").createIndex({ userId: 1 }),
     db.collection("object_storage_objects").createIndex({ universeId: 1 }),
+    db.collection("reconciliations").createIndex({ month: 1 }, { unique: true }),
+    db.collection("reconciliations").createIndex({ updatedAt: -1 }),
   ]);
 }
 
@@ -5265,6 +5297,153 @@ async function getAdminUserSummaries() {
     usageTotals: aggregateUsageSummaries([...usageByUser.values()]),
     passwordVisibility: "Roblox OAuth users are linked by Roblox user ID. Legacy passwords are hashed and cannot be viewed.",
   };
+}
+
+async function getAdminReconciliations() {
+  const records = await readReconciliations();
+  const currentMonth = getUsageMonthKey(Date.now());
+  const currentEstimate = await getUsageEstimateForMonth(currentMonth);
+  return {
+    currentMonth,
+    currentEstimate,
+    records: records
+      .map(serializeReconciliation)
+      .sort((a, b) => String(b.month).localeCompare(String(a.month))),
+  };
+}
+
+async function saveAdminReconciliation(input, adminUser) {
+  const month = cleanUsageMonth(input?.month || getUsageMonthKey(Date.now()));
+  if (!month) throw new Error("Enter a month like 2026-07.");
+
+  const estimate = await getUsageEstimateForMonth(month);
+  const actualOpenAiCostUsd = roundMoney(input?.actualOpenAiCostUsd);
+  const actualBackblazeCostUsd = roundMoney(input?.actualBackblazeCostUsd);
+  const actualRenderCostUsd = roundMoney(input?.actualRenderCostUsd);
+  const actualOtherCostUsd = roundMoney(input?.actualOtherCostUsd);
+  const actualTotalCostUsd = roundMoney(actualOpenAiCostUsd + actualBackblazeCostUsd + actualRenderCostUsd + actualOtherCostUsd);
+  const estimatedTotalCostUsd = roundMoney(estimate.estimatedTotalCostUsd);
+  const varianceUsd = roundMoney(actualTotalCostUsd - estimatedTotalCostUsd);
+  const now = Date.now();
+
+  const existing = await getReconciliationByMonth(month);
+  const record = {
+    id: existing?.id || crypto.randomUUID(),
+    month,
+    actualOpenAiCostUsd,
+    actualBackblazeCostUsd,
+    actualRenderCostUsd,
+    actualOtherCostUsd,
+    actualTotalCostUsd,
+    estimatedOpenAiCostUsd: estimate.estimatedOpenAiCostUsd,
+    estimatedBackblazeCostUsd: estimate.estimatedBackblazeCostUsd,
+    estimatedTotalCostUsd,
+    varianceUsd,
+    variancePercent: estimatedTotalCostUsd > 0 ? Math.round((varianceUsd / estimatedTotalCostUsd) * 10_000) / 100 : null,
+    activeUserCount: estimate.activeUserCount,
+    notes: cleanString(input?.notes, 1000),
+    updatedBy: getAdminResetLabel(adminUser),
+    createdAt: cleanInteger(existing?.createdAt) || now,
+    updatedAt: now,
+  };
+
+  await upsertReconciliation(record);
+  return {
+    ...await getAdminReconciliations(),
+    record: serializeReconciliation(record),
+  };
+}
+
+async function getUsageEstimateForMonth(month) {
+  const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
+  const users = await readUsers();
+  const usageByUser = await getUsageSummaryByUserIds(users.map((user) => user.id), cleanMonth);
+  const summaries = [...usageByUser.values()];
+  const totals = aggregateUsageSummaries(summaries);
+  return {
+    month: cleanMonth,
+    estimatedOpenAiCostUsd: roundMoney(totals.aiEstimatedCostUsd),
+    estimatedBackblazeCostUsd: roundMoney(Number(totals.backblazeEstimatedMonthlyStorageCostUsd || 0) + Number(totals.backblazeEstimatedEgressOverageCostUsd || 0)),
+    estimatedTotalCostUsd: roundMoney(totals.estimatedCostUsd),
+    activeUserCount: summaries.filter((usage) => Number(usage.estimatedCostUsd || 0) > 0 || cleanFiniteInteger(usage.events) > 0).length,
+  };
+}
+
+function serializeReconciliation(record) {
+  return {
+    id: record.id,
+    month: record.month,
+    actualOpenAiCostUsd: roundMoney(record.actualOpenAiCostUsd),
+    actualBackblazeCostUsd: roundMoney(record.actualBackblazeCostUsd),
+    actualRenderCostUsd: roundMoney(record.actualRenderCostUsd),
+    actualOtherCostUsd: roundMoney(record.actualOtherCostUsd),
+    actualTotalCostUsd: roundMoney(record.actualTotalCostUsd),
+    estimatedOpenAiCostUsd: roundMoney(record.estimatedOpenAiCostUsd),
+    estimatedBackblazeCostUsd: roundMoney(record.estimatedBackblazeCostUsd),
+    estimatedTotalCostUsd: roundMoney(record.estimatedTotalCostUsd),
+    varianceUsd: roundMoney(record.varianceUsd),
+    variancePercent: record.variancePercent === null ? null : Number(record.variancePercent),
+    activeUserCount: cleanFiniteInteger(record.activeUserCount),
+    notes: cleanString(record.notes, 1000),
+    updatedBy: cleanString(record.updatedBy, 120),
+    createdAt: cleanInteger(record.createdAt),
+    updatedAt: cleanInteger(record.updatedAt),
+  };
+}
+
+async function getReconciliationByMonth(month) {
+  const cleanMonth = cleanUsageMonth(month);
+  if (!cleanMonth) return null;
+
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("reconciliations").findOne({ month: cleanMonth }, { projection: { _id: 0 } });
+  }
+
+  const records = await readReconciliations();
+  return records.find((record) => record.month === cleanMonth) || null;
+}
+
+async function upsertReconciliation(record) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("reconciliations").replaceOne({ month: record.month }, record, { upsert: true });
+    return;
+  }
+
+  const records = await readReconciliations();
+  const nextRecords = records.filter((item) => item.month !== record.month);
+  nextRecords.push(record);
+  await writeReconciliations(nextRecords);
+}
+
+async function readReconciliations() {
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("reconciliations").find({}).project({ _id: 0 }).toArray();
+  }
+
+  try {
+    const content = await fs.readFile(reconciliationStorePath, "utf8");
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.records) ? parsed.records : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeReconciliations(records) {
+  await fs.mkdir(path.dirname(reconciliationStorePath), { recursive: true });
+  await fs.writeFile(reconciliationStorePath, JSON.stringify({ records }, null, 2));
+}
+
+function cleanUsageMonth(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})$/);
+  if (!match) return "";
+  const month = Number(match[2]);
+  if (!Number.isInteger(month) || month < 1 || month > 12) return "";
+  return `${match[1]}-${match[2]}`;
 }
 
 async function exchangeRobloxOAuthCode(code, codeVerifier) {

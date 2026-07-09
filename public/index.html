@@ -385,6 +385,47 @@
                 <strong id="adminMonthlyCost">$0.00</strong>
               </div>
             </div>
+
+            <section class="adminReconciliation">
+              <div class="sectionHeader compactHeader">
+                <div>
+                  <h3>Monthly Reconciliation</h3>
+                  <p>Compare provider bills against app-estimated customer cost.</p>
+                </div>
+                <button class="button secondary compact" id="refreshReconciliationButton" type="button">Refresh</button>
+              </div>
+              <form class="reconciliationForm" id="reconciliationForm">
+                <label>
+                  <span>Month</span>
+                  <input id="reconciliationMonth" type="month" required>
+                </label>
+                <label>
+                  <span>OpenAI actual</span>
+                  <input id="reconciliationOpenAi" type="number" min="0" step="0.0001" placeholder="0.00">
+                </label>
+                <label>
+                  <span>B2 actual</span>
+                  <input id="reconciliationBackblaze" type="number" min="0" step="0.0001" placeholder="0.00">
+                </label>
+                <label>
+                  <span>Render actual</span>
+                  <input id="reconciliationRender" type="number" min="0" step="0.0001" placeholder="0.00">
+                </label>
+                <label>
+                  <span>Other actual</span>
+                  <input id="reconciliationOther" type="number" min="0" step="0.0001" placeholder="0.00">
+                </label>
+                <label class="reconciliationNotes">
+                  <span>Notes</span>
+                  <input id="reconciliationNotes" type="text" maxlength="1000" placeholder="Invoice notes or adjustments">
+                </label>
+                <button class="button compact" id="saveReconciliationButton" type="submit">Save</button>
+              </form>
+              <div class="reconciliationStats" id="reconciliationStats"></div>
+              <div class="reconciliationList" id="reconciliationList"></div>
+              <p class="status" id="reconciliationStatus">Admin access required.</p>
+            </section>
+
             <div class="adminUserList" id="adminUserList"></div>
             <p class="status" id="adminUsersStatus">Admin access required.</p>
           </section>
