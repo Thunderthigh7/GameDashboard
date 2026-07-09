@@ -4846,6 +4846,7 @@ function aggregateUsageEvents(events, month) {
       summary.aiRequests += 1;
       if (event.unit === "tokens") summary.openAiTokens += quantity;
       summary.cachedOpenAiInputTokens += cleanFiniteInteger(event.metadata?.cachedInputTokens);
+      summary.aiEstimatedCostUsd = roundMoney(summary.aiEstimatedCostUsd + Number(event.estimatedCostUsd || 0));
     }
     if (event.provider === "backblaze") {
       if (event.feature === "object_storage_upload" && event.unit === "bytes") summary.backblazeUploadedBytes += quantity;
@@ -4867,6 +4868,7 @@ function createEmptyUsageSummary(month) {
     aiRequests: 0,
     openAiTokens: 0,
     cachedOpenAiInputTokens: 0,
+    aiEstimatedCostUsd: 0,
     backblazeStoredBytes: 0,
     backblazeObjectCount: 0,
     backblazeUploadedBytes: 0,
@@ -4887,6 +4889,7 @@ function aggregateUsageSummaries(summaries) {
     aiRequests: total.aiRequests + cleanFiniteInteger(summary.aiRequests),
     openAiTokens: total.openAiTokens + cleanFiniteInteger(summary.openAiTokens),
     cachedOpenAiInputTokens: total.cachedOpenAiInputTokens + cleanFiniteInteger(summary.cachedOpenAiInputTokens),
+    aiEstimatedCostUsd: roundMoney(total.aiEstimatedCostUsd + Number(summary.aiEstimatedCostUsd || 0)),
     backblazeStoredBytes: total.backblazeStoredBytes + cleanFiniteInteger(summary.backblazeStoredBytes),
     backblazeObjectCount: total.backblazeObjectCount + cleanFiniteInteger(summary.backblazeObjectCount),
     backblazeUploadedBytes: total.backblazeUploadedBytes + cleanFiniteInteger(summary.backblazeUploadedBytes),

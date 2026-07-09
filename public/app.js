@@ -20,6 +20,7 @@ const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
 const usageEstimatedCost = document.querySelector("#usageEstimatedCost");
+const usageAiCost = document.querySelector("#usageAiCost");
 const usageCachedInputTokens = document.querySelector("#usageCachedInputTokens");
 const usageBackblazeStorage = document.querySelector("#usageBackblazeStorage");
 const usageBackblazeCost = document.querySelector("#usageBackblazeCost");
@@ -502,6 +503,7 @@ function resetUsageView() {
   if (usagePlanName) usagePlanName.textContent = "Free";
   if (usageConnectedGames) usageConnectedGames.textContent = "0";
   if (usageEstimatedCost) usageEstimatedCost.textContent = "$0.00";
+  if (usageAiCost) usageAiCost.textContent = "$0.00";
   if (usageCachedInputTokens) usageCachedInputTokens.textContent = "0";
   if (usageBackblazeStorage) usageBackblazeStorage.textContent = "0 B";
   if (usageBackblazeCost) usageBackblazeCost.textContent = "$0.00";
@@ -522,9 +524,10 @@ function renderAccountUsage(data) {
   if (usagePlanName) usagePlanName.textContent = data.plan || "Free";
   if (usageConnectedGames) usageConnectedGames.textContent = formatCompactNumber(data.connectedGameCount || 0);
   if (usageEstimatedCost) usageEstimatedCost.textContent = formatCurrency(usage.estimatedCostUsd || 0);
+  if (usageAiCost) usageAiCost.textContent = formatCurrency(usage.aiEstimatedCostUsd || 0);
   if (usageCachedInputTokens) usageCachedInputTokens.textContent = formatCompactNumber(usage.cachedOpenAiInputTokens || 0);
   if (usageBackblazeStorage) usageBackblazeStorage.textContent = formatBytes(usage.backblazeStoredBytes || 0);
-  if (usageBackblazeCost) usageBackblazeCost.textContent = formatCurrency(usage.backblazeEstimatedMonthlyStorageCostUsd || 0);
+  if (usageBackblazeCost) usageBackblazeCost.textContent = formatCurrency(getBackblazeEstimatedCost(usage));
   if (usageResetDate) usageResetDate.textContent = formatShortDate(period.resetsAt);
   if (usageStatus) {
     usageStatus.textContent = `Current period: ${formatShortDate(period.startsAt)} to ${formatShortDate(period.endsAt)}.`;
@@ -613,8 +616,9 @@ function renderAdminUser(user) {
         <div><span>B2 uploads</span><strong>${escapeHtml(formatBytes(usage.backblazeUploadedBytes || 0))}</strong></div>
         <div><span>B2 downloads</span><strong>${escapeHtml(formatBytes(usage.backblazeDownloadedBytes || 0))}</strong></div>
         <div><span>Raw skipped</span><strong>${escapeHtml(formatBytes(usage.backblazeSkippedRawAnalyticsBytes || 0))}</strong></div>
-        <div><span>B2 monthly</span><strong>${escapeHtml(formatCurrency(usage.backblazeEstimatedMonthlyStorageCostUsd || 0))}</strong></div>
-        <div><span>Est. cost</span><strong>${escapeHtml(formatCurrency(usage.estimatedCostUsd || 0))}</strong></div>
+        <div><span>AI cost</span><strong>${escapeHtml(formatCurrency(usage.aiEstimatedCostUsd || 0))}</strong></div>
+        <div><span>B2 cost</span><strong>${escapeHtml(formatCurrency(getBackblazeEstimatedCost(usage)))}</strong></div>
+        <div><span>Total cost</span><strong>${escapeHtml(formatCurrency(usage.estimatedCostUsd || 0))}</strong></div>
       </div>
       <ul class="adminUniverseList">${universes}</ul>
     </article>
@@ -1488,6 +1492,11 @@ function formatBytes(value) {
 
 function formatUsageMetricValue(value, unit) {
   return unit === "bytes" ? formatBytes(value) : formatCompactNumber(value);
+}
+
+function getBackblazeEstimatedCost(usage) {
+  return Number(usage?.backblazeEstimatedMonthlyStorageCostUsd || 0)
+    + Number(usage?.backblazeEstimatedEgressOverageCostUsd || 0);
 }
 
 function formatCurrency(value) {
