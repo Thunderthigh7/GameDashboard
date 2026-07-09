@@ -15,6 +15,7 @@ const adminTotalProjects = document.querySelector("#adminTotalProjects");
 const adminRobloxUsers = document.querySelector("#adminRobloxUsers");
 const adminMonthlyAiRequests = document.querySelector("#adminMonthlyAiRequests");
 const adminMonthlyEvents = document.querySelector("#adminMonthlyEvents");
+const adminMonthlyFailedIngests = document.querySelector("#adminMonthlyFailedIngests");
 const adminMonthlyCost = document.querySelector("#adminMonthlyCost");
 const refreshReconciliationButton = document.querySelector("#refreshReconciliationButton");
 const reconciliationForm = document.querySelector("#reconciliationForm");
@@ -296,6 +297,7 @@ function setAuthenticated(value, user = null) {
     if (adminRobloxUsers) adminRobloxUsers.textContent = "0";
     if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = "0";
     if (adminMonthlyEvents) adminMonthlyEvents.textContent = "0";
+    if (adminMonthlyFailedIngests) adminMonthlyFailedIngests.textContent = "0";
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
     resetReconciliationView();
     resetUsageView();
@@ -496,6 +498,7 @@ function renderAdminUsers(data) {
   if (adminRobloxUsers) adminRobloxUsers.textContent = String(data.totalRobloxUsers || 0);
   if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = formatCompactNumber(data.usageTotals?.aiRequests || 0);
   if (adminMonthlyEvents) adminMonthlyEvents.textContent = formatCompactNumber(data.usageTotals?.events || 0);
+  if (adminMonthlyFailedIngests) adminMonthlyFailedIngests.textContent = formatCompactNumber(data.usageTotals?.failedIngests || 0);
   if (adminMonthlyCost) adminMonthlyCost.textContent = formatCurrency(data.usageTotals?.estimatedCostUsd || 0);
   adminUsersStatus.textContent = data.passwordVisibility || "Passwords are hashed and cannot be viewed.";
   adminUserList.innerHTML = Array.isArray(data.users) && data.users.length
@@ -672,7 +675,7 @@ async function loadAccountUsage() {
     renderAccountUsage(data);
   } catch (error) {
     handleAuthError(error);
-    usageStatus.textContent = error.message;
+    usageStatus.textContent = formatRequestError(error);
     usageMetricGrid.innerHTML = "";
   } finally {
     if (refreshUsageButton) refreshUsageButton.disabled = false;
@@ -772,7 +775,7 @@ async function selectPlan(planKey) {
     await loadOwnedGames();
   } catch (error) {
     handleAuthError(error);
-    if (usageStatus) usageStatus.textContent = error.message;
+    if (usageStatus) usageStatus.textContent = formatRequestError(error);
     await loadAccountUsage();
   }
 }
@@ -844,7 +847,9 @@ function renderAdminUser(user) {
         <div><span>Roblox user ID</span><strong>${escapeHtml(robloxId || "Not linked")}</strong></div>
         <div><span>Provider</span><strong>${escapeHtml(provider)}</strong></div>
         <div><span>AI calls</span><strong>${escapeHtml(formatCompactNumber(usage.aiRequests || 0))}</strong></div>
+        <div><span>Current model</span><strong>${escapeHtml(usage.currentOpenAiModel || "None")}</strong></div>
         <div><span>Events</span><strong>${escapeHtml(formatCompactNumber(usage.events || 0))}</strong></div>
+        <div><span>Failed ingests</span><strong>${escapeHtml(formatCompactNumber(usage.failedIngests || 0))}</strong></div>
         <div><span>OpenAI tokens</span><strong>${escapeHtml(formatCompactNumber(usage.openAiTokens || 0))}</strong></div>
         <div><span>Cached input</span><strong>${escapeHtml(formatCompactNumber(usage.cachedOpenAiInputTokens || 0))}</strong></div>
         <div><span>Raw history</span><strong>${escapeHtml(formatBytes(usage.backblazeStoredBytes || 0))}</strong></div>
@@ -1380,7 +1385,7 @@ async function loadChatLogs() {
     highlightSelectedChatLog({ scroll: false });
   } catch (error) {
     handleAuthError(error);
-    chatLogsStatus.textContent = error.message;
+    chatLogsStatus.textContent = formatRequestError(error);
     loadChatInsights();
   }
 }
@@ -1402,7 +1407,7 @@ async function loadChatInsights() {
     await loadAiReportHistory();
   } catch (error) {
     handleAuthError(error);
-    chatInsightsStatus.textContent = error.message;
+    chatInsightsStatus.textContent = formatRequestError(error);
     commonQuestionList.innerHTML = "";
     renderAiReportHistory([]);
   }
@@ -1454,7 +1459,7 @@ async function loadSelectedAiReport() {
     renderAiReport(data.report);
   } catch (error) {
     handleAuthError(error);
-    chatInsightsStatus.textContent = error.message;
+    chatInsightsStatus.textContent = formatRequestError(error);
   }
 }
 
@@ -1564,7 +1569,7 @@ async function runChatInsightsAnalysis() {
     }
   } catch (error) {
     handleAuthError(error);
-    chatInsightsStatus.textContent = error.message;
+    chatInsightsStatus.textContent = formatRequestError(error);
     chatInsightsMode.textContent = "AI failed";
   } finally {
     runChatInsightsButton.disabled = false;
@@ -1792,6 +1797,28 @@ async function request(url, options) {
     throw error;
   }
   return payload;
+}
+
+function formatRequestError(error) {
+  const payload = error?.payload || {};
+  if (payload.code !== "USAGE_LIMIT") return error?.message || "Request failed";
+
+  const label = payload.label || payload.metric || "Usage";
+  const used = formatUsageMetricValue(payload.used || payload.currentUsage || 0, getUsageMetricUnit(payload.metric));
+  const limit = payload.limit > 0
+    ? formatUsageMetricValue(payload.limit || payload.planLimit || 0, getUsageMetricUnit(payload.metric))
+    : "Unlimited";
+  const requested = formatUsageMetricValue(payload.requested || 0, getUsageMetricUnit(payload.metric));
+  const stillWorks = payload.whatStillWorks ? ` ${payload.whatStillWorks}` : "";
+  return `${label} limit reached. Current usage: ${used}. Plan limit: ${limit}. Requested: ${requested}.${stillWorks}`;
+}
+
+function getUsageMetricUnit(metric) {
+  if (metric === "backblazeStoredBytes" || metric === "backblazeUploadedBytes" || metric === "backblazeDownloadedBytes") return "bytes";
+  if (metric === "openAiTokens") return "tokens";
+  if (metric === "mapUploads") return "uploads";
+  if (metric === "aiRequests") return "runs";
+  return "unit";
 }
 
 function escapeHtml(value) {

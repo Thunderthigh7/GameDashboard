@@ -311,6 +311,10 @@ local function exportMap()
 
 				if not uploadOk then
 					lastError = uploadResult
+					local errorText = string.lower(tostring(uploadResult))
+					if string.find(errorText, "usage_limit", 1, true) or string.find(errorText, "limit reached", 1, true) then
+						error(tostring(uploadResult))
+					end
 					uploadedAll = false
 					break
 				end

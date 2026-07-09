@@ -67,7 +67,6 @@ const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPE
 const USAGE_LIMITS = {
   aiRequestsPerMonth: cleanEnvInteger("USAGE_AI_REQUESTS_PER_MONTH", 25),
   openAiTokensPerMonth: cleanEnvInteger("USAGE_OPENAI_TOKENS_PER_MONTH", 500_000),
-  eventsPerMonth: cleanEnvInteger("USAGE_EVENTS_PER_MONTH", 500_000),
   mapUploadsPerMonth: cleanEnvInteger("USAGE_MAP_UPLOADS_PER_MONTH", 200),
   backblazeStoredBytes: cleanEnvInteger("USAGE_B2_STORAGE_BYTES", 1_000_000_000),
   backblazeUploadedBytesPerMonth: cleanEnvInteger("USAGE_B2_UPLOAD_BYTES_PER_MONTH", 2_000_000_000),
@@ -112,7 +111,6 @@ const PLAN_CONFIG = {
       connectedGames: cleanEnvInteger("PLAN_FREE_CONNECTED_GAMES", 1),
       aiRequestsPerMonth: cleanEnvInteger("PLAN_FREE_AI_REQUESTS_PER_MONTH", 25),
       openAiTokensPerMonth: cleanEnvInteger("PLAN_FREE_OPENAI_TOKENS_PER_MONTH", 500_000),
-      eventsPerMonth: cleanEnvInteger("PLAN_FREE_EVENTS_PER_MONTH", 500_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_FREE_MAP_UPLOADS_PER_MONTH", 25),
       backblazeStoredBytes: cleanEnvInteger("PLAN_FREE_RAW_STORAGE_BYTES", 1_000_000_000),
       backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_FREE_RAW_UPLOAD_BYTES_PER_MONTH", 2_000_000_000),
@@ -125,12 +123,11 @@ const PLAN_CONFIG = {
     name: "Starter",
     priceUsd: 0,
     description: "For small live games that need regular dashboard checks.",
-    highlights: ["3 connected games", "More monthly events", "More AI runs"],
+    highlights: ["3 connected games", "More raw history", "More AI runs"],
     limits: {
       connectedGames: cleanEnvInteger("PLAN_STARTER_CONNECTED_GAMES", 3),
       aiRequestsPerMonth: cleanEnvInteger("PLAN_STARTER_AI_REQUESTS_PER_MONTH", 100),
       openAiTokensPerMonth: cleanEnvInteger("PLAN_STARTER_OPENAI_TOKENS_PER_MONTH", 2_000_000),
-      eventsPerMonth: cleanEnvInteger("PLAN_STARTER_EVENTS_PER_MONTH", 2_500_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_STARTER_MAP_UPLOADS_PER_MONTH", 100),
       backblazeStoredBytes: cleanEnvInteger("PLAN_STARTER_RAW_STORAGE_BYTES", 5_000_000_000),
       backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_STARTER_RAW_UPLOAD_BYTES_PER_MONTH", 20_000_000_000),
@@ -143,12 +140,11 @@ const PLAN_CONFIG = {
     name: "Pro",
     priceUsd: 0,
     description: "For serious live games with steady traffic and weekly analysis.",
-    highlights: ["10 connected games", "High event volume", "Saved AI workflow"],
+    highlights: ["10 connected games", "High raw history", "Saved AI workflow"],
     limits: {
       connectedGames: cleanEnvInteger("PLAN_PRO_CONNECTED_GAMES", 10),
       aiRequestsPerMonth: cleanEnvInteger("PLAN_PRO_AI_REQUESTS_PER_MONTH", 500),
       openAiTokensPerMonth: cleanEnvInteger("PLAN_PRO_OPENAI_TOKENS_PER_MONTH", 10_000_000),
-      eventsPerMonth: cleanEnvInteger("PLAN_PRO_EVENTS_PER_MONTH", 15_000_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_PRO_MAP_UPLOADS_PER_MONTH", 500),
       backblazeStoredBytes: cleanEnvInteger("PLAN_PRO_RAW_STORAGE_BYTES", 25_000_000_000),
       backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_PRO_RAW_UPLOAD_BYTES_PER_MONTH", 150_000_000_000),
@@ -166,7 +162,6 @@ const PLAN_CONFIG = {
       connectedGames: cleanEnvInteger("PLAN_STUDIO_CONNECTED_GAMES", 25),
       aiRequestsPerMonth: cleanEnvInteger("PLAN_STUDIO_AI_REQUESTS_PER_MONTH", 1500),
       openAiTokensPerMonth: cleanEnvInteger("PLAN_STUDIO_OPENAI_TOKENS_PER_MONTH", 30_000_000),
-      eventsPerMonth: cleanEnvInteger("PLAN_STUDIO_EVENTS_PER_MONTH", 75_000_000),
       mapUploadsPerMonth: cleanEnvInteger("PLAN_STUDIO_MAP_UPLOADS_PER_MONTH", 1500),
       backblazeStoredBytes: cleanEnvInteger("PLAN_STUDIO_RAW_STORAGE_BYTES", 100_000_000_000),
       backblazeUploadedBytesPerMonth: cleanEnvInteger("PLAN_STUDIO_RAW_UPLOAD_BYTES_PER_MONTH", 750_000_000_000),
@@ -694,7 +689,6 @@ function normalizePlanLimits(limits = {}) {
     connectedGames: cleanFiniteInteger(limits.connectedGames),
     aiRequestsPerMonth: cleanFiniteInteger(limits.aiRequestsPerMonth),
     openAiTokensPerMonth: cleanFiniteInteger(limits.openAiTokensPerMonth),
-    eventsPerMonth: cleanFiniteInteger(limits.eventsPerMonth),
     mapUploadsPerMonth: cleanFiniteInteger(limits.mapUploadsPerMonth),
     backblazeStoredBytes: cleanFiniteInteger(limits.backblazeStoredBytes),
     backblazeUploadedBytesPerMonth: cleanFiniteInteger(limits.backblazeUploadedBytesPerMonth),
@@ -737,7 +731,6 @@ function serializePlan(plan, selectedPlanKey = "") {
 function getPlanLimitSummary(limits = {}) {
   return [
     `${formatUsageNumber(limits.connectedGames)} connected game${limits.connectedGames === 1 ? "" : "s"}`,
-    `${formatUsageNumber(limits.eventsPerMonth)} analytics events/month`,
     `${formatUsageNumber(limits.aiRequestsPerMonth)} AI run${limits.aiRequestsPerMonth === 1 ? "" : "s"}/month`,
     `${formatBytesForDisplay(limits.backblazeStoredBytes)} raw analytics history`,
     `${formatBytesForDisplay(limits.backblazeUploadedBytesPerMonth)} raw upload/month`,
@@ -976,7 +969,7 @@ async function upsertAnalyticsDocuments(db, collectionName, documents) {
 }
 
 async function persistPresenceToObjectStorage(presence, usageContext = {}) {
-  if (!OBJECT_STORAGE_CONFIGURED) return;
+  if (!OBJECT_STORAGE_CONFIGURED) return { ok: true, skipped: false, reason: "not_configured" };
 
   try {
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
@@ -988,7 +981,17 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
       await recordRawAnalyticsStorageCapSkip(usageContext, body.length, storageCheck);
       objectStorageStatus.connected = true;
       objectStorageStatus.lastError = "";
-      return;
+      return {
+        ok: true,
+        skipped: true,
+        reason: storageCheck.reason,
+        limit: createUsageLimitDetails(
+          storageCheck.reason === "upload" ? "backblazeUploadedBytes" : "backblazeStoredBytes",
+          storageCheck.reason === "upload" ? storageCheck.uploadUsedBytes : storageCheck.storedBytes,
+          storageCheck.reason === "upload" ? storageCheck.uploadLimitBytes : storageCheck.limitBytes,
+          storageCheck.requestedBytes,
+        ),
+      };
     }
 
     await client.send(new PutObjectCommand({
@@ -1017,10 +1020,17 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
     objectStorageStatus.lastWriteAt = Date.now();
     objectStorageStatus.lastObjectKey = objectKey;
     await cleanupRawObjectStorageForUniverse(presence.universeId);
+    return { ok: true, skipped: false, objectKey };
   } catch (error) {
     objectStorageStatus.connected = false;
     objectStorageStatus.lastError = error.message || String(error);
+    await recordUsageFailure(usageContext, "raw_analytics_ingest_failed", objectStorageStatus.lastError, {
+      universeId: presence?.universeId,
+      placeId: presence?.placeId,
+      jobId: presence?.jobId,
+    });
     console.warn("B2 analytics batch write failed:", objectStorageStatus.lastError);
+    return { ok: false, skipped: false, error: objectStorageStatus.lastError };
   }
 }
 
@@ -1741,22 +1751,13 @@ async function handlePresenceHeartbeat(req, res) {
 
   const usageContext = getUsageContextFromProject(project, presence.value.universeId);
   const eventCount = getPresenceUsageEventCount(presence.value);
-  if (usageContext.userId && eventCount > 0) {
-    try {
-      await assertUsageAvailable(usageContext, "events", eventCount);
-    } catch (error) {
-      if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
-      throw error;
-    }
-  }
-
   const savedChatCount = saveChatLogs(presence.value);
   const savedMovementCount = saveMovementSamples(presence.value);
   const savedMovementRollupCount = saveMovementRollups(presence.value);
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
   await persistPresenceToMongo(presence.value);
-  await persistPresenceToObjectStorage(presence.value, usageContext);
+  const objectStorageResult = await persistPresenceToObjectStorage(presence.value, usageContext);
   if (usageContext.userId && eventCount > 0) {
     await recordUsage({
       ...usageContext,
@@ -1783,6 +1784,8 @@ async function handlePresenceHeartbeat(req, res) {
       connected: objectStorageStatus.connected,
       objectKey: objectStorageStatus.lastObjectKey || null,
       lastError: objectStorageStatus.lastError || null,
+      skipped: Boolean(objectStorageResult?.skipped),
+      limit: objectStorageResult?.limit || null,
     },
     savedChatCount,
     savedMovementCount,
@@ -1821,7 +1824,13 @@ async function handleMapSnapshotUpload(req, res) {
     }
   }
 
-  const result = await saveMapSnapshotChunk(chunk.value, usageContext);
+  let result;
+  try {
+    result = await saveMapSnapshotChunk(chunk.value, usageContext);
+  } catch (error) {
+    if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
+    throw error;
+  }
   if (usageContext.userId && result.ok !== false) {
     await recordUsage({
       ...usageContext,
@@ -2348,8 +2357,8 @@ async function saveMapSnapshotChunk(chunk, usageContext = {}) {
 
   if (chunk.chunkCount === 1) {
     const snapshot = buildMapSnapshot(chunk, chunk.parts);
-    mapSnapshotsByUniverseId.set(universeKey, snapshot);
     await persistMapSnapshot(snapshot, usageContext);
+    mapSnapshotsByUniverseId.set(universeKey, snapshot);
     mapUploadSessions.delete(sessionKey);
     return {
       ok: true,
@@ -2399,8 +2408,8 @@ async function saveMapSnapshotChunk(chunk, usageContext = {}) {
   }
 
   const snapshot = buildMapSnapshot(session, parts);
-  mapSnapshotsByUniverseId.set(universeKey, snapshot);
   await persistMapSnapshot(snapshot, usageContext);
+  mapSnapshotsByUniverseId.set(universeKey, snapshot);
   mapUploadSessions.delete(sessionKey);
 
   return {
@@ -2456,7 +2465,12 @@ async function persistMapSnapshot(snapshot, usageContext = {}) {
       await persistMapSnapshotToObjectStorage(snapshot, usageContext);
       return;
     } catch (error) {
+      if (error.code === "USAGE_LIMIT") throw error;
       objectStorageStatus.lastError = error.message || String(error);
+      await recordUsageFailure(usageContext, "map_snapshot_storage_failed", objectStorageStatus.lastError, {
+        universeId: snapshot?.universeId,
+        placeId: snapshot?.placeId,
+      });
       console.warn("B2 map snapshot write failed:", objectStorageStatus.lastError);
     }
   }
@@ -2525,6 +2539,10 @@ async function persistMapSnapshotToObjectStorage(snapshot, usageContext = {}) {
   const latestKey = getObjectStorageMapSnapshotKey(snapshot.universeId);
   const versionedKey = getObjectStorageMapSnapshotVersionKey(snapshot);
   const body = gzipSync(Buffer.from(JSON.stringify(snapshot), "utf8"));
+  await assertObjectStorageWriteAvailable(usageContext, [
+    { objectKey: latestKey, byteLength: body.length },
+    { objectKey: versionedKey, byteLength: body.length },
+  ]);
 
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
@@ -4710,15 +4728,15 @@ async function assertUsageAvailable(context, metric, quantity = 1) {
       limit: limits.openAiTokensPerMonth,
       label: "OpenAI tokens",
     },
-    events: {
-      used: usage.events,
-      limit: limits.eventsPerMonth,
-      label: "Roblox events",
-    },
     mapUploads: {
       used: usage.mapUploads,
       limit: limits.mapUploadsPerMonth,
       label: "map uploads",
+    },
+    backblazeStoredBytes: {
+      used: usage.backblazeStoredBytes,
+      limit: limits.backblazeStoredBytes,
+      label: "raw analytics storage",
     },
     backblazeUploadedBytes: {
       used: usage.backblazeUploadedBytes,
@@ -4742,18 +4760,62 @@ async function assertUsageAvailable(context, metric, quantity = 1) {
   error.used = check.used;
   error.limit = check.limit;
   error.requested = amount;
+  error.label = check.label;
   throw error;
 }
 
 function sendUsageLimitError(res, error) {
+  const limit = createUsageLimitDetails(error.metric, error.used, error.limit, error.requested, error.label);
   return sendJson(res, 403, {
-    error: error.message || "Usage limit reached.",
+    error: limit.message,
     code: "USAGE_LIMIT",
-    metric: error.metric || "",
-    used: cleanInteger(error.used),
-    limit: cleanInteger(error.limit),
-    requested: cleanInteger(error.requested),
+    ...limit,
   });
+}
+
+function createUsageLimitDetails(metric, used, limit, requested = 1, label = "") {
+  const cleanMetric = cleanString(metric, 64);
+  const metricLabels = {
+    aiRequests: "AI runs",
+    openAiTokens: "OpenAI tokens",
+    mapUploads: "map uploads",
+    backblazeStoredBytes: "raw analytics storage",
+    backblazeUploadedBytes: "raw data uploads",
+    backblazeDownloadedBytes: "raw data reads",
+  };
+  const cleanLabel = label || metricLabels[cleanMetric] || "usage";
+  const cleanUsed = cleanFiniteInteger(used);
+  const cleanLimit = cleanFiniteInteger(limit);
+  const cleanRequested = Math.max(cleanFiniteInteger(requested), 1);
+  const remaining = cleanLimit > 0 ? Math.max(0, cleanLimit - cleanUsed) : null;
+  return {
+    metric: cleanMetric,
+    label: cleanLabel,
+    message: `${cleanLabel} monthly usage limit reached.`,
+    used: cleanUsed,
+    limit: cleanLimit,
+    requested: cleanRequested,
+    remaining,
+    currentUsage: cleanUsed,
+    planLimit: cleanLimit,
+    whatStillWorks: getUsageLimitFallbacks(cleanMetric),
+  };
+}
+
+function getUsageLimitFallbacks(metric) {
+  if (metric === "aiRequests" || metric === "openAiTokens") {
+    return "Existing dashboard data, saved reports, heatmaps, and non-AI analytics still work.";
+  }
+  if (metric === "mapUploads") {
+    return "Existing map snapshots, live analytics, heatmaps, and AI reports still work.";
+  }
+  if (metric === "backblazeStoredBytes" || metric === "backblazeUploadedBytes") {
+    return "Summarized dashboard rollups and in-memory live testing still work, but durable raw B2 history pauses until usage resets or the plan changes.";
+  }
+  if (metric === "backblazeDownloadedBytes") {
+    return "Live dashboard data and writes still work, but raw-history reads for reports and rollups are paused.";
+  }
+  return "Other dashboard features continue to work if they do not use this limited resource.";
 }
 
 async function recordOpenAiUsage({ usageContext, feature, model, payload }) {
@@ -4937,6 +4999,33 @@ async function recordObjectStorageWrite({ usageContext = {}, objectKey, byteLeng
   }
 }
 
+async function assertObjectStorageWriteAvailable(usageContext = {}, objects = []) {
+  if (!usageContext?.userId) return;
+
+  const requestedObjects = (Array.isArray(objects) ? objects : [objects])
+    .map((object) => ({
+      objectKey: cleanString(object?.objectKey, 512),
+      byteLength: cleanFiniteInteger(object?.byteLength),
+    }))
+    .filter((object) => object.objectKey && object.byteLength > 0);
+  if (!requestedObjects.length) return;
+
+  let uploadedBytes = 0;
+  let storedDeltaBytes = 0;
+  for (const object of requestedObjects) {
+    uploadedBytes += object.byteLength;
+    const previous = await getObjectStorageObject(object.objectKey);
+    storedDeltaBytes += Math.max(object.byteLength - cleanFiniteInteger(previous?.byteLength), 0);
+  }
+
+  if (uploadedBytes > 0) {
+    await assertUsageAvailable(usageContext, "backblazeUploadedBytes", uploadedBytes);
+  }
+  if (storedDeltaBytes > 0) {
+    await assertUsageAvailable(usageContext, "backblazeStoredBytes", storedDeltaBytes);
+  }
+}
+
 async function recordObjectStorageRead(objectKey, byteLength) {
   const cleanObjectKey = cleanString(objectKey, 512);
   const cleanByteLength = cleanFiniteInteger(byteLength);
@@ -5026,6 +5115,23 @@ async function recordRawAnalyticsStorageCapSkip(usageContext = {}, byteLength = 
       storageAllowed: storageCheck.storageAllowed !== false,
       uploadAllowed: storageCheck.uploadAllowed !== false,
       reason: cleanString(storageCheck.reason, 32),
+    },
+  });
+}
+
+async function recordUsageFailure(usageContext = {}, feature = "ingest_failed", reason = "", metadata = {}) {
+  if (!usageContext?.userId) return;
+
+  await recordUsage({
+    ...usageContext,
+    provider: "internal",
+    feature,
+    quantity: 1,
+    unit: "failure",
+    estimatedCostUsd: 0,
+    metadata: {
+      ...metadata,
+      reason: cleanString(reason, 500),
     },
   });
 }
@@ -5360,7 +5466,6 @@ function getUsageMetrics(usage, connectedGameCount = 0) {
       ...createUsageMetric("connectedGames", "Connected games", connectedGameCount, cleanFiniteInteger(limits.connectedGames), "games"),
       note: "Each connected Roblox experience counts as one game.",
     },
-    createUsageMetric("events", "Analytics events", cleanFiniteInteger(usage?.events), cleanFiniteInteger(limits.eventsPerMonth), "events"),
     createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
     openAiTokens,
     {
@@ -5422,6 +5527,11 @@ function aggregateUsageEvents(events, month) {
       if (event.unit === "tokens") summary.openAiTokens += quantity;
       summary.cachedOpenAiInputTokens += cleanFiniteInteger(event.metadata?.cachedInputTokens);
       summary.aiEstimatedCostUsd = roundMoney(summary.aiEstimatedCostUsd + Number(event.estimatedCostUsd || 0));
+      const model = cleanString(event.metadata?.model, 120);
+      if (model) {
+        summary.openAiModelUsage[model] = (summary.openAiModelUsage[model] || 0) + 1;
+        summary.currentOpenAiModel = model;
+      }
     }
     if (event.provider === "backblaze") {
       if (event.feature === "object_storage_upload" && event.unit === "bytes") summary.backblazeUploadedBytes += quantity;
@@ -5430,6 +5540,7 @@ function aggregateUsageEvents(events, month) {
     }
     if (event.feature === "presence_ingest" && event.unit === "events") summary.events += quantity;
     if (event.feature === "map_snapshot_upload") summary.mapUploads += quantity;
+    if (event.unit === "failure" || String(event.feature || "").endsWith("_failed")) summary.failedIngests += quantity;
     summary.estimatedCostUsd = roundMoney(summary.estimatedCostUsd + Number(event.estimatedCostUsd || 0));
   }
 
@@ -5452,7 +5563,10 @@ function createEmptyUsageSummary(month) {
     backblazeEstimatedMonthlyStorageCostUsd: 0,
     backblazeEstimatedEgressOverageCostUsd: 0,
     events: 0,
+    failedIngests: 0,
     mapUploads: 0,
+    currentOpenAiModel: "",
+    openAiModelUsage: {},
     estimatedCostUsd: 0,
     limits: { ...USAGE_LIMITS },
   };
@@ -5473,10 +5587,25 @@ function aggregateUsageSummaries(summaries) {
     backblazeEstimatedMonthlyStorageCostUsd: roundMoney(total.backblazeEstimatedMonthlyStorageCostUsd + Number(summary.backblazeEstimatedMonthlyStorageCostUsd || 0)),
     backblazeEstimatedEgressOverageCostUsd: roundMoney(total.backblazeEstimatedEgressOverageCostUsd + Number(summary.backblazeEstimatedEgressOverageCostUsd || 0)),
     events: total.events + cleanFiniteInteger(summary.events),
+    failedIngests: total.failedIngests + cleanFiniteInteger(summary.failedIngests),
     mapUploads: total.mapUploads + cleanFiniteInteger(summary.mapUploads),
+    currentOpenAiModel: cleanString(summary.currentOpenAiModel, 120) || total.currentOpenAiModel,
+    openAiModelUsage: mergeOpenAiModelUsage(total.openAiModelUsage, summary.openAiModelUsage),
     estimatedCostUsd: roundMoney(total.estimatedCostUsd + Number(summary.estimatedCostUsd || 0)),
     limits: { ...USAGE_LIMITS },
   }), createEmptyUsageSummary(getUsageMonthKey(Date.now())));
+}
+
+function mergeOpenAiModelUsage(...modelUsageObjects) {
+  const merged = {};
+  for (const modelUsage of modelUsageObjects) {
+    for (const [model, count] of Object.entries(modelUsage || {})) {
+      const cleanModel = cleanString(model, 120);
+      if (!cleanModel) continue;
+      merged[cleanModel] = (merged[cleanModel] || 0) + cleanFiniteInteger(count);
+    }
+  }
+  return merged;
 }
 
 function mergeObjectStorageUsage(summary, storageUsage) {
@@ -5960,7 +6089,11 @@ async function getUsageEstimateForMonth(month) {
     estimatedOpenAiCostUsd: roundMoney(totals.aiEstimatedCostUsd),
     estimatedBackblazeCostUsd: roundMoney(Number(totals.backblazeEstimatedMonthlyStorageCostUsd || 0) + Number(totals.backblazeEstimatedEgressOverageCostUsd || 0)),
     estimatedTotalCostUsd: roundMoney(totals.estimatedCostUsd),
-    activeUserCount: summaries.filter((usage) => Number(usage.estimatedCostUsd || 0) > 0 || cleanFiniteInteger(usage.events) > 0).length,
+    activeUserCount: summaries.filter((usage) => (
+      Number(usage.estimatedCostUsd || 0) > 0
+      || cleanFiniteInteger(usage.events) > 0
+      || cleanFiniteInteger(usage.failedIngests) > 0
+    )).length,
   };
 }
 
