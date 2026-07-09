@@ -499,6 +499,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await getLeaveHeatmapFromQuery(url.searchParams));
     }
 
+    if (url.pathname === "/api/area-clusters" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      return sendJson(res, 200, await getComputedAreaClustersFromQuery(url.searchParams));
+    }
+
     if (url.pathname === "/api/ai-area-analysis" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getAiAreaAnalysisFromQuery(url.searchParams));
@@ -2966,6 +2971,24 @@ async function getAiAreaAnalysisFromQuery(searchParams) {
   }
 
   return getAiAreaAnalysis(filters);
+}
+
+async function getComputedAreaClustersFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+  return {
+    ...getAiAreaAnalysisWithoutStoredInsights(filters),
+    mode: "computed",
+    cost: {
+      openAiRequests: 0,
+      estimatedOpenAiCostUsd: 0,
+      note: "Computed on the dashboard server from stored movement, death, leave, and chat signals. No OpenAI request was made.",
+    },
+  };
 }
 
 async function getRobloxHeatmapFromQuery(searchParams) {

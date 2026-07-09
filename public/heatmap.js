@@ -4,6 +4,7 @@ const canvas = document.querySelector("#movementHeatmapCanvas");
 const aiAreaCard = document.querySelector("#aiAreaCard");
 const aiAreaBadge = document.querySelector("#aiAreaBadge");
 const aiAreaTitle = document.querySelector("#aiAreaTitle");
+const aiAreaSourceLabel = document.querySelector("#aiAreaSourceLabel");
 const aiAreaIssue = document.querySelector("#aiAreaIssue");
 const aiAreaQuote = document.querySelector("#aiAreaQuote");
 const aiAreaRecommendation = document.querySelector("#aiAreaRecommendation");
@@ -57,6 +58,7 @@ let selectedChatLogId = "";
 let hoveredAiAreaMarker = null;
 let selectedAiAreaMarker = null;
 let selectedAiArea = null;
+let latestAreaAnalysisMode = "computed";
 let focusedSignalArea = null;
 let heatmapRefreshTimer = null;
 const movementKeys = new Set();
@@ -114,9 +116,17 @@ if (canvas) {
 
     selectChatLogOnMap(id, { notifyList: false });
   });
-  window.addEventListener("dashboard:aiAreaAnalysisUpdated", () => {
-    if (activeHeatmapMode === "ai-analysis") {
-      loadHeatmap();
+  window.addEventListener("dashboard:aiAreaAnalysisUpdated", (event) => {
+    if (event.detail?.analysis) {
+      renderAreaAnalysisPayload(event.detail.analysis, { statusPrefix: "Loaded saved AI area analysis" });
+      return;
+    }
+
+    if (activeHeatmapMode === "ai-analysis") loadHeatmap();
+  });
+  window.addEventListener("dashboard:computedAreaClusters", (event) => {
+    if (event.detail?.analysis) {
+      renderAreaAnalysisPayload(event.detail.analysis, { statusPrefix: "Computed clusters" });
     }
   });
   window.addEventListener("dashboard:focusHeatmapArea", (event) => {
@@ -271,6 +281,9 @@ async function loadHeatmap(options = {}) {
     const samplePayload = normalizeHeatmapPayload(payload);
     latestSamples = samplePayload.samples;
     latestMapSnapshot = mapSnapshot;
+    if (activeHeatmapMode === "ai-analysis") {
+      latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "computed";
+    }
     renderScene(latestSamples, latestMapSnapshot, {
       resetView: Boolean(options.resetView),
     });
@@ -288,8 +301,52 @@ async function loadHeatmap(options = {}) {
   }
 }
 
+async function renderAreaAnalysisPayload(payload, options = {}) {
+  if (window.isDashboardAuthenticated?.() === false || !payload) return;
+
+  activeHeatmapMode = "ai-analysis";
+  activeRenderMode = "points";
+  for (const button of modeButtons) {
+    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
+  }
+  for (const button of renderButtons) {
+    button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
+  }
+
+  const universeId = window.getSelectedUniverseId?.() || payload.universeId || "";
+  setHeatmapEmptyState(false);
+  statusLine.textContent = "Rendering computed clusters...";
+
+  let mapSnapshot = latestMapSnapshot;
+  if (universeId && (!mapSnapshot || String(mapSnapshot.universeId || "") !== String(universeId))) {
+    try {
+      const mapPayload = await fetch(`/api/map-snapshot?universeId=${encodeURIComponent(universeId)}`, {
+        headers: { Accept: "application/json" },
+      }).then(readJsonResponse);
+      mapSnapshot = mapPayload.snapshot || null;
+    } catch {
+      mapSnapshot = null;
+    }
+  }
+
+  const samplePayload = normalizeHeatmapPayload(payload);
+  latestSamples = samplePayload.samples;
+  latestMapSnapshot = mapSnapshot;
+  latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "computed";
+  renderScene(latestSamples, latestMapSnapshot, {
+    resetView: true,
+  });
+
+  const clusterCount = samplePayload.returnedCount || 0;
+  const eventCount = payload.eventCount || 0;
+  sampleCount.textContent = `${clusterCount} cluster${clusterCount === 1 ? "" : "s"}`;
+  statusLine.textContent = clusterCount
+    ? `${options.statusPrefix || "Computed clusters"} from ${eventCount} local signal${eventCount === 1 ? "" : "s"}. OpenAI cost: $0.`
+    : "No clusters found for the selected filters. OpenAI cost: $0.";
+}
+
 function getModeText(label) {
-  return label === "AI Analysis" ? "AI analysis" : label.toLowerCase();
+  return label === "Clusters" ? "clusters" : label.toLowerCase();
 }
 
 function setHeatmapEmptyState(isEmpty) {
@@ -393,7 +450,7 @@ function getHeatmapEndpoint() {
 }
 
 function getModeLabel() {
-  if (activeHeatmapMode === "ai-analysis") return "AI Analysis";
+  if (activeHeatmapMode === "ai-analysis") return "Clusters";
   if (activeHeatmapMode === "deaths") return "Death";
   if (activeHeatmapMode === "leaves") return "Leave";
   if (activeHeatmapMode === "chat") return "Chat";
@@ -1110,6 +1167,7 @@ function updateAiAreaCard(area, marker = null, options = {}) {
   aiAreaBadge.textContent = String(area.rank || 1);
   aiAreaBadge.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
   aiAreaTitle.textContent = area.label || "Area 1";
+  if (aiAreaSourceLabel) aiAreaSourceLabel.textContent = latestAreaAnalysisMode === "ai" ? "AI" : "Computed";
   updateAiAreaInsightText(area);
   aiAreaVisits.textContent = String(area.movementCount || area.count || 0);
   aiAreaDeaths.textContent = String(area.deathCount ?? "--");
@@ -1234,7 +1292,7 @@ function getAiAreaIssue(area) {
     return "Potential question area based on chat activity near player movement.";
   }
 
-  return "Potential point of interest from movement density. AI naming and reasoning will come after clustering.";
+  return "Potential point of interest from movement density. Optional AI can name and explain it later.";
 }
 
 function getAiAreaRecommendation(area) {

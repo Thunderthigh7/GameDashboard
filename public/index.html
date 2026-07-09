@@ -109,7 +109,7 @@
                 </div>
                 <div class="heatmapToolbar">
                   <div class="heatmapPresets" aria-label="Heatmap mode">
-                    <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
+                    <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">Clusters</button>
                     <button class="miniButton" type="button" data-heatmap-mode="movement">Movement</button>
                     <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
                     <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
@@ -139,7 +139,7 @@
                     <div class="aiAreaCardHeader">
                       <span class="aiAreaBadge" id="aiAreaBadge">1</span>
                       <strong id="aiAreaTitle">Area 1</strong>
-                      <em>AI Analysis</em>
+                      <em id="aiAreaSourceLabel">Computed</em>
                     </div>
                     <div class="aiAreaInsightText">
                       <section>
@@ -169,7 +169,10 @@
                       <p>Automation and saved analysis history.</p>
                     </div>
                   </div>
-                  <button class="aiButton aiRunButton" id="runChatInsightsButton" type="button">AI Insights</button>
+                  <div class="aiRunActions">
+                    <button class="button secondary compact" id="findClustersButton" type="button">Find Clusters</button>
+                    <button class="aiButton aiRunButton" id="runChatInsightsButton" type="button">AI Insights</button>
+                  </div>
                   <p class="status aiRunStatus">No chat data available for AI analysis yet.</p>
                   <div class="aiAutomationControls">
                     <label class="toggleControl" for="aiAutomationToggle">

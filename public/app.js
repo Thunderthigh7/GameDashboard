@@ -67,6 +67,7 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
+const findClustersButton = document.querySelector("#findClustersButton");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const aiAutomationToggle = document.querySelector("#aiAutomationToggle");
 const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
@@ -150,6 +151,7 @@ function bindEvents() {
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
   refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
+  findClustersButton?.addEventListener("click", findAreaClusters);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
@@ -289,6 +291,7 @@ function setAuthenticated(value, user = null) {
     chatLogsStatus.textContent = "Sign in to view chat logs.";
     chatInsightsStatus.textContent = "Sign in to view chat insights.";
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
+    if (findClustersButton) findClustersButton.disabled = false;
     if (adminNavLink) adminNavLink.hidden = true;
     if (adminUserList) adminUserList.innerHTML = "";
     if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
@@ -1526,6 +1529,38 @@ async function saveAiAutomationSettings() {
     aiAutomationStatus.textContent = error.message;
   } finally {
     aiAutomationToggle.disabled = false;
+  }
+}
+
+async function findAreaClusters() {
+  if (!authenticated || !findClustersButton) return;
+
+  findClustersButton.disabled = true;
+  chatInsightsMode.textContent = "Computed";
+  chatInsightsStatus.textContent = "Finding clusters from movement, deaths, leaves, and chat. No AI request is being made.";
+
+  try {
+    if (!selectedUniverseId) {
+      chatInsightsStatus.textContent = "Select a universe with data before finding clusters.";
+      chatInsightsMode.textContent = "Not analyzed";
+      return;
+    }
+
+    const query = buildAiInsightsQuery();
+    const data = await request(`/api/area-clusters${query}`);
+    window.dispatchEvent(new CustomEvent("dashboard:computedAreaClusters", {
+      detail: { universeId: selectedUniverseId, analysis: data },
+    }));
+    chatInsightsMode.textContent = "Computed";
+    chatInsightsStatus.textContent = data.areaCount
+      ? `Found ${data.areaCount} cluster${data.areaCount === 1 ? "" : "s"} from ${formatCompactNumber(data.eventCount || 0)} local signal${data.eventCount === 1 ? "" : "s"}. OpenAI cost: $0.`
+      : "No clusters found for the selected filters. OpenAI cost: $0.";
+  } catch (error) {
+    handleAuthError(error);
+    chatInsightsStatus.textContent = formatRequestError(error);
+    chatInsightsMode.textContent = "Cluster failed";
+  } finally {
+    findClustersButton.disabled = false;
   }
 }
 
