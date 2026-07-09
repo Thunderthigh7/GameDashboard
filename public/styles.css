@@ -1171,6 +1171,13 @@ small,
   gap: 16px;
 }
 
+.adminActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .adminStats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

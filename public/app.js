@@ -8,6 +8,7 @@ const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const adminNavLink = document.querySelector("#adminNavLink");
 const refreshAdminUsersButton = document.querySelector("#refreshAdminUsersButton");
+const resetAdminUsageButton = document.querySelector("#resetAdminUsageButton");
 const adminUserList = document.querySelector("#adminUserList");
 const adminUsersStatus = document.querySelector("#adminUsersStatus");
 const adminTotalUsers = document.querySelector("#adminTotalUsers");
@@ -133,6 +134,7 @@ function bindEvents() {
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
   refreshAdminUsersButton?.addEventListener("click", loadAdminUsers);
+  resetAdminUsageButton?.addEventListener("click", resetAdminUsage);
   movementFromFilter?.addEventListener("change", loadSignalAreaCards);
   movementToFilter?.addEventListener("change", loadSignalAreaCards);
 
@@ -264,6 +266,7 @@ function setAuthenticated(value, user = null) {
     if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = "0";
     if (adminMonthlyEvents) adminMonthlyEvents.textContent = "0";
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
+    if (resetAdminUsageButton) resetAdminUsageButton.disabled = true;
     resetUsageView();
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
@@ -410,27 +413,58 @@ async function loadAdminUsers() {
   if (!authenticatedUser?.isAdmin || !adminUserList) return;
 
   adminUsersStatus.textContent = "Loading users...";
-  refreshAdminUsersButton.disabled = true;
+  setAdminButtonsDisabled(true);
 
   try {
     const data = await request("/api/admin/users");
-    adminTotalUsers.textContent = String(data.totalUsers || 0);
-    adminTotalProjects.textContent = String(data.totalProjects || 0);
-    if (adminRobloxUsers) adminRobloxUsers.textContent = String(data.totalRobloxUsers || 0);
-    if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = formatCompactNumber(data.usageTotals?.aiRequests || 0);
-    if (adminMonthlyEvents) adminMonthlyEvents.textContent = formatCompactNumber(data.usageTotals?.events || 0);
-    if (adminMonthlyCost) adminMonthlyCost.textContent = formatCurrency(data.usageTotals?.estimatedCostUsd || 0);
-    adminUsersStatus.textContent = data.passwordVisibility || "Passwords are hashed and cannot be viewed.";
-    adminUserList.innerHTML = Array.isArray(data.users) && data.users.length
-      ? data.users.map(renderAdminUser).join("")
-      : `<p class="status">No users yet.</p>`;
+    renderAdminUsers(data);
   } catch (error) {
     handleAuthError(error);
     adminUsersStatus.textContent = error.message;
     adminUserList.innerHTML = "";
   } finally {
-    refreshAdminUsersButton.disabled = false;
+    setAdminButtonsDisabled(false);
   }
+}
+
+async function resetAdminUsage() {
+  if (!authenticatedUser?.isAdmin || !adminUserList) return;
+  const confirmed = window.confirm("Reset all usage for every user? This clears the usage ledger and cannot be undone.");
+  if (!confirmed) return;
+
+  adminUsersStatus.textContent = "Resetting usage...";
+  setAdminButtonsDisabled(true);
+
+  try {
+    const data = await request("/api/admin/usage/reset", { method: "POST" });
+    renderAdminUsers(data);
+    const deletedEvents = data.reset?.deletedEvents || 0;
+    adminUsersStatus.textContent = `Usage reset complete. Deleted ${formatCompactNumber(deletedEvents)} usage events.`;
+    if (activeView === "usage") loadAccountUsage();
+  } catch (error) {
+    handleAuthError(error);
+    adminUsersStatus.textContent = error.message;
+  } finally {
+    setAdminButtonsDisabled(false);
+  }
+}
+
+function renderAdminUsers(data) {
+  adminTotalUsers.textContent = String(data.totalUsers || 0);
+  adminTotalProjects.textContent = String(data.totalProjects || 0);
+  if (adminRobloxUsers) adminRobloxUsers.textContent = String(data.totalRobloxUsers || 0);
+  if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = formatCompactNumber(data.usageTotals?.aiRequests || 0);
+  if (adminMonthlyEvents) adminMonthlyEvents.textContent = formatCompactNumber(data.usageTotals?.events || 0);
+  if (adminMonthlyCost) adminMonthlyCost.textContent = formatCurrency(data.usageTotals?.estimatedCostUsd || 0);
+  adminUsersStatus.textContent = data.passwordVisibility || "Passwords are hashed and cannot be viewed.";
+  adminUserList.innerHTML = Array.isArray(data.users) && data.users.length
+    ? data.users.map(renderAdminUser).join("")
+    : `<p class="status">No users yet.</p>`;
+}
+
+function setAdminButtonsDisabled(disabled) {
+  if (refreshAdminUsersButton) refreshAdminUsersButton.disabled = disabled;
+  if (resetAdminUsageButton) resetAdminUsageButton.disabled = disabled || !authenticatedUser?.isAdmin;
 }
 
 async function loadAccountUsage() {

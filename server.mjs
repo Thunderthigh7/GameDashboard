@@ -232,6 +232,19 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await getAdminUserSummaries());
     }
 
+    if (url.pathname === "/api/admin/usage/reset" && req.method === "POST") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      const reset = await resetStoredUsageEvents(user);
+      return sendJson(res, 200, {
+        ...await getAdminUserSummaries(),
+        reset,
+      });
+    }
+
     if (url.pathname === "/api/universes" && req.method === "GET") {
       return sendJson(res, 200, await getUniverseSummaries(auth.userId));
     }
@@ -4283,6 +4296,33 @@ function estimateOpenAiCost(inputTokens, cachedInputTokens, outputTokens) {
   const cachedInputCost = (cleanCachedInputTokens / 1_000_000) * OPENAI_CACHED_INPUT_USD_PER_1M;
   const outputCost = (Math.max(cleanInteger(outputTokens), 0) / 1_000_000) * OPENAI_OUTPUT_USD_PER_1M;
   return roundMoney(inputCost + cachedInputCost + outputCost);
+}
+
+async function resetStoredUsageEvents(adminUser) {
+  const resetAt = Date.now();
+  const db = await getMongoDb();
+
+  if (db) {
+    const result = await db.collection("usage_events").deleteMany({});
+    return {
+      resetAt,
+      deletedEvents: cleanFiniteInteger(result.deletedCount),
+      resetBy: getAdminResetLabel(adminUser),
+    };
+  }
+
+  const events = await readUsageEvents();
+  await writeUsageEvents([]);
+
+  return {
+    resetAt,
+    deletedEvents: events.length,
+    resetBy: getAdminResetLabel(adminUser),
+  };
+}
+
+function getAdminResetLabel(user) {
+  return cleanString(user?.robloxUsername || user?.username || user?.robloxDisplayName || user?.id || "admin", 120);
 }
 
 async function recordUsage(entry) {
