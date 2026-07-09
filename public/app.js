@@ -21,6 +21,8 @@ const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
 const usageEstimatedCost = document.querySelector("#usageEstimatedCost");
 const usageCachedInputTokens = document.querySelector("#usageCachedInputTokens");
+const usageBackblazeStorage = document.querySelector("#usageBackblazeStorage");
+const usageBackblazeCost = document.querySelector("#usageBackblazeCost");
 const usageResetDate = document.querySelector("#usageResetDate");
 const usageStatus = document.querySelector("#usageStatus");
 const usageMetricGrid = document.querySelector("#usageMetricGrid");
@@ -501,6 +503,8 @@ function resetUsageView() {
   if (usageConnectedGames) usageConnectedGames.textContent = "0";
   if (usageEstimatedCost) usageEstimatedCost.textContent = "$0.00";
   if (usageCachedInputTokens) usageCachedInputTokens.textContent = "0";
+  if (usageBackblazeStorage) usageBackblazeStorage.textContent = "0 B";
+  if (usageBackblazeCost) usageBackblazeCost.textContent = "$0.00";
   if (usageResetDate) usageResetDate.textContent = "--";
   if (usageStatus) usageStatus.textContent = "Sign in to view usage.";
   if (usageMetricGrid) usageMetricGrid.innerHTML = "";
@@ -519,6 +523,8 @@ function renderAccountUsage(data) {
   if (usageConnectedGames) usageConnectedGames.textContent = formatCompactNumber(data.connectedGameCount || 0);
   if (usageEstimatedCost) usageEstimatedCost.textContent = formatCurrency(usage.estimatedCostUsd || 0);
   if (usageCachedInputTokens) usageCachedInputTokens.textContent = formatCompactNumber(usage.cachedOpenAiInputTokens || 0);
+  if (usageBackblazeStorage) usageBackblazeStorage.textContent = formatBytes(usage.backblazeStoredBytes || 0);
+  if (usageBackblazeCost) usageBackblazeCost.textContent = formatCurrency(usage.backblazeEstimatedMonthlyStorageCostUsd || 0);
   if (usageResetDate) usageResetDate.textContent = formatShortDate(period.resetsAt);
   if (usageStatus) {
     usageStatus.textContent = `Current period: ${formatShortDate(period.startsAt)} to ${formatShortDate(period.endsAt)}.`;
@@ -536,14 +542,15 @@ function renderAccountUsage(data) {
 function renderUsageMetricCard(metric) {
   const percent = clampPercent(metric.percent);
   const status = metric.status === "blocked" || metric.status === "warning" ? metric.status : "ok";
-  const limitText = metric.limit > 0 ? formatCompactNumber(metric.limit) : "Unlimited";
-  const remainingText = metric.remaining === null ? "Unlimited remaining" : `${formatCompactNumber(metric.remaining || 0)} remaining`;
+  const usedText = formatUsageMetricValue(metric.used || 0, metric.unit);
+  const limitText = metric.limit > 0 ? formatUsageMetricValue(metric.limit, metric.unit) : "Unlimited";
+  const remainingText = metric.remaining === null ? "Unlimited remaining" : `${formatUsageMetricValue(metric.remaining || 0, metric.unit)} remaining`;
 
   return `
     <article class="panel usageMetricCard ${escapeHtml(status)}">
       <div class="usageMetricHeader">
         <span>${escapeHtml(metric.label || "Usage")}</span>
-        <strong>${escapeHtml(formatCompactNumber(metric.used || 0))} / ${escapeHtml(limitText)}</strong>
+        <strong>${escapeHtml(usedText)} / ${escapeHtml(limitText)}</strong>
       </div>
       <div class="usageProgress" aria-label="${escapeHtml(metric.label || "Usage")} usage">
         <span style="width: ${escapeHtml(String(percent))}%"></span>
@@ -601,6 +608,11 @@ function renderAdminUser(user) {
         <div><span>Events</span><strong>${escapeHtml(formatCompactNumber(usage.events || 0))}</strong></div>
         <div><span>OpenAI tokens</span><strong>${escapeHtml(formatCompactNumber(usage.openAiTokens || 0))}</strong></div>
         <div><span>Cached input</span><strong>${escapeHtml(formatCompactNumber(usage.cachedOpenAiInputTokens || 0))}</strong></div>
+        <div><span>B2 storage</span><strong>${escapeHtml(formatBytes(usage.backblazeStoredBytes || 0))}</strong></div>
+        <div><span>B2 objects</span><strong>${escapeHtml(formatCompactNumber(usage.backblazeObjectCount || 0))}</strong></div>
+        <div><span>B2 uploads</span><strong>${escapeHtml(formatBytes(usage.backblazeUploadedBytes || 0))}</strong></div>
+        <div><span>B2 downloads</span><strong>${escapeHtml(formatBytes(usage.backblazeDownloadedBytes || 0))}</strong></div>
+        <div><span>B2 monthly</span><strong>${escapeHtml(formatCurrency(usage.backblazeEstimatedMonthlyStorageCostUsd || 0))}</strong></div>
         <div><span>Est. cost</span><strong>${escapeHtml(formatCurrency(usage.estimatedCostUsd || 0))}</strong></div>
       </div>
       <ul class="adminUniverseList">${universes}</ul>
@@ -1456,6 +1468,25 @@ function formatCompactNumber(value) {
     notation: Math.abs(number) >= 10000 ? "compact" : "standard",
     maximumFractionDigits: 1,
   }).format(number);
+}
+
+function formatBytes(value) {
+  const bytes = Math.max(Number(value) || 0, 0);
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = bytes / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: size >= 10 ? 1 : 2,
+  }).format(size)} ${units[unitIndex]}`;
+}
+
+function formatUsageMetricValue(value, unit) {
+  return unit === "bytes" ? formatBytes(value) : formatCompactNumber(value);
 }
 
 function formatCurrency(value) {

@@ -12,6 +12,7 @@ const mapSnapshotDir = path.join(__dirname, "data", "map-snapshots");
 const userStorePath = path.join(__dirname, "data", "users.json");
 const projectStorePath = path.join(__dirname, "data", "projects.json");
 const usageStorePath = path.join(__dirname, "data", "usage-events.json");
+const objectStorageObjectStorePath = path.join(__dirname, "data", "object-storage-objects.json");
 
 loadLocalEnv();
 
@@ -69,6 +70,9 @@ const USAGE_LIMITS = {
 const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.75);
 const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.075);
 const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 4.5);
+const B2_STORAGE_USD_PER_TB_MONTH = cleanEnvNumber("B2_STORAGE_USD_PER_TB_MONTH", 6.95);
+const B2_EGRESS_OVERAGE_USD_PER_GB = cleanEnvNumber("B2_EGRESS_OVERAGE_USD_PER_GB", 0.01);
+const B2_FREE_EGRESS_MULTIPLIER = cleanEnvNumber("B2_FREE_EGRESS_MULTIPLIER", 3);
 const ANALYTICS_STORAGE_MODE = cleanAnalyticsStorageMode(process.env.ANALYTICS_STORAGE_MODE || "");
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
@@ -526,6 +530,9 @@ async function ensureMongoIndexes(db) {
     db.collection("usage_events").createIndex({ projectId: 1, month: 1 }),
     db.collection("usage_events").createIndex({ universeId: 1, month: 1 }),
     db.collection("usage_events").createIndex({ createdAt: -1 }),
+    db.collection("object_storage_objects").createIndex({ objectKey: 1 }, { unique: true }),
+    db.collection("object_storage_objects").createIndex({ userId: 1 }),
+    db.collection("object_storage_objects").createIndex({ universeId: 1 }),
   ]);
 }
 
@@ -642,7 +649,7 @@ async function upsertAnalyticsDocuments(db, collectionName, documents) {
   await db.collection(collectionName).bulkWrite(operations, { ordered: false });
 }
 
-async function persistPresenceToObjectStorage(presence) {
+async function persistPresenceToObjectStorage(presence, usageContext = {}) {
   if (!OBJECT_STORAGE_CONFIGURED) return;
 
   try {
@@ -664,6 +671,13 @@ async function persistPresenceToObjectStorage(presence) {
         receivedat: String(presence.receivedAt),
       },
     }));
+    await recordObjectStorageWrite({
+      usageContext,
+      objectKey,
+      byteLength: body.length,
+      feature: "presence_batch",
+      contentType: "application/x-ndjson",
+    });
 
     objectStorageStatus.connected = true;
     objectStorageStatus.lastError = "";
@@ -785,6 +799,7 @@ async function deleteObjectStoragePrefix(prefix) {
           Quiet: true,
         },
       }));
+      await deleteObjectStorageObjectRecords(objects.map((object) => object.Key));
       deletedCount += objects.length;
     }
 
@@ -808,6 +823,7 @@ async function deleteObjectStorageKey(objectKey) {
     if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return 0;
     throw error;
   }
+  await deleteObjectStorageObjectRecords(objectKey);
   return 1;
 }
 
@@ -819,6 +835,7 @@ async function readObjectStorageJson(objectKey) {
     Key: objectKey,
   }));
   const buffer = await streamToBuffer(response.Body);
+  await recordObjectStorageRead(objectKey, buffer.length);
   return JSON.parse(buffer.toString("utf8"));
 }
 
@@ -830,6 +847,7 @@ async function readObjectStorageGzipJson(objectKey) {
     Key: objectKey,
   }));
   const buffer = await streamToBuffer(response.Body);
+  await recordObjectStorageRead(objectKey, buffer.length);
   return JSON.parse(gunzipSync(buffer).toString("utf8"));
 }
 
@@ -1325,7 +1343,7 @@ async function handlePresenceHeartbeat(req, res) {
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
   await persistPresenceToMongo(presence.value);
-  await persistPresenceToObjectStorage(presence.value);
+  await persistPresenceToObjectStorage(presence.value, usageContext);
   if (usageContext.userId && eventCount > 0) {
     await recordUsage({
       ...usageContext,
@@ -1390,7 +1408,7 @@ async function handleMapSnapshotUpload(req, res) {
     }
   }
 
-  const result = await saveMapSnapshotChunk(chunk.value);
+  const result = await saveMapSnapshotChunk(chunk.value, usageContext);
   if (usageContext.userId && result.ok !== false) {
     await recordUsage({
       ...usageContext,
@@ -1911,14 +1929,14 @@ function normalizeMapPart(part) {
   };
 }
 
-async function saveMapSnapshotChunk(chunk) {
+async function saveMapSnapshotChunk(chunk, usageContext = {}) {
   const universeKey = String(chunk.universeId);
   const sessionKey = `${universeKey}:${chunk.uploadId}`;
 
   if (chunk.chunkCount === 1) {
     const snapshot = buildMapSnapshot(chunk, chunk.parts);
     mapSnapshotsByUniverseId.set(universeKey, snapshot);
-    await persistMapSnapshot(snapshot);
+    await persistMapSnapshot(snapshot, usageContext);
     mapUploadSessions.delete(sessionKey);
     return {
       ok: true,
@@ -1969,7 +1987,7 @@ async function saveMapSnapshotChunk(chunk) {
 
   const snapshot = buildMapSnapshot(session, parts);
   mapSnapshotsByUniverseId.set(universeKey, snapshot);
-  await persistMapSnapshot(snapshot);
+  await persistMapSnapshot(snapshot, usageContext);
   mapUploadSessions.delete(sessionKey);
 
   return {
@@ -2019,10 +2037,10 @@ async function getMapSnapshot(filters = {}) {
   };
 }
 
-async function persistMapSnapshot(snapshot) {
+async function persistMapSnapshot(snapshot, usageContext = {}) {
   if (OBJECT_STORAGE_CONFIGURED) {
     try {
-      await persistMapSnapshotToObjectStorage(snapshot);
+      await persistMapSnapshotToObjectStorage(snapshot, usageContext);
       return;
     } catch (error) {
       objectStorageStatus.lastError = error.message || String(error);
@@ -2090,7 +2108,7 @@ async function readPersistedMapSnapshot(universeId) {
   }
 }
 
-async function persistMapSnapshotToObjectStorage(snapshot) {
+async function persistMapSnapshotToObjectStorage(snapshot, usageContext = {}) {
   const latestKey = getObjectStorageMapSnapshotKey(snapshot.universeId);
   const versionedKey = getObjectStorageMapSnapshotVersionKey(snapshot);
   const body = gzipSync(Buffer.from(JSON.stringify(snapshot), "utf8"));
@@ -2114,10 +2132,24 @@ async function persistMapSnapshotToObjectStorage(snapshot) {
     ...putOptions,
     Key: latestKey,
   }));
+  await recordObjectStorageWrite({
+    usageContext,
+    objectKey: latestKey,
+    byteLength: body.length,
+    feature: "map_snapshot_latest",
+    contentType: "application/json",
+  });
   await client.send(new PutObjectCommand({
     ...putOptions,
     Key: versionedKey,
   }));
+  await recordObjectStorageWrite({
+    usageContext,
+    objectKey: versionedKey,
+    byteLength: body.length,
+    feature: "map_snapshot_version",
+    contentType: "application/json",
+  });
 
   objectStorageStatus.connected = true;
   objectStorageStatus.lastError = "";
@@ -3339,10 +3371,12 @@ async function getAiInsightReportFromQuery(searchParams) {
 async function persistAiInsightsReport(report) {
   const universeId = cleanInteger(report?.universeId);
   if (!OBJECT_STORAGE_CONFIGURED || universeId <= 0) return;
+  const usageContext = await getUsageContextForUniverse(null, universeId);
 
   const latestKey = getObjectStorageAiReportKey(universeId);
   const versionedKey = getObjectStorageAiReportVersionKey(report);
   const body = JSON.stringify(report);
+  const byteLength = Buffer.byteLength(body, "utf8");
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
   const putOptions = {
@@ -3360,10 +3394,24 @@ async function persistAiInsightsReport(report) {
     ...putOptions,
     Key: latestKey,
   }));
+  await recordObjectStorageWrite({
+    usageContext,
+    objectKey: latestKey,
+    byteLength,
+    feature: "ai_report_latest",
+    contentType: "application/json",
+  });
   await client.send(new PutObjectCommand({
     ...putOptions,
     Key: versionedKey,
   }));
+  await recordObjectStorageWrite({
+    usageContext,
+    objectKey: versionedKey,
+    byteLength,
+    feature: "ai_report_version",
+    contentType: "application/json",
+  });
 
   await appendAiReportManifest(universeId, {
     generatedAt: cleanInteger(report.generatedAt) || Date.now(),
@@ -3419,6 +3467,7 @@ async function readObjectStorageAiReportVersion(universeId, generatedAt) {
 }
 
 async function appendAiReportManifest(universeId, reportSummary) {
+  const usageContext = await getUsageContextForUniverse(null, universeId);
   const reports = await readAiReportManifest(universeId);
   const byGeneratedAt = new Map(reports.map((entry) => [cleanInteger(entry.generatedAt), entry]));
   byGeneratedAt.set(cleanInteger(reportSummary.generatedAt), reportSummary);
@@ -3429,16 +3478,25 @@ async function appendAiReportManifest(universeId, reportSummary) {
 
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
+  const body = JSON.stringify({
+    universeId,
+    updatedAt: Date.now(),
+    reports: nextReports,
+  });
+  const objectKey = getObjectStorageAiReportManifestKey(universeId);
   await client.send(new PutObjectCommand({
     Bucket: B2_BUCKET_NAME,
-    Key: getObjectStorageAiReportManifestKey(universeId),
-    Body: JSON.stringify({
-      universeId,
-      updatedAt: Date.now(),
-      reports: nextReports,
-    }),
+    Key: objectKey,
+    Body: body,
     ContentType: "application/json",
   }));
+  await recordObjectStorageWrite({
+    usageContext,
+    objectKey,
+    byteLength: Buffer.byteLength(body, "utf8"),
+    feature: "ai_report_manifest",
+    contentType: "application/json",
+  });
 }
 
 async function readAiReportManifest(universeId) {
@@ -3508,14 +3566,24 @@ async function saveAiAutomationSettings(settings) {
   aiAutomationSettingsCache.set(cacheKey, normalized);
 
   if (OBJECT_STORAGE_CONFIGURED) {
+    const usageContext = await getUsageContextForUniverse(null, cleanUniverseId);
+    const body = JSON.stringify(normalized);
+    const objectKey = getObjectStorageAiAutomationSettingsKey(cleanUniverseId);
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await getB2S3Client();
     await client.send(new PutObjectCommand({
       Bucket: B2_BUCKET_NAME,
-      Key: getObjectStorageAiAutomationSettingsKey(cleanUniverseId),
-      Body: JSON.stringify(normalized),
+      Key: objectKey,
+      Body: body,
       ContentType: "application/json",
     }));
+    await recordObjectStorageWrite({
+      usageContext,
+      objectKey,
+      byteLength: Buffer.byteLength(body, "utf8"),
+      feature: "ai_automation_settings",
+      contentType: "application/json",
+    });
   }
 
   return normalized;
@@ -4353,6 +4421,155 @@ function getAdminResetLabel(user) {
   return cleanString(user?.robloxUsername || user?.username || user?.robloxDisplayName || user?.id || "admin", 120);
 }
 
+async function recordObjectStorageWrite({ usageContext = {}, objectKey, byteLength, feature, contentType }) {
+  const cleanObjectKey = cleanString(objectKey, 512);
+  const cleanByteLength = cleanFiniteInteger(byteLength);
+  if (!cleanObjectKey || cleanByteLength <= 0) return null;
+
+  try {
+    let context = usageContext?.userId ? usageContext : null;
+    if (!context) {
+      const universeId = getUniverseIdFromObjectStorageKey(cleanObjectKey);
+      context = universeId > 0 ? await getUsageContextForUniverse(null, universeId) : {};
+    }
+    if (!context?.userId) return null;
+
+    const previous = await getObjectStorageObject(cleanObjectKey);
+    const now = Date.now();
+    const record = {
+      objectKey: cleanObjectKey,
+      userId: context.userId,
+      projectId: context.projectId || null,
+      universeId: cleanInteger(context.universeId) || getUniverseIdFromObjectStorageKey(cleanObjectKey) || null,
+      provider: "backblaze",
+      feature: cleanString(feature, 64) || "object",
+      contentType: cleanString(contentType, 120),
+      byteLength: cleanByteLength,
+      updatedAt: now,
+      createdAt: cleanInteger(previous?.createdAt) || now,
+    };
+
+    await upsertObjectStorageObject(record);
+    await recordUsage({
+      ...context,
+      provider: "backblaze",
+      feature: "object_storage_upload",
+      quantity: cleanByteLength,
+      unit: "bytes",
+      estimatedCostUsd: 0,
+      metadata: {
+        objectKey: cleanObjectKey,
+        storageFeature: record.feature,
+        byteLength: cleanByteLength,
+        previousByteLength: cleanFiniteInteger(previous?.byteLength),
+        contentType: record.contentType,
+      },
+    });
+    return record;
+  } catch (error) {
+    console.warn("B2 usage tracking write failed:", error.message || String(error));
+    return null;
+  }
+}
+
+async function recordObjectStorageRead(objectKey, byteLength) {
+  const cleanObjectKey = cleanString(objectKey, 512);
+  const cleanByteLength = cleanFiniteInteger(byteLength);
+  if (!cleanObjectKey || cleanByteLength <= 0) return;
+
+  try {
+    const object = await getObjectStorageObject(cleanObjectKey);
+    if (!object?.userId) return;
+
+    await recordUsage({
+      userId: object.userId,
+      projectId: object.projectId || null,
+      universeId: cleanInteger(object.universeId) || null,
+      provider: "backblaze",
+      feature: "object_storage_download",
+      quantity: cleanByteLength,
+      unit: "bytes",
+      estimatedCostUsd: 0,
+      metadata: {
+        objectKey: cleanObjectKey,
+        storageFeature: cleanString(object.feature, 64),
+        byteLength: cleanByteLength,
+      },
+    });
+  } catch (error) {
+    console.warn("B2 usage tracking read failed:", error.message || String(error));
+  }
+}
+
+async function getObjectStorageObject(objectKey) {
+  const cleanObjectKey = cleanString(objectKey, 512);
+  if (!cleanObjectKey) return null;
+
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("object_storage_objects").findOne({ objectKey: cleanObjectKey }, { projection: { _id: 0 } });
+  }
+
+  const objects = await readObjectStorageObjects();
+  return objects.find((object) => object.objectKey === cleanObjectKey) || null;
+}
+
+async function upsertObjectStorageObject(record) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("object_storage_objects").replaceOne(
+      { objectKey: record.objectKey },
+      record,
+      { upsert: true },
+    );
+    return;
+  }
+
+  const objects = await readObjectStorageObjects();
+  const nextObjects = objects.filter((object) => object.objectKey !== record.objectKey);
+  nextObjects.push(record);
+  await writeObjectStorageObjects(nextObjects);
+}
+
+async function deleteObjectStorageObjectRecords(objectKeys) {
+  const keys = [...new Set((Array.isArray(objectKeys) ? objectKeys : [objectKeys])
+    .map((key) => cleanString(key, 512))
+    .filter(Boolean))];
+  if (!keys.length) return;
+
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("object_storage_objects").deleteMany({ objectKey: { $in: keys } });
+    return;
+  }
+
+  const objects = await readObjectStorageObjects();
+  await writeObjectStorageObjects(objects.filter((object) => !keys.includes(object.objectKey)));
+}
+
+async function readObjectStorageObjects() {
+  try {
+    const content = await fs.readFile(objectStorageObjectStorePath, "utf8");
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.objects) ? parsed.objects : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeObjectStorageObjects(objects) {
+  await fs.mkdir(path.dirname(objectStorageObjectStorePath), { recursive: true });
+  await fs.writeFile(objectStorageObjectStorePath, JSON.stringify({ objects }, null, 2));
+}
+
+function getUniverseIdFromObjectStorageKey(objectKey) {
+  const key = String(objectKey || "");
+  const match = key.match(/^(?:raw|maps|reports|rollups)\/(\d+)\//)
+    || key.match(/^settings\/ai-automation\/(\d+)[.]json$/);
+  return cleanInteger(match?.[1]);
+}
+
 async function recordUsage(entry) {
   const userId = typeof entry?.userId === "string" ? entry.userId : "";
   if (!userId) return null;
@@ -4389,17 +4606,20 @@ async function getMonthlyUsage(userId, month = getUsageMonthKey(Date.now())) {
   const cleanUserId = typeof userId === "string" ? userId : "";
   if (!cleanUserId) return createEmptyUsageSummary(month);
 
+  let summary;
   const db = await getMongoDb();
   if (db) {
     const events = await db.collection("usage_events")
       .find({ userId: cleanUserId, month })
       .project({ _id: 0 })
       .toArray();
-    return aggregateUsageEvents(events, month);
+    summary = aggregateUsageEvents(events, month);
+  } else {
+    const events = await readUsageEvents();
+    summary = aggregateUsageEvents(events.filter((event) => event.userId === cleanUserId && event.month === month), month);
   }
 
-  const events = await readUsageEvents();
-  return aggregateUsageEvents(events.filter((event) => event.userId === cleanUserId && event.month === month), month);
+  return mergeObjectStorageUsage(summary, await getObjectStorageUsageForUser(cleanUserId));
 }
 
 async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now())) {
@@ -4421,6 +4641,14 @@ async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.n
 
   for (const id of ids) {
     summaries.set(id, aggregateUsageEvents(eventsByUser.get(id) || [], month));
+  }
+
+  const storageByUser = await getObjectStorageUsageByUserIds(ids);
+  for (const id of ids) {
+    summaries.set(id, mergeObjectStorageUsage(
+      summaries.get(id) || createEmptyUsageSummary(month),
+      storageByUser.get(id) || createEmptyObjectStorageUsage(),
+    ));
   }
 
   return summaries;
@@ -4469,6 +4697,15 @@ function getUsageMetrics(usage) {
   return [
     createUsageMetric("aiRequests", "AI runs", cleanFiniteInteger(usage?.aiRequests), cleanFiniteInteger(limits.aiRequestsPerMonth), "runs"),
     openAiTokens,
+    {
+      ...createUsageMetric("backblazeStoredBytes", "Backblaze storage", cleanFiniteInteger(usage?.backblazeStoredBytes), 0, "bytes"),
+      note: `${formatUsageNumber(cleanFiniteInteger(usage?.backblazeObjectCount))} B2 objects. Storage cost is estimated from current bytes stored.`,
+    },
+    createUsageMetric("backblazeUploadedBytes", "Backblaze uploads", cleanFiniteInteger(usage?.backblazeUploadedBytes), 0, "bytes"),
+    {
+      ...createUsageMetric("backblazeDownloadedBytes", "Backblaze downloads", cleanFiniteInteger(usage?.backblazeDownloadedBytes), 0, "bytes"),
+      note: "Tracked from app reads. Final egress billing uses Backblaze's account-level 3x free egress pool.",
+    },
     createUsageMetric("events", "Roblox events", cleanFiniteInteger(usage?.events), cleanFiniteInteger(limits.eventsPerMonth), "events"),
     createUsageMetric("mapUploads", "Map uploads", cleanFiniteInteger(usage?.mapUploads), cleanFiniteInteger(limits.mapUploadsPerMonth), "uploads"),
   ];
@@ -4502,6 +4739,10 @@ function aggregateUsageEvents(events, month) {
       if (event.unit === "tokens") summary.openAiTokens += quantity;
       summary.cachedOpenAiInputTokens += cleanFiniteInteger(event.metadata?.cachedInputTokens);
     }
+    if (event.provider === "backblaze") {
+      if (event.feature === "object_storage_upload" && event.unit === "bytes") summary.backblazeUploadedBytes += quantity;
+      if (event.feature === "object_storage_download" && event.unit === "bytes") summary.backblazeDownloadedBytes += quantity;
+    }
     if (event.feature === "presence_ingest" && event.unit === "events") summary.events += quantity;
     if (event.feature === "map_snapshot_upload") summary.mapUploads += quantity;
     summary.estimatedCostUsd = roundMoney(summary.estimatedCostUsd + Number(event.estimatedCostUsd || 0));
@@ -4517,6 +4758,12 @@ function createEmptyUsageSummary(month) {
     aiRequests: 0,
     openAiTokens: 0,
     cachedOpenAiInputTokens: 0,
+    backblazeStoredBytes: 0,
+    backblazeObjectCount: 0,
+    backblazeUploadedBytes: 0,
+    backblazeDownloadedBytes: 0,
+    backblazeEstimatedMonthlyStorageCostUsd: 0,
+    backblazeEstimatedEgressOverageCostUsd: 0,
     events: 0,
     mapUploads: 0,
     estimatedCostUsd: 0,
@@ -4530,11 +4777,112 @@ function aggregateUsageSummaries(summaries) {
     aiRequests: total.aiRequests + cleanFiniteInteger(summary.aiRequests),
     openAiTokens: total.openAiTokens + cleanFiniteInteger(summary.openAiTokens),
     cachedOpenAiInputTokens: total.cachedOpenAiInputTokens + cleanFiniteInteger(summary.cachedOpenAiInputTokens),
+    backblazeStoredBytes: total.backblazeStoredBytes + cleanFiniteInteger(summary.backblazeStoredBytes),
+    backblazeObjectCount: total.backblazeObjectCount + cleanFiniteInteger(summary.backblazeObjectCount),
+    backblazeUploadedBytes: total.backblazeUploadedBytes + cleanFiniteInteger(summary.backblazeUploadedBytes),
+    backblazeDownloadedBytes: total.backblazeDownloadedBytes + cleanFiniteInteger(summary.backblazeDownloadedBytes),
+    backblazeEstimatedMonthlyStorageCostUsd: roundMoney(total.backblazeEstimatedMonthlyStorageCostUsd + Number(summary.backblazeEstimatedMonthlyStorageCostUsd || 0)),
+    backblazeEstimatedEgressOverageCostUsd: roundMoney(total.backblazeEstimatedEgressOverageCostUsd + Number(summary.backblazeEstimatedEgressOverageCostUsd || 0)),
     events: total.events + cleanFiniteInteger(summary.events),
     mapUploads: total.mapUploads + cleanFiniteInteger(summary.mapUploads),
     estimatedCostUsd: roundMoney(total.estimatedCostUsd + Number(summary.estimatedCostUsd || 0)),
     limits: { ...USAGE_LIMITS },
   }), createEmptyUsageSummary(getUsageMonthKey(Date.now())));
+}
+
+function mergeObjectStorageUsage(summary, storageUsage) {
+  const next = {
+    ...summary,
+    backblazeStoredBytes: cleanFiniteInteger(storageUsage?.storedBytes),
+    backblazeObjectCount: cleanFiniteInteger(storageUsage?.objectCount),
+    backblazeEstimatedMonthlyStorageCostUsd: estimateBackblazeMonthlyStorageCost(storageUsage?.storedBytes),
+    backblazeEstimatedEgressOverageCostUsd: estimateBackblazeEgressOverageCost(
+      summary.backblazeDownloadedBytes,
+      storageUsage?.storedBytes,
+    ),
+  };
+  next.estimatedCostUsd = roundMoney(
+    Number(summary.estimatedCostUsd || 0)
+    + next.backblazeEstimatedMonthlyStorageCostUsd
+    + next.backblazeEstimatedEgressOverageCostUsd,
+  );
+  return next;
+}
+
+function createEmptyObjectStorageUsage() {
+  return {
+    storedBytes: 0,
+    objectCount: 0,
+  };
+}
+
+async function getObjectStorageUsageForUser(userId) {
+  const cleanUserId = cleanString(userId, 120);
+  if (!cleanUserId) return createEmptyObjectStorageUsage();
+
+  const db = await getMongoDb();
+  if (db) {
+    const rows = await db.collection("object_storage_objects").aggregate([
+      { $match: { userId: cleanUserId } },
+      { $group: { _id: "$userId", storedBytes: { $sum: "$byteLength" }, objectCount: { $sum: 1 } } },
+    ]).toArray();
+    return {
+      storedBytes: cleanFiniteInteger(rows[0]?.storedBytes),
+      objectCount: cleanFiniteInteger(rows[0]?.objectCount),
+    };
+  }
+
+  const objects = await readObjectStorageObjects();
+  return objects
+    .filter((object) => object.userId === cleanUserId)
+    .reduce((total, object) => ({
+      storedBytes: total.storedBytes + cleanFiniteInteger(object.byteLength),
+      objectCount: total.objectCount + 1,
+    }), createEmptyObjectStorageUsage());
+}
+
+async function getObjectStorageUsageByUserIds(userIds) {
+  const ids = [...new Set((Array.isArray(userIds) ? userIds : [])
+    .map((id) => cleanString(id, 120))
+    .filter(Boolean))];
+  const summaries = new Map(ids.map((id) => [id, createEmptyObjectStorageUsage()]));
+  if (!ids.length) return summaries;
+
+  const db = await getMongoDb();
+  if (db) {
+    const rows = await db.collection("object_storage_objects").aggregate([
+      { $match: { userId: { $in: ids } } },
+      { $group: { _id: "$userId", storedBytes: { $sum: "$byteLength" }, objectCount: { $sum: 1 } } },
+    ]).toArray();
+    for (const row of rows) {
+      summaries.set(row._id, {
+        storedBytes: cleanFiniteInteger(row.storedBytes),
+        objectCount: cleanFiniteInteger(row.objectCount),
+      });
+    }
+    return summaries;
+  }
+
+  const objects = await readObjectStorageObjects();
+  for (const object of objects) {
+    if (!summaries.has(object.userId)) continue;
+    const current = summaries.get(object.userId);
+    current.storedBytes += cleanFiniteInteger(object.byteLength);
+    current.objectCount += 1;
+  }
+  return summaries;
+}
+
+function estimateBackblazeMonthlyStorageCost(storedBytes) {
+  const terabytes = cleanFiniteInteger(storedBytes) / 1_000_000_000_000;
+  return roundMoney(terabytes * B2_STORAGE_USD_PER_TB_MONTH);
+}
+
+function estimateBackblazeEgressOverageCost(downloadedBytes, storedBytes) {
+  const freeBytes = cleanFiniteInteger(storedBytes) * B2_FREE_EGRESS_MULTIPLIER;
+  const overageBytes = Math.max(cleanFiniteInteger(downloadedBytes) - freeBytes, 0);
+  const gigabytes = overageBytes / 1_000_000_000;
+  return roundMoney(gigabytes * B2_EGRESS_OVERAGE_USD_PER_GB);
 }
 
 async function readUsageEvents() {
