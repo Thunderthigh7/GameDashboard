@@ -270,6 +270,18 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    const reconciliationMatch = url.pathname.match(/^\/api\/admin\/reconciliations\/([^/]+)$/);
+    if (reconciliationMatch && req.method === "DELETE") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      const deleted = await deleteAdminReconciliation(reconciliationMatch[1]);
+      if (!deleted) return sendJson(res, 404, { error: "Reconciliation record not found" });
+      return sendJson(res, 200, await getAdminReconciliations());
+    }
+
     if (url.pathname === "/api/admin/usage/reset" && req.method === "POST") {
       const user = await findUserById(auth.userId);
       if (!isAdminUser(user)) {
@@ -5415,6 +5427,23 @@ async function upsertReconciliation(record) {
   const nextRecords = records.filter((item) => item.month !== record.month);
   nextRecords.push(record);
   await writeReconciliations(nextRecords);
+}
+
+async function deleteAdminReconciliation(month) {
+  const cleanMonth = cleanUsageMonth(decodeURIComponent(String(month || "")));
+  if (!cleanMonth) return false;
+
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("reconciliations").deleteOne({ month: cleanMonth });
+    return result.deletedCount > 0;
+  }
+
+  const records = await readReconciliations();
+  const nextRecords = records.filter((record) => record.month !== cleanMonth);
+  if (nextRecords.length === records.length) return false;
+  await writeReconciliations(nextRecords);
+  return true;
 }
 
 async function readReconciliations() {

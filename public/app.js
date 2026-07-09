@@ -153,6 +153,10 @@ function bindEvents() {
     event.preventDefault();
     saveReconciliation();
   });
+  reconciliationList?.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("[data-delete-reconciliation]");
+    if (deleteButton) deleteReconciliation(deleteButton);
+  });
   adminUserList?.addEventListener("click", (event) => {
     const resetButton = event.target.closest("[data-reset-usage-user]");
     if (resetButton) resetAdminUsage(resetButton);
@@ -549,6 +553,28 @@ async function saveReconciliation() {
   }
 }
 
+async function deleteReconciliation(button) {
+  if (!authenticatedUser?.isAdmin) return;
+  const month = button?.dataset.deleteReconciliation || "";
+  if (!month) return;
+  const confirmed = window.confirm(`Delete reconciliation for ${month}?`);
+  if (!confirmed) return;
+
+  if (reconciliationStatus) reconciliationStatus.textContent = `Deleting ${month}...`;
+  setReconciliationFormDisabled(true);
+
+  try {
+    const data = await request(`/api/admin/reconciliations/${encodeURIComponent(month)}`, { method: "DELETE" });
+    renderReconciliations(data);
+    if (reconciliationStatus) reconciliationStatus.textContent = `Deleted reconciliation for ${month}.`;
+  } catch (error) {
+    handleAuthError(error);
+    if (reconciliationStatus) reconciliationStatus.textContent = error.message;
+  } finally {
+    setReconciliationFormDisabled(false);
+  }
+}
+
 function resetReconciliationView() {
   if (reconciliationStats) reconciliationStats.innerHTML = "";
   if (reconciliationList) reconciliationList.innerHTML = "";
@@ -581,7 +607,9 @@ function renderReconciliations(data) {
       ? records.map(renderReconciliationRecord).join("")
       : `<p class="status">No reconciliation records yet.</p>`;
   }
-  if (reconciliationStatus) reconciliationStatus.textContent = "Provider bills are the source of truth. Variance is actual cost minus app-estimated cost.";
+  if (reconciliationStatus) {
+    reconciliationStatus.textContent = "Provider bills are the source of truth. App estimates are everyone combined for the selected month.";
+  }
 }
 
 function renderReconciliationRecord(record) {
@@ -594,15 +622,18 @@ function renderReconciliationRecord(record) {
   return `
     <article class="reconciliationRecord ${escapeHtml(varianceClass)}">
       <div class="reconciliationRecordHeader">
-        <strong>${escapeHtml(record.month || "")}</strong>
-        <span>${escapeHtml(record.updatedBy ? `Updated by ${record.updatedBy}` : "Saved")}</span>
+        <div>
+          <strong>${escapeHtml(record.month || "")}</strong>
+          <span>${escapeHtml(record.updatedBy ? `Updated by ${record.updatedBy}` : "Saved")}</span>
+        </div>
+        <button class="miniButton danger" type="button" data-delete-reconciliation="${escapeHtml(record.month || "")}">Delete</button>
       </div>
       <div class="reconciliationRecordGrid">
         <div><span>Actual OpenAI</span><strong>${escapeHtml(formatCurrency(record.actualOpenAiCostUsd || 0))}</strong></div>
         <div><span>Actual B2</span><strong>${escapeHtml(formatCurrency(record.actualBackblazeCostUsd || 0))}</strong></div>
         <div><span>Actual Render</span><strong>${escapeHtml(formatCurrency(record.actualRenderCostUsd || 0))}</strong></div>
         <div><span>Actual total</span><strong>${escapeHtml(formatCurrency(record.actualTotalCostUsd || 0))}</strong></div>
-        <div><span>App estimate</span><strong>${escapeHtml(formatCurrency(record.estimatedTotalCostUsd || 0))}</strong></div>
+        <div><span>App month estimate</span><strong>${escapeHtml(formatCurrency(record.estimatedTotalCostUsd || 0))}</strong></div>
         <div><span>Variance</span><strong>${escapeHtml(formatCurrency(variance))}${escapeHtml(variancePercent)}</strong></div>
       </div>
       ${record.notes ? `<p>${escapeHtml(record.notes)}</p>` : ""}
