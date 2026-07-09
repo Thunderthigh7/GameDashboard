@@ -13,6 +13,9 @@ const adminUsersStatus = document.querySelector("#adminUsersStatus");
 const adminTotalUsers = document.querySelector("#adminTotalUsers");
 const adminTotalProjects = document.querySelector("#adminTotalProjects");
 const adminRobloxUsers = document.querySelector("#adminRobloxUsers");
+const adminMonthlyAiRequests = document.querySelector("#adminMonthlyAiRequests");
+const adminMonthlyEvents = document.querySelector("#adminMonthlyEvents");
+const adminMonthlyCost = document.querySelector("#adminMonthlyCost");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -246,6 +249,9 @@ function setAuthenticated(value, user = null) {
     if (adminTotalUsers) adminTotalUsers.textContent = "0";
     if (adminTotalProjects) adminTotalProjects.textContent = "0";
     if (adminRobloxUsers) adminRobloxUsers.textContent = "0";
+    if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = "0";
+    if (adminMonthlyEvents) adminMonthlyEvents.textContent = "0";
+    if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
@@ -386,6 +392,9 @@ async function loadAdminUsers() {
     adminTotalUsers.textContent = String(data.totalUsers || 0);
     adminTotalProjects.textContent = String(data.totalProjects || 0);
     if (adminRobloxUsers) adminRobloxUsers.textContent = String(data.totalRobloxUsers || 0);
+    if (adminMonthlyAiRequests) adminMonthlyAiRequests.textContent = formatCompactNumber(data.usageTotals?.aiRequests || 0);
+    if (adminMonthlyEvents) adminMonthlyEvents.textContent = formatCompactNumber(data.usageTotals?.events || 0);
+    if (adminMonthlyCost) adminMonthlyCost.textContent = formatCurrency(data.usageTotals?.estimatedCostUsd || 0);
     adminUsersStatus.textContent = data.passwordVisibility || "Passwords are hashed and cannot be viewed.";
     adminUserList.innerHTML = Array.isArray(data.users) && data.users.length
       ? data.users.map(renderAdminUser).join("")
@@ -403,6 +412,7 @@ function renderAdminUser(user) {
   const robloxId = user.robloxUserId ? String(user.robloxUserId) : "";
   const robloxName = user.robloxUsername || user.robloxDisplayName || "";
   const provider = user.authProvider === "roblox" || robloxId ? "Roblox" : "Legacy";
+  const usage = user.usage || {};
   const universes = Array.isArray(user.universes) && user.universes.length
     ? user.universes.map((universe) => `
       <li>
@@ -429,6 +439,10 @@ function renderAdminUser(user) {
         <div><span>Roblox username</span><strong>${escapeHtml(robloxName || "Not linked")}</strong></div>
         <div><span>Roblox user ID</span><strong>${escapeHtml(robloxId || "Not linked")}</strong></div>
         <div><span>Provider</span><strong>${escapeHtml(provider)}</strong></div>
+        <div><span>AI calls</span><strong>${escapeHtml(formatCompactNumber(usage.aiRequests || 0))}</strong></div>
+        <div><span>Events</span><strong>${escapeHtml(formatCompactNumber(usage.events || 0))}</strong></div>
+        <div><span>OpenAI tokens</span><strong>${escapeHtml(formatCompactNumber(usage.openAiTokens || 0))}</strong></div>
+        <div><span>Est. cost</span><strong>${escapeHtml(formatCurrency(usage.estimatedCostUsd || 0))}</strong></div>
       </div>
       <ul class="adminUniverseList">${universes}</ul>
     </article>
@@ -644,9 +658,8 @@ function renderOwnedGameOption(game) {
 function renderUniverseOption(universe) {
   const id = String(universe.id || "");
   const label = String(universe.name || `Universe ${id}`);
-  const totalSamples = Number(universe.totalSamples || 0);
   const selected = id === selectedUniverseId ? " selected" : "";
-  return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label)} (${escapeHtml(String(totalSamples))} samples)</option>`;
+  return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label)}</option>`;
 }
 
 function renderConnectedGames() {
@@ -1276,6 +1289,23 @@ function formatFullDate(timestamp) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatCompactNumber(value) {
+  const number = Number(value) || 0;
+  return new Intl.NumberFormat(undefined, {
+    notation: Math.abs(number) >= 10000 ? "compact" : "standard",
+    maximumFractionDigits: 1,
+  }).format(number);
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(Number(value) || 0);
 }
 
 function formatChatLocation(log) {

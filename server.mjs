@@ -11,6 +11,7 @@ const publicDir = path.join(__dirname, "public");
 const mapSnapshotDir = path.join(__dirname, "data", "map-snapshots");
 const userStorePath = path.join(__dirname, "data", "users.json");
 const projectStorePath = path.join(__dirname, "data", "projects.json");
+const usageStorePath = path.join(__dirname, "data", "usage-events.json");
 
 loadLocalEnv();
 
@@ -59,6 +60,14 @@ const ROBLOX_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || "gpt-5.5";
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
+const USAGE_LIMITS = {
+  aiRequestsPerMonth: cleanEnvInteger("USAGE_AI_REQUESTS_PER_MONTH", 25),
+  openAiTokensPerMonth: cleanEnvInteger("USAGE_OPENAI_TOKENS_PER_MONTH", 500_000),
+  eventsPerMonth: cleanEnvInteger("USAGE_EVENTS_PER_MONTH", 500_000),
+  mapUploadsPerMonth: cleanEnvInteger("USAGE_MAP_UPLOADS_PER_MONTH", 200),
+};
+const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 1.25);
+const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 10);
 const ANALYTICS_STORAGE_MODE = cleanAnalyticsStorageMode(process.env.ANALYTICS_STORAGE_MODE || "");
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || "";
 const DB_NAME = process.env.DB_NAME || process.env.MONGODB_DB || "roanalytics";
@@ -257,13 +266,17 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/ai-insights/analyze" && req.method === "POST") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
+        const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
+        await assertUsageAvailable(usageContext, "aiRequests", 2);
+        await assertUsageAvailable(usageContext, "openAiTokens", 1);
         return sendJson(res, 200, await analyzeAllAiInsights({
           universeId: url.searchParams.get("universeId"),
           from: url.searchParams.get("from"),
           to: url.searchParams.get("to"),
           target: url.searchParams.get("target") || url.searchParams.get("player"),
-        }));
+        }, usageContext));
       } catch (error) {
+        if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
         return sendJson(res, 400, { error: error.message });
       }
     }
@@ -271,10 +284,14 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/chat-insights/analyze" && req.method === "POST") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
+        const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
+        await assertUsageAvailable(usageContext, "aiRequests", 1);
+        await assertUsageAvailable(usageContext, "openAiTokens", 1);
         return sendJson(res, 200, await analyzeChatInsights({
           universeId: url.searchParams.get("universeId"),
-        }));
+        }, usageContext));
       } catch (error) {
+        if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
         return sendJson(res, 400, { error: error.message });
       }
     }
@@ -302,13 +319,17 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/ai-area-analysis/analyze" && req.method === "POST") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
+        const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
+        await assertUsageAvailable(usageContext, "aiRequests", 1);
+        await assertUsageAvailable(usageContext, "openAiTokens", 1);
         return sendJson(res, 200, await analyzeAiAreaInsights({
           universeId: url.searchParams.get("universeId"),
           from: url.searchParams.get("from"),
           to: url.searchParams.get("to"),
           target: url.searchParams.get("target") || url.searchParams.get("player"),
-        }));
+        }, usageContext));
       } catch (error) {
+        if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
         return sendJson(res, 400, { error: error.message });
       }
     }
@@ -471,6 +492,10 @@ async function ensureMongoIndexes(db) {
     db.collection("projects").createIndex({ universeId: 1 }, { unique: true }),
     db.collection("projects").createIndex({ ownerUserId: 1 }),
     db.collection("projects").createIndex({ secretHash: 1 }, { unique: true }),
+    db.collection("usage_events").createIndex({ userId: 1, month: 1 }),
+    db.collection("usage_events").createIndex({ projectId: 1, month: 1 }),
+    db.collection("usage_events").createIndex({ universeId: 1, month: 1 }),
+    db.collection("usage_events").createIndex({ createdAt: -1 }),
   ]);
 }
 
@@ -1253,6 +1278,17 @@ async function handlePresenceHeartbeat(req, res) {
     presence.value.projectId = project.id;
   }
 
+  const usageContext = getUsageContextFromProject(project, presence.value.universeId);
+  const eventCount = getPresenceUsageEventCount(presence.value);
+  if (usageContext.userId && eventCount > 0) {
+    try {
+      await assertUsageAvailable(usageContext, "events", eventCount);
+    } catch (error) {
+      if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
+      throw error;
+    }
+  }
+
   const savedChatCount = saveChatLogs(presence.value);
   const savedMovementCount = saveMovementSamples(presence.value);
   const savedMovementRollupCount = saveMovementRollups(presence.value);
@@ -1260,6 +1296,23 @@ async function handlePresenceHeartbeat(req, res) {
   const savedLeaveCount = saveLeaveSamples(presence.value);
   await persistPresenceToMongo(presence.value);
   await persistPresenceToObjectStorage(presence.value);
+  if (usageContext.userId && eventCount > 0) {
+    await recordUsage({
+      ...usageContext,
+      provider: "internal",
+      feature: "presence_ingest",
+      quantity: eventCount,
+      unit: "events",
+      estimatedCostUsd: 0,
+      metadata: {
+        savedChatCount,
+        savedMovementCount,
+        savedMovementRollupCount,
+        savedDeathCount,
+        savedLeaveCount,
+      },
+    });
+  }
 
   return sendJson(res, 200, {
     ok: true,
@@ -1297,7 +1350,32 @@ async function handleMapSnapshotUpload(req, res) {
     return sendJson(res, 401, { error: "Invalid dashboard secret" });
   }
 
+  const usageContext = getUsageContextFromProject(project, chunk.value.universeId);
+  if (usageContext.userId) {
+    try {
+      await assertUsageAvailable(usageContext, "mapUploads", 1);
+    } catch (error) {
+      if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
+      throw error;
+    }
+  }
+
   const result = await saveMapSnapshotChunk(chunk.value);
+  if (usageContext.userId && result.ok !== false) {
+    await recordUsage({
+      ...usageContext,
+      provider: "backblaze",
+      feature: "map_snapshot_upload",
+      quantity: 1,
+      unit: "upload",
+      estimatedCostUsd: 0,
+      metadata: {
+        chunkIndex: chunk.value.chunkIndex,
+        totalChunks: chunk.value.totalChunks,
+        partCount: Array.isArray(chunk.value.parts) ? chunk.value.parts.length : 0,
+      },
+    });
+  }
   return sendJson(res, result.ok === false ? 400 : 200, result);
 }
 
@@ -2635,7 +2713,7 @@ function getAiAreaAnalysis(filters = {}) {
   return applyStoredAiAreaInsights(getAiAreaAnalysisWithoutStoredInsights(filters));
 }
 
-async function analyzeAiAreaInsights(rawFilters = {}) {
+async function analyzeAiAreaInsights(rawFilters = {}, usageContext = {}) {
   const filters = await normalizeMovementFilters(rawFilters);
   const basePayload = getAiAreaAnalysisWithoutStoredInsights(filters);
 
@@ -2648,7 +2726,7 @@ async function analyzeAiAreaInsights(rawFilters = {}) {
   }
 
   try {
-    const aiPayload = await getAiAreaInsights(basePayload);
+    const aiPayload = await getAiAreaInsights(basePayload, usageContext);
     areaInsightsByScope.set(getAreaInsightsScopeKey(basePayload.universeId), aiPayload);
     return applyStoredAiAreaInsights(basePayload);
   } catch (error) {
@@ -3078,7 +3156,7 @@ async function getStoredChatInsights(filters = {}) {
   };
 }
 
-async function analyzeChatInsights(filters = {}) {
+async function analyzeChatInsights(filters = {}, usageContext = {}) {
   const chatPayload = getChatLogs(filters);
   const candidateLogs = chatPayload.logs
     .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
@@ -3093,7 +3171,7 @@ async function analyzeChatInsights(filters = {}) {
   }
 
   try {
-    const aiInsights = await getAiChatInsights(chatPayload, candidateLogs);
+    const aiInsights = await getAiChatInsights(chatPayload, candidateLogs, usageContext);
     chatInsightsByScope.set(getChatInsightsScopeKey(chatPayload.universeId), aiInsights);
     return aiInsights;
   } catch (error) {
@@ -3102,11 +3180,11 @@ async function analyzeChatInsights(filters = {}) {
   }
 }
 
-async function analyzeAllAiInsights(rawFilters = {}) {
+async function analyzeAllAiInsights(rawFilters = {}, usageContext = {}) {
   const filters = await normalizeMovementFilters(rawFilters);
   const [chatResult, areaResult] = await Promise.allSettled([
-    analyzeChatInsights(filters),
-    analyzeAiAreaInsights(filters),
+    analyzeChatInsights(filters, usageContext),
+    analyzeAiAreaInsights(filters, usageContext),
   ]);
   const errors = [];
 
@@ -3170,7 +3248,10 @@ async function runScheduledAiInsights() {
         continue;
       }
 
-      const report = await analyzeAllAiInsights({ universeId, source: "auto" });
+      const usageContext = await getUsageContextForUniverse(null, universeId);
+      await assertUsageAvailable(usageContext, "aiRequests", 2);
+      await assertUsageAvailable(usageContext, "openAiTokens", 1);
+      const report = await analyzeAllAiInsights({ universeId, source: "auto" }, usageContext);
       results.push({
         universeId,
         ok: true,
@@ -3437,7 +3518,7 @@ function getObjectStorageAiAutomationSettingsKey(universeId) {
   return `settings/ai-automation/${cleanInteger(universeId)}.json`;
 }
 
-async function getAiChatInsights(chatPayload, candidateLogs) {
+async function getAiChatInsights(chatPayload, candidateLogs, usageContext = {}) {
   const candidateMessages = candidateLogs.slice(0, MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS).map((log, index) => ({
     id: `m${index}`,
     message: log.message,
@@ -3502,6 +3583,12 @@ async function getAiChatInsights(chatPayload, candidateLogs) {
   if (!response.ok) {
     throw new Error(payload.error?.message || payload.error || `OpenAI request failed with ${response.status}`);
   }
+  await recordOpenAiUsage({
+    usageContext,
+    feature: "chat_insights",
+    model: OPENAI_CHAT_INSIGHTS_MODEL,
+    payload,
+  });
 
   const parsed = parseOpenAiJsonResponse(payload);
   const questions = normalizeAiInsightQuestions(parsed.questions, logById);
@@ -3522,7 +3609,7 @@ async function getAiChatInsights(chatPayload, candidateLogs) {
   };
 }
 
-async function getAiAreaInsights(areaPayload) {
+async function getAiAreaInsights(areaPayload, usageContext = {}) {
   const candidateAreas = areaPayload.areas.map((area) => ({
     id: area.id,
     fallbackLabel: area.label,
@@ -3597,6 +3684,12 @@ async function getAiAreaInsights(areaPayload) {
   if (!response.ok) {
     throw new Error(payload.error?.message || payload.error || `OpenAI request failed with ${response.status}`);
   }
+  await recordOpenAiUsage({
+    usageContext,
+    feature: "area_insights",
+    model: OPENAI_AREA_INSIGHTS_MODEL,
+    payload,
+  });
 
   const parsed = parseOpenAiJsonResponse(payload);
   const areas = normalizeAiAreaInsights(parsed.areas, new Set(candidateAreas.map((area) => area.id)));
@@ -4064,6 +4157,285 @@ function verifyPassword(password, storedValue) {
   return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(hash));
 }
 
+async function getUsageContextForUniverse(ownerUserId, universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const project = cleanUniverseId > 0 ? await getProjectByUniverseId(cleanUniverseId) : null;
+  return getUsageContextFromProject(project, cleanUniverseId, ownerUserId);
+}
+
+function getUsageContextFromProject(project, universeId, fallbackUserId = null) {
+  return {
+    userId: project?.ownerUserId || fallbackUserId || null,
+    projectId: project?.id || null,
+    universeId: cleanInteger(project?.universeId) || cleanInteger(universeId) || null,
+  };
+}
+
+function getPresenceUsageEventCount(presence) {
+  return Math.max(1,
+    (Array.isArray(presence?.players) ? presence.players.length : 0)
+    + (Array.isArray(presence?.chatLogs) ? presence.chatLogs.length : 0)
+    + (Array.isArray(presence?.movementSamples) ? presence.movementSamples.length : 0)
+    + (Array.isArray(presence?.movementRollups) ? presence.movementRollups.length : 0)
+    + (Array.isArray(presence?.deathSamples) ? presence.deathSamples.length : 0)
+    + (Array.isArray(presence?.leaveSamples) ? presence.leaveSamples.length : 0)
+  );
+}
+
+async function assertUsageAvailable(context, metric, quantity = 1) {
+  if (!context?.userId) return;
+
+  const amount = Math.max(cleanInteger(quantity), 1);
+  const usage = await getMonthlyUsage(context.userId);
+  const limits = USAGE_LIMITS;
+  const checks = {
+    aiRequests: {
+      used: usage.aiRequests,
+      limit: limits.aiRequestsPerMonth,
+      label: "AI requests",
+    },
+    openAiTokens: {
+      used: usage.openAiTokens,
+      limit: limits.openAiTokensPerMonth,
+      label: "OpenAI tokens",
+    },
+    events: {
+      used: usage.events,
+      limit: limits.eventsPerMonth,
+      label: "Roblox events",
+    },
+    mapUploads: {
+      used: usage.mapUploads,
+      limit: limits.mapUploadsPerMonth,
+      label: "map uploads",
+    },
+  };
+  const check = checks[metric];
+  if (!check || check.limit <= 0) return;
+
+  if (check.used + amount <= check.limit) return;
+
+  const error = new Error(`${check.label} monthly usage limit reached.`);
+  error.code = "USAGE_LIMIT";
+  error.metric = metric;
+  error.used = check.used;
+  error.limit = check.limit;
+  error.requested = amount;
+  throw error;
+}
+
+function sendUsageLimitError(res, error) {
+  return sendJson(res, 403, {
+    error: error.message || "Usage limit reached.",
+    code: "USAGE_LIMIT",
+    metric: error.metric || "",
+    used: cleanInteger(error.used),
+    limit: cleanInteger(error.limit),
+    requested: cleanInteger(error.requested),
+  });
+}
+
+async function recordOpenAiUsage({ usageContext, feature, model, payload }) {
+  if (!usageContext?.userId) return;
+
+  const usage = payload?.usage || {};
+  const inputTokens = cleanInteger(usage.input_tokens || usage.prompt_tokens);
+  const outputTokens = cleanInteger(usage.output_tokens || usage.completion_tokens);
+  const totalTokens = cleanInteger(usage.total_tokens) || inputTokens + outputTokens;
+  const quantity = totalTokens > 0 ? totalTokens : 1;
+  const unit = totalTokens > 0 ? "tokens" : "request";
+
+  await recordUsage({
+    ...usageContext,
+    provider: "openai",
+    feature,
+    quantity,
+    unit,
+    estimatedCostUsd: estimateOpenAiCost(inputTokens, outputTokens),
+    metadata: {
+      model,
+      requestId: cleanString(payload?.id, 120),
+      inputTokens,
+      outputTokens,
+      totalTokens,
+    },
+  });
+}
+
+function estimateOpenAiCost(inputTokens, outputTokens) {
+  const inputCost = (Math.max(cleanInteger(inputTokens), 0) / 1_000_000) * OPENAI_INPUT_USD_PER_1M;
+  const outputCost = (Math.max(cleanInteger(outputTokens), 0) / 1_000_000) * OPENAI_OUTPUT_USD_PER_1M;
+  return roundMoney(inputCost + outputCost);
+}
+
+async function recordUsage(entry) {
+  const userId = typeof entry?.userId === "string" ? entry.userId : "";
+  if (!userId) return null;
+
+  const createdAt = cleanInteger(entry.createdAt) || Date.now();
+  const event = {
+    id: crypto.randomUUID(),
+    userId,
+    projectId: cleanString(entry.projectId || "", 120) || null,
+    universeId: cleanInteger(entry.universeId) || null,
+    provider: cleanString(entry.provider, 32) || "internal",
+    feature: cleanString(entry.feature, 64) || "unknown",
+    quantity: Math.max(cleanFiniteInteger(entry.quantity), 1),
+    unit: cleanString(entry.unit, 24) || "unit",
+    estimatedCostUsd: roundMoney(Number(entry.estimatedCostUsd || 0)),
+    metadata: sanitizeUsageMetadata(entry.metadata),
+    month: getUsageMonthKey(createdAt),
+    createdAt,
+  };
+
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("usage_events").insertOne(event);
+    return event;
+  }
+
+  const events = await readUsageEvents();
+  events.push(event);
+  await writeUsageEvents(events);
+  return event;
+}
+
+async function getMonthlyUsage(userId, month = getUsageMonthKey(Date.now())) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  if (!cleanUserId) return createEmptyUsageSummary(month);
+
+  const db = await getMongoDb();
+  if (db) {
+    const events = await db.collection("usage_events")
+      .find({ userId: cleanUserId, month })
+      .project({ _id: 0 })
+      .toArray();
+    return aggregateUsageEvents(events, month);
+  }
+
+  const events = await readUsageEvents();
+  return aggregateUsageEvents(events.filter((event) => event.userId === cleanUserId && event.month === month), month);
+}
+
+async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now())) {
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(month)]));
+  if (!ids.length) return summaries;
+
+  const db = await getMongoDb();
+  const events = db
+    ? await db.collection("usage_events").find({ userId: { $in: ids }, month }).project({ _id: 0 }).toArray()
+    : (await readUsageEvents()).filter((event) => ids.includes(event.userId) && event.month === month);
+
+  const eventsByUser = new Map();
+  for (const event of events) {
+    const userEvents = eventsByUser.get(event.userId) || [];
+    userEvents.push(event);
+    eventsByUser.set(event.userId, userEvents);
+  }
+
+  for (const id of ids) {
+    summaries.set(id, aggregateUsageEvents(eventsByUser.get(id) || [], month));
+  }
+
+  return summaries;
+}
+
+function aggregateUsageEvents(events, month) {
+  const summary = createEmptyUsageSummary(month);
+
+  for (const event of events) {
+    const quantity = Math.max(cleanFiniteInteger(event.quantity), 0);
+    if (event.provider === "openai") {
+      summary.aiRequests += 1;
+      if (event.unit === "tokens") summary.openAiTokens += quantity;
+    }
+    if (event.feature === "presence_ingest" && event.unit === "events") summary.events += quantity;
+    if (event.feature === "map_snapshot_upload") summary.mapUploads += quantity;
+    summary.estimatedCostUsd = roundMoney(summary.estimatedCostUsd + Number(event.estimatedCostUsd || 0));
+  }
+
+  summary.limits = { ...USAGE_LIMITS };
+  return summary;
+}
+
+function createEmptyUsageSummary(month) {
+  return {
+    month,
+    aiRequests: 0,
+    openAiTokens: 0,
+    events: 0,
+    mapUploads: 0,
+    estimatedCostUsd: 0,
+    limits: { ...USAGE_LIMITS },
+  };
+}
+
+function aggregateUsageSummaries(summaries) {
+  return summaries.reduce((total, summary) => ({
+    month: summary.month || total.month,
+    aiRequests: total.aiRequests + cleanFiniteInteger(summary.aiRequests),
+    openAiTokens: total.openAiTokens + cleanFiniteInteger(summary.openAiTokens),
+    events: total.events + cleanFiniteInteger(summary.events),
+    mapUploads: total.mapUploads + cleanFiniteInteger(summary.mapUploads),
+    estimatedCostUsd: roundMoney(total.estimatedCostUsd + Number(summary.estimatedCostUsd || 0)),
+    limits: { ...USAGE_LIMITS },
+  }), createEmptyUsageSummary(getUsageMonthKey(Date.now())));
+}
+
+async function readUsageEvents() {
+  try {
+    const content = await fs.readFile(usageStorePath, "utf8");
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.events) ? parsed.events : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeUsageEvents(events) {
+  await fs.mkdir(path.dirname(usageStorePath), { recursive: true });
+  await fs.writeFile(usageStorePath, JSON.stringify({ events }, null, 2));
+}
+
+function sanitizeUsageMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const output = {};
+  for (const [key, item] of Object.entries(value)) {
+    const cleanKey = cleanString(key, 40);
+    if (!cleanKey) continue;
+    if (typeof item === "string") output[cleanKey] = cleanString(item, 240);
+    else if (typeof item === "number" && Number.isFinite(item)) output[cleanKey] = item;
+    else if (typeof item === "boolean") output[cleanKey] = item;
+  }
+  return output;
+}
+
+function getUsageMonthKey(timestamp) {
+  const date = new Date(cleanInteger(timestamp) || Date.now());
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function cleanFiniteInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0;
+}
+
+function cleanEnvInteger(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+}
+
+function cleanEnvNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 1_000_000) / 1_000_000;
+}
+
 async function readUsers() {
   const db = await getMongoDb();
   if (db) {
@@ -4216,6 +4588,7 @@ async function getAdminUserSummaries() {
     readUsers(),
     readProjects(),
   ]);
+  const usageByUser = await getUsageSummaryByUserIds(users.map((user) => user.id));
   const projectsByOwner = new Map();
 
   for (const project of projects) {
@@ -4230,6 +4603,7 @@ async function getAdminUserSummaries() {
   const sanitizedUsers = users
     .map((user) => {
       const userProjects = projectsByOwner.get(user.id) || [];
+      const usage = usageByUser.get(user.id) || createEmptyUsageSummary(getUsageMonthKey(Date.now()));
       return {
         id: user.id,
         username: user.username,
@@ -4241,6 +4615,7 @@ async function getAdminUserSummaries() {
         createdAt: cleanInteger(user.createdAt),
         lastLoginAt: cleanInteger(user.lastLoginAt) || null,
         projectCount: userProjects.length,
+        usage,
         universes: userProjects.map((project) => ({
           id: project.universeId,
           name: project.name,
@@ -4255,6 +4630,7 @@ async function getAdminUserSummaries() {
     totalUsers: sanitizedUsers.length,
     totalRobloxUsers: sanitizedUsers.filter((user) => cleanInteger(user.robloxUserId) > 0 || user.authProvider === "roblox").length,
     totalProjects: projects.length,
+    usageTotals: aggregateUsageSummaries([...usageByUser.values()]),
     passwordVisibility: "Roblox OAuth users are linked by Roblox user ID. Legacy passwords are hashed and cannot be viewed.",
   };
 }
