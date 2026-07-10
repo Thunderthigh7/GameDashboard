@@ -194,17 +194,20 @@ small,
   font-weight: 650;
 }
 
-.sideNav a::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  margin-right: 12px;
-  border: 2px solid currentColor;
-  border-radius: 3px;
+.sideNav a > span:last-child {
+  flex: 1;
 }
 
-.sideNav a span {
-  flex: 1;
+.navIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-right: 12px;
+  font-size: 18px;
+  line-height: 1;
+  filter: grayscale(0.15);
 }
 
 .sideNav a.active {
@@ -214,10 +217,8 @@ small,
   box-shadow: 0 16px 36px rgba(96, 50, 255, 0.24);
 }
 
-.sideNav a.active::before {
-  border-color: var(--purple);
-  background: var(--purple);
-  box-shadow: 0 0 0 3px var(--purple-soft);
+.sideNav a.active .navIcon {
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.75));
 }
 
 .sideNav em {
