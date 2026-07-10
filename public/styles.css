@@ -1,32 +1,35 @@
 :root {
   color-scheme: dark;
-  --bg: #080b12;
-  --surface: #121722;
-  --surface-strong: #171d2a;
-  --surface-soft: #0d121b;
-  --sidebar: rgba(12, 16, 24, 0.96);
-  --line: #283244;
-  --line-strong: #344054;
-  --text: #f5f7fb;
-  --muted: #9aa7bd;
-  --purple: #6d42e8;
-  --purple-soft: rgba(109, 66, 232, 0.18);
+  --bg: #030814;
+  --surface: rgba(12, 18, 36, 0.82);
+  --surface-strong: rgba(19, 27, 52, 0.88);
+  --surface-soft: rgba(9, 15, 31, 0.9);
+  --sidebar: rgba(4, 9, 22, 0.96);
+  --line: rgba(80, 99, 150, 0.36);
+  --line-strong: rgba(113, 130, 188, 0.48);
+  --text: #fbfcff;
+  --muted: #9aa6c7;
+  --purple: #7c3cff;
+  --purple-soft: rgba(124, 60, 255, 0.2);
   --green: #35d083;
   --red: #ef4444;
   --danger-bg: rgba(127, 29, 29, 0.2);
   --danger-border: rgba(248, 113, 113, 0.42);
   --danger-text: #fecaca;
-  --control-bg: #171d2a;
-  --field-bg: #0d121b;
-  --card-bg: #101620;
-  --heatmap-bg: linear-gradient(180deg, #0e1420, #151b27);
-  --overlay-bg: rgba(18, 23, 34, 0.88);
-  --nav-text: #c2ccdc;
+  --control-bg: rgba(15, 23, 48, 0.82);
+  --field-bg: rgba(10, 15, 31, 0.94);
+  --card-bg: rgba(13, 20, 38, 0.78);
+  --heatmap-bg:
+    radial-gradient(circle at 32% 48%, rgba(255, 55, 176, 0.3), transparent 13%),
+    radial-gradient(circle at 64% 40%, rgba(124, 60, 255, 0.3), transparent 13%),
+    linear-gradient(180deg, #071128, #050916);
+  --overlay-bg: rgba(10, 16, 35, 0.86);
+  --nav-text: #d2d8ee;
   --placeholder: #7d889c;
   --live-badge-bg: rgba(53, 208, 131, 0.14);
   --placeholder-badge-bg: rgba(154, 167, 189, 0.14);
-  --overlay-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
-  --shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  --overlay-shadow: 0 20px 50px rgba(0, 0, 0, 0.36);
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
 }
 
 :root[data-theme="light"] {
@@ -68,7 +71,10 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 45% -10%, rgba(34, 74, 190, 0.22), transparent 38%),
+    radial-gradient(circle at 82% 18%, rgba(124, 60, 255, 0.16), transparent 36%),
+    var(--bg);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -105,7 +111,7 @@ small,
 
 .appShell {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 252px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -127,7 +133,8 @@ small,
   height: 100vh;
   border-right: 1px solid var(--line);
   background: var(--sidebar);
-  padding: 20px 14px;
+  padding: 28px 16px;
+  box-shadow: inset -1px 0 0 rgba(88, 103, 159, 0.12);
 }
 
 .brand {
@@ -170,7 +177,7 @@ small,
 
 .sideNav {
   display: grid;
-  gap: 6px;
+  gap: 12px;
 }
 
 .sideNav a {
@@ -178,7 +185,8 @@ small,
   align-items: center;
   justify-content: space-between;
   min-height: 46px;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   color: var(--nav-text);
   padding: 0 14px;
   text-decoration: none;
@@ -200,8 +208,10 @@ small,
 }
 
 .sideNav a.active {
-  background: var(--purple-soft);
-  color: var(--purple);
+  border-color: rgba(124, 60, 255, 0.58);
+  background: linear-gradient(135deg, rgba(124, 60, 255, 0.95), rgba(31, 38, 121, 0.62));
+  color: white;
+  box-shadow: 0 16px 36px rgba(96, 50, 255, 0.24);
 }
 
 .sideNav a.active::before {
@@ -266,7 +276,7 @@ small,
 
 .dashboardMain {
   min-width: 0;
-  padding: 20px 28px 34px;
+  padding: 22px 20px 34px 32px;
 }
 
 .topbar {
@@ -351,9 +361,10 @@ small,
 .panel,
 .notice {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 14px;
   background: var(--surface);
   box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
 }
 
 .panel {
@@ -968,9 +979,16 @@ small,
   min-width: 0;
 }
 
+.overviewHeroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 316px);
+  gap: 12px;
+  align-items: stretch;
+}
+
 .aiCardRow {
   display: grid;
-  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(260px, 380px);
   gap: 18px;
   align-items: start;
 }
@@ -983,14 +1001,14 @@ small,
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 16px;
+  margin-top: 18px;
 }
 
 .heatmapPresets {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .heatmapFilters {
@@ -1002,18 +1020,35 @@ small,
 
 .heatmapShell {
   position: relative;
-  min-height: clamp(480px, 56vh, 700px);
-  margin-top: 14px;
+  min-height: clamp(600px, 68vh, 780px);
+  margin-top: 22px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 14px;
   background: var(--heatmap-bg);
 }
 
+.heatmapShell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(rgba(52, 107, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52, 107, 255, 0.12) 1px, transparent 1px);
+  background-size: 34px 34px;
+  transform: perspective(800px) rotateX(58deg) translateY(-120px) scale(1.5);
+  transform-origin: center top;
+  opacity: 0.62;
+  pointer-events: none;
+}
+
 #movementHeatmapCanvas {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
-  height: clamp(480px, 56vh, 700px);
+  height: clamp(600px, 68vh, 780px);
 }
 
 #movementHeatmapCanvas.isEmpty {
@@ -1068,28 +1103,114 @@ small,
 
 .heatmapLegend {
   left: 14px;
-  top: 14px;
+  top: 118px;
   display: grid;
-  gap: 7px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 18px 20px;
   font-size: 12px;
   color: var(--muted);
 }
 
 .heatmapLegend div {
   width: 10px;
-  height: 96px;
+  height: 174px;
   border-radius: 999px;
   background: linear-gradient(180deg, #ef4444, #facc15, #22c55e, #2563eb);
 }
 
 .heatmapOverlay {
-  left: 130px;
-  top: 14px;
+  right: 20px;
+  left: auto;
+  top: 130px;
   display: grid;
-  gap: 4px;
-  max-width: min(460px, calc(100% - 158px));
-  padding: 10px 12px;
+  gap: 12px;
+  width: min(216px, calc(100% - 40px));
+  max-width: none;
+  padding: 24px 22px;
+}
+
+.heatmapOverlay strong {
+  color: #9ee8ff;
+  font-size: 16px;
+}
+
+.heatmapOverlay span {
+  line-height: 1.45;
+}
+
+.mapAiCallout {
+  position: absolute;
+  left: 150px;
+  top: 128px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 14px;
+  width: min(340px, calc(100% - 420px));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(16, 24, 56, 0.86);
+  box-shadow: var(--overlay-shadow);
+  padding: 18px;
+}
+
+.mapAiCallout > span,
+.botMessage > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #315bff, #8b3cff);
+}
+
+.mapAiCallout > span::before,
+.botMessage > span::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: white;
+  transform: rotate(45deg);
+}
+
+.mapAiCallout strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.mapAiCallout p {
+  line-height: 1.45;
+}
+
+.mapViewDock {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(6, 11, 25, 0.82);
+  box-shadow: var(--overlay-shadow);
+  padding: 12px 22px;
+  transform: translateX(-50%);
+}
+
+.mapViewDock span {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.mapViewDock b {
+  border-radius: 8px;
+  background: linear-gradient(135deg, #7c3cff, #4527b8);
+  padding: 12px 24px;
+  white-space: nowrap;
 }
 
 .aiAreaCard {
@@ -1198,6 +1319,168 @@ small,
   white-space: nowrap;
 }
 
+.chatBotPanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 20px;
+}
+
+.chatBotHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chatBotHeader h2 {
+  font-size: 16px;
+}
+
+.chatBotHeader p {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  color: var(--green);
+  font-weight: 800;
+}
+
+.chatBotHeader p span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 0 5px rgba(53, 208, 131, 0.12);
+}
+
+.miniIconButton {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background:
+    linear-gradient(135deg, transparent 0 40%, var(--muted) 41% 48%, transparent 49%),
+    linear-gradient(45deg, transparent 0 40%, var(--muted) 41% 48%, transparent 49%);
+  opacity: 0.82;
+  cursor: pointer;
+}
+
+.chatBotPanel > .status {
+  margin-top: 12px;
+  min-height: 36px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chatBotMessages {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  flex: 1;
+  min-height: 430px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.botMessage {
+  display: grid;
+  gap: 10px;
+  color: var(--nav-text);
+  line-height: 1.55;
+}
+
+.assistantMessage {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+
+.botMessage strong,
+.userMessage strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.botMessage small,
+.userMessage small {
+  margin-left: 7px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.userMessage {
+  width: 86%;
+  justify-self: end;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(31, 43, 86, 0.88), rgba(18, 28, 59, 0.9));
+  padding: 14px 16px;
+}
+
+.chatBotPanel .commonQuestionList {
+  margin: 0;
+}
+
+.typingDots {
+  display: inline-flex;
+  gap: 8px;
+  width: max-content;
+  border-radius: 9px;
+  background: rgba(124, 60, 255, 0.2);
+  padding: 13px 18px;
+}
+
+.typingDots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7b61ff;
+}
+
+.chatComposer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 10px;
+  margin-top: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(10, 16, 35, 0.78);
+  padding: 10px;
+}
+
+.chatComposer input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+}
+
+.chatComposer button {
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #8f48ff, #6428ee);
+  cursor: pointer;
+}
+
+.chatComposer button::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 0 auto;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 11px solid white;
+}
+
+.chatBotPanel > small {
+  margin-top: 10px;
+}
+
+.chatBotPanel > .insightMode {
+  display: none;
+}
+
 .commonQuestionList,
 .chatLogList {
   display: grid;
@@ -1258,7 +1541,6 @@ small,
   padding: 8px 10px;
 }
 
-.commonQuestionItem,
 .chatLogItem {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1690,18 +1972,19 @@ small,
 
 .commonQuestionItem {
   display: grid;
-  grid-template-columns: 30px 1fr;
-  gap: 10px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  color: var(--nav-text);
 }
 
 .questionRank {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
-  background: var(--purple-soft);
-  color: var(--purple);
+  background: linear-gradient(135deg, #315bff, #8b3cff);
+  color: white;
   font-weight: 800;
 }
 
@@ -1728,6 +2011,14 @@ small,
   color: var(--muted);
 }
 
+.questionBody {
+  min-width: 0;
+}
+
+.questionBody > p {
+  line-height: 1.5;
+}
+
 .questionExamples {
   display: grid;
   gap: 6px;
@@ -1741,8 +2032,8 @@ small,
   justify-content: space-between;
   gap: 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface-strong);
+  border-radius: 9px;
+  background: rgba(17, 26, 56, 0.68);
   padding: 8px 10px;
 }
 
@@ -1950,12 +2241,21 @@ small,
 
 @media (max-width: 1180px) {
   .dashboardGrid,
-  .chatAnalysisPage {
+  .chatAnalysisPage,
+  .overviewHeroGrid {
     grid-template-columns: 1fr;
   }
 
   .insightRail {
     grid-template-columns: repeat(2, minmax(260px, 1fr));
+  }
+
+  .chatBotPanel {
+    min-height: 520px;
+  }
+
+  .mapAiCallout {
+    width: min(340px, calc(100% - 220px));
   }
 
   .adminUserMeta {
@@ -2034,10 +2334,28 @@ small,
   .integrationStatusGrid,
   .setupChecklist,
   .insightRail,
+  .overviewHeroGrid,
   .topbarFilters,
   .aiCardRow,
   .heatmapFilters {
     grid-template-columns: 1fr;
+  }
+
+  .mapAiCallout {
+    left: 18px;
+    top: 18px;
+    width: min(360px, calc(100% - 36px));
+  }
+
+  .heatmapOverlay {
+    right: 18px;
+    top: 168px;
+  }
+
+  .mapViewDock {
+    max-width: calc(100% - 32px);
+    gap: 12px;
+    padding: 10px 14px;
   }
 
   .integrationStatusHeader {

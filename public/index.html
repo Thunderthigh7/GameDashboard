@@ -101,66 +101,114 @@
         <section class="viewPage" data-view-panel="overview" hidden>
           <div class="dashboardGrid">
             <div class="dashboardContentColumn">
-              <section class="panel movementHeatmap mapPanel" id="heatmaps">
-                <div class="sectionHeader">
-                  <div>
-                    <h2>Map Analytics</h2>
-                  </div>
-                </div>
-                <div class="heatmapToolbar">
-                  <div class="heatmapPresets" aria-label="Heatmap mode">
-                    <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
-                    <button class="miniButton" type="button" data-heatmap-mode="movement">Movement</button>
-                    <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
-                    <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
-                    <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
-                  </div>
-                  <div class="heatmapPresets" aria-label="Heatmap render style">
-                    <button class="miniButton active" type="button" data-heatmap-render="points">Areas</button>
-                    <button class="miniButton" type="button" data-heatmap-render="heatmap">Heatmap</button>
-                    <button class="miniButton" id="refreshMovementButton" type="button">Refresh</button>
-                  </div>
-                </div>
-                <div class="heatmapShell">
-                  <canvas id="movementHeatmapCanvas"></canvas>
-                  <div class="heatmapEmptyState" id="heatmapEmptyState" hidden>
-                    <strong>Pick universe first</strong>
-                    <p id="heatmapEmptyMessage">Connect or select a Roblox game to view map analytics.</p>
-                  </div>
-                  <div class="heatmapLegend">
-                    <span>Higher traffic</span>
-                    <div></div>
-                    <span>Lower traffic</span>
-                  </div>
-                  <div class="heatmapOverlay">
-                    <strong id="movementSampleCount">0 samples</strong>
-                    <span id="movementHeatmapStatus">Waiting for movement samples...</span>
-                  </div>
-                  <div class="aiAreaCard" id="aiAreaCard" hidden>
-                    <div class="aiAreaCardHeader">
-                      <span class="aiAreaBadge" id="aiAreaBadge">1</span>
-                      <strong id="aiAreaTitle">Area 1</strong>
-                      <em id="aiAreaSourceLabel">Computed</em>
-                    </div>
-                    <div class="aiAreaInsightText">
-                      <section>
-                        <strong>Issue:</strong>
-                        <p id="aiAreaIssue">Potential point of interest from movement density.</p>
-                        <blockquote id="aiAreaQuote" hidden></blockquote>
-                      </section>
-                      <section>
-                        <strong>Recommendation:</strong>
-                        <p id="aiAreaRecommendation">Review this area in Studio and compare against player intent.</p>
-                      </section>
-                    </div>
-                    <div class="aiAreaStats">
-                      <div><strong id="aiAreaVisits">0</strong><span>Samples</span></div>
-                      <div><strong id="aiAreaDeaths">--</strong><span>Deaths</span></div>
-                      <div><strong id="aiAreaLeaves">--</strong><span>Leaves</span></div>
+              <div class="overviewHeroGrid">
+                <section class="panel movementHeatmap mapPanel" id="heatmaps">
+                  <div class="sectionHeader">
+                    <div>
+                      <h2>Map Analytics</h2>
                     </div>
                   </div>
-                </div>
-              </section>
+                  <div class="heatmapToolbar">
+                    <div class="heatmapPresets" aria-label="Heatmap mode">
+                      <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
+                      <button class="miniButton" type="button" data-heatmap-mode="movement">Movement</button>
+                      <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
+                      <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
+                      <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
+                    </div>
+                    <div class="heatmapPresets" aria-label="Heatmap render style">
+                      <button class="miniButton active" type="button" data-heatmap-render="points">Areas</button>
+                      <button class="miniButton" type="button" data-heatmap-render="heatmap">Heatmap</button>
+                      <button class="miniButton" id="refreshMovementButton" type="button">Refresh</button>
+                    </div>
+                  </div>
+                  <div class="heatmapShell">
+                    <canvas id="movementHeatmapCanvas"></canvas>
+                    <div class="heatmapEmptyState" id="heatmapEmptyState" hidden>
+                      <strong>Pick universe first</strong>
+                      <p id="heatmapEmptyMessage">Connect or select a Roblox game to view map analytics.</p>
+                    </div>
+                    <div class="heatmapLegend">
+                      <span>Traffic</span>
+                      <div></div>
+                      <span>Higher</span>
+                      <span>Lower</span>
+                    </div>
+                    <div class="heatmapOverlay">
+                      <strong id="movementSampleCount">0 samples</strong>
+                      <span id="movementHeatmapStatus">Waiting for movement samples...</span>
+                    </div>
+                    <div class="mapAiCallout">
+                      <span aria-hidden="true"></span>
+                      <div>
+                        <strong>AI Analysis Active</strong>
+                        <p>Run AI Insights to generate intelligent area analysis and recommendations.</p>
+                      </div>
+                    </div>
+                    <div class="mapViewDock" aria-hidden="true">
+                      <span></span>
+                      <b>3D View</b>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <div class="aiAreaCard" id="aiAreaCard" hidden>
+                      <div class="aiAreaCardHeader">
+                        <span class="aiAreaBadge" id="aiAreaBadge">1</span>
+                        <strong id="aiAreaTitle">Area 1</strong>
+                        <em id="aiAreaSourceLabel">Computed</em>
+                      </div>
+                      <div class="aiAreaInsightText">
+                        <section>
+                          <strong>Issue:</strong>
+                          <p id="aiAreaIssue">Potential point of interest from movement density.</p>
+                          <blockquote id="aiAreaQuote" hidden></blockquote>
+                        </section>
+                        <section>
+                          <strong>Recommendation:</strong>
+                          <p id="aiAreaRecommendation">Review this area in Studio and compare against player intent.</p>
+                        </section>
+                      </div>
+                      <div class="aiAreaStats">
+                        <div><strong id="aiAreaVisits">0</strong><span>Samples</span></div>
+                        <div><strong id="aiAreaDeaths">--</strong><span>Deaths</span></div>
+                        <div><strong id="aiAreaLeaves">--</strong><span>Leaves</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <article class="panel chatInsights chatBotPanel">
+                  <div class="chatBotHeader">
+                    <div>
+                      <h2>Chat Analysis</h2>
+                      <p><span></span>Live</p>
+                    </div>
+                    <button class="miniIconButton" type="button" aria-label="Filter chat analysis"></button>
+                  </div>
+                  <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
+                  <div class="chatBotMessages">
+                    <article class="botMessage assistantMessage">
+                      <span aria-hidden="true"></span>
+                      <div>
+                        <strong>RoAnalytics AI <small>10:30 AM</small></strong>
+                        <p>Welcome. Ask me anything about player behavior, traffic patterns, or game insights.</p>
+                      </div>
+                    </article>
+                    <article class="botMessage userMessage">
+                      <strong>homie106 <small>10:31 AM</small></strong>
+                      <p>Show me the most active areas in my game</p>
+                    </article>
+                    <div class="commonQuestionList" id="commonQuestionList"></div>
+                    <div class="typingDots" aria-hidden="true"><span></span><span></span><span></span></div>
+                  </div>
+                  <div class="chatComposer">
+                    <input type="text" value="" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
+                    <button type="button" aria-label="Send chat prompt"></button>
+                  </div>
+                  <small>AI responses may not always be accurate.</small>
+                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
+                </article>
+              </div>
 
               <aside class="insightRail">
                 <article class="panel dataCard">
@@ -219,18 +267,6 @@
                       <option value="">Latest saved report</option>
                     </select>
                   </div>
-                </article>
-
-                <article class="panel chatInsights">
-                  <div class="sectionHeader">
-                    <div>
-                      <h2>Top common questions</h2>
-                      <p>Grouped from recent player chat.</p>
-                    </div>
-                    <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
-                  </div>
-                  <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
-                  <div class="commonQuestionList" id="commonQuestionList"></div>
                 </article>
               </div>
             </div>
