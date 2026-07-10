@@ -1711,6 +1711,12 @@ small,
   background: #fb7185;
 }
 
+.signalAreaItem.chatSignal .signalBar i,
+.signalAreaItem.chatSignal b {
+  color: #a78bfa;
+  background: #a78bfa;
+}
+
 .signalAreaItem b {
   background: transparent !important;
 }

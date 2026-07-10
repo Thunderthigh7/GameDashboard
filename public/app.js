@@ -81,6 +81,7 @@ const viewPanels = document.querySelectorAll("[data-view-panel]");
 const movementAreaList = document.querySelector("#movementAreaList");
 const dropOffAreaList = document.querySelector("#dropOffAreaList");
 const deathAreaList = document.querySelector("#deathAreaList");
+const chatAreaList = document.querySelector("#chatAreaList");
 const protectedDashboardPanels = document.querySelectorAll(
   ".sidebar, .topbar, #authControls, .viewPage"
 );
@@ -200,7 +201,7 @@ function bindEvents() {
     selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
   });
 
-  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList]) {
+  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList, chatAreaList]) {
     areaList?.addEventListener("click", (event) => {
       const item = event.target.closest("[data-signal-area-index]");
       if (!item) return;
@@ -208,29 +209,15 @@ function bindEvents() {
     });
   }
 
-  dropOffAreaList?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const item = event.target.closest("[data-signal-area-index]");
-    if (!item) return;
-    event.preventDefault();
-    focusSignalAreaFromElement(item);
-  });
-
-  deathAreaList?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const item = event.target.closest("[data-signal-area-index]");
-    if (!item) return;
-    event.preventDefault();
-    focusSignalAreaFromElement(item);
-  });
-
-  movementAreaList?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const item = event.target.closest("[data-signal-area-index]");
-    if (!item) return;
-    event.preventDefault();
-    focusSignalAreaFromElement(item);
-  });
+  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList, chatAreaList]) {
+    areaList?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const item = event.target.closest("[data-signal-area-index]");
+      if (!item) return;
+      event.preventDefault();
+      focusSignalAreaFromElement(item);
+    });
+  }
 
   window.addEventListener("dashboard:chatPointSelected", (event) => {
     selectChatLog(event.detail?.id || "", { scroll: true });
@@ -1192,12 +1179,14 @@ async function loadSignalAreaCards() {
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
+    renderSignalAreas(chatAreaList, [], "chat");
     return;
   }
 
   renderSignalLoading(movementAreaList, "movement");
   renderSignalLoading(dropOffAreaList, "drop-off");
   renderSignalLoading(deathAreaList, "death");
+  renderSignalLoading(chatAreaList, "chat");
 
   const query = buildSignalAreaQuery();
   try {
@@ -1208,6 +1197,7 @@ async function loadSignalAreaCards() {
     renderSignalError(movementAreaList, error.message);
     renderSignalError(dropOffAreaList, error.message);
     renderSignalError(deathAreaList, error.message);
+    renderSignalError(chatAreaList, error.message);
   }
 }
 
@@ -1216,6 +1206,7 @@ function renderSignalAreasFromComputedPayload(payload) {
   renderSignalAreas(movementAreaList, payload.signalAreas.movement || [], "movement");
   renderSignalAreas(dropOffAreaList, payload.signalAreas.leaves || [], "leaves");
   renderSignalAreas(deathAreaList, payload.signalAreas.deaths || [], "deaths");
+  renderSignalAreas(chatAreaList, payload.signalAreas.chat || [], "chat");
 }
 
 function buildSignalAreaQuery() {
@@ -1317,7 +1308,7 @@ function getSignalPlaceholderAreas(mode, filledCount, maxCount) {
 }
 
 function focusSignalAreaFromElement(item) {
-  const mode = ["movement", "deaths", "leaves"].includes(item.dataset.signalMode)
+  const mode = ["movement", "deaths", "leaves", "chat"].includes(item.dataset.signalMode)
     ? item.dataset.signalMode
     : "leaves";
   const x = Number(item.dataset.signalX);
@@ -1336,18 +1327,21 @@ function focusSignalAreaFromElement(item) {
 function getSignalAreaTypeText(mode) {
   if (mode === "movement") return "movement";
   if (mode === "deaths") return "death";
+  if (mode === "chat") return "chat";
   return "drop-off";
 }
 
 function getSignalAreaTitleText(mode) {
   if (mode === "movement") return "Movement";
   if (mode === "deaths") return "Death";
+  if (mode === "chat") return "Chat";
   return "Drop-off";
 }
 
 function getSignalAreaClass(mode) {
   if (mode === "movement") return "movementSignal";
   if (mode === "deaths") return "deathSignal";
+  if (mode === "chat") return "chatSignal";
   return "leaveSignal";
 }
 

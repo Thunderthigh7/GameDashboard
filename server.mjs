@@ -3076,6 +3076,7 @@ function getComputedSignalAreas(filters = {}) {
     movement: clusterSignalAreaSamples(getMovementAnalysisSamplesForFilters(filters), "movement"),
     leaves: clusterSignalAreaSamples(getLeaveSamplesForFilters(filters), "leaves"),
     deaths: clusterSignalAreaSamples(getDeathSamplesForFilters(filters), "deaths"),
+    chat: clusterSignalAreaSamples(getChatLogs(filters).logs, "chat"),
   };
 }
 
@@ -3084,6 +3085,7 @@ function getComputedSignalAreasFromRollup(rollup, filters = {}) {
     movement: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.movement?.samples || [], filters, { allowUserFilter: false }), "movement"),
     leaves: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.leaves?.samples || [], filters), "leaves"),
     deaths: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.deaths?.samples || [], filters), "deaths"),
+    chat: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.chatLogs || [], filters), "chat"),
   };
 }
 

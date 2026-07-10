@@ -403,6 +403,9 @@ function setHeatmapMode(mode, options = {}) {
   if (options.selectedChatLogId) {
     selectedChatLogId = options.selectedChatLogId;
   }
+  if (options.focusArea && activeHeatmapMode === "chat") {
+    selectedChatLogId = "";
+  }
 
   for (const button of modeButtons) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
@@ -617,6 +620,10 @@ function getSampleEntries(samples, mapSnapshot = null, options = {}) {
   if (activeHeatmapMode === "ai-analysis") {
     if (options.suppressFallbackAreas) return [];
     return getAiAnalysisAreaEntries(samples, mapSnapshot);
+  }
+
+  if (activeHeatmapMode === "chat" && activeRenderMode === "points" && !selectedChatLogId) {
+    return getSignalAreaEntries(samples, "chat");
   }
 
   if (activeHeatmapMode === "chat") {
@@ -841,6 +848,7 @@ function renderSamples(entries, center) {
   if (
     activeHeatmapMode === "deaths"
     || activeHeatmapMode === "leaves"
+    || (activeHeatmapMode === "chat" && activeRenderMode === "points" && entries[0]?.signalMode === "chat")
     || (activeHeatmapMode === "movement" && activeRenderMode === "points")
   ) {
     renderSignalAreas(entries, center, activeHeatmapMode);
@@ -953,12 +961,14 @@ function createSignalAreaMarker(entry, mode) {
 function getSignalAreaGroupName(mode) {
   if (mode === "movement") return "MovementAreaMarkers";
   if (mode === "deaths") return "DeathAreaMarkers";
+  if (mode === "chat") return "ChatAreaMarkers";
   return "DropOffAreaMarkers";
 }
 
 function getSignalAreaLabelPrefix(mode) {
   if (mode === "movement") return "Movement Area";
   if (mode === "deaths") return "Death Area";
+  if (mode === "chat") return "Chat Area";
   return "Drop-off Area";
 }
 
@@ -1560,6 +1570,14 @@ function getSignalAreaColor(value, mode) {
       r: Math.round(lerp(248, 239, intensity)),
       g: Math.round(lerp(113, 68, intensity)),
       b: Math.round(lerp(113, 68, intensity)),
+    };
+  }
+
+  if (mode === "chat") {
+    return {
+      r: Math.round(lerp(167, 124, intensity)),
+      g: Math.round(lerp(139, 58, intensity)),
+      b: Math.round(lerp(250, 237, intensity)),
     };
   }
 
