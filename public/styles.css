@@ -235,6 +235,28 @@ small,
   transform: rotate(45deg);
 }
 
+.areaIcon::before {
+  left: 5px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  box-shadow:
+    11px 0 0 -2px currentColor,
+    0 11px 0 -2px currentColor,
+    11px 11px 0 -2px currentColor;
+}
+
+.areaIcon::after {
+  left: 13px;
+  top: 13px;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
 .chatIcon::before {
   left: 4px;
   top: 6px;
@@ -1091,6 +1113,7 @@ small,
   grid-template-columns: minmax(0, 1fr) minmax(300px, 316px);
   gap: 12px;
   align-items: stretch;
+  min-height: calc(100vh - 128px);
 }
 
 .aiCardRow {
@@ -1101,7 +1124,10 @@ small,
 }
 
 .mapPanel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
+  min-height: calc(100vh - 128px);
 }
 
 .heatmapToolbar {
@@ -1127,7 +1153,8 @@ small,
 
 .heatmapShell {
   position: relative;
-  min-height: clamp(600px, 68vh, 780px);
+  min-height: 0;
+  height: 100%;
   margin-top: 22px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -1155,7 +1182,8 @@ small,
   z-index: 1;
   display: block;
   width: 100%;
-  height: clamp(600px, 68vh, 780px);
+  height: 100%;
+  min-height: 0;
 }
 
 #movementHeatmapCanvas.isEmpty {
@@ -1416,6 +1444,10 @@ small,
   gap: 18px;
 }
 
+.areasPage .insightRail {
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+}
+
 .insightMode {
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -1429,7 +1461,7 @@ small,
 .chatBotPanel {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: calc(100vh - 128px);
   padding: 20px;
 }
 
@@ -1484,9 +1516,9 @@ small,
   align-content: start;
   gap: 18px;
   flex: 1;
-  min-height: 430px;
+  min-height: 0;
   margin-top: 8px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .botMessage {
@@ -2351,6 +2383,19 @@ small,
   .chatAnalysisPage,
   .overviewHeroGrid {
     grid-template-columns: 1fr;
+  }
+
+  .overviewHeroGrid {
+    min-height: auto;
+  }
+
+  .mapPanel {
+    min-height: 620px;
+  }
+
+  .heatmapShell,
+  #movementHeatmapCanvas {
+    min-height: clamp(520px, 62vh, 700px);
   }
 
   .insightRail {

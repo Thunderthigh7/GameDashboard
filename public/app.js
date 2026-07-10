@@ -335,6 +335,7 @@ async function loadDashboardData() {
 }
 
 function getViewFromHash() {
+  if (window.location.hash === "#areas") return "areas";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
@@ -343,18 +344,20 @@ function getViewFromHash() {
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "areas" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
-    const nextHash = activeView === "chat"
-      ? "#chat"
-      : activeView === "usage"
-        ? "#usage"
-        : activeView === "connect"
-          ? "#connect"
-          : activeView === "admin"
-            ? "#admin"
-            : "#overview";
+    const nextHash = activeView === "areas"
+      ? "#areas"
+      : activeView === "chat"
+        ? "#chat"
+        : activeView === "usage"
+          ? "#usage"
+          : activeView === "connect"
+            ? "#connect"
+            : activeView === "admin"
+              ? "#admin"
+              : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -382,6 +385,10 @@ function renderActiveView() {
       title: "Overview",
       subtitle: "Roblox game analytics powered by live heartbeat data.",
     },
+    areas: {
+      title: "Areas",
+      subtitle: "Computed movement, drop-off, death, and chat hotspots.",
+    },
     chat: {
       title: "Chat Analysis",
       subtitle: "Player messages and grouped question insights.",
@@ -406,6 +413,10 @@ function renderActiveView() {
     window.dispatchEvent(new CustomEvent("dashboard:overviewShown", {
       detail: { universeId: selectedUniverseId },
     }));
+  }
+
+  if (authenticated && activeView === "areas") {
+    loadSignalAreaCards();
   }
 
   if (authenticated && activeView === "admin" && authenticatedUser?.isAdmin) {

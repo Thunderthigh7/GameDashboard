@@ -19,6 +19,7 @@
 
         <nav class="sideNav" aria-label="Dashboard sections">
           <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
+          <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
           <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
           <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
           <a href="#connect" data-dashboard-view="connect"><span class="navIcon connectIcon" aria-hidden="true"></span><span>Connect Universe</span></a>
@@ -210,40 +211,6 @@
                 </article>
               </div>
 
-              <aside class="insightRail">
-                <article class="panel dataCard">
-                  <h2>Top movement areas</h2>
-                  <p>Highest traffic share from player movement locations.</p>
-                  <div class="signalAreaList" id="movementAreaList">
-                    <p class="status">Waiting for movement samples...</p>
-                  </div>
-                </article>
-
-                <article class="panel dataCard">
-                  <h2>Top drop-off points</h2>
-                  <p>Highest exit share from player leave locations.</p>
-                  <div class="signalAreaList" id="dropOffAreaList">
-                    <p class="status">Waiting for leave samples...</p>
-                  </div>
-                </article>
-
-                <article class="panel dataCard placeholderFeature">
-                  <h2>Top death areas</h2>
-                  <p>Highest death share from raw event locations.</p>
-                  <div class="signalAreaList" id="deathAreaList">
-                    <p class="status">Waiting for death samples...</p>
-                  </div>
-                </article>
-
-                <article class="panel dataCard">
-                  <h2>Top chat areas</h2>
-                  <p>Highest message share from chat locations.</p>
-                  <div class="signalAreaList" id="chatAreaList">
-                    <p class="status">Waiting for chat locations...</p>
-                  </div>
-                </article>
-              </aside>
-
               <div class="aiCardRow">
                 <article class="panel aiRunControls">
                   <div class="sectionHeader">
@@ -271,6 +238,42 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="viewPage areasPage" data-view-panel="areas" hidden>
+          <aside class="insightRail">
+            <article class="panel dataCard">
+              <h2>Top movement areas</h2>
+              <p>Highest traffic share from player movement locations.</p>
+              <div class="signalAreaList" id="movementAreaList">
+                <p class="status">Waiting for movement samples...</p>
+              </div>
+            </article>
+
+            <article class="panel dataCard">
+              <h2>Top drop-off points</h2>
+              <p>Highest exit share from player leave locations.</p>
+              <div class="signalAreaList" id="dropOffAreaList">
+                <p class="status">Waiting for leave samples...</p>
+              </div>
+            </article>
+
+            <article class="panel dataCard placeholderFeature">
+              <h2>Top death areas</h2>
+              <p>Highest death share from raw event locations.</p>
+              <div class="signalAreaList" id="deathAreaList">
+                <p class="status">Waiting for death samples...</p>
+              </div>
+            </article>
+
+            <article class="panel dataCard">
+              <h2>Top chat areas</h2>
+              <p>Highest message share from chat locations.</p>
+              <div class="signalAreaList" id="chatAreaList">
+                <p class="status">Waiting for chat locations...</p>
+              </div>
+            </article>
+          </aside>
         </section>
 
         <section class="viewPage chatAnalysisPage" data-view-panel="chat" hidden>
