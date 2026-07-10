@@ -376,9 +376,9 @@ small,
 
 .sidebarFooter {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   margin-top: auto;
-  padding-top: 22px;
+  padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
@@ -387,6 +387,10 @@ small,
   grid-template-columns: 42px 1fr;
   align-items: center;
   gap: 10px;
+  border: 1px solid rgba(80, 99, 150, 0.32);
+  border-radius: 10px;
+  background: rgba(13, 20, 38, 0.72);
+  padding: 14px 12px;
 }
 
 .gameThumb {
@@ -398,27 +402,59 @@ small,
 
 .universeSelector strong {
   display: block;
-  font-size: 13px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
-.universeSelector select,
-.universeSelector button,
-.universeSelector .status {
+.universeSelector select {
   grid-column: 1 / -1;
 }
 
 .universeSelector select {
   width: 100%;
-  min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--field-bg);
+  min-height: 34px;
+  border: 1px solid rgba(80, 99, 150, 0.28);
+  border-radius: 8px;
+  background: rgba(7, 12, 27, 0.46);
   color: var(--text);
-  padding: 0 10px;
+  padding: 0 9px;
 }
 
 .universeSelector .status {
   margin-top: 0;
+  font-size: 12px;
+}
+
+.universeSelector small {
+  display: block;
+  margin-top: 4px;
+  color: var(--nav-text);
+  line-height: 1.35;
+}
+
+.sidebarRefreshButton {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #8f48ff, #6428ee);
+  box-shadow: 0 14px 32px rgba(96, 50, 255, 0.28);
+}
+
+.sidebarRefreshButton::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+}
+
+.sidebarFooter > .status {
+  margin: 0;
+  padding: 0 10px 12px;
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -622,8 +658,44 @@ small,
   width: 100%;
 }
 
-.authControls .button {
+.authControls .button,
+.sidebarLogoutButton {
   width: 100%;
+}
+
+.sidebarLogoutButton {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sidebarLogoutButton::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  margin-right: 12px;
+  border: 2px solid currentColor;
+  border-right: 0;
+  border-radius: 4px 0 0 4px;
+}
+
+.sidebarLogoutButton::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-left: -22px;
+  margin-right: 14px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
 }
 
 .projectForm {
