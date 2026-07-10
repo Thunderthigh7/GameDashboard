@@ -476,7 +476,7 @@ small,
 .connectUniversePanel {
   display: grid;
   gap: 18px;
-  max-width: 720px;
+  max-width: 920px;
 }
 
 .connectUniverseForm {
@@ -492,6 +492,97 @@ small,
 .connectUniverseForm .button {
   min-height: 43px;
   white-space: nowrap;
+}
+
+.integrationStatusCard {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 14px;
+}
+
+.integrationStatusHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.integrationStatusHeader > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.integrationStatusHeader span,
+.integrationStatusGrid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.integrationStatusHeader strong {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+}
+
+.integrationStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.integrationStatusGrid div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.integrationStatusGrid strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.integrationStatusGrid .ok strong {
+  color: var(--green);
+}
+
+.integrationStatusGrid .danger strong {
+  color: var(--danger-text);
+}
+
+.integrationSignalList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.integrationSignalList span {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--placeholder-badge-bg);
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.integrationSignalList span.active {
+  border-color: rgba(53, 208, 131, 0.36);
+  background: var(--live-badge-bg);
+  color: var(--green);
+}
+
+.integrationStatusCard .status {
+  margin-top: 0;
 }
 
 .projectSecretBox {
@@ -1808,10 +1899,20 @@ small,
 
   .authForm,
   .connectUniverseForm,
+  .integrationStatusGrid,
   .topbarFilters,
   .aiCardRow,
   .heatmapFilters {
     grid-template-columns: 1fr;
+  }
+
+  .integrationStatusHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .integrationStatusHeader .button {
+    width: 100%;
   }
 
   .adminStats,

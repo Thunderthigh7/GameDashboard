@@ -53,6 +53,11 @@ const ownedGameSelect = document.querySelector("#ownedGameSelect");
 const refreshOwnedGamesButton = document.querySelector("#refreshOwnedGamesButton");
 const ownedGamesStatus = document.querySelector("#ownedGamesStatus");
 const createProjectButton = document.querySelector("#createProjectButton");
+const refreshIntegrationStatusButton = document.querySelector("#refreshIntegrationStatusButton");
+const integrationStatusTitle = document.querySelector("#integrationStatusTitle");
+const integrationStatusGrid = document.querySelector("#integrationStatusGrid");
+const integrationSignalList = document.querySelector("#integrationSignalList");
+const integrationStatusMessage = document.querySelector("#integrationStatusMessage");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
 const projectSecretTarget = document.querySelector("#projectSecretTarget");
@@ -125,6 +130,7 @@ function bindEvents() {
   });
 
   refreshUniversesButton.addEventListener("click", loadUniverses);
+  refreshIntegrationStatusButton?.addEventListener("click", loadUniverses);
   refreshUsageButton?.addEventListener("click", loadAccountUsage);
   usagePlanOptions?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-select-plan]");
@@ -278,6 +284,7 @@ function setAuthenticated(value, user = null) {
     if (projectSecretValue) projectSecretValue.textContent = "";
     if (projectSecretTarget) projectSecretTarget.textContent = "";
     if (connectedGameList) connectedGameList.innerHTML = "";
+    renderIntegrationStatusCard();
     if (ownedGameSelect) {
       ownedGameSelect.innerHTML = `<option value="">Sign in to load games</option>`;
       ownedGameSelect.disabled = true;
@@ -922,6 +929,7 @@ function getAdminPlanOptions(selectedPlanKey) {
 
 async function loadUniverses() {
   universesStatus.textContent = "Loading universes...";
+  if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = true;
 
   try {
     const data = await request("/api/universes");
@@ -934,6 +942,7 @@ async function loadUniverses() {
       universeSelect.innerHTML = `<option value="">Add your first game</option>`;
       universesStatus.textContent = "Add a universe ID to connect your Roblox game.";
       renderConnectedGames();
+      renderIntegrationStatusCard();
       updateSelectedUniverse();
       loadSignalAreaCards();
       return;
@@ -949,6 +958,7 @@ async function loadUniverses() {
     universeSelect.innerHTML = knownUniverses.map(renderUniverseOption).join("");
     universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.`;
     renderConnectedGames();
+    renderIntegrationStatusCard();
     updateSelectedUniverse();
 
     if (previousUniverseId !== selectedUniverseId) {
@@ -958,6 +968,9 @@ async function loadUniverses() {
     }
   } catch (error) {
     universesStatus.textContent = error.message;
+    renderIntegrationStatusCard({ error: error.message });
+  } finally {
+    if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = false;
   }
 }
 
@@ -1158,12 +1171,86 @@ function renderConnectedGame(universe) {
   `;
 }
 
+function renderIntegrationStatusCard(options = {}) {
+  if (!integrationStatusTitle || !integrationStatusGrid || !integrationSignalList || !integrationStatusMessage) return;
+
+  if (options.error) {
+    integrationStatusTitle.textContent = "Unable to check status";
+    integrationStatusGrid.innerHTML = renderIntegrationMetric("Connection", "Error")
+      + renderIntegrationMetric("Last data", "--")
+      + renderIntegrationMetric("Map", "--")
+      + renderIntegrationMetric("Failed ingests", "--");
+    integrationSignalList.innerHTML = "";
+    integrationStatusMessage.textContent = options.error;
+    return;
+  }
+
+  const selectedUniverse = selectedUniverseId
+    ? knownUniverses.find((universe) => String(universe.id || "") === selectedUniverseId)
+    : knownUniverses[0];
+
+  if (!selectedUniverse) {
+    integrationStatusTitle.textContent = "No game connected";
+    integrationStatusGrid.innerHTML = renderIntegrationMetric("Connection", "Waiting")
+      + renderIntegrationMetric("Last data", "--")
+      + renderIntegrationMetric("Map", "--")
+      + renderIntegrationMetric("Failed ingests", "--");
+    integrationSignalList.innerHTML = renderIntegrationSignal("Movement", false)
+      + renderIntegrationSignal("Deaths", false)
+      + renderIntegrationSignal("Leaves", false)
+      + renderIntegrationSignal("Chat", false);
+    integrationStatusMessage.textContent = authenticated
+      ? "Connect a Roblox game to start receiving analytics data."
+      : "Sign in to check integration status.";
+    return;
+  }
+
+  const status = selectedUniverse.integrationStatus || {};
+  const signals = status.signals || {};
+  const counts = status.counts || {};
+  const name = String(selectedUniverse.name || `Universe ${selectedUniverse.id || ""}`);
+  const lastReceivedAt = Number(status.lastReceivedAt || selectedUniverse.lastSeenAt || 0);
+  const failedIngests = Number(status.failedIngests24h || 0);
+  const hasAnyData = lastReceivedAt > 0 || Number(selectedUniverse.totalSamples || 0) > 0;
+
+  integrationStatusTitle.textContent = name;
+  integrationStatusGrid.innerHTML = renderIntegrationMetric("Connection", status.connected === false ? "Not connected" : "Connected")
+    + renderIntegrationMetric("Last data", lastReceivedAt ? formatRelativeTime(lastReceivedAt) : "Waiting")
+    + renderIntegrationMetric("Map", status.mapUploaded || selectedUniverse.hasMapSnapshot ? "Uploaded" : "Missing")
+    + renderIntegrationMetric("Failed ingests", `${formatCompactNumber(failedIngests)} / 24h`, failedIngests > 0 ? "danger" : "ok");
+  integrationSignalList.innerHTML = renderIntegrationSignal("Movement", Boolean(signals.movement), counts.movement)
+    + renderIntegrationSignal("Deaths", Boolean(signals.deaths), counts.deaths)
+    + renderIntegrationSignal("Leaves", Boolean(signals.leaves), counts.leaves)
+    + renderIntegrationSignal("Chat", Boolean(signals.chat), counts.chat);
+
+  if (failedIngests > 0) {
+    integrationStatusMessage.textContent = "Data is coming in, but recent ingests failed. Check the game secret and server logs before a client test.";
+  } else if (!hasAnyData) {
+    integrationStatusMessage.textContent = "Connected, waiting for Roblox data. Paste the secret into Settings.Secret and start a live server.";
+  } else if (!status.mapUploaded && !selectedUniverse.hasMapSnapshot) {
+    integrationStatusMessage.textContent = "Live data is coming in. Upload a map snapshot to make heatmaps easier to read.";
+  } else {
+    integrationStatusMessage.textContent = "Integration is receiving Roblox analytics data.";
+  }
+}
+
+function renderIntegrationMetric(label, value, status = "") {
+  const statusClass = status ? ` class="${escapeHtml(status)}"` : "";
+  return `<div${statusClass}><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function renderIntegrationSignal(label, active, count = null) {
+  const countText = count === null || count === undefined ? "" : ` ${formatCompactNumber(count)}`;
+  return `<span class="${active ? "active" : ""}">${escapeHtml(label)}${escapeHtml(countText)}</span>`;
+}
+
 function selectUniverse(value) {
   const cleanValue = String(value || "").trim();
   const knownIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
   selectedUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
   selectedChatLogId = "";
   updateSelectedUniverse();
+  renderIntegrationStatusCard();
   loadAiAutomationSettings();
   loadChatLogs();
   loadSignalAreaCards();
@@ -1708,6 +1795,23 @@ function formatFullDate(timestamp) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatRelativeTime(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) return "--";
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+  if (elapsedSeconds < 60) return "Just now";
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h ago`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  return `${elapsedDays}d ago`;
 }
 
 function formatCompactNumber(value) {

@@ -329,6 +329,23 @@
                 <p>Verify a Roblox universe with the Roblox account that owns it.</p>
               </div>
             </div>
+            <article class="integrationStatusCard" id="integrationStatusCard">
+              <div class="integrationStatusHeader">
+                <div>
+                  <span>Integration Status</span>
+                  <strong id="integrationStatusTitle">No game connected</strong>
+                </div>
+                <button class="button secondary compact" id="refreshIntegrationStatusButton" type="button">Refresh</button>
+              </div>
+              <div class="integrationStatusGrid" id="integrationStatusGrid">
+                <div><span>Connection</span><strong>Waiting</strong></div>
+                <div><span>Last data</span><strong>--</strong></div>
+                <div><span>Map</span><strong>--</strong></div>
+                <div><span>Failed ingests</span><strong>--</strong></div>
+              </div>
+              <div class="integrationSignalList" id="integrationSignalList" aria-label="Active Roblox analytics signals"></div>
+              <p class="status" id="integrationStatusMessage">Connect a Roblox game to start receiving analytics data.</p>
+            </article>
             <form class="projectForm connectUniverseForm" id="projectForm">
               <div class="fieldGroup">
                 <label for="ownedGameSelect">Owned game</label>

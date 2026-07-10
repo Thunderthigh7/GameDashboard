@@ -2738,6 +2738,7 @@ async function getUniverseSummaries(ownerUserId = null) {
     universeIds.add(String(universeId));
   }
 
+  const recentFailuresByUniverseId = await getRecentIntegrationFailuresByUniverse(ownerUserId, [...universeIds]);
   const universes = [];
   for (const id of universeIds) {
     const universeId = cleanInteger(id);
@@ -2748,16 +2749,19 @@ async function getUniverseSummaries(ownerUserId = null) {
     const summary = buildUniverseSummary(universeId, persistedMapUniverseIds.has(String(universeId)));
     const rollup = await getObjectStorageRollup(universeId);
     if (rollup && rollupTotalSamples(rollup) > summary.totalSamples) {
+      const rollupSummary = buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot);
       universes.push({
-        ...buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot),
+        ...rollupSummary,
         projectId: project.id,
         name: project.name,
+        integrationStatus: buildUniverseIntegrationStatus(rollupSummary, recentFailuresByUniverseId.get(String(universeId))),
       });
     } else {
       universes.push({
         ...summary,
         projectId: project.id,
         name: project.name,
+        integrationStatus: buildUniverseIntegrationStatus(summary, recentFailuresByUniverseId.get(String(universeId))),
       });
     }
   }
@@ -2767,6 +2771,43 @@ async function getUniverseSummaries(ownerUserId = null) {
   return {
     universes,
   };
+}
+
+async function getRecentIntegrationFailuresByUniverse(ownerUserId = null, universeIds = [], sinceMs = Date.now() - 24 * 60 * 60 * 1000) {
+  const cleanUserId = typeof ownerUserId === "string" ? ownerUserId : "";
+  const cleanUniverseIds = [...new Set(universeIds.map(cleanInteger).filter((id) => id > 0))];
+  const failuresByUniverseId = new Map();
+  if (!cleanUserId || !cleanUniverseIds.length) return failuresByUniverseId;
+
+  const db = await getMongoDb();
+  const events = db
+    ? await db.collection("usage_events")
+      .find({
+        userId: cleanUserId,
+        universeId: { $in: cleanUniverseIds },
+        createdAt: { $gte: sinceMs },
+      })
+      .project({ _id: 0, universeId: 1, unit: 1, feature: 1, quantity: 1, createdAt: 1 })
+      .toArray()
+    : (await readUsageEvents()).filter((event) => (
+      event.userId === cleanUserId
+      && cleanUniverseIds.includes(cleanInteger(event.universeId))
+      && cleanInteger(event.createdAt) >= sinceMs
+    ));
+
+  for (const event of events) {
+    if (event.unit !== "failure" && !String(event.feature || "").endsWith("_failed")) continue;
+    const universeId = cleanInteger(event.universeId);
+    if (universeId <= 0) continue;
+    const key = String(universeId);
+    const previous = failuresByUniverseId.get(key) || { count: 0, lastFailureAt: 0 };
+    failuresByUniverseId.set(key, {
+      count: previous.count + Math.max(cleanFiniteInteger(event.quantity), 1),
+      lastFailureAt: Math.max(previous.lastFailureAt, cleanInteger(event.createdAt)),
+    });
+  }
+
+  return failuresByUniverseId;
 }
 
 function addUniverseKeys(target, sourceMap) {
@@ -2892,6 +2933,33 @@ function buildUniverseSummaryFromRollup(rollup, hasPersistedMapSnapshot = false)
     totalSamples,
     hasMapSnapshot: hasPersistedMapSnapshot,
     lastSeenAt: cleanInteger(rollup.lastSeenAt) || cleanInteger(rollup.generatedAt),
+  };
+}
+
+function buildUniverseIntegrationStatus(summary, recentFailureSummary = null) {
+  const chatLogCount = cleanFiniteInteger(summary?.chatLogCount);
+  const movementSampleCount = cleanFiniteInteger(summary?.movementSampleCount) + cleanFiniteInteger(summary?.movementRollupCount);
+  const deathSampleCount = cleanFiniteInteger(summary?.deathSampleCount);
+  const leaveSampleCount = cleanFiniteInteger(summary?.leaveSampleCount);
+
+  return {
+    connected: true,
+    lastReceivedAt: cleanInteger(summary?.lastSeenAt) || null,
+    mapUploaded: Boolean(summary?.hasMapSnapshot),
+    signals: {
+      movement: movementSampleCount > 0,
+      deaths: deathSampleCount > 0,
+      leaves: leaveSampleCount > 0,
+      chat: chatLogCount > 0,
+    },
+    counts: {
+      movement: movementSampleCount,
+      deaths: deathSampleCount,
+      leaves: leaveSampleCount,
+      chat: chatLogCount,
+    },
+    failedIngests24h: cleanFiniteInteger(recentFailureSummary?.count),
+    lastFailureAt: cleanInteger(recentFailureSummary?.lastFailureAt) || null,
   };
 }
 
