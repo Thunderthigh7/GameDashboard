@@ -816,24 +816,6 @@ small,
   font-size: 12px;
 }
 
-.metricCard {
-  display: grid;
-  gap: 8px;
-}
-
-.metricCard span {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.metricCard strong {
-  font-size: 26px;
-}
-
-.metricCard small {
-  color: var(--green);
-}
-
 .sectionHeader {
   display: flex;
   align-items: flex-start;
@@ -1203,12 +1185,6 @@ small,
 .insightRail {
   display: grid;
   gap: 18px;
-}
-
-.metricRail {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .insightMode {

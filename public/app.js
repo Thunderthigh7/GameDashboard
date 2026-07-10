@@ -66,8 +66,6 @@ const copyProjectSecretButton = document.querySelector("#copyProjectSecretButton
 const connectedGameList = document.querySelector("#connectedGameList");
 const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const refreshMovementButton = document.querySelector("#refreshMovementButton");
-const chatLogCount = document.querySelector("#chatLogCount");
-const universeTotalMetric = document.querySelector("#universeTotalMetric");
 const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
@@ -275,8 +273,6 @@ function setAuthenticated(value, user = null) {
       aiReportSelect.innerHTML = `<option value="">Latest saved report</option>`;
       aiReportSelect.disabled = true;
     }
-    chatLogCount.textContent = "0";
-    universeTotalMetric.textContent = "0";
     selectedUniverseId = "";
     selectedUniverseLabel.textContent = "No universe selected";
     universeSelect.innerHTML = `<option value="">Sign in to load universes</option>`;
@@ -936,7 +932,6 @@ async function loadUniverses() {
   try {
     const data = await request("/api/universes");
     knownUniverses = data.universes || [];
-    universeTotalMetric.textContent = String(knownUniverses.length);
 
     if (!knownUniverses.length) {
       selectedUniverseId = "";
@@ -1556,7 +1551,6 @@ async function loadChatLogs() {
   if (!authenticated) return;
 
   if (!selectedUniverseId) {
-    chatLogCount.textContent = "0";
     chatLogsStatus.textContent = "Connect or select a Roblox game to view chat logs.";
     chatLogList.innerHTML = "";
     loadChatInsights();
@@ -1567,8 +1561,6 @@ async function loadChatLogs() {
     const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
     const data = await request(`/api/chat-logs${query}`);
     loadChatInsights();
-    chatLogCount.textContent = String(data.logCount || 0);
-
     if (!data.logs.length) {
       chatLogsStatus.textContent = selectedUniverseId
         ? "No chat logs yet. Start a live server with chat tracking enabled, then have a player send a message."
