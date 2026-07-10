@@ -58,6 +58,7 @@ const integrationStatusTitle = document.querySelector("#integrationStatusTitle")
 const integrationStatusGrid = document.querySelector("#integrationStatusGrid");
 const integrationSignalList = document.querySelector("#integrationSignalList");
 const integrationStatusMessage = document.querySelector("#integrationStatusMessage");
+const setupChecklist = document.querySelector("#setupChecklist");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
 const projectSecretTarget = document.querySelector("#projectSecretTarget");
@@ -285,6 +286,7 @@ function setAuthenticated(value, user = null) {
     if (projectSecretTarget) projectSecretTarget.textContent = "";
     if (connectedGameList) connectedGameList.innerHTML = "";
     renderIntegrationStatusCard();
+    renderSetupChecklist();
     if (ownedGameSelect) {
       ownedGameSelect.innerHTML = `<option value="">Sign in to load games</option>`;
       ownedGameSelect.disabled = true;
@@ -943,6 +945,7 @@ async function loadUniverses() {
       universesStatus.textContent = "Add a universe ID to connect your Roblox game.";
       renderConnectedGames();
       renderIntegrationStatusCard();
+      renderSetupChecklist();
       updateSelectedUniverse();
       loadSignalAreaCards();
       return;
@@ -959,6 +962,7 @@ async function loadUniverses() {
     universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.`;
     renderConnectedGames();
     renderIntegrationStatusCard();
+    renderSetupChecklist();
     updateSelectedUniverse();
 
     if (previousUniverseId !== selectedUniverseId) {
@@ -969,6 +973,7 @@ async function loadUniverses() {
   } catch (error) {
     universesStatus.textContent = error.message;
     renderIntegrationStatusCard({ error: error.message });
+    renderSetupChecklist();
   } finally {
     if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = false;
   }
@@ -1082,6 +1087,7 @@ function clearProjectSecretBox() {
   if (projectSecretBox) projectSecretBox.hidden = true;
   if (projectSecretValue) projectSecretValue.textContent = "";
   if (projectSecretTarget) projectSecretTarget.textContent = "";
+  renderSetupChecklist();
 }
 
 function showProjectSecret(secret, project) {
@@ -1094,6 +1100,7 @@ function showProjectSecret(secret, project) {
       : `For: ${name}`;
   }
   if (projectSecretBox) projectSecretBox.hidden = !secret;
+  renderSetupChecklist();
 }
 
 async function loadOwnedGames() {
@@ -1204,6 +1211,7 @@ function renderIntegrationStatusCard(options = {}) {
       + renderIntegrationMetric("Failed ingests", "--");
     integrationSignalList.innerHTML = "";
     integrationStatusMessage.textContent = options.error;
+    renderSetupChecklist();
     return;
   }
 
@@ -1224,6 +1232,7 @@ function renderIntegrationStatusCard(options = {}) {
     integrationStatusMessage.textContent = authenticated
       ? "Connect a Roblox game to start receiving analytics data."
       : "Sign in to check integration status.";
+    renderSetupChecklist();
     return;
   }
 
@@ -1254,6 +1263,75 @@ function renderIntegrationStatusCard(options = {}) {
   } else {
     integrationStatusMessage.textContent = "Integration is receiving Roblox analytics data.";
   }
+
+  renderSetupChecklist(selectedUniverse);
+}
+
+function renderSetupChecklist(selectedUniverse = null) {
+  if (!setupChecklist) return;
+
+  const universe = selectedUniverse || (selectedUniverseId
+    ? knownUniverses.find((entry) => String(entry.id || "") === selectedUniverseId)
+    : knownUniverses[0]);
+  const status = universe?.integrationStatus || {};
+  const signals = status.signals || {};
+  const hasAnySignal = Boolean(signals.movement || signals.deaths || signals.leaves || signals.chat);
+  const hasData = Boolean(Number(status.lastReceivedAt || universe?.lastSeenAt || 0));
+  const hasMap = Boolean(status.mapUploaded || universe?.hasMapSnapshot);
+  const secretVisible = Boolean(projectSecretBox && !projectSecretBox.hidden && projectSecretValue?.textContent);
+
+  const steps = [
+    {
+      title: "Sign in with Roblox",
+      detail: authenticated ? "Signed in." : "Use the Roblox account that owns the game.",
+      complete: authenticated,
+    },
+    {
+      title: "Connect a game",
+      detail: knownUniverses.length ? `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.` : "Pick one owned public game from the list.",
+      complete: knownUniverses.length > 0,
+    },
+    {
+      title: "Install the secret",
+      detail: hasData ? "Roblox is sending data with the installed secret." : secretVisible ? "Copy the visible secret into Settings.Secret now." : "Regenerate the secret if you need to copy it again.",
+      complete: hasData,
+      current: Boolean(universe && !hasData),
+    },
+    {
+      title: "Start a live server",
+      detail: hasData ? `Last data ${formatRelativeTime(status.lastReceivedAt || universe?.lastSeenAt)}.` : "Join the game after installing the analytics script.",
+      complete: hasData,
+    },
+    {
+      title: "Confirm signals",
+      detail: hasAnySignal ? getActiveSignalText(signals) : "Movement should activate first; deaths, leaves, and chat activate when those events happen.",
+      complete: hasAnySignal,
+    },
+    {
+      title: "Upload map",
+      detail: hasMap ? "Map snapshot uploaded." : "Upload a map snapshot so heatmaps line up with the world.",
+      complete: hasMap,
+    },
+  ];
+
+  setupChecklist.innerHTML = steps.map((step) => `
+    <li class="${step.complete ? "complete" : step.current ? "current" : ""}">
+      <span aria-hidden="true"></span>
+      <div>
+        <strong>${escapeHtml(step.title)}</strong>
+        <p>${escapeHtml(step.detail)}</p>
+      </div>
+    </li>
+  `).join("");
+}
+
+function getActiveSignalText(signals = {}) {
+  const active = [];
+  if (signals.movement) active.push("movement");
+  if (signals.deaths) active.push("deaths");
+  if (signals.leaves) active.push("leaves");
+  if (signals.chat) active.push("chat");
+  return active.length ? `Active signals: ${active.join(", ")}.` : "No active signals yet.";
 }
 
 function renderIntegrationMetric(label, value, status = "") {
@@ -1273,6 +1351,7 @@ function selectUniverse(value) {
   selectedChatLogId = "";
   updateSelectedUniverse();
   renderIntegrationStatusCard();
+  renderSetupChecklist();
   loadAiAutomationSettings();
   loadChatLogs();
   loadSignalAreaCards();
@@ -1353,13 +1432,22 @@ function renderSignalAreas(container, areas, mode) {
   ];
   const totalCount = realRows.reduce((sum, area) => sum + Math.max(Number(area.count) || 0, 0), 0);
 
-  container.innerHTML = rows.map((area) => renderSignalAreaRow({
+  const emptyMessage = realRows.length ? "" : `<p class="status signalEmptyStatus">${escapeHtml(getSignalEmptyMessage(mode))}</p>`;
+  container.innerHTML = emptyMessage + rows.map((area) => renderSignalAreaRow({
     area,
     label,
     mode,
     percent: getSignalAreaPercent(area, totalCount),
     isPlaceholder: Boolean(area.placeholder),
   })).join("");
+}
+
+function getSignalEmptyMessage(mode) {
+  if (!selectedUniverseId) return "Select or connect a Roblox game to see top areas.";
+  if (mode === "movement") return "No movement areas yet. Start a live Roblox server with the analytics script installed.";
+  if (mode === "deaths") return "No death areas yet. Death locations appear after players die in a tracked server.";
+  if (mode === "chat") return "No chat areas yet. Chat locations appear after players send messages in a tracked server.";
+  return "No drop-off areas yet. Leave locations appear after players exit a tracked server.";
 }
 
 function renderSignalAreaRow({ area, label, mode, percent, isPlaceholder }) {
@@ -1469,7 +1557,7 @@ async function loadChatLogs() {
 
   if (!selectedUniverseId) {
     chatLogCount.textContent = "0";
-    chatLogsStatus.textContent = "Select a universe with data to view chat logs.";
+    chatLogsStatus.textContent = "Connect or select a Roblox game to view chat logs.";
     chatLogList.innerHTML = "";
     loadChatInsights();
     return;
@@ -1483,8 +1571,8 @@ async function loadChatLogs() {
 
     if (!data.logs.length) {
       chatLogsStatus.textContent = selectedUniverseId
-        ? `No chat logs stored for universe ${selectedUniverseId} yet.`
-        : "Select a universe with data to view chat logs.";
+        ? "No chat logs yet. Start a live server with chat tracking enabled, then have a player send a message."
+        : "Connect or select a Roblox game to view chat logs.";
       chatLogList.innerHTML = "";
       return;
     }
@@ -1505,7 +1593,7 @@ async function loadChatInsights() {
   if (!authenticated) return;
 
   if (!selectedUniverseId) {
-    chatInsightsStatus.textContent = "Select a universe with data to view chat insights.";
+    chatInsightsStatus.textContent = "Connect or select a Roblox game before running AI Insights.";
     commonQuestionList.innerHTML = "";
     renderAiReportHistory([]);
     return;
@@ -1712,8 +1800,8 @@ function renderChatInsights(data) {
 
   if (!data.questions.length) {
     chatInsightsStatus.textContent = data.sourceLogCount
-      ? `No AI analysis saved yet. ${data.questionLikeCount || 0} question-like messages are ready to send.`
-      : "No chat data available for AI analysis yet.";
+      ? `No AI report saved yet. ${data.questionLikeCount || 0} question-like messages are ready; run AI Insights when you want a paid analysis.`
+      : "No chat data yet. Start a live server with chat tracking enabled before running AI Insights.";
     commonQuestionList.innerHTML = "";
     return;
   }

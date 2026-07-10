@@ -16,6 +16,7 @@ const centerButton = document.querySelector("#centerMovementButton");
 const sampleCount = document.querySelector("#movementSampleCount");
 const statusLine = document.querySelector("#movementHeatmapStatus");
 const emptyState = document.querySelector("#heatmapEmptyState");
+const emptyMessage = document.querySelector("#heatmapEmptyMessage");
 const heatmapLegend = document.querySelector(".heatmapLegend");
 const heatmapOverlay = document.querySelector(".heatmapOverlay");
 const playerFilter = document.querySelector("#movementPlayerFilter");
@@ -244,6 +245,7 @@ async function loadHeatmap(options = {}) {
     latestSamples = [];
     latestEntries = [];
     setHeatmapEmptyState(true);
+    setHeatmapEmptyCopy("Pick universe first", "Connect or select a Roblox game to view map analytics.");
     sampleCount.textContent = "0 samples";
     statusLine.textContent = "Pick universe first";
     renderScene([], null, {
@@ -292,7 +294,7 @@ async function loadHeatmap(options = {}) {
     } else if (samplePayload.returnedCount || mapSnapshot?.partCount) {
       statusLine.textContent = `${getStatusText(samplePayload)}${mapText}${mapErrorText}`;
     } else {
-      statusLine.textContent = `No ${modeText} samples received yet.${mapErrorText}`;
+      statusLine.textContent = getEmptyHeatmapStatus(modeText, mapErrorText);
     }
   } catch (error) {
     statusLine.textContent = error.message;
@@ -354,6 +356,21 @@ function setHeatmapEmptyState(isEmpty) {
   if (heatmapOverlay) heatmapOverlay.hidden = isEmpty;
   canvas?.classList.toggle("isEmpty", isEmpty);
   if (isEmpty) hideAiAreaCard();
+}
+
+function setHeatmapEmptyCopy(title, message) {
+  const titleElement = emptyState?.querySelector("strong");
+  if (titleElement) titleElement.textContent = title;
+  if (emptyMessage) emptyMessage.textContent = message;
+}
+
+function getEmptyHeatmapStatus(modeText, suffix = "") {
+  if (activeHeatmapMode === "ai-analysis") return `No saved AI area analysis yet. Run AI Insights after Roblox data arrives.${suffix}`;
+  if (activeHeatmapMode === "movement") return `No movement samples yet. Start a live Roblox server with the analytics script installed.${suffix}`;
+  if (activeHeatmapMode === "deaths") return `No death samples yet. Death heatmaps appear after players die in a tracked server.${suffix}`;
+  if (activeHeatmapMode === "leaves") return `No leave samples yet. Drop-off heatmaps appear after players exit a tracked server.${suffix}`;
+  if (activeHeatmapMode === "chat") return `No chat samples yet. Chat heatmaps appear after players send messages in a tracked server.${suffix}`;
+  return `No ${modeText} samples received yet.${suffix}`;
 }
 
 function startHeatmapRefresh() {

@@ -585,6 +585,85 @@ small,
   margin-top: 0;
 }
 
+.setupChecklistCard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 14px;
+}
+
+.setupChecklistCard h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.setupChecklistCard p {
+  margin-top: 4px;
+}
+
+.setupChecklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setupChecklist li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.setupChecklist li > span {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--control-bg);
+}
+
+.setupChecklist li.complete > span {
+  border-color: rgba(53, 208, 131, 0.45);
+  background: var(--green);
+}
+
+.setupChecklist li.complete > span::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 4px;
+  margin: 7px auto 0;
+  border-bottom: 2px solid #06130d;
+  border-left: 2px solid #06130d;
+  transform: rotate(-45deg);
+}
+
+.setupChecklist li.current {
+  border-color: rgba(109, 66, 232, 0.7);
+  background: var(--purple-soft);
+}
+
+.setupChecklist strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.setupChecklist p {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .projectSecretBox {
   width: 100%;
   border: 1px solid rgba(34, 211, 238, 0.28);
@@ -964,10 +1043,14 @@ small,
   inset: 0;
   z-index: 3;
   display: grid;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
   background: var(--heatmap-bg);
   color: var(--muted);
   pointer-events: none;
+  padding: 22px;
+  text-align: center;
 }
 
 .heatmapEmptyState strong {
@@ -978,6 +1061,12 @@ small,
   color: var(--text);
   font-size: 18px;
   box-shadow: var(--overlay-shadow);
+}
+
+.heatmapEmptyState p {
+  max-width: 420px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .heatmapLegend,
@@ -1737,6 +1826,16 @@ small,
   margin-top: 16px;
 }
 
+.signalEmptyStatus {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .signalAreaItem {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) 76px 58px;
@@ -1952,6 +2051,7 @@ small,
   .authForm,
   .connectUniverseForm,
   .integrationStatusGrid,
+  .setupChecklist,
   .topbarFilters,
   .aiCardRow,
   .heatmapFilters {

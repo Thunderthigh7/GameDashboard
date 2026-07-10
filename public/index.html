@@ -125,6 +125,7 @@
                   <canvas id="movementHeatmapCanvas"></canvas>
                   <div class="heatmapEmptyState" id="heatmapEmptyState" hidden>
                     <strong>Pick universe first</strong>
+                    <p id="heatmapEmptyMessage">Connect or select a Roblox game to view map analytics.</p>
                   </div>
                   <div class="heatmapLegend">
                     <span>Higher traffic</span>
@@ -345,6 +346,20 @@
               </div>
               <div class="integrationSignalList" id="integrationSignalList" aria-label="Active Roblox analytics signals"></div>
               <p class="status" id="integrationStatusMessage">Connect a Roblox game to start receiving analytics data.</p>
+            </article>
+            <article class="setupChecklistCard" id="setupChecklistCard">
+              <div>
+                <h3>First-run setup</h3>
+                <p>Complete these once per Roblox game before judging the dashboard.</p>
+              </div>
+              <ol class="setupChecklist" id="setupChecklist">
+                <li><span></span><div><strong>Sign in with Roblox</strong><p>Use the Roblox account that owns the game.</p></div></li>
+                <li><span></span><div><strong>Connect a game</strong><p>Pick one owned public game from the list.</p></div></li>
+                <li><span></span><div><strong>Install the secret</strong><p>Paste the generated secret into Settings.Secret in Roblox.</p></div></li>
+                <li><span></span><div><strong>Start a live server</strong><p>Join the game so the analytics heartbeat can send data.</p></div></li>
+                <li><span></span><div><strong>Confirm signals</strong><p>Movement, deaths, leaves, or chat should become active.</p></div></li>
+                <li><span></span><div><strong>Upload map</strong><p>Upload a map snapshot so heatmaps are readable.</p></div></li>
+              </ol>
             </article>
             <form class="projectForm connectUniverseForm" id="projectForm">
               <div class="fieldGroup">
