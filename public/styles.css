@@ -433,24 +433,6 @@ small,
   line-height: 1.35;
 }
 
-.sidebarRefreshButton {
-  width: 100%;
-  min-height: 46px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #8f48ff, #6428ee);
-  box-shadow: 0 14px 32px rgba(96, 50, 255, 0.28);
-}
-
-.sidebarRefreshButton::before {
-  content: "";
-  width: 16px;
-  height: 16px;
-  margin-right: 10px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 999px;
-}
-
 .sidebarFooter > .status {
   margin: 0;
   padding: 0 10px 12px;

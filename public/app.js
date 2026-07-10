@@ -131,7 +131,7 @@ function bindEvents() {
     window.location.reload();
   });
 
-  refreshUniversesButton.addEventListener("click", loadUniverses);
+  refreshUniversesButton?.addEventListener("click", loadUniverses);
   refreshIntegrationStatusButton?.addEventListener("click", loadUniverses);
   refreshUsageButton?.addEventListener("click", loadAccountUsage);
   usagePlanOptions?.addEventListener("click", (event) => {
