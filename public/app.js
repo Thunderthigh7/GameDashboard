@@ -1157,11 +1157,33 @@ function renderConnectedGame(universe) {
   const id = String(universe.id || "");
   const projectId = String(universe.projectId || "");
   const name = String(universe.name || `Universe ${id}`);
+  const status = universe.integrationStatus || {};
+  const failedIngests = Number(status.failedIngests24h || 0);
+  const lastReceivedAt = Number(status.lastReceivedAt || universe.lastSeenAt || 0);
+  const statusClass = failedIngests > 0 ? "warning" : lastReceivedAt ? "ok" : "waiting";
+  const statusText = failedIngests > 0
+    ? `${formatCompactNumber(failedIngests)} failed ingests`
+    : lastReceivedAt
+      ? `Last data ${formatRelativeTime(lastReceivedAt)}`
+      : "Waiting for data";
+
   return `
     <article class="connectedGameItem">
-      <div>
-        <strong>${escapeHtml(name)}</strong>
-        <span>Universe ${escapeHtml(id)}</span>
+      <div class="connectedGameInfo">
+        <div>
+          <strong>${escapeHtml(name)}</strong>
+          <span>Universe ${escapeHtml(id)}</span>
+        </div>
+        <div class="connectedGameStatus ${escapeHtml(statusClass)}">
+          <b>${escapeHtml(statusText)}</b>
+          <span>${escapeHtml(status.mapUploaded || universe.hasMapSnapshot ? "Map uploaded" : "Map missing")}</span>
+        </div>
+        <div class="connectedGameSignals">
+          ${renderIntegrationSignal("Movement", Boolean(status.signals?.movement), status.counts?.movement)}
+          ${renderIntegrationSignal("Deaths", Boolean(status.signals?.deaths), status.counts?.deaths)}
+          ${renderIntegrationSignal("Leaves", Boolean(status.signals?.leaves), status.counts?.leaves)}
+          ${renderIntegrationSignal("Chat", Boolean(status.signals?.chat), status.counts?.chat)}
+        </div>
       </div>
       <div class="connectedGameActions">
         <button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
