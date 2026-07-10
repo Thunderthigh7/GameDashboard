@@ -1218,6 +1218,15 @@ small,
   min-height: 0;
 }
 
+.mapPanel:focus,
+.mapPanel:focus-visible,
+.heatmapShell:focus,
+.heatmapShell:focus-visible,
+#movementHeatmapCanvas:focus,
+#movementHeatmapCanvas:focus-visible {
+  outline: none;
+}
+
 #movementHeatmapCanvas.isEmpty {
   opacity: 0;
 }
