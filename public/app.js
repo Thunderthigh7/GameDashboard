@@ -78,6 +78,8 @@ const aiReportSelect = document.querySelector("#aiReportSelect");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
+const movementFromDisplay = document.querySelector("#movementFromDisplay");
+const movementToDisplay = document.querySelector("#movementToDisplay");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
@@ -113,6 +115,7 @@ init();
 async function init() {
   showAuthError();
   bindEvents();
+  syncDateFilterDisplays();
   await checkAuth();
 }
 
@@ -179,8 +182,16 @@ function bindEvents() {
     const planButton = event.target.closest("[data-admin-save-plan-user]");
     if (planButton) saveAdminUserPlan(planButton);
   });
-  movementFromFilter?.addEventListener("change", loadSignalAreaCards);
-  movementToFilter?.addEventListener("change", loadSignalAreaCards);
+  movementFromFilter?.addEventListener("change", () => {
+    syncDateFilterDisplays();
+    loadSignalAreaCards();
+  });
+  movementToFilter?.addEventListener("change", () => {
+    syncDateFilterDisplays();
+    loadSignalAreaCards();
+  });
+  movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
+  movementToFilter?.addEventListener("input", syncDateFilterDisplays);
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -1803,6 +1814,33 @@ function getDateTimeMs(value) {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function syncDateFilterDisplays() {
+  if (movementFromDisplay) {
+    movementFromDisplay.textContent = formatDateFilterDisplay(movementFromFilter?.value, "Select start date");
+  }
+
+  if (movementToDisplay) {
+    movementToDisplay.textContent = formatDateFilterDisplay(movementToFilter?.value, "Select end date");
+  }
+}
+
+function formatDateFilterDisplay(value, fallback) {
+  const timestamp = getDateTimeMs(value);
+  if (!timestamp) return fallback;
+
+  const date = new Date(timestamp);
+  const dateText = date.toLocaleDateString([], {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timeText = date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${dateText} ${timeText}`;
 }
 
 function renderChatInsights(data) {

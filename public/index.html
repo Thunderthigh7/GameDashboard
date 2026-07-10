@@ -55,13 +55,19 @@
           </div>
           <div class="topbarActions">
             <div class="topbarFilters" aria-label="Heatmap date range">
-              <div class="fieldGroup compactField">
+              <div class="fieldGroup compactField dateDisplayField">
                 <label for="movementFromFilter">From</label>
-                <input id="movementFromFilter" type="datetime-local">
+                <div class="dateDisplayControl">
+                  <span id="movementFromDisplay">Select start date</span>
+                  <input id="movementFromFilter" type="datetime-local">
+                </div>
               </div>
-              <div class="fieldGroup compactField">
+              <div class="fieldGroup compactField dateDisplayField">
                 <label for="movementToFilter">To</label>
-                <input id="movementToFilter" type="datetime-local">
+                <div class="dateDisplayControl">
+                  <span id="movementToDisplay">Select end date</span>
+                  <input id="movementToFilter" type="datetime-local">
+                </div>
               </div>
             </div>
             <div class="topbarButtonGroup">
@@ -105,11 +111,6 @@
             <div class="dashboardContentColumn">
               <div class="overviewHeroGrid">
                 <section class="panel movementHeatmap mapPanel" id="heatmaps">
-                  <div class="sectionHeader">
-                    <div>
-                      <h2>Map Analytics</h2>
-                    </div>
-                  </div>
                   <div class="heatmapToolbar">
                     <div class="heatmapPresets" aria-label="Heatmap mode">
                       <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>

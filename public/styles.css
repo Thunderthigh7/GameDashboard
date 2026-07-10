@@ -503,7 +503,7 @@ small,
 }
 
 .topbarFilters {
-  gap: 24px;
+  gap: 14px;
 }
 
 .topbarButtonGroup {
@@ -1130,7 +1130,7 @@ small,
 }
 
 .compactField {
-  width: 220px;
+  width: 320px;
   min-width: 0;
 }
 
@@ -1153,6 +1153,60 @@ small,
   background: var(--field-bg);
   color: var(--text);
   padding: 0 10px;
+}
+
+.dateDisplayField {
+  width: clamp(300px, 24vw, 380px);
+}
+
+.dateDisplayControl {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--text);
+  padding: 0 42px 0 12px;
+  white-space: nowrap;
+}
+
+.dateDisplayControl span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dateDisplayControl::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--nav-text);
+  border-radius: 3px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.dateDisplayControl input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  opacity: 0;
 }
 
 .fieldGroup select {
@@ -1240,7 +1294,7 @@ small,
 
 .heatmapToolbar {
   position: absolute;
-  top: 68px;
+  top: 22px;
   left: 22px;
   right: 22px;
   z-index: 5;
