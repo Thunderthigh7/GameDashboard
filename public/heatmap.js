@@ -1685,19 +1685,20 @@ function renderMapSnapshot(snapshot, center, entries = []) {
   mapGroup.name = "UploadedMapSnapshot";
 
   const parts = snapshot.parts.slice(0, 8000);
+  const entryBounds = entries.length ? getBounds(entries) : null;
   const heatContext = activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis"
     ? createSurfaceHeatContext(entries, center, snapshot)
     : null;
 
   for (let index = 0; index < parts.length; index += 1) {
-    const mesh = createMapMesh(parts[index], center, heatContext);
+    const mesh = createMapMesh(parts[index], center, heatContext, snapshot, entryBounds);
     if (mesh) mapGroup.add(mesh);
   }
 
   scene.add(mapGroup);
 }
 
-function createMapMesh(part, center, heatContext = null) {
+function createMapMesh(part, center, heatContext = null, snapshot = null, entryBounds = null) {
   const size = part.size || [];
   const cframe = part.cframe || [];
   if (size.length < 3 || cframe.length < 12) return null;
@@ -1708,6 +1709,8 @@ function createMapMesh(part, center, heatContext = null) {
   const sx = Math.max(Number(size[0]) || 1, 0.05);
   const sy = Math.max(Number(size[1]) || 1, 0.05);
   const sz = Math.max(Number(size[2]) || 1, 0.05);
+  if (shouldSkipMapPart(part, sx, sy, sz, snapshot, entryBounds)) return null;
+
   const baseColor = new THREE.Color(
     clamp((Number(color[0]) || 0) / 255, 0, 1),
     clamp((Number(color[1]) || 0) / 255, 0, 1),
@@ -1742,6 +1745,30 @@ function createMapMesh(part, center, heatContext = null) {
   );
 
   return mesh;
+}
+
+function shouldSkipMapPart(part, sx, sy, sz, snapshot = null, entryBounds = null) {
+  const horizontalSpan = Math.max(sx, sz);
+  const horizontalFootprint = sx * sz;
+  const isFlatHorizontal = sy <= Math.max(4, horizontalSpan * 0.035);
+  if (!isFlatHorizontal || horizontalSpan < 180 || horizontalFootprint < 25000) return false;
+
+  const bounds = snapshot?.bounds;
+  const mapSpan = Math.max(Number(bounds?.width) || 0, Number(bounds?.depth) || 0);
+  const entrySpan = entryBounds
+    ? Math.max(Number(entryBounds.width) || 0, Number(entryBounds.depth) || 0)
+    : 0;
+  const dwarfsData = entrySpan > 0
+    && horizontalSpan > entrySpan * 2.2
+    && horizontalFootprint > entrySpan * entrySpan * 3;
+  const dominatesSnapshot = mapSpan > 0
+    && horizontalSpan > mapSpan * 0.68
+    && horizontalFootprint > mapSpan * mapSpan * 0.25;
+  const hugeStandaloneBase = horizontalFootprint > 160000;
+  const name = String(part.name || part.className || "").toLowerCase();
+  const looksLikeBaseplate = /baseplate|base|floor|terrain|ground/.test(name);
+
+  return dwarfsData || dominatesSnapshot || hugeStandaloneBase || looksLikeBaseplate;
 }
 
 function getReadableMapColor(color) {
