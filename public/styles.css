@@ -199,15 +199,121 @@ small,
 }
 
 .navIcon {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: block;
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
   margin-right: 12px;
-  font-size: 18px;
-  line-height: 1;
-  filter: grayscale(0.15);
+  color: currentColor;
+}
+
+.navIcon::before,
+.navIcon::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.homeIcon::before {
+  left: 6px;
+  top: 11px;
+  width: 16px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top: 0;
+  border-radius: 3px;
+}
+
+.homeIcon::after {
+  left: 7px;
+  top: 5px;
+  width: 14px;
+  height: 14px;
+  border-left: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.chatIcon::before {
+  left: 4px;
+  top: 6px;
+  width: 19px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+
+.chatIcon::after {
+  left: 14px;
+  top: 19px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(35deg);
+}
+
+.usageIcon::before {
+  left: 6px;
+  bottom: 5px;
+  width: 3px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow:
+    6px -5px 0 currentColor,
+    12px -10px 0 currentColor;
+}
+
+.usageIcon::after {
+  left: 5px;
+  bottom: 4px;
+  width: 16px;
+  height: 19px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.35;
+}
+
+.connectIcon::before {
+  left: 5px;
+  top: 13px;
+  width: 12px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  transform: rotate(-42deg);
+}
+
+.connectIcon::after {
+  right: 5px;
+  top: 7px;
+  width: 12px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  transform: rotate(-42deg);
+}
+
+.adminIcon::before {
+  left: 6px;
+  top: 4px;
+  width: 16px;
+  height: 19px;
+  border: 2px solid currentColor;
+  border-radius: 5px 5px 8px 8px;
+  clip-path: polygon(50% 0, 100% 18%, 100% 62%, 50% 100%, 0 62%, 0 18%);
+}
+
+.adminIcon::after {
+  left: 12px;
+  top: 10px;
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(38deg);
 }
 
 .sideNav a.active {
