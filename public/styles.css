@@ -1400,6 +1400,7 @@ small,
 
 .heatmapLegend,
 .heatmapOverlay {
+  z-index: 2;
   pointer-events: none;
 }
 
