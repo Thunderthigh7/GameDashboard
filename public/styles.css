@@ -1277,19 +1277,18 @@ small,
 .heatmapToolbar {
   position: absolute;
   top: 22px;
-  left: 22px;
-  right: 22px;
+  left: 50%;
   z-index: 5;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: center;
   margin: 0;
+  transform: translateX(-50%);
 }
 
 .heatmapPresets {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
 }
 
@@ -1387,8 +1386,8 @@ small,
 }
 
 .heatmapLegend {
-  left: 14px;
-  top: 118px;
+  left: 22px;
+  top: 76px;
   display: grid;
   gap: 10px;
   padding: 18px 20px;
@@ -1426,7 +1425,7 @@ small,
 .mapAiCallout {
   position: absolute;
   left: 150px;
-  top: 128px;
+  top: 76px;
   z-index: 2;
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
@@ -1484,11 +1483,91 @@ small,
   transform: translateX(-50%);
 }
 
-.mapViewDock span {
+.dockIcon,
+.dockIconButton {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
+}
+
+.dockIcon {
   border: 2px solid var(--line-strong);
   border-radius: 999px;
+}
+
+.dockIconButton {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dockIconButton.active {
+  border-color: rgba(124, 60, 255, 0.54);
+  background: var(--purple);
+  color: white;
+}
+
+.dockIconButton::before,
+.dockIconButton::after,
+.dockIcon::before,
+.dockIcon::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.areasDockButton::before {
+  left: 5px;
+  top: 5px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  box-shadow:
+    8px 0 0 -2px currentColor,
+    0 8px 0 -2px currentColor,
+    8px 8px 0 -2px currentColor;
+}
+
+.heatmapDockButton::before {
+  left: 4px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 35%, #ef4444 0 24%, transparent 25%),
+    radial-gradient(circle at 66% 40%, #facc15 0 20%, transparent 21%),
+    radial-gradient(circle at 50% 70%, #2563eb 0 28%, transparent 29%);
+}
+
+.targetIcon::before {
+  left: 6px;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.expandIcon {
+  border-radius: 6px;
+}
+
+.expandIcon::before {
+  inset: 4px;
+  border-top: 2px solid var(--line-strong);
+  border-right: 2px solid var(--line-strong);
+}
+
+.expandIcon::after {
+  inset: 4px;
+  border-bottom: 2px solid var(--line-strong);
+  border-left: 2px solid var(--line-strong);
 }
 
 .mapViewDock b {
@@ -2567,6 +2646,11 @@ small,
     width: min(340px, calc(100% - 220px));
   }
 
+  .heatmapToolbar {
+    width: max-content;
+    max-width: calc(100% - 44px);
+  }
+
   .adminUserMeta {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2652,13 +2736,23 @@ small,
 
   .mapAiCallout {
     left: 18px;
-    top: 18px;
+    top: 86px;
     width: min(360px, calc(100% - 36px));
+  }
+
+  .heatmapToolbar {
+    top: 18px;
+    width: calc(100% - 36px);
+  }
+
+  .heatmapLegend {
+    left: 18px;
+    top: 240px;
   }
 
   .heatmapOverlay {
     right: 18px;
-    top: 168px;
+    top: 240px;
   }
 
   .mapViewDock {

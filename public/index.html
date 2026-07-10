@@ -118,11 +118,6 @@
                       <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
                       <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
                     </div>
-                    <div class="heatmapPresets" aria-label="Heatmap render style">
-                      <button class="miniButton active" type="button" data-heatmap-render="points">Areas</button>
-                      <button class="miniButton" type="button" data-heatmap-render="heatmap">Heatmap</button>
-                      <button class="miniButton" id="refreshMovementButton" type="button">Refresh</button>
-                    </div>
                   </div>
                   <div class="heatmapShell">
                     <canvas id="movementHeatmapCanvas"></canvas>
@@ -147,11 +142,12 @@
                         <p>Run AI Insights to generate intelligent area analysis and recommendations.</p>
                       </div>
                     </div>
-                    <div class="mapViewDock" aria-hidden="true">
-                      <span></span>
+                    <div class="mapViewDock">
+                      <span class="dockIcon targetIcon" aria-hidden="true"></span>
                       <b>3D View</b>
-                      <span></span>
-                      <span></span>
+                      <button class="dockIconButton areasDockButton active" type="button" data-heatmap-render="points" aria-label="Areas view" title="Areas"></button>
+                      <button class="dockIconButton heatmapDockButton" type="button" data-heatmap-render="heatmap" aria-label="Heatmap view" title="Heatmap"></button>
+                      <span class="dockIcon expandIcon" aria-hidden="true"></span>
                     </div>
                     <div class="aiAreaCard" id="aiAreaCard" hidden>
                       <div class="aiAreaCardHeader">
