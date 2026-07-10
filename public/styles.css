@@ -19,10 +19,7 @@
   --control-bg: rgba(15, 23, 48, 0.82);
   --field-bg: rgba(10, 15, 31, 0.94);
   --card-bg: rgba(13, 20, 38, 0.78);
-  --heatmap-bg:
-    radial-gradient(circle at 32% 48%, rgba(255, 55, 176, 0.3), transparent 13%),
-    radial-gradient(circle at 64% 40%, rgba(124, 60, 255, 0.3), transparent 13%),
-    linear-gradient(180deg, #071128, #050916);
+  --heatmap-bg: linear-gradient(180deg, #071128, #050916);
   --overlay-bg: rgba(10, 16, 35, 0.86);
   --nav-text: #d2d8ee;
   --placeholder: #7d889c;
@@ -1191,18 +1188,7 @@ small,
 }
 
 .heatmapShell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background:
-    linear-gradient(rgba(52, 107, 255, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(52, 107, 255, 0.12) 1px, transparent 1px);
-  background-size: 34px 34px;
-  transform: perspective(800px) rotateX(58deg) translateY(-120px) scale(1.5);
-  transform-origin: center top;
-  opacity: 0.62;
-  pointer-events: none;
+  display: none;
 }
 
 #movementHeatmapCanvas {
