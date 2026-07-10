@@ -20,6 +20,7 @@
         <nav class="sideNav" aria-label="Dashboard sections">
           <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
           <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
+          <a href="#ai-runs" data-dashboard-view="ai-runs"><span class="navIcon aiRunsIcon" aria-hidden="true"></span><span>AI Runs</span></a>
           <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
           <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
           <a href="#connect" data-dashboard-view="connect"><span class="navIcon connectIcon" aria-hidden="true"></span><span>Connect Universe</span></a>
@@ -210,33 +211,35 @@
                   <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
                 </article>
               </div>
-
-              <div class="aiCardRow">
-                <article class="panel aiRunControls">
-                  <div class="sectionHeader">
-                    <div>
-                      <h2>AI Runs</h2>
-                      <p>Automation and saved analysis history.</p>
-                    </div>
-                  </div>
-                  <button class="aiButton aiRunButton" id="runChatInsightsButton" type="button">AI Insights</button>
-                  <p class="status aiRunStatus">No chat data available for AI analysis yet.</p>
-                  <div class="aiAutomationControls">
-                    <label class="toggleControl" for="aiAutomationToggle">
-                      <input id="aiAutomationToggle" type="checkbox" checked />
-                      <span>Auto hourly</span>
-                    </label>
-                    <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
-                  </div>
-                  <div class="aiReportHistory">
-                    <label for="aiReportSelect">Saved runs</label>
-                    <select id="aiReportSelect" disabled>
-                      <option value="">Latest saved report</option>
-                    </select>
-                  </div>
-                </article>
-              </div>
             </div>
+          </div>
+        </section>
+
+        <section class="viewPage aiRunsPage" data-view-panel="ai-runs" hidden>
+          <div class="aiCardRow">
+            <article class="panel aiRunControls">
+              <div class="sectionHeader">
+                <div>
+                  <h2>AI Runs</h2>
+                  <p>Automation and saved analysis history.</p>
+                </div>
+              </div>
+              <button class="aiButton aiRunButton" id="runChatInsightsButton" type="button">AI Insights</button>
+              <p class="status aiRunStatus">No chat data available for AI analysis yet.</p>
+              <div class="aiAutomationControls">
+                <label class="toggleControl" for="aiAutomationToggle">
+                  <input id="aiAutomationToggle" type="checkbox" checked />
+                  <span>Auto hourly</span>
+                </label>
+                <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
+              </div>
+              <div class="aiReportHistory">
+                <label for="aiReportSelect">Saved runs</label>
+                <select id="aiReportSelect" disabled>
+                  <option value="">Latest saved report</option>
+                </select>
+              </div>
+            </article>
           </div>
         </section>
 

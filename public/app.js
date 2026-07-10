@@ -336,6 +336,7 @@ async function loadDashboardData() {
 
 function getViewFromHash() {
   if (window.location.hash === "#areas") return "areas";
+  if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
@@ -344,20 +345,22 @@ function getViewFromHash() {
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "areas" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "areas" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
     const nextHash = activeView === "areas"
       ? "#areas"
-      : activeView === "chat"
-        ? "#chat"
-        : activeView === "usage"
-          ? "#usage"
-          : activeView === "connect"
-            ? "#connect"
-            : activeView === "admin"
-              ? "#admin"
-              : "#overview";
+      : activeView === "ai-runs"
+        ? "#ai-runs"
+        : activeView === "chat"
+          ? "#chat"
+          : activeView === "usage"
+            ? "#usage"
+            : activeView === "connect"
+              ? "#connect"
+              : activeView === "admin"
+                ? "#admin"
+                : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -388,6 +391,10 @@ function renderActiveView() {
     areas: {
       title: "Areas",
       subtitle: "Computed movement, drop-off, death, and chat hotspots.",
+    },
+    "ai-runs": {
+      title: "AI Runs",
+      subtitle: "Automation and saved analysis history.",
     },
     chat: {
       title: "Chat Analysis",

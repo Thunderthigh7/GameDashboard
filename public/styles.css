@@ -257,6 +257,28 @@ small,
   background: currentColor;
 }
 
+.aiRunsIcon::before {
+  left: 6px;
+  top: 6px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+
+.aiRunsIcon::after {
+  left: 12px;
+  top: 4px;
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow:
+    -6px 6px 0 -1px currentColor,
+    6px 6px 0 -1px currentColor;
+  transform: rotate(45deg);
+}
+
 .chatIcon::before {
   left: 4px;
   top: 6px;
@@ -1113,7 +1135,8 @@ small,
   grid-template-columns: minmax(0, 1fr) minmax(300px, 316px);
   gap: 12px;
   align-items: stretch;
-  min-height: calc(100vh - 128px);
+  height: calc(100vh - 154px);
+  min-height: 560px;
 }
 
 .aiCardRow {
@@ -1123,11 +1146,16 @@ small,
   align-items: start;
 }
 
+.aiRunsPage .aiCardRow {
+  grid-template-columns: minmax(280px, 380px);
+}
+
 .mapPanel {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
-  min-height: calc(100vh - 128px);
+  height: 100%;
+  min-height: 0;
 }
 
 .heatmapToolbar {
@@ -1461,7 +1489,8 @@ small,
 .chatBotPanel {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 128px);
+  height: 100%;
+  min-height: 0;
   padding: 20px;
 }
 
@@ -2386,11 +2415,17 @@ small,
   }
 
   .overviewHeroGrid {
+    height: auto;
     min-height: auto;
   }
 
   .mapPanel {
+    height: auto;
     min-height: 620px;
+  }
+
+  .chatBotPanel {
+    height: auto;
   }
 
   .heatmapShell,
