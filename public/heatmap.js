@@ -1748,6 +1748,8 @@ function createMapMesh(part, center, heatContext = null, snapshot = null, entryB
 }
 
 function shouldSkipMapPart(part, sx, sy, sz, snapshot = null, entryBounds = null) {
+  if (isTerrainMapPart(part)) return true;
+
   const horizontalSpan = Math.max(sx, sz);
   const horizontalFootprint = sx * sz;
   const isFlatHorizontal = sy <= Math.max(4, horizontalSpan * 0.035);
@@ -1769,6 +1771,13 @@ function shouldSkipMapPart(part, sx, sy, sz, snapshot = null, entryBounds = null
   const looksLikeBaseplate = /baseplate|base|floor|terrain|ground/.test(name);
 
   return dwarfsData || dominatesSnapshot || hugeStandaloneBase || looksLikeBaseplate;
+}
+
+function isTerrainMapPart(part) {
+  const className = String(part.className || "").toLowerCase();
+  const name = String(part.name || "").toLowerCase();
+  const pathValue = String(part.path || "").toLowerCase();
+  return className === "terrain" || name === "terrain" || pathValue === "workspace.terrain";
 }
 
 function getReadableMapColor(color) {

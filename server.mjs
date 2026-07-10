@@ -2386,6 +2386,8 @@ function normalizeMapSnapshotChunk(body) {
 function normalizeMapPart(part) {
   if (!part || typeof part !== "object" || Array.isArray(part)) return null;
 
+  if (isIgnoredMapSnapshotPart(part)) return null;
+
   const cframe = cleanNumberArray(part.cframe, 12);
   const size = cleanNumberArray(part.size, 3);
   if (!cframe || !size) return null;
@@ -2403,6 +2405,13 @@ function normalizeMapPart(part) {
     meshId: cleanString(part.meshId, 256),
     textureId: cleanString(part.textureId, 256),
   };
+}
+
+function isIgnoredMapSnapshotPart(part) {
+  const className = cleanString(part.className, 64).toLowerCase();
+  const name = cleanString(part.name, 128).toLowerCase();
+  const pathValue = cleanString(part.path, 256).toLowerCase();
+  return className === "terrain" || name === "terrain" || pathValue === "workspace.terrain";
 }
 
 async function saveMapSnapshotChunk(chunk, usageContext = {}) {
