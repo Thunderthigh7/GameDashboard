@@ -1430,11 +1430,16 @@ small,
   gap: 4px;
 }
 
+.adminPlanControl {
+  grid-column: span 2;
+}
+
 .adminPlanControl > div {
   display: grid;
-  grid-template-columns: minmax(92px, 1fr) auto;
+  grid-template-columns: minmax(120px, 160px) 72px;
   align-items: center;
-  gap: 6px;
+  justify-content: start;
+  gap: 8px;
 }
 
 .adminPlanControl select {
@@ -1447,6 +1452,14 @@ small,
   padding: 7px 8px;
   font: inherit;
   font-weight: 800;
+}
+
+.adminPlanControl .miniButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  text-align: center;
 }
 
 .adminUniverseList {
