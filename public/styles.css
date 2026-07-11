@@ -1550,6 +1550,38 @@ small,
   white-space: nowrap;
 }
 
+.mapCameraToggle {
+  position: absolute;
+  right: 24px;
+  bottom: 26px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+}
+
+.mapCameraButton {
+  min-width: 54px;
+  height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(6, 11, 25, 0.42);
+  color: var(--nav-text);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.mapCameraButton.active {
+  border-color: rgba(124, 60, 255, 0.8);
+  background: rgba(124, 60, 255, 0.38);
+  color: white;
+  box-shadow: 0 0 0 1px rgba(124, 60, 255, 0.28), 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
 .aiAreaCard {
   left: 14px;
   top: 14px;
@@ -2722,6 +2754,16 @@ small,
     max-width: calc(100% - 32px);
     gap: 12px;
     padding: 10px 14px;
+  }
+
+  .mapCameraToggle {
+    right: 18px;
+    bottom: 86px;
+  }
+
+  .mapCameraButton {
+    min-width: 48px;
+    height: 38px;
   }
 
   .integrationStatusHeader {

@@ -19,12 +19,18 @@ const emptyState = document.querySelector("#heatmapEmptyState");
 const emptyMessage = document.querySelector("#heatmapEmptyMessage");
 const heatmapLegend = document.querySelector(".heatmapLegend");
 const heatmapOverlay = document.querySelector(".heatmapOverlay");
+const mapViewLabel = document.querySelector("#mapViewLabel");
 const playerFilter = document.querySelector("#movementPlayerFilter");
 const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
 const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]");
 const modeButtons = document.querySelectorAll("[data-heatmap-mode]");
 const renderButtons = document.querySelectorAll("[data-heatmap-render]");
+const mapViewButtons = document.querySelectorAll("[data-map-view]");
+
+const DEFAULT_3D_YAW = -0.8;
+const DEFAULT_3D_PITCH = 0.72;
+const TOP_DOWN_PITCH = 1.5;
 
 let renderer;
 let scene;
@@ -36,8 +42,8 @@ let aiAreaGroup;
 let mapGroup;
 let grid;
 let animationFrame;
-let yaw = -0.8;
-let pitch = 0.72;
+let yaw = DEFAULT_3D_YAW;
+let pitch = DEFAULT_3D_PITCH;
 let distance = 520;
 let dragging = false;
 let dragMode = "rotate";
@@ -55,6 +61,8 @@ let canvasHovered = false;
 let lastFrameTime = 0;
 let activeHeatmapMode = "ai-analysis";
 let activeRenderMode = "points";
+let activeCameraView = "3d";
+let saved3dView = { yaw: DEFAULT_3D_YAW, pitch: DEFAULT_3D_PITCH };
 let selectedChatLogId = "";
 let hoveredAiAreaMarker = null;
 let selectedAiAreaMarker = null;
@@ -89,6 +97,11 @@ if (canvas) {
   for (const button of renderButtons) {
     button.addEventListener("click", () => {
       setRenderMode(button.dataset.heatmapRender || "points");
+    });
+  }
+  for (const button of mapViewButtons) {
+    button.addEventListener("click", () => {
+      setCameraView(button.dataset.mapView || "3d");
     });
   }
   window.addEventListener("dashboard:analyticsReady", () => {
@@ -174,8 +187,13 @@ function initScene() {
     if (dragMode === "pan") {
       panView(dx, dy);
     } else {
+      if (activeCameraView === "2d") {
+        activeCameraView = "3d";
+        syncCameraViewButtons();
+      }
       yaw -= dx * 0.006;
       pitch = clamp(pitch + dy * 0.004, 0.18, 1.35);
+      remember3dView();
       updateCamera();
     }
 
@@ -2053,6 +2071,41 @@ function fitViewToBounds() {
   distance = clamp(Math.max(latestBounds.width, latestBounds.height, latestBounds.depth) * 1.8, 160, 3000);
   panTarget.set(0, 0, 0);
   updateCamera();
+}
+
+function setCameraView(view) {
+  const nextView = view === "2d" ? "2d" : "3d";
+  if (nextView === activeCameraView) return;
+
+  if (activeCameraView === "3d") {
+    remember3dView();
+  }
+
+  activeCameraView = nextView;
+  if (activeCameraView === "2d") {
+    yaw = 0;
+    pitch = TOP_DOWN_PITCH;
+  } else {
+    yaw = saved3dView.yaw;
+    pitch = saved3dView.pitch;
+  }
+
+  syncCameraViewButtons();
+  updateCamera();
+}
+
+function remember3dView() {
+  if (activeCameraView !== "3d") return;
+  saved3dView = { yaw, pitch };
+}
+
+function syncCameraViewButtons() {
+  for (const button of mapViewButtons) {
+    button.classList.toggle("active", button.dataset.mapView === activeCameraView);
+  }
+  if (mapViewLabel) {
+    mapViewLabel.textContent = activeCameraView === "2d" ? "2D View" : "3D View";
+  }
 }
 
 function panView(dx, dy) {
