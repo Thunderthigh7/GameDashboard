@@ -1464,14 +1464,13 @@ small,
   justify-content: center;
   flex: 0 0 auto;
   width: auto;
-  min-width: 104px;
+  min-width: 108px;
   height: 28px;
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
   color: var(--muted);
-  gap: 8px;
-  padding: 0 14px;
+  padding: 0 18px;
   font-weight: 900;
   cursor: pointer;
 }
@@ -1483,15 +1482,6 @@ small,
   box-shadow: 0 0 0 1px rgba(190, 117, 255, 0.3), 0 10px 24px rgba(124, 60, 255, 0.24);
 }
 
-.dockIconButton::before,
-.dockIconButton::after {
-  content: "";
-  position: relative;
-  display: block;
-  flex: 0 0 auto;
-  box-sizing: border-box;
-}
-
 .dockIconButton span {
   position: static;
   width: auto;
@@ -1499,31 +1489,6 @@ small,
   overflow: visible;
   clip: auto;
   white-space: nowrap;
-}
-
-.areasDockButton::before {
-  width: 13px;
-  height: 13px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.heatmapDockButton::before {
-  width: 16px;
-  height: 16px;
-  border-top: 2px solid currentColor;
-  border-right: 2px solid currentColor;
-  border-radius: 2px;
-}
-
-.heatmapDockButton::after {
-  position: absolute;
-  right: 7px;
-  top: 7px;
-  width: 7px;
-  height: 7px;
-  border-top: 2px solid currentColor;
-  border-right: 2px solid currentColor;
 }
 
 .mapCameraToggle {
