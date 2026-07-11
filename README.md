@@ -1,8 +1,9 @@
-# Dashboard
+# RoAnalytics Dashboard
 
-Blank local starter.
+The dashboard requires Node.js 20 or newer. Install the locked production dependencies and start the web service with:
 
 ```bash
+npm ci
 npm start
 ```
 
@@ -54,8 +55,14 @@ For Backblaze B2 raw analytics storage, add the values from your B2 bucket and a
 ANALYTICS_STORAGE_MODE=b2
 B2_BUCKET_NAME=your-bucket-name
 B2_ENDPOINT=https://s3.your-region.backblazeb2.com
+B2_REGION=your-region
 B2_KEY_ID=your-key-id
 B2_APPLICATION_KEY=your-application-key
+B2_CONNECTION_TIMEOUT_MS=5000
+B2_REQUEST_TIMEOUT_MS=60000
+B2_SOCKET_TIMEOUT_MS=30000
+B2_MAX_ATTEMPTS=3
+OBJECT_STORAGE_REQUEST_TIMEOUT_MS=5000
 ```
 
 Do not commit `.env`. It is ignored by git.
@@ -142,6 +149,7 @@ Useful environment variables:
 ```env
 ROLLUP_LOOKBACK_HOURS=24
 ROLLUP_MAX_RAW_OBJECTS=5000
+ROLLUP_READ_CONCURRENCY=8
 ROLLUP_UNIVERSE_IDS=
 ```
 
@@ -170,6 +178,7 @@ B2_MAINTENANCE_RETENTION_DAYS=14
 B2_MAINTENANCE_LOOKBACK_HOURS=24
 B2_MAINTENANCE_MAX_RAW_OBJECTS=10000
 B2_MAINTENANCE_MAX_DELETE_OBJECTS=5000
+B2_MAINTENANCE_READ_CONCURRENCY=8
 B2_MAINTENANCE_UNIVERSE_IDS=
 B2_MAINTENANCE_DRY_RUN=false
 B2_STORAGE_USD_PER_TB_MONTH=6.95
@@ -218,6 +227,7 @@ Required environment variables for the AI cron:
 ```env
 AI_REPORT_BASE_URL=https://game-dashboard-zaya.onrender.com
 AI_REPORT_SECRET=your-presence-secret
+AI_REPORT_TIMEOUT_MS=600000
 ```
 
 The dashboard AI panel includes an Auto hourly toggle for the selected game. Turning it off stores manual mode in B2 for that universe and causes the cron job to skip AI calls for that universe.

@@ -71,25 +71,41 @@ let focusedSignalArea = null;
 let heatmapRefreshTimer = null;
 let renderedUniverseId = "";
 let activeDashboardView = "overview";
+let activeCacheScope = "";
+let heatmapLoadSequence = 0;
+let heatmapRequestState = null;
+let renderedMapSignature = "";
 const mapSnapshotCache = new Map();
+const mapSnapshotRequests = new Map();
+const heatmapPayloadCache = new Map();
+const blockedCacheScopes = new Set();
+const persistentCachePrunes = new Map();
 const MAX_RENDERED_MAP_PARTS = 3500;
+const HEATMAP_CACHE_NAME_PREFIX = "roanalytics-heatmap-v2";
+const HEATMAP_PAYLOAD_FRESH_MS = 12 * 1000;
+const HEATMAP_PAYLOAD_MAX_AGE_MS = 10 * 60 * 1000;
+const MAP_SNAPSHOT_FRESH_MS = 5 * 60 * 1000;
+const MAP_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_PERSISTED_CACHE_CHARS = 10_000_000;
+const MAX_MEMORY_CACHE_ENTRIES = 24;
+const MAX_PERSISTED_CACHE_ENTRIES = 20;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
 if (canvas) {
   initScene();
-  refreshButton?.addEventListener("click", loadHeatmap);
+  refreshButton?.addEventListener("click", () => loadHeatmap({ force: true }));
   centerButton?.addEventListener("click", centerView);
   playerFilter?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") loadHeatmap();
+    if (event.key === "Enter") loadHeatmap({ force: true });
   });
-  fromFilter?.addEventListener("change", loadHeatmap);
-  toFilter?.addEventListener("change", loadHeatmap);
+  fromFilter?.addEventListener("change", () => loadHeatmap({ force: true }));
+  toFilter?.addEventListener("change", () => loadHeatmap({ force: true }));
   for (const button of presetButtons) {
     button.addEventListener("click", () => {
       applyPreset(Number(button.dataset.heatmapPresetMinutes) || 0);
-      loadHeatmap();
+      loadHeatmap({ force: true });
     });
   }
   for (const button of modeButtons) {
@@ -114,7 +130,16 @@ if (canvas) {
   window.addEventListener("dashboard:authChanged", (event) => {
     if (!event.detail?.authenticated) {
       stopHeatmapRefresh();
+      stopAnimation();
+      abortHeatmapRequest();
+      const previousScope = activeCacheScope;
+      activeCacheScope = "";
+      if (previousScope) clearPersistentCacheScope(previousScope);
+      return;
     }
+
+    activeCacheScope = getCacheScope();
+    if (activeDashboardView === "overview") startAnimation();
   });
   window.addEventListener("dashboard:universeChanged", () => {
     resizeScene();
@@ -132,10 +157,13 @@ if (canvas) {
     if (activeDashboardView === "overview") {
       resizeScene();
       startHeatmapRefresh();
+      startAnimation();
       return;
     }
 
     stopHeatmapRefresh();
+    stopAnimation();
+    abortHeatmapRequest();
   });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
@@ -160,6 +188,7 @@ if (canvas) {
     setHeatmapMode(mode, { focusArea: area, forcePoints: true });
   });
   window.addEventListener("resize", resizeScene);
+  window.addEventListener("dashboard:visibilityChanged", handleVisibilityChange);
 }
 
 function initScene() {
@@ -265,17 +294,34 @@ function initScene() {
   });
 
   resizeScene();
-  animate();
+  startAnimation();
 }
 
-async function loadHeatmap(options = {}) {
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopHeatmapRefresh();
+    stopAnimation();
+    abortHeatmapRequest();
+    return;
+  }
+
+  if (activeDashboardView === "overview" && window.isDashboardAuthenticated?.() !== false) {
+    resizeScene();
+    startAnimation();
+    startHeatmapRefresh();
+    loadHeatmap();
+  }
+}
+
+function loadHeatmap(options = {}) {
   if (window.isDashboardAuthenticated?.() === false) {
     statusLine.textContent = "Sign in to view heatmap samples.";
-    return;
+    return Promise.resolve(null);
   }
 
   const universeId = window.getSelectedUniverseId?.() || "";
   if (!universeId) {
+    abortHeatmapRequest();
     latestSamples = [];
     latestEntries = [];
     setHeatmapEmptyState(true);
@@ -286,55 +332,219 @@ async function loadHeatmap(options = {}) {
       resetView: Boolean(options.resetView),
       suppressFallbackAreas: true,
     });
-    return;
+    return Promise.resolve(null);
   }
 
   const query = buildHeatmapQuery(universeId);
+  const endpoint = getHeatmapEndpoint();
+  const requestUrl = `${endpoint}${query}`;
+  const requestKey = `${getCacheScope()}:${requestUrl}`;
+  if (heatmapRequestState?.key === requestKey && !options.force) {
+    if (options.resetView) heatmapRequestState.context.resetView = true;
+    if (options.focusArea) heatmapRequestState.context.focusArea = options.focusArea;
+    return heatmapRequestState.promise;
+  }
+
+  abortHeatmapRequest();
+  const controller = new AbortController();
+  const requestSequence = ++heatmapLoadSequence;
+  const context = {
+    requestSequence,
+    requestKey,
+    requestUrl,
+    universeId: String(universeId),
+    mode: activeHeatmapMode,
+    force: Boolean(options.force),
+    resetView: Boolean(options.resetView),
+    focusArea: options.focusArea || null,
+  };
+  const promise = performHeatmapLoad(context, controller.signal).finally(() => {
+    if (heatmapRequestState?.sequence === requestSequence) heatmapRequestState = null;
+  });
+  heatmapRequestState = { key: requestKey, sequence: requestSequence, controller, context, promise };
+  return promise;
+}
+
+async function performHeatmapLoad(context, signal) {
   const modeLabel = getModeLabel();
   const modeText = getModeText(modeLabel);
+  const mapState = { settled: false, payload: null };
+  const mapPromise = getCachedMapSnapshotPayload(context.universeId).then((payload) => {
+    mapState.settled = true;
+    mapState.payload = payload;
+    return payload;
+  });
+  let cached = getMemoryHeatmapPayload(context.requestKey);
+  if (!cached) {
+    cached = await readPersistentJsonCache("samples", context.requestUrl, HEATMAP_PAYLOAD_MAX_AGE_MS);
+    if (cached) setBoundedMemoryCache(heatmapPayloadCache, context.requestKey, cached);
+  }
+  if (!isCurrentHeatmapLoad(context)) return null;
 
   setHeatmapEmptyState(false);
-  statusLine.textContent = `Loading ${modeText} samples for universe ${universeId}...`;
+  if (cached?.payload) {
+    const currentMapPayload = getCurrentMapPayload(context.universeId);
+    const initialMapPayload = preserveUsableMapSnapshot(mapState.settled
+      ? mapState.payload
+      : currentMapPayload, currentMapPayload, context.universeId);
+    const sampleRevision = (context.sampleRevision || 0) + 1;
+    context.sampleRevision = sampleRevision;
+    applyHeatmapPayload(cached.payload, initialMapPayload, context);
+    applyMapPayloadWhenReady(mapPromise, cached.payload, context, initialMapPayload, sampleRevision);
+    if (!context.force && Date.now() - cached.storedAt < HEATMAP_PAYLOAD_FRESH_MS) {
+      return cached.payload;
+    }
+    statusLine.textContent = `Showing cached ${modeText} samples while refreshing...`;
+  } else {
+    statusLine.textContent = `Loading ${modeText} samples for universe ${context.universeId}...`;
+  }
 
   try {
-    const samplePromise = fetch(`${getHeatmapEndpoint()}${query}`, {
+    const samplePromise = fetchJson(context.requestUrl, {
       headers: { Accept: "application/json" },
-    }).then(readJsonResponse);
-
-    const mapPromise = getCachedMapSnapshotPayload(universeId);
-
-    const [payload, mapPayload] = await Promise.all([samplePromise, mapPromise]);
-    const mapSnapshot = mapPayload.snapshot || null;
-    const samplePayload = normalizeHeatmapPayload(payload);
-    latestSamples = samplePayload.samples;
-    latestMapSnapshot = mapSnapshot;
-    if (activeHeatmapMode === "ai-analysis") {
-      latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "none";
-    }
-    const shouldResetView = Boolean(options.resetView) && String(universeId) !== renderedUniverseId;
-    renderScene(latestSamples, latestMapSnapshot, {
-      resetView: shouldResetView,
-      suppressFallbackAreas: activeHeatmapMode === "ai-analysis" && payload.mode !== "ai",
+      cache: "no-store",
+      credentials: "same-origin",
+      signal,
     });
-    renderedUniverseId = String(universeId);
-
-    const mapText = getMapStatusText(mapSnapshot);
-    const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
-    sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
-    if (activeHeatmapMode === "ai-analysis" && payload.mode !== "ai") {
-      statusLine.textContent = `${payload.message || "Run AI Insights to generate AI area analysis."}${mapErrorText}`;
-    } else if (samplePayload.returnedCount || mapSnapshot?.partCount) {
-      statusLine.textContent = `${getStatusText(samplePayload)}${mapText}${mapErrorText}`;
-    } else {
-      statusLine.textContent = getEmptyHeatmapStatus(modeText, mapErrorText);
-    }
+    const payload = await samplePromise;
+    if (!isCurrentHeatmapLoad(context)) return null;
+    const cacheEntry = { storedAt: Date.now(), payload };
+    setBoundedMemoryCache(heatmapPayloadCache, context.requestKey, cacheEntry);
+    writePersistentJsonCache("samples", context.requestUrl, payload);
+    const currentMapPayload = getCurrentMapPayload(context.universeId);
+    const initialMapPayload = preserveUsableMapSnapshot(mapState.settled
+      ? mapState.payload
+      : currentMapPayload, currentMapPayload, context.universeId);
+    const sampleRevision = (context.sampleRevision || 0) + 1;
+    context.sampleRevision = sampleRevision;
+    applyHeatmapPayload(payload, initialMapPayload, context);
+    applyMapPayloadWhenReady(mapPromise, payload, context, initialMapPayload, sampleRevision);
+    return payload;
   } catch (error) {
-    statusLine.textContent = error.message;
+    if (error.name === "AbortError" || !isCurrentHeatmapLoad(context)) return null;
+    if (!cached?.payload) statusLine.textContent = error.message;
+    return null;
   }
+}
+
+function applyMapPayloadWhenReady(mapPromise, payload, context, initialMapPayload, sampleRevision) {
+  mapPromise.then((mapPayload) => {
+    if (!isCurrentHeatmapLoad(context) || context.sampleRevision !== sampleRevision) return;
+    const effectiveMapPayload = preserveUsableMapSnapshot(mapPayload, initialMapPayload, context.universeId);
+    const snapshot = effectiveMapPayload?.snapshot || null;
+    if (snapshot && String(snapshot.universeId || "") !== context.universeId) return;
+    if (!shouldApplyResolvedMap(initialMapPayload, effectiveMapPayload)) return;
+    applyHeatmapPayload(payload, effectiveMapPayload, context);
+  }).catch(() => {
+    // Map failures are already normalized by getCachedMapSnapshotPayload.
+  });
+}
+
+function preserveUsableMapSnapshot(mapPayload, fallbackMapPayload, universeId) {
+  const payload = mapPayload || { snapshot: null };
+  if (!payload.mapError || payload.snapshot) return payload;
+
+  const currentSnapshot = getCurrentMapPayload(universeId).snapshot;
+  const fallbackSnapshot = fallbackMapPayload?.snapshot || null;
+  const snapshot = currentSnapshot || fallbackSnapshot;
+  if (!snapshot || String(snapshot.universeId || "") !== String(universeId || "")) return payload;
+  return { ...payload, snapshot };
+}
+
+function shouldApplyResolvedMap(initialMapPayload, resolvedMapPayload) {
+  if (resolvedMapPayload?.mapError && resolvedMapPayload.mapError !== initialMapPayload?.mapError) return true;
+  const initialSnapshot = initialMapPayload?.snapshot || null;
+  const resolvedSnapshot = resolvedMapPayload?.snapshot || null;
+  if (getMapSnapshotVersion(initialSnapshot) === getMapSnapshotVersion(resolvedSnapshot)) return false;
+
+  const currentSnapshot = latestMapSnapshot;
+  const resolvedTimestamp = Number(resolvedSnapshot?.receivedAt || resolvedSnapshot?.exportedAt) || 0;
+  const currentTimestamp = Number(currentSnapshot?.receivedAt || currentSnapshot?.exportedAt) || 0;
+  if (resolvedTimestamp && currentTimestamp && resolvedTimestamp < currentTimestamp) return false;
+  return true;
+}
+
+function getMapSnapshotVersion(snapshot) {
+  if (!snapshot) return "none";
+  return [
+    snapshot.universeId || "",
+    snapshot.receivedAt || snapshot.exportedAt || "",
+    snapshot.returnedPartCount || snapshot.parts?.length || 0,
+    snapshot.partCount || 0,
+  ].join(":");
+}
+
+function applyHeatmapPayload(payload, mapPayload, context) {
+  if (!isCurrentHeatmapLoad(context)) return;
+  const modeText = getModeText(getModeLabel());
+  const mapSnapshot = mapPayload?.snapshot || null;
+  const samplePayload = normalizeHeatmapPayload(payload);
+  latestSamples = samplePayload.samples;
+  latestMapSnapshot = mapSnapshot;
+  if (activeHeatmapMode === "ai-analysis") {
+    latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "none";
+  }
+  let shouldResetView = false;
+  if (context.resetView) {
+    shouldResetView = mapSnapshot
+      ? !context.hasResetViewWithMap
+      : !context.hasResetView;
+    if (shouldResetView) {
+      context.hasResetView = true;
+      if (mapSnapshot) context.hasResetViewWithMap = true;
+    }
+  }
+  renderScene(latestSamples, latestMapSnapshot, {
+    resetView: shouldResetView,
+    focusArea: context.focusArea,
+    suppressFallbackAreas: activeHeatmapMode === "ai-analysis" && payload.mode !== "ai",
+  });
+  renderedUniverseId = context.universeId;
+
+  const mapText = getMapStatusText(mapSnapshot);
+  const mapErrorText = mapPayload?.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
+  sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
+  if (activeHeatmapMode === "ai-analysis" && payload.mode !== "ai") {
+    statusLine.textContent = `${payload.message || "Run AI Insights to generate AI area analysis."}${mapErrorText}`;
+  } else if (samplePayload.returnedCount || mapSnapshot?.partCount) {
+    statusLine.textContent = `${getStatusText(samplePayload)}${mapText}${mapErrorText}`;
+  } else {
+    statusLine.textContent = getEmptyHeatmapStatus(modeText, mapErrorText);
+  }
+}
+
+function getMemoryHeatmapPayload(requestKey) {
+  const cached = heatmapPayloadCache.get(requestKey);
+  if (!cached) return null;
+  if (Date.now() - cached.storedAt <= HEATMAP_PAYLOAD_MAX_AGE_MS) return cached;
+  heatmapPayloadCache.delete(requestKey);
+  return null;
+}
+
+function getCurrentMapPayload(universeId) {
+  const cleanUniverseId = String(universeId || "");
+  const snapshot = String(latestMapSnapshot?.universeId || "") === cleanUniverseId
+    ? latestMapSnapshot
+    : null;
+  return { snapshot };
+}
+
+function isCurrentHeatmapLoad(context) {
+  return context.requestSequence === heatmapLoadSequence
+    && context.universeId === String(window.getSelectedUniverseId?.() || "")
+    && context.mode === activeHeatmapMode;
+}
+
+function abortHeatmapRequest() {
+  heatmapRequestState?.controller.abort();
+  heatmapRequestState = null;
+  heatmapLoadSequence += 1;
 }
 
 async function renderAreaAnalysisPayload(payload, options = {}) {
   if (window.isDashboardAuthenticated?.() === false || !payload) return;
+  abortHeatmapRequest();
+  const renderSequence = heatmapLoadSequence;
 
   activeHeatmapMode = "ai-analysis";
   activeRenderMode = "points";
@@ -354,6 +564,7 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
     const mapPayload = await getCachedMapSnapshotPayload(universeId);
     mapSnapshot = mapPayload.snapshot || null;
   }
+  if (renderSequence !== heatmapLoadSequence || String(universeId) !== String(window.getSelectedUniverseId?.() || "")) return;
 
   const samplePayload = normalizeHeatmapPayload(payload);
   latestSamples = samplePayload.samples;
@@ -406,30 +617,192 @@ function getEmptyHeatmapStatus(modeText, suffix = "") {
 }
 
 function startHeatmapRefresh() {
-  stopHeatmapRefresh();
+  if (heatmapRefreshTimer || document.hidden || activeDashboardView !== "overview") return;
   heatmapRefreshTimer = window.setInterval(loadHeatmap, 15000);
 }
 
-function getCachedMapSnapshotPayload(universeId) {
+async function getCachedMapSnapshotPayload(universeId) {
   const cleanUniverseId = String(universeId || "").trim();
-  if (!cleanUniverseId) return Promise.resolve({ snapshot: null });
+  if (!cleanUniverseId) return { snapshot: null };
 
-  const cacheKey = `${cleanUniverseId}:${MAX_RENDERED_MAP_PARTS}`;
+  const persistentKey = `${cleanUniverseId}:${MAX_RENDERED_MAP_PARTS}`;
+  const cacheScope = getCacheScope();
+  const cacheKey = `${cacheScope}:${persistentKey}`;
   const cached = mapSnapshotCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached && Date.now() - cached.storedAt <= MAP_SNAPSHOT_MAX_AGE_MS) {
+    if (Date.now() - cached.storedAt > MAP_SNAPSHOT_FRESH_MS) {
+      fetchMapSnapshotPayload(cleanUniverseId, cacheKey, persistentKey, cacheScope);
+    }
+    return cached.payload;
+  }
+  if (cached) mapSnapshotCache.delete(cacheKey);
 
-  const request = fetch(`/api/map-snapshot?universeId=${encodeURIComponent(cleanUniverseId)}&maxParts=${MAX_RENDERED_MAP_PARTS}`, {
+  const persisted = await readPersistentJsonCache("maps", persistentKey, MAP_SNAPSHOT_MAX_AGE_MS);
+  if (persisted) {
+    setBoundedMemoryCache(mapSnapshotCache, cacheKey, persisted);
+    if (Date.now() - persisted.storedAt > MAP_SNAPSHOT_FRESH_MS) {
+      fetchMapSnapshotPayload(cleanUniverseId, cacheKey, persistentKey, cacheScope);
+    }
+    return persisted.payload;
+  }
+
+  return fetchMapSnapshotPayload(cleanUniverseId, cacheKey, persistentKey, cacheScope);
+}
+
+function fetchMapSnapshotPayload(universeId, cacheKey, persistentKey, cacheScope) {
+  const inFlight = mapSnapshotRequests.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  const requestUrl = `/api/map-snapshot?universeId=${encodeURIComponent(universeId)}&maxParts=${MAX_RENDERED_MAP_PARTS}`;
+  const request = fetchJson(requestUrl, {
     headers: { Accept: "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
   })
-    .then(readJsonResponse)
+    .then((payload) => {
+      if (!cacheScope || blockedCacheScopes.has(cacheScope) || cacheScope !== getCacheScope()) {
+        return payload;
+      }
+      const cacheEntry = { storedAt: Date.now(), payload };
+      setBoundedMemoryCache(mapSnapshotCache, cacheKey, cacheEntry);
+      writePersistentJsonCache("maps", persistentKey, payload);
+      return payload;
+    })
     .catch((error) => {
-      mapSnapshotCache.delete(cacheKey);
       return { mapError: error.message };
+    })
+    .finally(() => {
+      if (mapSnapshotRequests.get(cacheKey) === request) mapSnapshotRequests.delete(cacheKey);
     });
 
-  mapSnapshotCache.set(cacheKey, request);
+  mapSnapshotRequests.set(cacheKey, request);
   return request;
 }
+
+function setBoundedMemoryCache(cache, key, value) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > MAX_MEMORY_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+}
+
+function getCacheScope() {
+  return String(window.getDashboardCacheScope?.() || activeCacheScope || "").trim();
+}
+
+function getPersistentCacheRequest(scope, namespace, key) {
+  if (!scope) return null;
+  const path = `/__roanalytics_client_cache__/${encodeURIComponent(scope)}/${encodeURIComponent(namespace)}/${encodeURIComponent(key)}`;
+  return new Request(new URL(path, window.location.origin), { method: "GET" });
+}
+
+function getPersistentCacheName(scope) {
+  return `${HEATMAP_CACHE_NAME_PREFIX}-${encodeURIComponent(scope)}`;
+}
+
+async function readPersistentJsonCache(namespace, key, maxAgeMs) {
+  const scope = getCacheScope();
+  if (!scope || blockedCacheScopes.has(scope) || !("caches" in window)) return null;
+
+  try {
+    const cache = await window.caches.open(getPersistentCacheName(scope));
+    const request = getPersistentCacheRequest(scope, namespace, key);
+    const response = request ? await cache.match(request) : null;
+    if (!response) return null;
+
+    const storedAt = Number(response.headers.get("X-RoAnalytics-Stored-At")) || 0;
+    if (!storedAt || Date.now() - storedAt > maxAgeMs) {
+      await cache.delete(request);
+      return null;
+    }
+
+    const payload = await response.json();
+    if (scope !== getCacheScope() || blockedCacheScopes.has(scope)) return null;
+    return { storedAt, payload };
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistentJsonCache(namespace, key, payload) {
+  const scope = getCacheScope();
+  if (!scope || blockedCacheScopes.has(scope) || !("caches" in window)) return;
+
+  try {
+    const serialized = JSON.stringify(payload);
+    if (serialized.length > MAX_PERSISTED_CACHE_CHARS) return;
+    const cache = await window.caches.open(getPersistentCacheName(scope));
+    if (scope !== getCacheScope() || blockedCacheScopes.has(scope)) return;
+    const request = getPersistentCacheRequest(scope, namespace, key);
+    if (!request) return;
+    await cache.put(request, new Response(serialized, {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        "X-RoAnalytics-Stored-At": String(Date.now()),
+      },
+    }));
+    schedulePersistentCachePrune(scope, cache);
+  } catch {
+    // Persistent caching is an optimization; memory/network behavior is unchanged.
+  }
+}
+
+function schedulePersistentCachePrune(scope, cache) {
+  if (persistentCachePrunes.has(scope) || blockedCacheScopes.has(scope)) return;
+  const prune = prunePersistentCache(scope, cache).finally(() => {
+    if (persistentCachePrunes.get(scope) === prune) persistentCachePrunes.delete(scope);
+  });
+  persistentCachePrunes.set(scope, prune);
+}
+
+async function prunePersistentCache(scope, cache) {
+  try {
+    if (blockedCacheScopes.has(scope)) return;
+    const requests = await cache.keys();
+    if (requests.length <= MAX_PERSISTED_CACHE_ENTRIES) return;
+    const datedRequests = await Promise.all(requests.map(async (request) => {
+      const response = await cache.match(request);
+      return {
+        request,
+        storedAt: Number(response?.headers.get("X-RoAnalytics-Stored-At")) || 0,
+      };
+    }));
+    if (blockedCacheScopes.has(scope)) return;
+    datedRequests.sort((a, b) => b.storedAt - a.storedAt);
+    await Promise.all(datedRequests
+      .slice(MAX_PERSISTED_CACHE_ENTRIES)
+      .map(({ request }) => cache.delete(request)));
+  } catch {
+    // Cache eviction is best-effort and never affects live requests.
+  }
+}
+
+async function clearPersistentCacheScope(scope = getCacheScope()) {
+  const cleanScope = String(scope || "").trim();
+  if (!cleanScope) return;
+  blockedCacheScopes.add(cleanScope);
+  persistentCachePrunes.delete(cleanScope);
+
+  const memoryPrefix = `${cleanScope}:`;
+  for (const key of [...mapSnapshotCache.keys()]) {
+    if (key.startsWith(memoryPrefix)) mapSnapshotCache.delete(key);
+  }
+  for (const key of [...heatmapPayloadCache.keys()]) {
+    if (key.startsWith(memoryPrefix)) heatmapPayloadCache.delete(key);
+  }
+
+  if (!("caches" in window)) return;
+  try {
+    await window.caches.delete(getPersistentCacheName(cleanScope));
+  } catch {
+    // Scope keys prevent another signed-in account from reading these entries.
+  }
+}
+
+window.clearDashboardPersistentCache = clearPersistentCacheScope;
 
 function getMapStatusText(snapshot) {
   if (!snapshot?.partCount) return "";
@@ -550,6 +923,19 @@ async function readJsonResponse(response) {
   return payload;
 }
 
+async function fetchJson(url, options = {}) {
+  const startedAt = performance.now();
+  try {
+    const response = await fetch(url, options);
+    return await readJsonResponse(response);
+  } finally {
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (durationMs >= 2000) {
+      console.warn(`[RoAnalytics] Slow request (${durationMs} ms): GET ${url}`);
+    }
+  }
+}
+
 function buildHeatmapQuery(universeId) {
   const params = new URLSearchParams();
   if (universeId) params.set("universeId", universeId);
@@ -638,12 +1024,6 @@ function renderScene(samples, mapSnapshot, options = {}) {
     selectedAiAreaMarker = null;
   }
 
-  if (mapGroup) {
-    scene.remove(mapGroup);
-    disposeObject3D(mapGroup);
-    mapGroup = null;
-  }
-
   const entries = getSampleEntries(samples, mapSnapshot, options);
   latestEntries = entries;
   if (!previousSelectedAiAreaId) {
@@ -658,8 +1038,20 @@ function renderScene(samples, mapSnapshot, options = {}) {
     sceneCenter = dataCenter;
   }
 
+  const nextMapSignature = getReusableMapSignature(mapSnapshot, sceneCenter, entries);
+  const canReuseRenderedMap = Boolean(mapGroup && nextMapSignature && renderedMapSignature === nextMapSignature);
+  if (mapGroup && !canReuseRenderedMap) {
+    scene.remove(mapGroup);
+    disposeObject3D(mapGroup);
+    mapGroup = null;
+    renderedMapSignature = "";
+  }
+
   if (mapSnapshot?.parts?.length) {
-    renderMapSnapshot(mapSnapshot, sceneCenter, entries);
+    if (!mapGroup) {
+      renderMapSnapshot(mapSnapshot, sceneCenter, entries);
+      renderedMapSignature = nextMapSignature || `dynamic:${Date.now()}`;
+    }
   }
 
   if (entries.length) {
@@ -684,6 +1076,23 @@ function renderScene(samples, mapSnapshot, options = {}) {
   if (focusedSignalArea && activeHeatmapMode !== "ai-analysis") {
     focusCameraOnSignalArea(focusedSignalArea);
   }
+}
+
+function getReusableMapSignature(snapshot, center, entries) {
+  if (!snapshot?.parts?.length || activeRenderMode !== "points") return "";
+  const entryBounds = entries.length ? getBounds(entries) : null;
+  const rounded = (value) => Math.round((Number(value) || 0) * 10) / 10;
+  return [
+    snapshot.universeId || "",
+    snapshot.receivedAt || snapshot.exportedAt || "",
+    snapshot.returnedPartCount || snapshot.parts.length,
+    rounded(center?.x),
+    rounded(center?.y),
+    rounded(center?.z),
+    rounded(entryBounds?.width),
+    rounded(entryBounds?.height),
+    rounded(entryBounds?.depth),
+  ].join(":");
 }
 
 function restoreAiAreaCardAfterRefresh(areaId, entries) {
@@ -2221,13 +2630,28 @@ function updateCamera() {
   camera.lookAt(target);
 }
 
-function animate(timestamp = 0) {
+function startAnimation() {
+  if (animationFrame || document.hidden || activeDashboardView !== "overview") return;
+  if (window.isDashboardAuthenticated?.() === false) return;
+  lastFrameTime = 0;
   animationFrame = window.requestAnimationFrame(animate);
+}
+
+function stopAnimation() {
+  if (animationFrame) window.cancelAnimationFrame(animationFrame);
+  animationFrame = null;
+  lastFrameTime = 0;
+}
+
+function animate(timestamp = 0) {
+  animationFrame = null;
+  if (document.hidden || activeDashboardView !== "overview" || window.isDashboardAuthenticated?.() === false) return;
   const deltaSeconds = lastFrameTime ? Math.min((timestamp - lastFrameTime) / 1000, 0.05) : 0;
   lastFrameTime = timestamp;
   updateKeyboardMovement(deltaSeconds);
   positionAiAreaCard();
   renderer.render(scene, camera);
+  animationFrame = window.requestAnimationFrame(animate);
 }
 
 function clamp(value, min, max) {
@@ -2239,5 +2663,7 @@ function lerp(start, end, alpha) {
 }
 
 window.addEventListener("beforeunload", () => {
-  if (animationFrame) window.cancelAnimationFrame(animationFrame);
+  stopHeatmapRefresh();
+  stopAnimation();
+  abortHeatmapRequest();
 });

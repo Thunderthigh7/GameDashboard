@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzip, gzipSync, gunzipSync } from "node:zlib";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -60,6 +60,21 @@ const DASHBOARD_AUTH_COOKIE = "dashboard_auth";
 const ROBLOX_OAUTH_STATE_COOKIE = "roblox_oauth_state";
 const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const ROBLOX_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
+const RESPONSE_COMPRESSION_THRESHOLD_BYTES = cleanEnvInteger("RESPONSE_COMPRESSION_THRESHOLD_BYTES", 1024);
+const SLOW_REQUEST_THRESHOLD_MS = cleanEnvInteger("SLOW_REQUEST_THRESHOLD_MS", 1000);
+const SLOW_STORAGE_THRESHOLD_MS = cleanEnvInteger("SLOW_STORAGE_THRESHOLD_MS", 750);
+const OBJECT_STORAGE_REQUEST_TIMEOUT_MS = cleanEnvInteger(
+  "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
+  cleanEnvInteger("B2_REQUEST_TIMEOUT_MS", 5000),
+);
+const OBJECT_STORAGE_DISCOVERY_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_DISCOVERY_CACHE_MS", 5 * 60 * 1000);
+const OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS", 10 * 1000);
+const ANALYTICS_RESPONSE_CACHE_MS = cleanEnvInteger("ANALYTICS_RESPONSE_CACHE_MS", 25 * 1000);
+const MAX_ANALYTICS_RESPONSE_CACHE_ENTRIES = cleanEnvInteger("MAX_ANALYTICS_RESPONSE_CACHE_ENTRIES", 32);
+const UNIVERSE_ROLLUP_READ_CONCURRENCY = Math.max(1, cleanEnvInteger("UNIVERSE_ROLLUP_READ_CONCURRENCY", 4));
+const MONTHLY_USAGE_SNAPSHOT_DEBOUNCE_MS = cleanEnvInteger("MONTHLY_USAGE_SNAPSHOT_DEBOUNCE_MS", 100);
+const USAGE_QUOTA_CACHE_MS = cleanEnvInteger("USAGE_QUOTA_CACHE_MS", 1000);
+const MONGO_MAX_POOL_SIZE = Math.max(5, cleanEnvInteger("MONGO_MAX_POOL_SIZE", 10));
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-nano";
 const OPENAI_CHAT_INSIGHTS_MODEL = normalizeOpenAiConfiguredModel(process.env.OPENAI_CHAT_INSIGHTS_MODEL || DEFAULT_OPENAI_INSIGHTS_MODEL);
@@ -256,8 +271,23 @@ const objectStorageStatus = {
   lastObjectKey: "",
 };
 const objectStorageRollupCache = new Map();
+const objectStorageRollupRequests = new Map();
+const analyticsResponseCache = new Map();
+const analyticsResponseRequests = new Map();
+const analyticsDataVersionByUniverseId = new Map();
+const monthlyUsageSnapshotRefreshes = new Map();
+const usageQuotaCache = new Map();
+const usageQuotaRequests = new Map();
+const usageQuotaVersionByUserId = new Map();
+const objectStorageReadReservationsByUserId = new Map();
+const objectStorageReadReservationLocks = new Map();
 const rawObjectStorageCleanupByUniverse = new Map();
-const OBJECT_STORAGE_ROLLUP_CACHE_MS = 60 * 1000;
+const OBJECT_STORAGE_ROLLUP_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_CACHE_MS", 60 * 1000);
+let persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
+let persistedMapUniverseIdsRequest = null;
+let persistedMapUniverseIdsVersion = 0;
+const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
+const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
 const DEFAULT_AI_AUTOMATION_SETTINGS = {
   mode: "auto",
   intervalHours: 1,
@@ -266,6 +296,17 @@ const DEFAULT_AI_AUTOMATION_SETTINGS = {
 };
 
 const server = http.createServer(async (req, res) => {
+  const requestStartedAt = performance.now();
+  res[RESPONSE_STARTED_AT] = requestStartedAt;
+  res[RESPONSE_ACCEPTS_GZIP] = acceptsGzipEncoding(req.headers["accept-encoding"]);
+  res.once("finish", () => {
+    const durationMs = performance.now() - requestStartedAt;
+    if (SLOW_REQUEST_THRESHOLD_MS > 0 && durationMs >= SLOW_REQUEST_THRESHOLD_MS) {
+      const pathname = String(req.url || "/").split("?", 1)[0];
+      console.warn(`[slow-request] ${req.method || "GET"} ${pathname} ${res.statusCode} ${durationMs.toFixed(1)}ms`);
+    }
+  });
+
   try {
     const url = new URL(req.url || "/", appBaseUrl);
 
@@ -460,7 +501,7 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getChatLogsFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "chat-logs", url.searchParams, () => getChatLogsFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
@@ -551,27 +592,27 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getMovementHeatmapFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "movement-heatmap", url.searchParams, () => getMovementHeatmapFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/death-heatmap" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getDeathHeatmapFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "death-heatmap", url.searchParams, () => getDeathHeatmapFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/leave-heatmap" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getLeaveHeatmapFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "leave-heatmap", url.searchParams, () => getLeaveHeatmapFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/area-clusters" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getComputedAreaClustersFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "area-clusters", url.searchParams, () => getComputedAreaClustersFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/ai-area-analysis" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getAiAreaAnalysisFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "ai-area-analysis", url.searchParams, () => getAiAreaAnalysisFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/ai-area-analysis/analyze" && req.method === "POST") {
@@ -604,11 +645,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 404, { error: "Not found" });
     }
 
-    if (req.method !== "GET") {
+    if (req.method !== "GET" && req.method !== "HEAD") {
       return sendJson(res, 405, { error: "Method not allowed" });
     }
 
-    return serveStatic(res, url.pathname === "/" ? "index.html" : url.pathname.slice(1));
+    return serveStatic(req, res, url.pathname === "/" ? "index.html" : url.pathname.slice(1));
   } catch (error) {
     if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
     console.error(error);
@@ -621,7 +662,7 @@ server.listen(port, () => {
   console.log(`Roblox presence endpoint: ${appBaseUrl}/api/roblox/presence`);
 });
 
-if (MONGO_ANALYTICS_ENABLED) {
+if (MONGODB_URI) {
   void initializeMongoStorage();
 }
 
@@ -857,19 +898,24 @@ function formatBytesForDisplay(value) {
 }
 
 async function initializeMongoStorage() {
-  if (!MONGO_ANALYTICS_ENABLED) return;
+  if (!MONGODB_URI) return;
 
   try {
     const db = await getMongoDb();
     if (!db) return;
 
-    await ensureMongoIndexes(db);
-    await pruneExpiredAnalyticsDocuments(db);
-    await hydrateRuntimeFromMongo(db);
+    await ensureMongoCoreIndexes(db);
     mongoStatus.connected = true;
-    mongoStatus.hydrated = true;
     mongoStatus.lastError = "";
-    console.log(`MongoDB analytics storage connected: ${DB_NAME}`);
+    console.log(`MongoDB storage connected: ${DB_NAME}`);
+
+    if (MONGO_ANALYTICS_ENABLED) {
+      await ensureMongoAnalyticsIndexes(db);
+      await pruneExpiredAnalyticsDocuments(db);
+      await hydrateRuntimeFromMongo(db);
+    }
+
+    mongoStatus.hydrated = true;
   } catch (error) {
     mongoStatus.connected = false;
     mongoStatus.lastError = error.message || String(error);
@@ -884,10 +930,11 @@ async function getMongoDb() {
     mongoClientPromise = import("mongodb")
       .then(({ MongoClient }) => {
         const client = new MongoClient(MONGODB_URI, {
-          maxPoolSize: 5,
+          maxPoolSize: MONGO_MAX_POOL_SIZE,
+          connectTimeoutMS: 5000,
           serverSelectionTimeoutMS: 5000,
         });
-        return client.connect();
+        return runTimedOperation("MongoDB connect", () => client.connect());
       })
       .catch((error) => {
         mongoClientPromise = null;
@@ -900,21 +947,18 @@ async function getMongoDb() {
   return client.db(DB_NAME);
 }
 
-async function ensureMongoIndexes(db) {
+async function ensureMongoCoreIndexes(db) {
   await Promise.all([
-    ensureAnalyticsIndexes(db, "chat_logs", "sentAt"),
-    ensureAnalyticsIndexes(db, "movement_samples", "sampledAt"),
-    ensureAnalyticsIndexes(db, "movement_rollups", "sampledAt"),
-    ensureAnalyticsIndexes(db, "death_samples", "sampledAt"),
-    ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
     db.collection("map_snapshots").createIndex({ universeId: 1 }, { unique: true }),
     db.collection("map_snapshot_chunks").createIndex({ universeId: 1, chunkIndex: 1 }, { unique: true }),
     db.collection("users").createIndex({ usernameLower: 1 }, { unique: true }),
     db.collection("users").createIndex({ robloxUserId: 1 }, { unique: true, sparse: true }),
+    db.collection("projects").createIndex({ id: 1 }, { unique: true }),
     db.collection("projects").createIndex({ universeId: 1 }, { unique: true }),
-    db.collection("projects").createIndex({ ownerUserId: 1 }),
+    db.collection("projects").createIndex({ ownerUserId: 1, createdAt: -1 }),
     db.collection("projects").createIndex({ secretHash: 1 }, { unique: true }),
     db.collection("usage_events").createIndex({ userId: 1, month: 1 }),
+    db.collection("usage_events").createIndex({ userId: 1, universeId: 1, createdAt: -1 }),
     db.collection("usage_events").createIndex({ projectId: 1, month: 1 }),
     db.collection("usage_events").createIndex({ universeId: 1, month: 1 }),
     db.collection("usage_events").createIndex({ createdAt: -1 }),
@@ -925,6 +969,16 @@ async function ensureMongoIndexes(db) {
     db.collection("object_storage_objects").createIndex({ universeId: 1 }),
     db.collection("reconciliations").createIndex({ month: 1 }, { unique: true }),
     db.collection("reconciliations").createIndex({ updatedAt: -1 }),
+  ]);
+}
+
+async function ensureMongoAnalyticsIndexes(db) {
+  await Promise.all([
+    ensureAnalyticsIndexes(db, "chat_logs", "sentAt"),
+    ensureAnalyticsIndexes(db, "movement_samples", "sampledAt"),
+    ensureAnalyticsIndexes(db, "movement_rollups", "sampledAt"),
+    ensureAnalyticsIndexes(db, "death_samples", "sampledAt"),
+    ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
   ]);
 }
 
@@ -952,13 +1006,24 @@ async function pruneExpiredAnalyticsDocuments(db) {
 
 async function hydrateRuntimeFromMongo(db) {
   const since = Date.now() - MONGO_HYDRATE_WINDOW_MS;
-  await Promise.all([
-    hydrateAnalyticsCollection(db, "chat_logs", chatLogsByUniverseId, chatLogIdsByUniverseId, MAX_CHAT_LOGS_PER_UNIVERSE, since),
-    hydrateAnalyticsCollection(db, "movement_samples", movementSamplesByUniverseId, movementSampleIdsByUniverseId, MAX_MOVEMENT_SAMPLES_PER_UNIVERSE, since),
-    hydrateAnalyticsCollection(db, "movement_rollups", movementRollupsByUniverseId, movementRollupIdsByUniverseId, MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE, since),
-    hydrateAnalyticsCollection(db, "death_samples", deathSamplesByUniverseId, deathSampleIdsByUniverseId, MAX_DEATH_SAMPLES_PER_UNIVERSE, since),
-    hydrateAnalyticsCollection(db, "leave_samples", leaveSamplesByUniverseId, leaveSampleIdsByUniverseId, MAX_LEAVE_SAMPLES_PER_UNIVERSE, since),
-  ]);
+  const collections = [
+    ["chat_logs", chatLogsByUniverseId, chatLogIdsByUniverseId, MAX_CHAT_LOGS_PER_UNIVERSE],
+    ["movement_samples", movementSamplesByUniverseId, movementSampleIdsByUniverseId, MAX_MOVEMENT_SAMPLES_PER_UNIVERSE],
+    ["movement_rollups", movementRollupsByUniverseId, movementRollupIdsByUniverseId, MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE],
+    ["death_samples", deathSamplesByUniverseId, deathSampleIdsByUniverseId, MAX_DEATH_SAMPLES_PER_UNIVERSE],
+    ["leave_samples", leaveSamplesByUniverseId, leaveSampleIdsByUniverseId, MAX_LEAVE_SAMPLES_PER_UNIVERSE],
+  ];
+
+  // Hydration runs in the background. Keeping it sequential leaves pool capacity
+  // for login, authorization, and dashboard reads during a cold deployment.
+  for (const [collectionName, targetMap, idMap, maxPerUniverse] of collections) {
+    await hydrateAnalyticsCollection(db, collectionName, targetMap, idMap, maxPerUniverse, since);
+  }
+
+  const hydratedUniverseIds = new Set(collections.flatMap(([, targetMap]) => [...targetMap.keys()]));
+  for (const universeId of hydratedUniverseIds) {
+    invalidateAnalyticsResponses(universeId);
+  }
 }
 
 async function hydrateAnalyticsCollection(db, collectionName, targetMap, idMap, maxPerUniverse, since) {
@@ -1067,7 +1132,7 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
       };
     }
 
-    await client.send(new PutObjectCommand({
+    await sendObjectStorageCommand(client, new PutObjectCommand({
       Bucket: B2_BUCKET_NAME,
       Key: objectKey,
       Body: body,
@@ -1079,7 +1144,7 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
         jobid: presence.jobId,
         receivedat: String(presence.receivedAt),
       },
-    }));
+    }), `B2 PUT ${objectKey}`);
     await recordObjectStorageWrite({
       usageContext,
       objectKey,
@@ -1128,36 +1193,13 @@ async function getB2S3Client() {
   return b2S3ClientPromise;
 }
 
-async function getObjectStorageRollupUniverseIds() {
-  if (!OBJECT_STORAGE_CONFIGURED) return [];
+function getObjectStorageRequestOptions() {
+  if (OBJECT_STORAGE_REQUEST_TIMEOUT_MS <= 0) return undefined;
+  return { abortSignal: AbortSignal.timeout(OBJECT_STORAGE_REQUEST_TIMEOUT_MS) };
+}
 
-  try {
-    const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
-    const client = await getB2S3Client();
-    const universeIds = new Set();
-    let ContinuationToken;
-
-    do {
-      const response = await client.send(new ListObjectsV2Command({
-        Bucket: B2_BUCKET_NAME,
-        Prefix: "rollups/",
-        ContinuationToken,
-        MaxKeys: 1000,
-      }));
-
-      for (const object of response.Contents || []) {
-        const match = String(object.Key || "").match(/^rollups\/(\d+)\/latest[.]json$/);
-        if (match) universeIds.add(match[1]);
-      }
-
-      ContinuationToken = response.NextContinuationToken;
-    } while (ContinuationToken);
-
-    return [...universeIds].map((id) => cleanInteger(id)).filter((id) => id > 0);
-  } catch (error) {
-    objectStorageStatus.lastError = error.message || String(error);
-    return [];
-  }
+async function sendObjectStorageCommand(client, command, operation) {
+  return runTimedOperation(operation, () => client.send(command, getObjectStorageRequestOptions()));
 }
 
 async function getObjectStorageRollup(universeId) {
@@ -1166,28 +1208,96 @@ async function getObjectStorageRollup(universeId) {
 
   const cacheKey = String(cleanUniverseId);
   const cached = objectStorageRollupCache.get(cacheKey);
-  if (cached && Date.now() - cached.cachedAt < OBJECT_STORAGE_ROLLUP_CACHE_MS) {
+  const now = Date.now();
+  if (cached && now - cached.cachedAt < OBJECT_STORAGE_ROLLUP_CACHE_MS) {
+    return cached.rollup;
+  }
+  if (cached && cleanInteger(cached.retryAfter) > now) {
     return cached.rollup;
   }
 
-  try {
-    const rollup = await readObjectStorageJson(`rollups/${cleanUniverseId}/latest.json`);
-    if (!rollup || cleanInteger(rollup.universeId) !== cleanUniverseId) return null;
-
-    objectStorageRollupCache.set(cacheKey, {
-      cachedAt: Date.now(),
-      rollup,
-    });
-    objectStorageStatus.connected = true;
-    objectStorageStatus.lastError = "";
-    return rollup;
-  } catch (error) {
-    if (error.code === "USAGE_LIMIT") throw error;
-    if (error?.name !== "NoSuchKey" && error?.$metadata?.httpStatusCode !== 404) {
-      objectStorageStatus.lastError = error.message || String(error);
+  const existingRequest = objectStorageRollupRequests.get(cacheKey);
+  if (cached?.rollup) {
+    if (!existingRequest) {
+      const refresh = startObjectStorageRollupRefresh(cleanUniverseId, cacheKey, cached);
+      // A warm request does not need to wait for remote storage. Quota errors are
+      // still preserved for cold reads, while this background refresh is optional.
+      void refresh.catch(() => {});
     }
-    return null;
+    return cached.rollup;
   }
+  if (existingRequest) return existingRequest;
+  return startObjectStorageRollupRefresh(cleanUniverseId, cacheKey, cached);
+}
+
+function startObjectStorageRollupRefresh(cleanUniverseId, cacheKey, cached) {
+  const request = (async () => {
+    try {
+      const rollup = await readObjectStorageJson(`rollups/${cleanUniverseId}/latest.json`);
+      if (!rollup || cleanInteger(rollup.universeId) !== cleanUniverseId) {
+        const current = objectStorageRollupCache.get(cacheKey) || cached;
+        objectStorageRollupCache.set(cacheKey, {
+          cachedAt: cleanInteger(current?.cachedAt),
+          rollup: current?.rollup || null,
+          retryAfter: Date.now() + OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS,
+        });
+        return current?.rollup || null;
+      }
+
+      objectStorageRollupCache.set(cacheKey, {
+        cachedAt: Date.now(),
+        rollup,
+        retryAfter: 0,
+      });
+      if (cached && getObjectStorageRollupVersion(cached.rollup) !== getObjectStorageRollupVersion(rollup)) {
+        invalidateAnalyticsResponses(cleanUniverseId);
+      }
+      objectStorageStatus.connected = true;
+      objectStorageStatus.lastError = "";
+      return rollup;
+    } catch (error) {
+      if (error.code === "USAGE_LIMIT") {
+        const current = objectStorageRollupCache.get(cacheKey) || cached;
+        if (current?.rollup) {
+          objectStorageRollupCache.set(cacheKey, {
+            ...current,
+            retryAfter: Date.now() + OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS,
+          });
+        }
+        throw error;
+      }
+      if (isObjectStorageNotFound(error)) {
+        objectStorageRollupCache.set(cacheKey, { cachedAt: Date.now(), rollup: null, retryAfter: 0 });
+        if (cached?.rollup) invalidateAnalyticsResponses(cleanUniverseId);
+        return null;
+      }
+
+      objectStorageStatus.lastError = error.message || String(error);
+      const current = objectStorageRollupCache.get(cacheKey) || cached;
+      objectStorageRollupCache.set(cacheKey, {
+        cachedAt: cleanInteger(current?.cachedAt),
+        rollup: current?.rollup || null,
+        retryAfter: Date.now() + OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS,
+      });
+      return current?.rollup || null;
+    } finally {
+      objectStorageRollupRequests.delete(cacheKey);
+    }
+  })();
+
+  objectStorageRollupRequests.set(cacheKey, request);
+  return request;
+}
+
+function getObjectStorageRollupVersion(rollup) {
+  if (!rollup) return "";
+  return `${cleanInteger(rollup.generatedAt)}:${cleanInteger(rollup.lastSeenAt)}:${rollupTotalSamples(rollup)}`;
+}
+
+function isObjectStorageNotFound(error) {
+  return error?.name === "NoSuchKey"
+    || error?.name === "NotFound"
+    || error?.$metadata?.httpStatusCode === 404;
 }
 
 async function deleteObjectStoragePrefix(prefix) {
@@ -1199,24 +1309,24 @@ async function deleteObjectStoragePrefix(prefix) {
   let deletedCount = 0;
 
   do {
-    const response = await client.send(new ListObjectsV2Command({
+    const response = await sendObjectStorageCommand(client, new ListObjectsV2Command({
       Bucket: B2_BUCKET_NAME,
       Prefix: prefix,
       ContinuationToken,
       MaxKeys: 1000,
-    }));
+    }), `B2 LIST ${prefix}`);
     const objects = (response.Contents || [])
       .map((object) => ({ Key: object.Key }))
       .filter((object) => object.Key);
 
     if (objects.length) {
-      await client.send(new DeleteObjectsCommand({
+      await sendObjectStorageCommand(client, new DeleteObjectsCommand({
         Bucket: B2_BUCKET_NAME,
         Delete: {
           Objects: objects,
           Quiet: true,
         },
-      }));
+      }), `B2 DELETE ${prefix}`);
       await deleteObjectStorageObjectRecords(objects.map((object) => object.Key));
       deletedCount += objects.length;
     }
@@ -1236,24 +1346,24 @@ async function deleteObjectStoragePrefixOlderThan(prefix, cutoffMs) {
   let deletedCount = 0;
 
   do {
-    const response = await client.send(new ListObjectsV2Command({
+    const response = await sendObjectStorageCommand(client, new ListObjectsV2Command({
       Bucket: B2_BUCKET_NAME,
       Prefix: prefix,
       ContinuationToken,
       MaxKeys: 1000,
-    }));
+    }), `B2 LIST ${prefix}`);
     const objects = (response.Contents || [])
       .filter((object) => object.Key && new Date(object.LastModified || 0).getTime() < cutoffMs)
       .map((object) => ({ Key: object.Key }));
 
     if (objects.length) {
-      await client.send(new DeleteObjectsCommand({
+      await sendObjectStorageCommand(client, new DeleteObjectsCommand({
         Bucket: B2_BUCKET_NAME,
         Delete: {
           Objects: objects,
           Quiet: true,
         },
-      }));
+      }), `B2 DELETE ${prefix}`);
       await deleteObjectStorageObjectRecords(objects.map((object) => object.Key));
       deletedCount += objects.length;
     }
@@ -1270,10 +1380,10 @@ async function deleteObjectStorageKey(objectKey) {
   const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await getB2S3Client();
   try {
-    await client.send(new DeleteObjectCommand({
+    await sendObjectStorageCommand(client, new DeleteObjectCommand({
       Bucket: B2_BUCKET_NAME,
       Key: objectKey,
-    }));
+    }), `B2 DELETE ${objectKey}`);
   } catch (error) {
     if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return 0;
     throw error;
@@ -1283,29 +1393,49 @@ async function deleteObjectStorageKey(objectKey) {
 }
 
 async function readObjectStorageJson(objectKey) {
-  await assertObjectStorageReadAvailable(objectKey);
-  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-  const client = await getB2S3Client();
-  const response = await client.send(new GetObjectCommand({
-    Bucket: B2_BUCKET_NAME,
-    Key: objectKey,
-  }));
-  const buffer = await streamToBuffer(response.Body);
-  await recordObjectStorageRead(objectKey, buffer.length);
-  return JSON.parse(buffer.toString("utf8"));
+  const readAuthorization = await runTimedOperation(
+    `B2 read quota ${objectKey}`,
+    () => assertObjectStorageReadAvailable(objectKey),
+  );
+  try {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getB2S3Client();
+    const response = await sendObjectStorageCommand(client, new GetObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+    }), `B2 GET ${objectKey}`);
+    const buffer = await streamToBuffer(response.Body);
+    await runTimedOperation(
+      `B2 read usage ${objectKey}`,
+      () => recordObjectStorageRead(objectKey, buffer.length, readAuthorization),
+    );
+    return JSON.parse(buffer.toString("utf8"));
+  } finally {
+    await releaseObjectStorageReadReservation(readAuthorization);
+  }
 }
 
 async function readObjectStorageGzipJson(objectKey) {
-  await assertObjectStorageReadAvailable(objectKey);
-  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-  const client = await getB2S3Client();
-  const response = await client.send(new GetObjectCommand({
-    Bucket: B2_BUCKET_NAME,
-    Key: objectKey,
-  }));
-  const buffer = await streamToBuffer(response.Body);
-  await recordObjectStorageRead(objectKey, buffer.length);
-  return JSON.parse(gunzipSync(buffer).toString("utf8"));
+  const readAuthorization = await runTimedOperation(
+    `B2 read quota ${objectKey}`,
+    () => assertObjectStorageReadAvailable(objectKey),
+  );
+  try {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await getB2S3Client();
+    const response = await sendObjectStorageCommand(client, new GetObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: objectKey,
+    }), `B2 GET ${objectKey}`);
+    const buffer = await streamToBuffer(response.Body);
+    await runTimedOperation(
+      `B2 read usage ${objectKey}`,
+      () => recordObjectStorageRead(objectKey, buffer.length, readAuthorization),
+    );
+    return JSON.parse(gunzipSync(buffer).toString("utf8"));
+  } finally {
+    await releaseObjectStorageReadReservation(readAuthorization);
+  }
 }
 
 function createPresenceJsonLines(presence) {
@@ -1573,8 +1703,7 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
   const cleanProjectId = cleanString(projectId, 120);
   if (!cleanProjectId) return sendJson(res, 400, { error: "Missing project ID." });
 
-  const projects = await readProjects();
-  const project = projects.find((entry) => entry.id === cleanProjectId && entry.ownerUserId === auth.userId);
+  const project = await getProjectByIdForOwner(cleanProjectId, auth.userId);
   if (!project) return sendJson(res, 404, { error: "Connected game not found." });
 
   const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
@@ -1690,11 +1819,10 @@ async function handleOwnedRobloxGames(req, res, auth) {
     return sendJson(res, 400, { error: "Log in with Roblox before connecting a universe." });
   }
 
-  const [games, projects] = await Promise.all([
+  const [games, connectedUniverseIds] = await Promise.all([
     getOwnedRobloxGames(robloxUserId),
-    readProjects(),
+    getConnectedUniverseIds(),
   ]);
-  const connectedUniverseIds = new Set(projects.map((project) => String(cleanInteger(project.universeId))).filter((id) => id !== "0"));
 
   return sendJson(res, 200, {
     games: games.map((game) => ({
@@ -1865,6 +1993,9 @@ async function handlePresenceHeartbeat(req, res) {
   const savedMovementRollupCount = saveMovementRollups(presence.value);
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
+  if (savedChatCount + savedMovementCount + savedMovementRollupCount + savedDeathCount + savedLeaveCount > 0) {
+    invalidateAnalyticsResponses(presence.value.universeId);
+  }
   await persistPresenceToMongo(presence.value);
   const objectStorageResult = await persistPresenceToObjectStorage(presence.value, usageContext);
   if (usageContext.userId && eventCount > 0) {
@@ -2477,6 +2608,7 @@ async function saveMapSnapshotChunk(chunk, usageContext = {}) {
     const snapshot = buildMapSnapshot(chunk, chunk.parts);
     await persistMapSnapshot(snapshot, usageContext);
     mapSnapshotsByUniverseId.set(universeKey, snapshot);
+    invalidatePersistedMapUniverseIdsCache();
     mapUploadSessions.delete(sessionKey);
     return {
       ok: true,
@@ -2528,6 +2660,7 @@ async function saveMapSnapshotChunk(chunk, usageContext = {}) {
   const snapshot = buildMapSnapshot(session, parts);
   await persistMapSnapshot(snapshot, usageContext);
   mapSnapshotsByUniverseId.set(universeKey, snapshot);
+  invalidatePersistedMapUniverseIdsCache();
   mapUploadSessions.delete(sessionKey);
 
   return {
@@ -2687,10 +2820,10 @@ async function persistMapSnapshotToObjectStorage(snapshot, usageContext = {}) {
     },
   };
 
-  await client.send(new PutObjectCommand({
+  await sendObjectStorageCommand(client, new PutObjectCommand({
     ...putOptions,
     Key: latestKey,
-  }));
+  }), `B2 PUT ${latestKey}`);
   await recordObjectStorageWrite({
     usageContext,
     objectKey: latestKey,
@@ -2698,10 +2831,10 @@ async function persistMapSnapshotToObjectStorage(snapshot, usageContext = {}) {
     feature: "map_snapshot_latest",
     contentType: "application/json",
   });
-  await client.send(new PutObjectCommand({
+  await sendObjectStorageCommand(client, new PutObjectCommand({
     ...putOptions,
     Key: versionedKey,
-  }));
+  }), `B2 PUT ${versionedKey}`);
   await recordObjectStorageWrite({
     usageContext,
     objectKey: versionedKey,
@@ -2778,6 +2911,22 @@ function chunkArray(items, chunkSize) {
   return chunks;
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  if (!Array.isArray(items) || !items.length) return [];
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(cleanFiniteInteger(concurrency), 1), items.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 function getMapSnapshotPath(universeId) {
   return path.join(mapSnapshotDir, `${cleanInteger(universeId)}.json`);
 }
@@ -2794,25 +2943,20 @@ function getObjectStorageMapSnapshotVersionKey(snapshot) {
 async function getUniverseSummaries(ownerUserId = null) {
   const projects = ownerUserId ? await getUserProjects(ownerUserId) : (await readProjects()).map(serializeProject);
   const projectsByUniverseId = new Map(projects.map((project) => [String(project.universeId), project]));
-  const universeIds = new Set(projects.map((project) => String(project.universeId)));
-  addUniverseKeys(universeIds, chatLogsByUniverseId);
-  addUniverseKeys(universeIds, movementSamplesByUniverseId);
-  addUniverseKeys(universeIds, movementRollupsByUniverseId);
-  addUniverseKeys(universeIds, deathSamplesByUniverseId);
-  addUniverseKeys(universeIds, leaveSamplesByUniverseId);
-  addUniverseKeys(universeIds, mapSnapshotsByUniverseId);
+  const universeIds = [...projectsByUniverseId.keys()]
+    .map(cleanInteger)
+    .filter((universeId) => universeId > 0);
+  if (!universeIds.length) return { universes: [] };
 
-  const persistedMapUniverseIds = new Set((await getPersistedMapUniverseIds()).map(String));
-  for (const universeId of persistedMapUniverseIds) {
-    universeIds.add(String(universeId));
-  }
-
-  const objectStorageUniverseIds = new Set((await getObjectStorageRollupUniverseIds()).map(String));
-  for (const universeId of objectStorageUniverseIds) {
-    universeIds.add(String(universeId));
-  }
-
-  const recentFailuresByUniverseId = await getRecentIntegrationFailuresByUniverse(ownerUserId, [...universeIds]);
+  const [persistedMapIds, recentFailuresByUniverseId, rollupEntries] = await Promise.all([
+    getPersistedMapUniverseIds(universeIds),
+    getRecentIntegrationFailuresByUniverse(ownerUserId, universeIds),
+    mapWithConcurrency(universeIds, UNIVERSE_ROLLUP_READ_CONCURRENCY, async (universeId) => (
+      [String(universeId), await getObjectStorageRollup(universeId)]
+    )),
+  ]);
+  const persistedMapUniverseIds = new Set(persistedMapIds.map(String));
+  const rollupsByUniverseId = new Map(rollupEntries);
   const universes = [];
   for (const id of universeIds) {
     const universeId = cleanInteger(id);
@@ -2821,7 +2965,7 @@ async function getUniverseSummaries(ownerUserId = null) {
     if (!project) continue;
 
     const summary = buildUniverseSummary(universeId, persistedMapUniverseIds.has(String(universeId)));
-    const rollup = await getObjectStorageRollup(universeId);
+    const rollup = rollupsByUniverseId.get(String(universeId));
     if (rollup && rollupTotalSamples(rollup) > summary.totalSamples) {
       const rollupSummary = buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot);
       universes.push({
@@ -2860,6 +3004,10 @@ async function getRecentIntegrationFailuresByUniverse(ownerUserId = null, univer
         userId: cleanUserId,
         universeId: { $in: cleanUniverseIds },
         createdAt: { $gte: sinceMs },
+        $or: [
+          { unit: "failure" },
+          { feature: { $regex: "_failed$" } },
+        ],
       })
       .project({ _id: 0, universeId: 1, unit: 1, feature: 1, quantity: 1, createdAt: 1 })
       .toArray()
@@ -2884,50 +3032,132 @@ async function getRecentIntegrationFailuresByUniverse(ownerUserId = null, univer
   return failuresByUniverseId;
 }
 
-function addUniverseKeys(target, sourceMap) {
-  for (const key of sourceMap.keys()) {
-    if (cleanInteger(key) > 0) {
-      target.add(String(cleanInteger(key)));
-    }
+async function getPersistedMapUniverseIds(requestedUniverseIds = []) {
+  const requestedIds = [...new Set(requestedUniverseIds.map(cleanInteger).filter((universeId) => universeId > 0))];
+  const cacheVersion = persistedMapUniverseIdsVersion;
+  const cacheKey = `${cacheVersion}:${requestedIds.slice().sort((a, b) => a - b).join(",")}`;
+  const now = Date.now();
+  if (persistedMapUniverseIdsCache.key === cacheKey
+    && now - persistedMapUniverseIdsCache.cachedAt < OBJECT_STORAGE_DISCOVERY_CACHE_MS) {
+    return [...persistedMapUniverseIdsCache.universeIds];
   }
-}
+  if (persistedMapUniverseIdsRequest?.key === cacheKey) return persistedMapUniverseIdsRequest.promise;
 
-async function getPersistedMapUniverseIds() {
-  const universeIds = new Set(await getPersistedMongoMapUniverseIds());
-  for (const universeId of await getPersistedObjectStorageMapUniverseIds()) {
-    universeIds.add(universeId);
-  }
-
-  try {
-    const entries = await fs.readdir(mapSnapshotDir);
-    for (const universeId of entries
-      .map((name) => cleanInteger(String(name).replace(/\.json$/i, "")))
-      .filter((universeId) => universeId > 0)) {
+  const promise = (async () => {
+    const universeIds = new Set();
+    const [mongoUniverseIds, objectStorageUniverseIds, localUniverseIds] = await Promise.all([
+      getPersistedMongoMapUniverseIds(requestedIds),
+      getPersistedObjectStorageMapUniverseIds(requestedIds),
+      getPersistedLocalMapUniverseIds(requestedIds),
+    ]);
+    for (const universeId of mongoUniverseIds) universeIds.add(universeId);
+    for (const universeId of objectStorageUniverseIds) {
       universeIds.add(universeId);
     }
-  } catch {
-    // The filesystem fallback is optional on Render.
-  }
+    for (const universeId of localUniverseIds) universeIds.add(universeId);
 
-  return [...universeIds];
+    const cleanUniverseIds = [...universeIds].filter((universeId) => (
+      universeId > 0 && (!requestedIds.length || requestedIds.includes(universeId))
+    ));
+    if (persistedMapUniverseIdsVersion === cacheVersion) {
+      persistedMapUniverseIdsCache = {
+        key: cacheKey,
+        cachedAt: Date.now(),
+        universeIds: cleanUniverseIds,
+      };
+    }
+    return [...cleanUniverseIds];
+  })().finally(() => {
+    if (persistedMapUniverseIdsRequest?.promise === promise) persistedMapUniverseIdsRequest = null;
+  });
+
+  persistedMapUniverseIdsRequest = { key: cacheKey, promise };
+  return promise;
 }
 
-async function getPersistedObjectStorageMapUniverseIds() {
+async function getPersistedLocalMapUniverseIds(requestedUniverseIds = []) {
+  try {
+    if (requestedUniverseIds.length) {
+      const results = await Promise.all(requestedUniverseIds.map(async (universeId) => {
+        try {
+          await fs.access(getMapSnapshotPath(universeId));
+          return universeId;
+        } catch {
+          return 0;
+        }
+      }));
+      return results.filter((universeId) => universeId > 0);
+    }
+
+    const entries = await fs.readdir(mapSnapshotDir);
+    return entries
+      .map((name) => cleanInteger(String(name).replace(/\.json$/i, "")))
+      .filter((universeId) => universeId > 0);
+  } catch {
+    return [];
+  }
+}
+
+async function getPersistedObjectStorageMapUniverseIds(requestedUniverseIds = []) {
   if (!OBJECT_STORAGE_CONFIGURED) return [];
 
   try {
+    if (requestedUniverseIds.length) {
+      const latestKeys = requestedUniverseIds.map(getObjectStorageMapSnapshotKey);
+      const db = await getMongoDb();
+      const records = db
+        ? await db.collection("object_storage_objects")
+          .find({ objectKey: { $in: latestKeys } }, { projection: { _id: 0, objectKey: 1 } })
+          .toArray()
+        : (await readObjectStorageObjects()).filter((record) => latestKeys.includes(record.objectKey));
+      const storedKeys = new Set(records.map((record) => cleanString(record.objectKey, 512)).filter(Boolean));
+      const knownUniverseIds = requestedUniverseIds.filter((universeId) => (
+        storedKeys.has(getObjectStorageMapSnapshotKey(universeId))
+      ));
+      const unknownUniverseIds = requestedUniverseIds.filter((universeId) => (
+        !storedKeys.has(getObjectStorageMapSnapshotKey(universeId))
+      ));
+      if (!unknownUniverseIds.length) return knownUniverseIds;
+
+      const staleUniverseIds = new Set(
+        persistedMapUniverseIdsCache.key === `${persistedMapUniverseIdsVersion}:${requestedUniverseIds.slice().sort((a, b) => a - b).join(",")}`
+          ? persistedMapUniverseIdsCache.universeIds
+          : [],
+      );
+      const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+      const client = await getB2S3Client();
+      const headResults = await mapWithConcurrency(
+        unknownUniverseIds,
+        UNIVERSE_ROLLUP_READ_CONCURRENCY,
+        async (universeId) => {
+          try {
+            await sendObjectStorageCommand(client, new HeadObjectCommand({
+              Bucket: B2_BUCKET_NAME,
+              Key: getObjectStorageMapSnapshotKey(universeId),
+            }), `B2 HEAD map ${universeId}`);
+            return universeId;
+          } catch (error) {
+            if (isObjectStorageNotFound(error)) return 0;
+            objectStorageStatus.lastError = error.message || String(error);
+            return staleUniverseIds.has(universeId) ? universeId : 0;
+          }
+        },
+      );
+      return [...knownUniverseIds, ...headResults.filter((universeId) => universeId > 0)];
+    }
+
     const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
     const client = await getB2S3Client();
     const universeIds = new Set();
     let ContinuationToken;
 
     do {
-      const response = await client.send(new ListObjectsV2Command({
+      const response = await sendObjectStorageCommand(client, new ListObjectsV2Command({
         Bucket: B2_BUCKET_NAME,
         Prefix: "maps/",
         ContinuationToken,
         MaxKeys: 1000,
-      }));
+      }), "B2 LIST map universe IDs");
 
       for (const object of response.Contents || []) {
         const match = String(object.Key || "").match(/^maps\/(\d+)\/latest[.]json[.]gz$/);
@@ -2944,15 +3174,16 @@ async function getPersistedObjectStorageMapUniverseIds() {
   }
 }
 
-async function getPersistedMongoMapUniverseIds() {
+async function getPersistedMongoMapUniverseIds(requestedUniverseIds = []) {
   if (!MONGODB_URI) return [];
 
   try {
     const db = await getMongoDb();
     if (!db) return [];
 
+    const query = requestedUniverseIds.length ? { universeId: { $in: requestedUniverseIds } } : {};
     const documents = await db.collection("map_snapshots")
-      .find({}, { projection: { universeId: 1 } })
+      .find(query, { projection: { universeId: 1 } })
       .toArray();
     return documents
       .map((document) => cleanInteger(document.universeId))
@@ -3095,6 +3326,87 @@ function getCFramePosition(cframe) {
     y: Number(cframe?.[1]) || 0,
     z: Number(cframe?.[2]) || 0,
   };
+}
+
+async function getCachedAnalyticsResponse(ownerUserId, namespace, searchParams, loader) {
+  if (ANALYTICS_RESPONSE_CACHE_MS <= 0 || MAX_ANALYTICS_RESPONSE_CACHE_ENTRIES <= 0) {
+    return loader();
+  }
+
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const version = cleanFiniteInteger(analyticsDataVersionByUniverseId.get(String(universeId)));
+  const query = [...searchParams.entries()]
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => (
+      leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue)
+    ))
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&");
+  const cacheKey = `${cleanString(ownerUserId, 120)}:${namespace}:${universeId}:${version}:${query}`;
+  const cached = analyticsResponseCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < ANALYTICS_RESPONSE_CACHE_MS) {
+    return cached.payload;
+  }
+  if (analyticsResponseRequests.has(cacheKey)) return analyticsResponseRequests.get(cacheKey);
+
+  const request = Promise.resolve()
+    .then(loader)
+    .then((payload) => {
+      const currentVersion = cleanFiniteInteger(analyticsDataVersionByUniverseId.get(String(universeId)));
+      if (currentVersion === version) {
+        analyticsResponseCache.set(cacheKey, { cachedAt: Date.now(), universeId, payload });
+        trimAnalyticsResponseCache();
+      }
+      return payload;
+    })
+    .finally(() => {
+      analyticsResponseRequests.delete(cacheKey);
+    });
+  analyticsResponseRequests.set(cacheKey, request);
+  return request;
+}
+
+function invalidateAnalyticsResponses(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (cleanUniverseId <= 0) {
+    analyticsResponseCache.clear();
+    return;
+  }
+
+  const universeKey = String(cleanUniverseId);
+  analyticsDataVersionByUniverseId.set(
+    universeKey,
+    cleanFiniteInteger(analyticsDataVersionByUniverseId.get(universeKey)) + 1,
+  );
+  for (const [cacheKey, entry] of analyticsResponseCache) {
+    if (entry.universeId === cleanUniverseId) analyticsResponseCache.delete(cacheKey);
+  }
+}
+
+function trimAnalyticsResponseCache() {
+  const now = Date.now();
+  for (const [cacheKey, entry] of analyticsResponseCache) {
+    if (now - entry.cachedAt >= ANALYTICS_RESPONSE_CACHE_MS) analyticsResponseCache.delete(cacheKey);
+  }
+  while (analyticsResponseCache.size > MAX_ANALYTICS_RESPONSE_CACHE_ENTRIES) {
+    analyticsResponseCache.delete(analyticsResponseCache.keys().next().value);
+  }
+}
+
+function invalidatePersistedMapUniverseIdsCache() {
+  persistedMapUniverseIdsVersion += 1;
+  persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
+}
+
+async function runTimedOperation(name, operation) {
+  const startedAt = performance.now();
+  try {
+    return await operation();
+  } finally {
+    const durationMs = performance.now() - startedAt;
+    if (SLOW_STORAGE_THRESHOLD_MS > 0 && durationMs >= SLOW_STORAGE_THRESHOLD_MS) {
+      console.warn(`[slow-storage] ${name} ${durationMs.toFixed(1)}ms`);
+    }
+  }
 }
 
 async function getMovementHeatmapFromQuery(searchParams) {
@@ -3536,6 +3848,7 @@ async function analyzeAiAreaInsights(rawFilters = {}, usageContext = {}) {
   try {
     const aiPayload = await getAiAreaInsights(basePayload, usageContext);
     areaInsightsByScope.set(getAreaInsightsScopeKey(basePayload.universeId), aiPayload);
+    invalidateAnalyticsResponses(basePayload.universeId);
     return applyStoredAiAreaInsights(basePayload);
   } catch (error) {
     console.warn("AI area analysis failed:", error.message);
@@ -4451,10 +4764,10 @@ async function persistAiInsightsReport(report) {
     },
   };
 
-  await client.send(new PutObjectCommand({
+  await sendObjectStorageCommand(client, new PutObjectCommand({
     ...putOptions,
     Key: latestKey,
-  }));
+  }), `B2 PUT ${latestKey}`);
   await recordObjectStorageWrite({
     usageContext,
     objectKey: latestKey,
@@ -4462,10 +4775,10 @@ async function persistAiInsightsReport(report) {
     feature: "ai_report_latest",
     contentType: "application/json",
   });
-  await client.send(new PutObjectCommand({
+  await sendObjectStorageCommand(client, new PutObjectCommand({
     ...putOptions,
     Key: versionedKey,
-  }));
+  }), `B2 PUT ${versionedKey}`);
   await recordObjectStorageWrite({
     usageContext,
     objectKey: versionedKey,
@@ -4483,6 +4796,7 @@ async function persistAiInsightsReport(report) {
     areaCount: Array.isArray(report.areaAnalysis?.areas) ? report.areaAnalysis.areas.length : 0,
     errorCount: Array.isArray(report.errors) ? report.errors.length : 0,
   });
+  invalidateAnalyticsResponses(universeId);
 }
 
 async function readObjectStorageAiReport(universeId) {
@@ -4550,12 +4864,12 @@ async function appendAiReportManifest(universeId, reportSummary) {
   const byteLength = Buffer.byteLength(body, "utf8");
   await assertObjectStorageWriteAvailable(usageContext, { objectKey, byteLength });
 
-  await client.send(new PutObjectCommand({
+  await sendObjectStorageCommand(client, new PutObjectCommand({
     Bucket: B2_BUCKET_NAME,
     Key: objectKey,
     Body: body,
     ContentType: "application/json",
-  }));
+  }), `B2 PUT ${objectKey}`);
   await recordObjectStorageWrite({
     usageContext,
     objectKey,
@@ -4642,12 +4956,12 @@ async function saveAiAutomationSettings(settings) {
 
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await getB2S3Client();
-    await client.send(new PutObjectCommand({
+    await sendObjectStorageCommand(client, new PutObjectCommand({
       Bucket: B2_BUCKET_NAME,
       Key: objectKey,
       Body: body,
       ContentType: "application/json",
-    }));
+    }), `B2 PUT ${objectKey}`);
     await recordObjectStorageWrite({
       usageContext,
       objectKey,
@@ -5363,7 +5677,45 @@ async function assertUsageAvailable(context, metric, quantity = 1) {
   if (!context?.userId) return;
 
   const amount = Math.max(cleanInteger(quantity), 1);
-  const usage = await getMonthlyUsage(context.userId);
+  const usage = await getMonthlyUsageForQuota(context.userId);
+  assertUsageSummaryAvailable(usage, metric, amount);
+}
+
+async function getMonthlyUsageForQuota(userId) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  if (!cleanUserId) return createEmptyUsageSummary(getUsageMonthKey(Date.now()));
+
+  const cached = usageQuotaCache.get(cleanUserId);
+  if (cached && Date.now() - cached.cachedAt < USAGE_QUOTA_CACHE_MS) return cached.usage;
+  if (usageQuotaRequests.has(cleanUserId)) return usageQuotaRequests.get(cleanUserId);
+
+  const request = (async () => {
+    while (true) {
+      const version = cleanFiniteInteger(usageQuotaVersionByUserId.get(cleanUserId));
+      const usage = await getMonthlyUsage(cleanUserId);
+      if (version !== cleanFiniteInteger(usageQuotaVersionByUserId.get(cleanUserId))) continue;
+      usageQuotaCache.set(cleanUserId, { cachedAt: Date.now(), usage });
+      return usage;
+    }
+  })()
+    .finally(() => {
+      usageQuotaRequests.delete(cleanUserId);
+    });
+  usageQuotaRequests.set(cleanUserId, request);
+  return request;
+}
+
+function invalidateUsageQuotaCache(userId) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  if (!cleanUserId) return;
+  usageQuotaVersionByUserId.set(
+    cleanUserId,
+    cleanFiniteInteger(usageQuotaVersionByUserId.get(cleanUserId)) + 1,
+  );
+  usageQuotaCache.delete(cleanUserId);
+}
+
+function assertUsageSummaryAvailable(usage, metric, amount) {
   const limits = usage.limits || USAGE_LIMITS;
   const checks = {
     aiRequests: {
@@ -5581,12 +5933,14 @@ async function resetStoredUsageEventsForUser(targetUser, adminUser) {
 
   const resetAt = Date.now();
   const db = await getMongoDb();
+  invalidateUsageQuotaCache(userId);
 
   if (db) {
     const [eventResult, monthlyResult] = await Promise.all([
       db.collection("usage_events").deleteMany({ userId }),
       db.collection("monthly_user_usage").deleteMany({ userId }),
     ]);
+    invalidateUsageQuotaCache(userId);
     return {
       resetAt,
       deletedEvents: cleanFiniteInteger(eventResult.deletedCount),
@@ -5603,6 +5957,7 @@ async function resetStoredUsageEventsForUser(targetUser, adminUser) {
   const monthlyRecords = await readMonthlyUserUsageRecords();
   const remainingMonthlyRecords = monthlyRecords.filter((record) => record?.userId !== userId);
   await writeMonthlyUserUsageRecords(remainingMonthlyRecords);
+  invalidateUsageQuotaCache(userId);
 
   return {
     resetAt,
@@ -5698,25 +6053,34 @@ async function assertObjectStorageWriteAvailable(usageContext = {}, objects = []
 
 async function assertObjectStorageReadAvailable(objectKey) {
   const cleanObjectKey = cleanString(objectKey, 512);
-  if (!cleanObjectKey) return;
+  if (!cleanObjectKey) return { object: null, reservation: null };
 
   const object = await getObjectStorageObject(cleanObjectKey);
-  if (!object?.userId) return;
+  if (!object?.userId) return { object: object || null, reservation: null };
 
-  await assertUsageAvailable({
-    userId: object.userId,
-    projectId: object.projectId || null,
-    universeId: cleanInteger(object.universeId) || null,
-  }, "backblazeDownloadedBytes", Math.max(cleanFiniteInteger(object.byteLength), 1));
+  const requestedBytes = Math.max(cleanFiniteInteger(object.byteLength), 1);
+  return withObjectStorageReadReservationLock(object.userId, async () => {
+    const reservedBytes = cleanFiniteInteger(objectStorageReadReservationsByUserId.get(object.userId));
+    const usage = await getMonthlyUsageForQuota(object.userId);
+    assertUsageSummaryAvailable({
+      ...usage,
+      backblazeDownloadedBytes: cleanFiniteInteger(usage.backblazeDownloadedBytes) + reservedBytes,
+    }, "backblazeDownloadedBytes", requestedBytes);
+    objectStorageReadReservationsByUserId.set(object.userId, reservedBytes + requestedBytes);
+    return {
+      object,
+      reservation: { userId: object.userId, byteLength: requestedBytes },
+    };
+  });
 }
 
-async function recordObjectStorageRead(objectKey, byteLength) {
+async function recordObjectStorageRead(objectKey, byteLength, readAuthorization = null) {
   const cleanObjectKey = cleanString(objectKey, 512);
   const cleanByteLength = cleanFiniteInteger(byteLength);
   if (!cleanObjectKey || cleanByteLength <= 0) return;
 
   try {
-    const object = await getObjectStorageObject(cleanObjectKey);
+    const object = readAuthorization?.object || readAuthorization || await getObjectStorageObject(cleanObjectKey);
     if (!object?.userId) return;
 
     await recordUsage({
@@ -5736,6 +6100,39 @@ async function recordObjectStorageRead(objectKey, byteLength) {
     });
   } catch (error) {
     console.warn("B2 usage tracking read failed:", error.message || String(error));
+  }
+}
+
+async function releaseObjectStorageReadReservation(readAuthorization) {
+  const reservation = readAuthorization?.reservation;
+  if (!reservation?.userId) return;
+
+  await withObjectStorageReadReservationLock(reservation.userId, async () => {
+    const remainingBytes = Math.max(
+      cleanFiniteInteger(objectStorageReadReservationsByUserId.get(reservation.userId))
+        - cleanFiniteInteger(reservation.byteLength),
+      0,
+    );
+    if (remainingBytes > 0) objectStorageReadReservationsByUserId.set(reservation.userId, remainingBytes);
+    else objectStorageReadReservationsByUserId.delete(reservation.userId);
+  });
+}
+
+async function withObjectStorageReadReservationLock(userId, callback) {
+  const previous = objectStorageReadReservationLocks.get(userId) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  objectStorageReadReservationLocks.set(userId, current);
+  await previous;
+  try {
+    return await callback();
+  } finally {
+    release();
+    if (objectStorageReadReservationLocks.get(userId) === current) {
+      objectStorageReadReservationLocks.delete(userId);
+    }
   }
 }
 
@@ -5930,15 +6327,53 @@ async function recordUsage(entry) {
   const db = await getMongoDb();
   if (db) {
     await db.collection("usage_events").insertOne(event);
-    await refreshMonthlyUserUsageSnapshot(userId, event.month);
+    invalidateUsageQuotaCache(userId);
+    scheduleMonthlyUsageSnapshotRefresh(userId, event.month);
     return event;
   }
 
   const events = await readUsageEvents();
   events.push(event);
   await writeUsageEvents(events);
-  await refreshMonthlyUserUsageSnapshot(userId, event.month);
+  invalidateUsageQuotaCache(userId);
+  scheduleMonthlyUsageSnapshotRefresh(userId, event.month);
   return event;
+}
+
+function scheduleMonthlyUsageSnapshotRefresh(userId, month) {
+  const cleanUserId = typeof userId === "string" ? userId : "";
+  const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
+  if (!cleanUserId) return;
+
+  const key = `${cleanUserId}:${cleanMonth}`;
+  const existing = monthlyUsageSnapshotRefreshes.get(key);
+  if (existing) {
+    existing.dirty = true;
+    return;
+  }
+
+  const state = { dirty: false, timer: null };
+  monthlyUsageSnapshotRefreshes.set(key, state);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    void runMonthlyUsageSnapshotRefresh(key, state, cleanUserId, cleanMonth);
+  }, MONTHLY_USAGE_SNAPSHOT_DEBOUNCE_MS);
+  state.timer.unref?.();
+}
+
+async function runMonthlyUsageSnapshotRefresh(key, state, userId, month) {
+  try {
+    do {
+      state.dirty = false;
+      await refreshMonthlyUserUsageSnapshot(userId, month);
+    } while (state.dirty);
+  } catch (error) {
+    console.warn("Monthly usage snapshot refresh failed:", error.message || String(error));
+  } finally {
+    if (monthlyUsageSnapshotRefreshes.get(key) === state) {
+      monthlyUsageSnapshotRefreshes.delete(key);
+    }
+  }
 }
 
 async function getMonthlyUsage(userId, month = getUsageMonthKey(Date.now())) {
@@ -6617,6 +7052,7 @@ async function updateUserPlan(userId, planKey) {
       { id: cleanUserId },
       { $set: { planKey: cleanKey, planUpdatedAt: updatedAt } }
     );
+    if (result.matchedCount > 0) invalidateUsageQuotaCache(cleanUserId);
     return result.matchedCount > 0;
   }
 
@@ -6627,6 +7063,7 @@ async function updateUserPlan(userId, planKey) {
   user.planKey = cleanKey;
   user.planUpdatedAt = updatedAt;
   await writeUsers(users);
+  invalidateUsageQuotaCache(cleanUserId);
   return true;
 }
 
@@ -7094,6 +7531,11 @@ async function getProjectByUniverseId(universeId) {
   const cleanUniverseId = cleanInteger(universeId);
   if (cleanUniverseId <= 0) return null;
 
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("projects").findOne({ universeId: cleanUniverseId }, { projection: { _id: 0 } });
+  }
+
   const projects = await readProjects();
   return projects.find((project) => cleanInteger(project.universeId) === cleanUniverseId) || null;
 }
@@ -7102,11 +7544,31 @@ async function getProjectByIdForOwner(projectId, ownerUserId) {
   const cleanProjectId = cleanString(projectId, 120);
   if (!cleanProjectId || !ownerUserId) return null;
 
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("projects").findOne(
+      { id: cleanProjectId, ownerUserId },
+      { projection: { _id: 0 } },
+    );
+  }
+
   const projects = await readProjects();
   return projects.find((project) => project.id === cleanProjectId && project.ownerUserId === ownerUserId) || null;
 }
 
 async function getUserProjects(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    const projects = await db.collection("projects")
+      .find(
+        { ownerUserId },
+        { projection: { _id: 0, id: 1, universeId: 1, name: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: -1 })
+      .toArray();
+    return projects.map(serializeProject);
+  }
+
   const projects = await readProjects();
   return projects
     .filter((project) => project.ownerUserId === ownerUserId)
@@ -7133,6 +7595,15 @@ async function userOwnsUniverse(ownerUserId, universeId) {
   const cleanUniverseId = cleanInteger(universeId);
   if (!ownerUserId || cleanUniverseId <= 0) return false;
 
+  const db = await getMongoDb();
+  if (db) {
+    const project = await db.collection("projects").findOne(
+      { ownerUserId, universeId: cleanUniverseId },
+      { projection: { _id: 1 } },
+    );
+    return Boolean(project);
+  }
+
   const projects = await readProjects();
   return projects.some((project) => (
     project.ownerUserId === ownerUserId
@@ -7147,11 +7618,30 @@ async function getProjectFromRequestSecret(req, universeId) {
   const cleanUniverseId = cleanInteger(universeId);
   if (cleanUniverseId <= 0) return null;
 
+  const db = await getMongoDb();
+  if (db) {
+    const project = await db.collection("projects").findOne(
+      { universeId: cleanUniverseId },
+      { projection: { _id: 0 } },
+    );
+    return project && verifyProjectSecret(secret, project.secretHash) ? project : null;
+  }
+
   const projects = await readProjects();
   return projects.find((project) => (
     cleanInteger(project.universeId) === cleanUniverseId
     && verifyProjectSecret(secret, project.secretHash)
   )) || null;
+}
+
+async function getConnectedUniverseIds() {
+  const db = await getMongoDb();
+  const projects = db
+    ? await db.collection("projects").find({}, { projection: { _id: 0, universeId: 1 } }).toArray()
+    : await readProjects();
+  return new Set(projects
+    .map((project) => String(cleanInteger(project.universeId)))
+    .filter((id) => id !== "0"));
 }
 
 function hashProjectSecret(secret) {
@@ -7258,12 +7748,17 @@ async function deleteUniverseAnalyticsData(universeId) {
   if (cleanUniverseId <= 0) return { universeId: null, deleted: false };
 
   const universeKey = String(cleanUniverseId);
+  invalidateAnalyticsResponses(cleanUniverseId);
+  invalidatePersistedMapUniverseIdsCache();
   const memoryDeleted = clearUniverseRuntimeData(universeKey);
   const [mongoDeleted, localDeleted, objectStorageDeleted] = await Promise.all([
     deleteMongoUniverseData(cleanUniverseId),
     deleteLocalUniverseData(cleanUniverseId),
     deleteObjectStorageUniverseData(cleanUniverseId),
   ]);
+  objectStorageRollupCache.delete(universeKey);
+  invalidateAnalyticsResponses(cleanUniverseId);
+  invalidatePersistedMapUniverseIdsCache();
 
   return {
     universeId: cleanUniverseId,
@@ -7379,36 +7874,129 @@ function appendSetCookie(res, cookie) {
   }
 }
 
-async function serveStatic(res, relativePath) {
-  const filePath = path.normalize(path.join(publicDir, relativePath));
-  if (!filePath.startsWith(publicDir)) {
+async function serveStatic(req, res, relativePath) {
+  const filePath = path.resolve(publicDir, relativePath);
+  if (filePath !== publicDir && !filePath.startsWith(`${publicDir}${path.sep}`)) {
     return sendJson(res, 403, { error: "Forbidden" });
   }
 
   try {
-    const content = await fs.readFile(filePath);
-    const headers = { "Content-Type": contentType(filePath) };
-    if (relativePath.startsWith("vendor/")) {
-      headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    const stats = await fs.stat(filePath);
+    if (!stats.isFile()) return sendJson(res, 404, { error: "Not found" });
+    const etag = `W/"${stats.size.toString(16)}-${Math.floor(stats.mtimeMs).toString(16)}"`;
+    const headers = {
+      "Content-Type": contentType(filePath),
+      "Cache-Control": getStaticCacheControl(relativePath),
+      ETag: etag,
+      "X-Content-Type-Options": "nosniff",
+    };
+    const compressible = isCompressibleContentType(headers["Content-Type"]);
+    if (compressible) headers.Vary = appendVaryHeader(headers.Vary, "Accept-Encoding");
+    if (String(req.headers["if-none-match"] || "").split(/\s*,\s*/).includes(etag)) {
+      return endResponse(res, 304, headers);
     }
-    res.writeHead(200, headers);
-    res.end(content);
+    if (req.method === "HEAD") {
+      return endResponse(res, 200, { ...headers, "Content-Length": stats.size });
+    }
+
+    const content = await fs.readFile(filePath);
+    return sendBuffer(res, 200, headers, content, compressible);
   } catch {
-    sendJson(res, 404, { error: "Not found" });
+    return sendJson(res, 404, { error: "Not found" });
   }
 }
 
 function sendJson(res, status, payload) {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(payload));
+  const body = Buffer.from(JSON.stringify(payload), "utf8");
+  return sendBuffer(res, status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  }, body, true);
 }
 
 function sendHtml(res, status, html) {
-  res.writeHead(status, {
+  return sendBuffer(res, status, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store",
-  });
-  res.end(html);
+    "X-Content-Type-Options": "nosniff",
+  }, Buffer.from(html, "utf8"), true);
+}
+
+function sendBuffer(res, status, headers, body, compress = false) {
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  const responseHeaders = compress
+    ? { ...headers, Vary: appendVaryHeader(headers.Vary, "Accept-Encoding") }
+    : headers;
+  if (compress
+    && res[RESPONSE_ACCEPTS_GZIP]
+    && buffer.length >= RESPONSE_COMPRESSION_THRESHOLD_BYTES
+    && status !== 204
+    && status !== 304) {
+    gzip(buffer, { level: 4 }, (error, compressed) => {
+      if (res.destroyed || res.writableEnded) return;
+      if (error) {
+        endResponse(res, status, { ...responseHeaders, "Content-Length": buffer.length }, buffer);
+        return;
+      }
+      endResponse(res, status, {
+        ...responseHeaders,
+        "Content-Encoding": "gzip",
+        "Content-Length": compressed.length,
+      }, compressed);
+    });
+    return;
+  }
+
+  return endResponse(res, status, { ...responseHeaders, "Content-Length": buffer.length }, buffer);
+}
+
+function endResponse(res, status, headers = {}, body = null) {
+  const startedAt = Number(res[RESPONSE_STARTED_AT]);
+  const durationMs = Number.isFinite(startedAt) ? Math.max(performance.now() - startedAt, 0) : 0;
+  const responseHeaders = {
+    ...headers,
+    "Server-Timing": `app;dur=${durationMs.toFixed(1)}`,
+  };
+  res.writeHead(status, responseHeaders);
+  res.end(body);
+}
+
+function appendVaryHeader(currentValue, value) {
+  const values = String(currentValue || "").split(/\s*,\s*/).filter(Boolean);
+  if (!values.some((entry) => entry.toLowerCase() === value.toLowerCase())) values.push(value);
+  return values.join(", ");
+}
+
+function acceptsGzipEncoding(value) {
+  let gzipQuality = null;
+  let wildcardQuality = null;
+  for (const token of String(value || "").split(",")) {
+    const [rawEncoding, ...parameters] = token.trim().split(";");
+    const encoding = rawEncoding.trim().toLowerCase();
+    if (!encoding) continue;
+    let quality = 1;
+    for (const parameter of parameters) {
+      const match = parameter.trim().match(/^q\s*=\s*([0-9.]+)$/i);
+      if (!match) continue;
+      const parsed = Number(match[1]);
+      quality = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 1) : 0;
+    }
+    if (encoding === "gzip") gzipQuality = quality;
+    if (encoding === "*") wildcardQuality = quality;
+  }
+  if (gzipQuality !== null) return gzipQuality > 0;
+  return wildcardQuality !== null && wildcardQuality > 0;
+}
+
+function getStaticCacheControl(relativePath) {
+  if (relativePath.startsWith("vendor/")) return "public, max-age=31536000, immutable";
+  if (path.extname(relativePath).toLowerCase() === ".html") return "no-cache";
+  return "public, max-age=0, must-revalidate";
+}
+
+function isCompressibleContentType(value) {
+  return /^(?:text\/|application\/(?:javascript|json|xml))/i.test(String(value || ""));
 }
 
 function sendRobloxOAuthResult(res, result) {

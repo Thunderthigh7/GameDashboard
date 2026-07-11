@@ -1,7 +1,11 @@
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand } from "@aws-sdk/client-s3";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { loadLocalEnv } from "../lib/env.mjs";
-import { getObjectStorageClient, getObjectStorageConfig } from "../lib/object-storage.mjs";
+import {
+  destroyObjectStorageClient,
+  getObjectStorageClient,
+  getObjectStorageConfig,
+} from "../lib/object-storage.mjs";
 
 loadLocalEnv();
 
@@ -22,18 +26,22 @@ const MAX_CHAT_LOGS = cleanPositiveInteger(process.env.ROLLUP_MAX_CHAT_LOGS, 250
 const MAX_EVENT_SAMPLES = cleanPositiveInteger(process.env.ROLLUP_MAX_EVENT_SAMPLES, 5000);
 const MAX_MOVEMENT_CELLS = cleanPositiveInteger(process.env.ROLLUP_MAX_MOVEMENT_CELLS, 5000);
 const MOVEMENT_GRID_SIZE = cleanPositiveInteger(process.env.ROLLUP_MOVEMENT_GRID_SIZE, 12);
+const READ_CONCURRENCY = cleanBoundedInteger(process.env.B2_MAINTENANCE_READ_CONCURRENCY, 8, 1, 32);
 const B2_STORAGE_USD_PER_TB_MONTH = cleanFiniteNumber(process.env.B2_STORAGE_USD_PER_TB_MONTH, 6.95);
 const UNIVERSE_IDS = parseUniverseIds(process.env.B2_MAINTENANCE_UNIVERSE_IDS || process.env.ROLLUP_UNIVERSE_IDS || "");
 const DRY_RUN = cleanBoolean(process.env.B2_MAINTENANCE_DRY_RUN);
 
 const objectStorageConfig = getObjectStorageConfig();
 const objectStorageClient = await getObjectStorageClient();
+process.once("exit", destroyObjectStorageClient);
 const startedAt = Date.now();
 const sinceMs = startedAt - LOOKBACK_HOURS * 60 * 60 * 1000;
 const retentionCutoffMs = startedAt - RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const rollupsByUniverseId = new Map();
 const statsByUniverseId = new Map();
 const errors = [];
+const failedRawObjectUniverseIds = new Set();
+let skipAllRollupWrites = false;
 
 const rawScan = await listRawObjects();
 const expiredRawObjects = [];
@@ -68,23 +76,48 @@ for (const object of rawScan.objects) {
 
 const deleted = await deleteExpiredRawObjects(expiredRawObjects);
 
-for (const object of recentRawObjects) {
-  try {
-    const body = await readGzipObject(object.Key);
-    ingestJsonLines(body, object.Key);
-  } catch (error) {
-    errors.push({
-      objectKey: object.Key,
-      error: error.message || String(error),
-    });
+for (let startIndex = 0; startIndex < recentRawObjects.length; startIndex += READ_CONCURRENCY) {
+  const batch = recentRawObjects.slice(startIndex, startIndex + READ_CONCURRENCY);
+  const batchResults = await Promise.all(batch.map(async (object) => {
+    try {
+      return { objectKey: object.Key, body: await readGzipObject(object.Key) };
+    } catch (error) {
+      const failedUniverseId = getRawUniverseId(object.Key);
+      if (failedUniverseId > 0) {
+        failedRawObjectUniverseIds.add(failedUniverseId);
+      } else {
+        skipAllRollupWrites = true;
+      }
+      errors.push({
+        objectKey: object.Key,
+        error: error.message || String(error),
+      });
+      return null;
+    }
+  }));
+
+  for (const result of batchResults) {
+    if (result) ingestJsonLines(result.body, result.objectKey);
   }
 }
 
-for (const rollup of rollupsByUniverseId.values()) {
+const rollups = [...rollupsByUniverseId.values()];
+for (const rollup of rollups) {
   finalizeRollup(rollup);
+}
+
+await forEachWithConcurrency(rollups, Math.min(READ_CONCURRENCY, 8), async (rollup) => {
+  const stats = getUniverseStats(rollup.universeId);
+  if (skipAllRollupWrites || failedRawObjectUniverseIds.has(rollup.universeId)) {
+    stats.rollupWriteSkipped = true;
+    stats.rollupWriteSkipReason = skipAllRollupWrites
+      ? "unparseable_failed_raw_object_key"
+      : "failed_raw_object";
+    return;
+  }
+
   try {
     const writeResult = await writeRollup(rollup);
-    const stats = getUniverseStats(rollup.universeId);
     stats.rollupWritten = true;
     stats.rollupLatestKey = writeResult.latestKey;
     stats.rollupVersionedKey = writeResult.versionedKey;
@@ -99,7 +132,7 @@ for (const rollup of rollupsByUniverseId.values()) {
       error: error.message || String(error),
     });
   }
-}
+});
 
 await attachRollupStorageStats();
 
@@ -116,6 +149,8 @@ console.log(JSON.stringify(report, null, 2));
 if (!report.ok) {
   process.exitCode = 1;
 }
+
+destroyObjectStorageClient();
 
 async function listRawObjects() {
   const prefixes = UNIVERSE_IDS.length
@@ -289,6 +324,7 @@ function addChatEvent(rollup, event) {
     sampledAt: cleanTimestamp(event.sentAt) || cleanTimestamp(event.receivedAt),
     receivedAt: cleanTimestamp(event.receivedAt),
   });
+  trimNewestSamples(rollup.chatLogs, MAX_CHAT_LOGS, compareChatSamples);
 }
 
 function addMovementEvent(rollup, event) {
@@ -383,19 +419,20 @@ function addEventSample(target, event, timestampField) {
     sampledAt: cleanTimestamp(event.sampledAt) || cleanTimestamp(event[timestampField]) || cleanTimestamp(event.receivedAt),
     receivedAt: cleanTimestamp(event.receivedAt),
   });
+  trimNewestSamples(target.samples, MAX_EVENT_SAMPLES, compareEventSamples);
 }
 
 function finalizeRollup(rollup) {
   rollup.rawObjectCount = rollup.rawObjectKeys.size;
   rollup.rawObjectKeys = [...rollup.rawObjectKeys].sort();
-  rollup.chatLogs.sort((a, b) => b.sentAt - a.sentAt || b.receivedAt - a.receivedAt);
+  rollup.chatLogs.sort(compareChatSamples);
   rollup.chatLogs = rollup.chatLogs.slice(0, MAX_CHAT_LOGS);
   rollup.movement.samples = [...rollup.movement.cells.values()]
     .sort((a, b) => b.movementCount - a.movementCount || b.sampledAt - a.sampledAt)
     .slice(0, MAX_MOVEMENT_CELLS);
   delete rollup.movement.cells;
-  rollup.deaths.samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
-  rollup.leaves.samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
+  rollup.deaths.samples.sort(compareEventSamples);
+  rollup.leaves.samples.sort(compareEventSamples);
   rollup.deaths.samples = rollup.deaths.samples.slice(0, MAX_EVENT_SAMPLES);
   rollup.leaves.samples = rollup.leaves.samples.slice(0, MAX_EVENT_SAMPLES);
 }
@@ -436,7 +473,7 @@ async function writeRollup(rollup) {
 
 async function attachRollupStorageStats() {
   const universeIds = [...statsByUniverseId.keys()];
-  for (const universeId of universeIds) {
+  await forEachWithConcurrency(universeIds, Math.min(READ_CONCURRENCY, 8), async (universeId) => {
     let ContinuationToken;
     do {
       const response = await objectStorageClient.send(new ListObjectsV2Command({
@@ -455,7 +492,7 @@ async function attachRollupStorageStats() {
 
       ContinuationToken = response.NextContinuationToken;
     } while (ContinuationToken);
-  }
+  });
 }
 
 function buildMaintenanceReport(rawScan, deleted) {
@@ -499,6 +536,8 @@ function buildMaintenanceReport(rawScan, deleted) {
     sinceMs,
     maxRawObjects: MAX_RAW_OBJECTS,
     rawScanTruncated: rawScan.truncated,
+    failedRawObjectUniverseIds: [...failedRawObjectUniverseIds].sort((a, b) => a - b),
+    skipAllRollupWrites,
     deleted,
     totals,
     universeCount: universes.length,
@@ -546,6 +585,8 @@ function getUniverseStats(universeId) {
       expiredRawBytes: 0,
       rollupSourceObjectCount: 0,
       rollupWritten: false,
+      rollupWriteSkipped: false,
+      rollupWriteSkipReason: null,
       rollupLatestKey: null,
       rollupVersionedKey: null,
       rollupObjectCount: 0,
@@ -620,4 +661,38 @@ function cleanBoolean(value) {
 
 function roundMoney(value) {
   return Math.round((Number(value) || 0) * 10000) / 10000;
+}
+
+function cleanBoundedInteger(value, fallback, minimum, maximum) {
+  if (value === undefined || value === null || String(value).trim() === "") return fallback;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) return fallback;
+  return Math.min(maximum, Math.max(minimum, number));
+}
+
+function compareChatSamples(a, b) {
+  return b.sentAt - a.sentAt || b.receivedAt - a.receivedAt;
+}
+
+function compareEventSamples(a, b) {
+  return b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt;
+}
+
+function trimNewestSamples(samples, maximum, compare) {
+  if (samples.length <= maximum * 2) return;
+  samples.sort(compare);
+  samples.length = maximum;
+}
+
+async function forEachWithConcurrency(items, concurrency, callback) {
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, concurrency);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await callback(items[index], index);
+    }
+  });
+  await Promise.all(workers);
 }

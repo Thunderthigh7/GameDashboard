@@ -109,10 +109,19 @@ let authenticatedUser = null;
 let lastAdminPlans = [];
 let activeView = getViewFromHash();
 let aiChatBusy = false;
+let universeRequestSequence = 0;
+let signalAreaRequestSequence = 0;
+let signalAreaRequestState = null;
+let chatLogRequestSequence = 0;
+let chatLogRequestState = null;
+let chatInsightsRequestSequence = 0;
+let aiReportHistoryRequestSequence = 0;
 const loadedViews = new Set();
+const inFlightGetRequests = new Map();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
+window.getDashboardCacheScope = () => getDashboardCacheScope();
 
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
@@ -124,6 +133,13 @@ const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
 const CHAT_PANEL_WIDTH_MIN = 300;
 const CHAT_PANEL_WIDTH_MAX = 560;
+const DASHBOARD_SESSION_CACHE_PREFIX = "roanalytics.dashboard.v2";
+const UNIVERSE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SIGNAL_CACHE_FRESH_MS = 12 * 1000;
+const SIGNAL_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const MAX_SIGNAL_SESSION_CACHE_ENTRIES = 8;
+const MAX_SIGNAL_SESSION_CACHE_CHARS = 1_000_000;
+const MAX_SESSION_CACHE_CHARS = 1_500_000;
 
 init();
 
@@ -143,7 +159,10 @@ function bindEvents() {
   });
 
   logoutButton.addEventListener("click", async () => {
+    const cacheScope = getDashboardCacheScope();
     await request("/api/auth/logout", { method: "POST" });
+    clearDashboardSessionCache(cacheScope);
+    await window.clearDashboardPersistentCache?.(cacheScope);
     window.location.reload();
   });
 
@@ -173,14 +192,14 @@ function bindEvents() {
     }
   });
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
-  refreshChatLogsButton.addEventListener("click", loadChatLogs);
+  refreshChatLogsButton.addEventListener("click", () => loadChatLogs({ includeInsights: true }));
   aiChatSendButton?.addEventListener("click", sendAiChatPrompt);
   aiChatInput?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     sendAiChatPrompt();
   });
-  refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
+  refreshMovementButton?.addEventListener("click", () => loadSignalAreaCards({ force: true }));
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
@@ -220,11 +239,11 @@ function bindEvents() {
   });
   movementFromFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
-    loadSignalAreaCards();
+    loadSignalAreaCards({ force: true });
   });
   movementToFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
-    loadSignalAreaCards();
+    loadSignalAreaCards({ force: true });
   });
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
@@ -282,6 +301,24 @@ function bindEvents() {
   window.addEventListener("hashchange", () => {
     setActiveView(getViewFromHash(), { updateHash: false });
   });
+  document.addEventListener("visibilitychange", handleDashboardVisibilityChange);
+}
+
+function handleDashboardVisibilityChange() {
+  if (document.hidden) {
+    stopChatRefresh();
+    stopSignalRefresh();
+  } else {
+    updateViewRefreshTimers();
+    if (authenticated && selectedUniverseId) {
+      if (activeView === "chat") loadChatLogs({ includeInsights: false });
+      if (activeView === "areas") loadSignalAreaCards();
+    }
+  }
+
+  window.dispatchEvent(new CustomEvent("dashboard:visibilityChanged", {
+    detail: { hidden: document.hidden },
+  }));
 }
 
 function applyStoredLayoutSizes() {
@@ -353,6 +390,124 @@ function storeLayoutWidth(storageKey, width) {
   }
 }
 
+function getDashboardCacheScope() {
+  const username = String(authenticatedUser?.username || "").trim().toLowerCase();
+  return authenticated && username ? encodeURIComponent(username) : "";
+}
+
+function getScopedSessionCacheKey(namespace, key = "") {
+  const scope = getDashboardCacheScope();
+  if (!scope) return "";
+  return `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:${namespace}:${key}`;
+}
+
+function readScopedSessionCache(namespace, key, maxAgeMs) {
+  const storageKey = getScopedSessionCacheKey(namespace, key);
+  if (!storageKey) return null;
+
+  try {
+    const cached = JSON.parse(window.sessionStorage.getItem(storageKey) || "null");
+    const storedAt = Number(cached?.storedAt) || 0;
+    if (!storedAt || Date.now() - storedAt > maxAgeMs) {
+      window.sessionStorage.removeItem(storageKey);
+      return null;
+    }
+    return cached;
+  } catch {
+    try {
+      window.sessionStorage.removeItem(storageKey);
+    } catch {
+      // Session storage is optional; network loading remains available.
+    }
+    return null;
+  }
+}
+
+function writeScopedSessionCache(namespace, key, payload) {
+  const storageKey = getScopedSessionCacheKey(namespace, key);
+  if (!storageKey) return;
+
+  pruneScopedSignalAreaCache();
+  try {
+    const serialized = JSON.stringify({ storedAt: Date.now(), payload });
+    if (serialized.length > MAX_SESSION_CACHE_CHARS) return;
+    window.sessionStorage.setItem(storageKey, serialized);
+    if (namespace === "signal-areas") pruneScopedSignalAreaCache();
+  } catch {
+    // Quota/privacy restrictions should never prevent live data from loading.
+  }
+}
+
+function pruneScopedSignalAreaCache() {
+  const scope = getDashboardCacheScope();
+  if (!scope) return;
+  const prefix = `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:signal-areas:`;
+
+  try {
+    const entries = [];
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+
+      let storedAt = 0;
+      const cachedValue = window.sessionStorage.getItem(key) || "";
+      try {
+        storedAt = Number(JSON.parse(cachedValue || "null")?.storedAt) || 0;
+      } catch {
+        storedAt = 0;
+      }
+
+      if (!storedAt || Date.now() - storedAt > SIGNAL_CACHE_MAX_AGE_MS) {
+        window.sessionStorage.removeItem(key);
+      } else {
+        entries.push({ key, storedAt, size: cachedValue.length });
+      }
+    }
+
+    entries.sort((a, b) => b.storedAt - a.storedAt);
+    let keptEntries = 0;
+    let keptChars = 0;
+    for (const entry of entries) {
+      const fits = keptEntries < MAX_SIGNAL_SESSION_CACHE_ENTRIES
+        && keptChars + entry.size <= MAX_SIGNAL_SESSION_CACHE_CHARS;
+      if (fits) {
+        keptEntries += 1;
+        keptChars += entry.size;
+      } else {
+        window.sessionStorage.removeItem(entry.key);
+      }
+    }
+  } catch {
+    // Session cache pruning is best-effort and never blocks live requests.
+  }
+}
+
+function clearDashboardSessionCache(scope = getDashboardCacheScope()) {
+  if (!scope) return;
+  const prefix = `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:`;
+
+  try {
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (key?.startsWith(prefix)) window.sessionStorage.removeItem(key);
+    }
+  } catch {
+    // The active in-memory identity is still cleared even if storage is unavailable.
+  }
+}
+
+function abortActiveDashboardRequests() {
+  signalAreaRequestState?.controller.abort();
+  signalAreaRequestState = null;
+  chatLogRequestState = null;
+  universeRequestSequence += 1;
+  signalAreaRequestSequence += 1;
+  chatLogRequestSequence += 1;
+  chatInsightsRequestSequence += 1;
+  aiReportHistoryRequestSequence += 1;
+  inFlightGetRequests.clear();
+}
+
 async function checkAuth() {
   try {
     const data = await request("/api/auth/status");
@@ -363,6 +518,7 @@ async function checkAuth() {
 }
 
 function setAuthenticated(value, user = null) {
+  const previousCacheScope = getDashboardCacheScope();
   authenticated = value;
   authenticatedUser = authenticated ? user : null;
   loadedViews.clear();
@@ -382,6 +538,8 @@ function setAuthenticated(value, user = null) {
   }));
 
   if (!authenticated) {
+    abortActiveDashboardRequests();
+    clearDashboardSessionCache(previousCacheScope);
     stopChatRefresh();
     stopSignalRefresh();
     chatLogList.innerHTML = "";
@@ -432,8 +590,20 @@ function setAuthenticated(value, user = null) {
 }
 
 async function loadDashboardData() {
-  const didNotifyUniverseChange = await loadUniverses();
-  renderActiveView({ suppressOverviewEvent: didNotifyUniverseChange });
+  const cachedState = restoreCachedUniverses();
+  if (cachedState.restored) {
+    renderActiveView({ suppressOverviewEvent: cachedState.didNotifyUniverseChange });
+    notifyAnalyticsReady();
+  }
+
+  const didNotifyUniverseChange = await loadUniverses({ background: cachedState.restored });
+  if (!cachedState.restored) {
+    renderActiveView({ suppressOverviewEvent: didNotifyUniverseChange });
+    notifyAnalyticsReady();
+  }
+}
+
+function notifyAnalyticsReady() {
   window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
     detail: { universeId: selectedUniverseId },
   }));
@@ -535,7 +705,7 @@ function renderActiveView(options = {}) {
 }
 
 function updateViewRefreshTimers() {
-  if (!authenticated) {
+  if (!authenticated || document.hidden) {
     stopChatRefresh();
     stopSignalRefresh();
     return;
@@ -572,8 +742,8 @@ function loadActiveViewData(view, options = {}) {
 }
 
 function startChatRefresh() {
-  stopChatRefresh();
-  chatRefreshTimer = window.setInterval(loadChatLogs, CHAT_REFRESH_MS);
+  if (chatRefreshTimer || document.hidden) return;
+  chatRefreshTimer = window.setInterval(() => loadChatLogs({ includeInsights: false }), CHAT_REFRESH_MS);
 }
 
 function stopChatRefresh() {
@@ -584,7 +754,7 @@ function stopChatRefresh() {
 }
 
 function startSignalRefresh() {
-  stopSignalRefresh();
+  if (signalRefreshTimer || document.hidden) return;
   signalRefreshTimer = window.setInterval(loadSignalAreaCards, SIGNAL_REFRESH_MS);
 }
 
@@ -1074,55 +1244,92 @@ function getAdminPlanOptions(selectedPlanKey) {
   `).join("");
 }
 
-async function loadUniverses() {
-  universesStatus.textContent = "Loading universes...";
-  if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = true;
+function restoreCachedUniverses() {
+  const cached = readScopedSessionCache("universes", "current", UNIVERSE_CACHE_MAX_AGE_MS);
+  if (!cached || !Array.isArray(cached.payload?.universes)) {
+    return { restored: false, didNotifyUniverseChange: false };
+  }
 
-  try {
-    const data = await request("/api/universes");
-    knownUniverses = data.universes || [];
+  const didNotifyUniverseChange = applyUniverseCollection(cached.payload.universes, {
+    preferredUniverseId: cached.payload.selectedUniverseId,
+    statusSuffix: " Refreshing...",
+  });
+  return { restored: true, didNotifyUniverseChange };
+}
 
-    if (!knownUniverses.length) {
-      selectedUniverseId = "";
-      universeSelect.disabled = true;
-      universeSelect.innerHTML = `<option value="">Add your first game</option>`;
-      universesStatus.textContent = "Add a universe ID to connect your Roblox game.";
-      renderConnectedGames();
-      renderIntegrationStatusCard();
-      renderSetupChecklist();
-      updateSelectedUniverse();
-      loadSignalAreaCards();
-      return false;
-    }
+function applyUniverseCollection(universes, options = {}) {
+  const previousUniverseId = selectedUniverseId;
+  knownUniverses = Array.isArray(universes) ? universes : [];
 
+  if (!knownUniverses.length) {
+    selectedUniverseId = "";
+    universeSelect.disabled = true;
+    universeSelect.innerHTML = `<option value="">Add your first game</option>`;
+    universesStatus.textContent = `Add a universe ID to connect your Roblox game.${options.statusSuffix || ""}`;
+  } else {
     const availableIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
-    const previousUniverseId = selectedUniverseId;
-    if (!selectedUniverseId || !availableIds.has(selectedUniverseId)) {
+    const preferredUniverseId = String(options.preferredUniverseId || "");
+    if (preferredUniverseId && availableIds.has(preferredUniverseId)) {
+      selectedUniverseId = preferredUniverseId;
+    } else if (!selectedUniverseId || !availableIds.has(selectedUniverseId)) {
       selectedUniverseId = String(knownUniverses[0].id || "");
     }
 
     universeSelect.disabled = false;
     universeSelect.innerHTML = knownUniverses.map(renderUniverseOption).join("");
-    universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.`;
-    renderConnectedGames();
-    renderIntegrationStatusCard();
-    renderSetupChecklist();
-    updateSelectedUniverse();
+    universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.${options.statusSuffix || ""}`;
+  }
 
-    if (previousUniverseId !== selectedUniverseId) {
-      window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
-        detail: { universeId: selectedUniverseId },
-      }));
-      return true;
+  renderConnectedGames();
+  renderIntegrationStatusCard();
+  renderSetupChecklist();
+  updateSelectedUniverse();
+
+  const didChangeUniverse = previousUniverseId !== selectedUniverseId;
+  if (didChangeUniverse) {
+    selectedChatLogId = "";
+    loadedViews.clear();
+    window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
+      detail: { universeId: selectedUniverseId },
+    }));
+  }
+  return didChangeUniverse;
+}
+
+function cacheCurrentUniverses() {
+  writeScopedSessionCache("universes", "current", {
+    universes: knownUniverses,
+    selectedUniverseId,
+  });
+}
+
+async function loadUniverses(options = {}) {
+  const requestSequence = ++universeRequestSequence;
+  if (!options.background) universesStatus.textContent = "Loading universes...";
+  if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = true;
+
+  try {
+    const data = await request("/api/universes");
+    if (requestSequence !== universeRequestSequence || !authenticated) return false;
+
+    const didNotifyUniverseChange = applyUniverseCollection(data.universes || []);
+    cacheCurrentUniverses();
+    if (!knownUniverses.length) loadSignalAreaCards();
+    return didNotifyUniverseChange;
+  } catch (error) {
+    if (requestSequence !== universeRequestSequence) return false;
+    if (knownUniverses.length && options.background) {
+      universesStatus.textContent = `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}. Refresh failed: ${error.message}`;
+    } else {
+      universesStatus.textContent = error.message;
+      renderIntegrationStatusCard({ error: error.message });
+      renderSetupChecklist();
     }
     return false;
-  } catch (error) {
-    universesStatus.textContent = error.message;
-    renderIntegrationStatusCard({ error: error.message });
-    renderSetupChecklist();
-    return false;
   } finally {
-    if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = false;
+    if (requestSequence === universeRequestSequence && refreshIntegrationStatusButton) {
+      refreshIntegrationStatusButton.disabled = false;
+    }
   }
 }
 
@@ -1494,12 +1701,19 @@ function renderIntegrationSignal(label, active, count = null) {
 function selectUniverse(value) {
   const cleanValue = String(value || "").trim();
   const knownIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
+  const previousUniverseId = selectedUniverseId;
   selectedUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
+  if (selectedUniverseId === previousUniverseId) return;
+
+  signalAreaRequestState?.controller.abort();
+  signalAreaRequestState = null;
+  signalAreaRequestSequence += 1;
   selectedChatLogId = "";
   updateSelectedUniverse();
   renderAiChatWelcome();
   renderIntegrationStatusCard();
   renderSetupChecklist();
+  cacheCurrentUniverses();
   loadedViews.clear();
   loadActiveViewData(activeView, { force: true });
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
@@ -1507,10 +1721,12 @@ function selectUniverse(value) {
   }));
 }
 
-async function loadSignalAreaCards() {
+async function loadSignalAreaCards(options = {}) {
   if (!authenticated) return;
 
   if (!selectedUniverseId) {
+    signalAreaRequestState?.controller.abort();
+    signalAreaRequestState = null;
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
@@ -1518,22 +1734,55 @@ async function loadSignalAreaCards() {
     return;
   }
 
-  renderSignalLoading(movementAreaList, "movement");
-  renderSignalLoading(dropOffAreaList, "drop-off");
-  renderSignalLoading(deathAreaList, "death");
-  renderSignalLoading(chatAreaList, "chat");
-
   const query = buildSignalAreaQuery();
-  try {
-    const data = await request(`/api/area-clusters${query}`);
-    renderSignalAreasFromComputedPayload(data);
-  } catch (error) {
-    handleAuthError(error);
-    renderSignalError(movementAreaList, error.message);
-    renderSignalError(dropOffAreaList, error.message);
-    renderSignalError(deathAreaList, error.message);
-    renderSignalError(chatAreaList, error.message);
+  const requestUrl = `/api/area-clusters${query}`;
+  const cached = readScopedSessionCache("signal-areas", requestUrl, SIGNAL_CACHE_MAX_AGE_MS);
+  const hasCachedPayload = Boolean(cached?.payload?.signalAreas);
+  if (hasCachedPayload) renderSignalAreasFromComputedPayload(cached.payload);
+
+  if (!options.force && cached && Date.now() - cached.storedAt < SIGNAL_CACHE_FRESH_MS) {
+    return cached.payload;
   }
+
+  if (signalAreaRequestState?.key === requestUrl && !options.force) {
+    return signalAreaRequestState.promise;
+  }
+
+  signalAreaRequestState?.controller.abort();
+  if (!hasCachedPayload) {
+    renderSignalLoading(movementAreaList, "movement");
+    renderSignalLoading(dropOffAreaList, "drop-off");
+    renderSignalLoading(deathAreaList, "death");
+    renderSignalLoading(chatAreaList, "chat");
+  }
+
+  const controller = new AbortController();
+  const requestSequence = ++signalAreaRequestSequence;
+  const universeId = selectedUniverseId;
+  const promise = (async () => {
+    try {
+      const data = await request(requestUrl, { signal: controller.signal, dedupe: false });
+      if (requestSequence !== signalAreaRequestSequence || universeId !== selectedUniverseId) return null;
+      writeScopedSessionCache("signal-areas", requestUrl, data);
+      renderSignalAreasFromComputedPayload(data);
+      return data;
+    } catch (error) {
+      if (error.name === "AbortError" || requestSequence !== signalAreaRequestSequence) return null;
+      handleAuthError(error);
+      if (!hasCachedPayload) {
+        renderSignalError(movementAreaList, error.message);
+        renderSignalError(dropOffAreaList, error.message);
+        renderSignalError(deathAreaList, error.message);
+        renderSignalError(chatAreaList, error.message);
+      }
+      return null;
+    } finally {
+      if (signalAreaRequestState?.sequence === requestSequence) signalAreaRequestState = null;
+    }
+  })();
+
+  signalAreaRequestState = { key: requestUrl, sequence: requestSequence, controller, promise };
+  return promise;
 }
 
 function renderSignalAreasFromComputedPayload(payload) {
@@ -1699,42 +1948,65 @@ function updateSelectedUniverse() {
   }
 }
 
-async function loadChatLogs() {
+async function loadChatLogs(options = {}) {
   if (!authenticated) return;
 
+  const includeInsights = options.includeInsights !== false;
+  const universeId = selectedUniverseId;
+
   if (!selectedUniverseId) {
+    chatLogRequestState = null;
     chatLogsStatus.textContent = "Connect or select a Roblox game to view chat logs.";
     chatLogList.innerHTML = "";
-    loadChatInsights();
+    if (includeInsights) loadChatInsights();
     return;
   }
 
-  try {
-    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
-    const data = await request(`/api/chat-logs${query}`);
-    loadChatInsights();
-    if (!data.logs.length) {
-      chatLogsStatus.textContent = selectedUniverseId
-        ? "No chat logs yet. Start a live server with chat tracking enabled, then have a player send a message."
-        : "Connect or select a Roblox game to view chat logs.";
-      chatLogList.innerHTML = "";
-      return;
-    }
-
-    chatLogsStatus.textContent = selectedUniverseId
-      ? `Showing stored chat logs for universe ${selectedUniverseId}.`
-      : "Select a universe with data to view chat logs.";
-    chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
-    highlightSelectedChatLog({ scroll: false });
-  } catch (error) {
-    handleAuthError(error);
-    chatLogsStatus.textContent = formatRequestError(error);
-    loadChatInsights();
+  if (chatLogRequestState?.universeId === universeId) {
+    if (includeInsights) chatLogRequestState.includeInsights = true;
+    return chatLogRequestState.promise;
   }
+
+  const requestSequence = ++chatLogRequestSequence;
+  const requestState = { universeId, requestSequence, includeInsights, promise: null };
+  const promise = (async () => {
+    try {
+      const query = `?universeId=${encodeURIComponent(universeId)}`;
+      const data = await request(`/api/chat-logs${query}`);
+      if (requestSequence !== chatLogRequestSequence || universeId !== selectedUniverseId) return;
+      if (requestState.includeInsights) loadChatInsights();
+      if (!data.logs.length) {
+        chatLogsStatus.textContent = selectedUniverseId
+          ? "No chat logs yet. Start a live server with chat tracking enabled, then have a player send a message."
+          : "Connect or select a Roblox game to view chat logs.";
+        chatLogList.innerHTML = "";
+        return;
+      }
+
+      chatLogsStatus.textContent = selectedUniverseId
+        ? `Showing stored chat logs for universe ${selectedUniverseId}.`
+        : "Select a universe with data to view chat logs.";
+      chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
+      highlightSelectedChatLog({ scroll: false });
+    } catch (error) {
+      if (requestSequence !== chatLogRequestSequence || universeId !== selectedUniverseId) return;
+      handleAuthError(error);
+      chatLogsStatus.textContent = formatRequestError(error);
+      if (requestState.includeInsights) loadChatInsights();
+    } finally {
+      if (chatLogRequestState === requestState) chatLogRequestState = null;
+    }
+  })();
+  requestState.promise = promise;
+  chatLogRequestState = requestState;
+  return promise;
 }
 
 async function loadChatInsights() {
   if (!authenticated) return;
+
+  const requestSequence = ++chatInsightsRequestSequence;
+  const universeId = selectedUniverseId;
 
   if (!selectedUniverseId) {
     chatInsightsStatus.textContent = "Connect or select a Roblox game before running AI Insights.";
@@ -1744,11 +2016,13 @@ async function loadChatInsights() {
   }
 
   try {
-    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
+    const query = `?universeId=${encodeURIComponent(universeId)}`;
     const data = await request(`/api/chat-insights${query}`);
+    if (requestSequence !== chatInsightsRequestSequence || universeId !== selectedUniverseId) return;
     renderChatInsights(data);
-    await loadAiReportHistory();
+    loadAiReportHistory();
   } catch (error) {
+    if (requestSequence !== chatInsightsRequestSequence || universeId !== selectedUniverseId) return;
     handleAuthError(error);
     chatInsightsStatus.textContent = formatRequestError(error);
     commonQuestionList.innerHTML = "";
@@ -1759,11 +2033,16 @@ async function loadChatInsights() {
 async function loadAiReportHistory() {
   if (!authenticated || !selectedUniverseId || !aiReportSelect) return;
 
+  const requestSequence = ++aiReportHistoryRequestSequence;
+  const universeId = selectedUniverseId;
+
   try {
-    const query = `?universeId=${encodeURIComponent(selectedUniverseId)}`;
+    const query = `?universeId=${encodeURIComponent(universeId)}`;
     const data = await request(`/api/ai-insights/reports${query}`);
+    if (requestSequence !== aiReportHistoryRequestSequence || universeId !== selectedUniverseId) return;
     renderAiReportHistory(data.reports || []);
   } catch (error) {
+    if (requestSequence !== aiReportHistoryRequestSequence || universeId !== selectedUniverseId) return;
     handleAuthError(error);
     renderAiReportHistory([]);
   }
@@ -2254,16 +2533,65 @@ function showAuthError() {
   history.replaceState(null, "", "/");
 }
 
-async function request(url, options) {
-  const response = await fetch(url, options);
-  const payload = await response.json();
-  if (!response.ok) {
-    const error = new Error(payload.error || "Request failed");
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
+function request(url, options = {}) {
+  const { dedupe = true, ...fetchOptions } = options || {};
+  const method = String(fetchOptions.method || "GET").toUpperCase();
+  const canDedupe = method === "GET" && dedupe && !fetchOptions.signal;
+  const requestKey = `${method}:${url}`;
+  if (canDedupe && inFlightGetRequests.has(requestKey)) {
+    return inFlightGetRequests.get(requestKey);
   }
-  return payload;
+
+  const requestPromise = performJsonRequest(url, method, fetchOptions);
+  if (!canDedupe) return requestPromise;
+
+  const trackedPromise = requestPromise.finally(() => {
+    if (inFlightGetRequests.get(requestKey) === trackedPromise) {
+      inFlightGetRequests.delete(requestKey);
+    }
+  });
+  inFlightGetRequests.set(requestKey, trackedPromise);
+  return trackedPromise;
+}
+
+async function performJsonRequest(url, method, options) {
+  const startedAt = performance.now();
+  try {
+    const response = await fetch(url, {
+      ...options,
+      method,
+      cache: options.cache || "no-store",
+      credentials: options.credentials || "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    const responseText = await response.text();
+    let payload = {};
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText);
+      } catch {
+        const error = new Error(response.ok ? "Server returned an invalid response" : `Request failed (${response.status})`);
+        error.status = response.status;
+        throw error;
+      }
+    }
+
+    if (!response.ok) {
+      const error = new Error(payload.error || "Request failed");
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+    return payload;
+  } finally {
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (durationMs >= 2000) {
+      console.warn(`[RoAnalytics] Slow request (${durationMs} ms): ${method} ${url}`);
+    }
+  }
 }
 
 function formatRequestError(error) {

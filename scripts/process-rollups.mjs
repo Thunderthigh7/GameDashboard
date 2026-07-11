@@ -1,7 +1,11 @@
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand } from "@aws-sdk/client-s3";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { loadLocalEnv } from "../lib/env.mjs";
-import { getObjectStorageClient, getObjectStorageConfig } from "../lib/object-storage.mjs";
+import {
+  destroyObjectStorageClient,
+  getObjectStorageClient,
+  getObjectStorageConfig,
+} from "../lib/object-storage.mjs";
 
 loadLocalEnv();
 
@@ -11,29 +15,64 @@ const MAX_CHAT_LOGS = cleanPositiveInteger(process.env.ROLLUP_MAX_CHAT_LOGS, 250
 const MAX_EVENT_SAMPLES = cleanPositiveInteger(process.env.ROLLUP_MAX_EVENT_SAMPLES, 5000);
 const MAX_MOVEMENT_CELLS = cleanPositiveInteger(process.env.ROLLUP_MAX_MOVEMENT_CELLS, 5000);
 const MOVEMENT_GRID_SIZE = cleanPositiveInteger(process.env.ROLLUP_MOVEMENT_GRID_SIZE, 12);
+const READ_CONCURRENCY = cleanBoundedInteger(process.env.ROLLUP_READ_CONCURRENCY, 8, 1, 32);
 const UNIVERSE_IDS = parseUniverseIds(process.env.ROLLUP_UNIVERSE_IDS || "");
 
 const objectStorageConfig = getObjectStorageConfig();
 const objectStorageClient = await getObjectStorageClient();
+process.once("exit", destroyObjectStorageClient);
 const sinceMs = Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000;
 const rawObjectKeys = await listRecentRawObjectKeys();
 const rollupsByUniverseId = new Map();
+const rawObjectErrors = [];
+const failedRawObjectUniverseIds = new Set();
+let failedRawObjectCount = 0;
+let skipAllRollupWrites = false;
 
-for (const objectKey of rawObjectKeys) {
-  const body = await readGzipObject(objectKey);
-  ingestJsonLines(body, objectKey);
+for (let startIndex = 0; startIndex < rawObjectKeys.length; startIndex += READ_CONCURRENCY) {
+  const batchKeys = rawObjectKeys.slice(startIndex, startIndex + READ_CONCURRENCY);
+  const batchResults = await Promise.all(batchKeys.map(async (objectKey) => {
+    try {
+      return { objectKey, body: await readGzipObject(objectKey) };
+    } catch (error) {
+      failedRawObjectCount += 1;
+      const failedUniverseId = getRawUniverseId(objectKey);
+      if (failedUniverseId > 0) {
+        failedRawObjectUniverseIds.add(failedUniverseId);
+      } else {
+        skipAllRollupWrites = true;
+      }
+      if (rawObjectErrors.length < 50) {
+        rawObjectErrors.push({
+          objectKey,
+          error: error?.message || String(error),
+        });
+      }
+      return null;
+    }
+  }));
+
+  for (const result of batchResults) {
+    if (result) ingestJsonLines(result.body, result.objectKey);
+  }
 }
 
 for (const rollup of rollupsByUniverseId.values()) {
   finalizeRollup(rollup);
+  if (skipAllRollupWrites || failedRawObjectUniverseIds.has(rollup.universeId)) continue;
   await writeRollup(rollup);
 }
 
 console.log(JSON.stringify({
-  ok: true,
+  ok: failedRawObjectCount === 0,
   rawObjectCount: rawObjectKeys.length,
+  failedRawObjectCount,
+  failedRawObjectUniverseIds: [...failedRawObjectUniverseIds].sort((a, b) => a - b),
+  skipAllRollupWrites,
+  readConcurrency: READ_CONCURRENCY,
   universeCount: rollupsByUniverseId.size,
   lookbackHours: LOOKBACK_HOURS,
+  errors: rawObjectErrors,
   universes: [...rollupsByUniverseId.values()].map((rollup) => ({
     universeId: rollup.universeId,
     rawObjectCount: rollup.rawObjectCount,
@@ -41,9 +80,19 @@ console.log(JSON.stringify({
     movementSampleCount: rollup.movement.samples.length,
     deathSampleCount: rollup.deaths.samples.length,
     leaveSampleCount: rollup.leaves.samples.length,
+    rollupWriteSkipped: skipAllRollupWrites || failedRawObjectUniverseIds.has(rollup.universeId),
+    rollupWriteSkipReason: skipAllRollupWrites
+      ? "unparseable_failed_raw_object_key"
+      : (failedRawObjectUniverseIds.has(rollup.universeId) ? "failed_raw_object" : null),
     latestObjectKey: `rollups/${rollup.universeId}/latest.json`,
   })),
 }, null, 2));
+
+if (failedRawObjectCount > 0) {
+  process.exitCode = 1;
+}
+
+destroyObjectStorageClient();
 
 async function listRecentRawObjectKeys() {
   const prefixes = UNIVERSE_IDS.length
@@ -181,6 +230,7 @@ function addChatEvent(rollup, event) {
     sampledAt: cleanTimestamp(event.sentAt) || cleanTimestamp(event.receivedAt),
     receivedAt: cleanTimestamp(event.receivedAt),
   });
+  trimNewestSamples(rollup.chatLogs, MAX_CHAT_LOGS, compareChatSamples);
 }
 
 function addMovementEvent(rollup, event) {
@@ -275,19 +325,20 @@ function addEventSample(target, event, timestampField) {
     sampledAt: cleanTimestamp(event.sampledAt) || cleanTimestamp(event[timestampField]) || cleanTimestamp(event.receivedAt),
     receivedAt: cleanTimestamp(event.receivedAt),
   });
+  trimNewestSamples(target.samples, MAX_EVENT_SAMPLES, compareEventSamples);
 }
 
 function finalizeRollup(rollup) {
   rollup.rawObjectCount = rollup.rawObjectKeys.size;
   rollup.rawObjectKeys = [...rollup.rawObjectKeys].sort();
-  rollup.chatLogs.sort((a, b) => b.sentAt - a.sentAt || b.receivedAt - a.receivedAt);
+  rollup.chatLogs.sort(compareChatSamples);
   rollup.chatLogs = rollup.chatLogs.slice(0, MAX_CHAT_LOGS);
   rollup.movement.samples = [...rollup.movement.cells.values()]
     .sort((a, b) => b.movementCount - a.movementCount || b.sampledAt - a.sampledAt)
     .slice(0, MAX_MOVEMENT_CELLS);
   delete rollup.movement.cells;
-  rollup.deaths.samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
-  rollup.leaves.samples.sort((a, b) => b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt);
+  rollup.deaths.samples.sort(compareEventSamples);
+  rollup.leaves.samples.sort(compareEventSamples);
   rollup.deaths.samples = rollup.deaths.samples.slice(0, MAX_EVENT_SAMPLES);
   rollup.leaves.samples = rollup.leaves.samples.slice(0, MAX_EVENT_SAMPLES);
 }
@@ -337,6 +388,11 @@ function parseUniverseIds(value) {
     .filter((item) => item > 0);
 }
 
+function getRawUniverseId(objectKey) {
+  const match = String(objectKey || "").match(/^raw\/(\d+)\//);
+  return cleanPositiveInteger(match?.[1], 0);
+}
+
 function cleanString(value, maxLength) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
@@ -358,3 +414,23 @@ function cleanTimestamp(value) {
   return number < 10_000_000_000 ? number * 1000 : number;
 }
 
+function cleanBoundedInteger(value, fallback, minimum, maximum) {
+  if (value === undefined || value === null || String(value).trim() === "") return fallback;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) return fallback;
+  return Math.min(maximum, Math.max(minimum, number));
+}
+
+function compareChatSamples(a, b) {
+  return b.sentAt - a.sentAt || b.receivedAt - a.receivedAt;
+}
+
+function compareEventSamples(a, b) {
+  return b.sampledAt - a.sampledAt || b.receivedAt - a.receivedAt;
+}
+
+function trimNewestSamples(samples, maximum, compare) {
+  if (samples.length <= maximum * 2) return;
+  samples.sort(compare);
+  samples.length = maximum;
+}
