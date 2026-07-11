@@ -127,7 +127,10 @@ if (canvas) {
   }
   window.addEventListener("dashboard:analyticsReady", () => {
     resizeScene();
-    if (activeDashboardView === "overview") startHeatmapRefresh();
+    if (activeDashboardView !== "overview" || document.hidden) return;
+    startHeatmapRefresh();
+    startAnimation();
+    if (!renderPendingAreaAnalysis()) loadHeatmap();
   });
   window.addEventListener("dashboard:authChanged", (event) => {
     if (!event.detail?.authenticated) {

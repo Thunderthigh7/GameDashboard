@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260711-1">
+    <link rel="stylesheet" href="/styles.css?v=20260711-2">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -58,14 +58,14 @@
               <div class="fieldGroup compactField dateDisplayField">
                 <label for="movementFromFilter">From</label>
                 <div class="dateDisplayControl">
-                  <span id="movementFromDisplay">Select start date</span>
+                  <span id="movementFromDisplay">All data</span>
                   <input id="movementFromFilter" type="datetime-local">
                 </div>
               </div>
               <div class="fieldGroup compactField dateDisplayField">
                 <label for="movementToFilter">To</label>
                 <div class="dateDisplayControl">
-                  <span id="movementToDisplay">Select end date</span>
+                  <span id="movementToDisplay">Today</span>
                   <input id="movementToFilter" type="datetime-local">
                 </div>
               </div>
@@ -113,7 +113,7 @@
                 <section class="panel movementHeatmap mapPanel" id="heatmaps">
                   <div class="heatmapToolbar">
                     <div class="heatmapPresets" aria-label="Heatmap mode">
-                      <button class="miniButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
+                      <button class="miniButton aiAnalysisModeButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
                       <button class="miniButton" type="button" data-heatmap-mode="movement">Movement</button>
                       <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
                       <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
@@ -134,7 +134,7 @@
                     </div>
                     <div class="heatmapOverlay">
                       <strong id="movementSampleCount">0 samples</strong>
-                      <span id="movementHeatmapStatus">Waiting for movement samples...</span>
+                      <span id="movementHeatmapStatus">Loading AI analysis...</span>
                     </div>
                     <div class="mapViewDock">
                       <button class="dockIconButton areasDockButton active" type="button" data-heatmap-render="points" aria-label="Areas view" title="Areas">
@@ -182,7 +182,7 @@
                       <p><span></span>Live</p>
                     </div>
                   </div>
-                  <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
+                  <p class="status" id="chatInsightsStatus">Checking analytics data...</p>
                   <div class="chatBotMessages" id="aiChatMessages">
                     <article class="botMessage assistantMessage">
                       <span aria-hidden="true"></span>
@@ -195,7 +195,7 @@
                     <div class="typingDots" id="aiChatTyping" aria-hidden="true" hidden><span></span><span></span><span></span></div>
                   </div>
                   <div class="chatComposer">
-                    <input id="aiChatInput" type="text" value="" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
+                    <input id="aiChatInput" type="text" value="" maxlength="800" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
                     <button id="aiChatSendButton" type="button" aria-label="Send chat prompt"></button>
                   </div>
                   <small>AI responses may not always be accurate.</small>
@@ -499,6 +499,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260711-1"></script>
+    <script defer src="/app.js?v=20260711-2"></script>
   </body>
 </html>

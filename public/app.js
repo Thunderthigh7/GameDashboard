@@ -127,8 +127,10 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260711-1";
+const DASHBOARD_ASSET_VERSION = "20260711-2";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
+const MAX_AI_CHAT_PROMPT_CHARS = 800;
+const MAX_AI_CHAT_RENDER_CHARS = 6000;
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -176,6 +178,7 @@ async function init() {
   showAuthError();
   applyStoredLayoutSizes();
   bindEvents();
+  initializeDateFilterDefaults();
   syncDateFilterDisplays();
   await checkAuth();
 }
@@ -622,7 +625,7 @@ function setAuthenticated(value, user = null) {
     }
     if (ownedGamesStatus) ownedGamesStatus.textContent = "Sign in to load Roblox games.";
     chatLogsStatus.textContent = "Sign in to view chat logs.";
-    chatInsightsStatus.textContent = "Sign in to view chat insights.";
+    chatInsightsStatus.textContent = "Sign in to use AI analysis.";
     setAiChatBusy(false);
     renderAiChatWelcome();
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
@@ -1433,6 +1436,7 @@ function applyUniverseCollection(universes, options = {}) {
   renderIntegrationStatusCard();
   renderSetupChecklist();
   updateSelectedUniverse();
+  updateAiReadinessStatus();
 
   const didChangeUniverse = previousUniverseId !== selectedUniverseId;
   if (didChangeUniverse) {
@@ -2543,7 +2547,7 @@ function buildAiInsightsQuery() {
 async function sendAiChatPrompt() {
   if (!aiChatInput || !aiChatSendButton || aiChatBusy) return;
 
-  const prompt = aiChatInput.value.trim();
+  const prompt = aiChatInput.value.trim().slice(0, MAX_AI_CHAT_PROMPT_CHARS);
   if (!prompt) return;
 
   if (!selectedUniverseId) {
@@ -2611,16 +2615,14 @@ async function requestAiChatStream(url, payload, onDelta) {
 
   if (!response.ok) {
     const responseText = await response.text();
-    let message = `Request failed (${response.status})`;
-    try {
-      const errorPayload = responseText ? JSON.parse(responseText) : {};
-      message = errorPayload.error || message;
-    } catch {
-      if (responseText) message = responseText;
-    }
+    const message = getSafeAiChatHttpError(response, responseText);
     const error = new Error(message);
     error.status = response.status;
     throw error;
+  }
+  const contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
+  if (!contentType.includes("text/event-stream")) {
+    throw new Error("The AI service returned an invalid response. Please retry in a moment.");
   }
   if (!response.body) throw new Error("AI response stream was unavailable.");
 
@@ -2650,7 +2652,10 @@ async function requestAiChatStream(url, payload, onDelta) {
     } else if (eventName === "done") {
       result = eventPayload;
     } else if (eventName === "error") {
-      throw new Error(eventPayload.error || "AI response failed.");
+      throw new Error(cleanClientErrorMessage(
+        eventPayload.error,
+        "The AI response was interrupted. Please retry.",
+      ));
     }
   };
 
@@ -2671,6 +2676,43 @@ async function requestAiChatStream(url, payload, onDelta) {
   return result;
 }
 
+function getSafeAiChatHttpError(response, responseText) {
+  const status = Number(response?.status) || 0;
+  const contentType = String(response?.headers?.get("Content-Type") || "").toLowerCase();
+  const fallback = status >= 500
+    ? "The AI service is temporarily unavailable. Please retry in a moment."
+    : `The AI request failed${status ? ` (${status})` : ""}. Please retry.`;
+
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = responseText ? JSON.parse(responseText) : {};
+      const message = typeof payload?.error === "string"
+        ? payload.error
+        : typeof payload?.error?.message === "string"
+          ? payload.error.message
+          : "";
+      return cleanClientErrorMessage(message, fallback);
+    } catch {
+      return fallback;
+    }
+  }
+
+  if (contentType.includes("text/html") || /<!doctype\s+html|<html[\s>]/i.test(responseText || "")) {
+    return fallback;
+  }
+  return cleanClientErrorMessage(responseText, fallback);
+}
+
+function cleanClientErrorMessage(value, fallback) {
+  const message = String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!message) return fallback;
+  return message.length > 300 ? `${message.slice(0, 297)}...` : message;
+}
+
 function appendAiChatMessage(role, message) {
   if (!aiChatMessages) return null;
 
@@ -2681,14 +2723,14 @@ function appendAiChatMessage(role, message) {
   if (role === "user") {
     article.innerHTML = `
       <strong>${escapeHtml(authenticatedUser?.username || "You")} <small>${escapeHtml(formatDateTime(Date.now()))}</small></strong>
-      <p>${escapeHtml(message)}</p>
+      <p>${escapeHtml(limitAiChatMessage(message, MAX_AI_CHAT_PROMPT_CHARS))}</p>
     `;
   } else {
     article.innerHTML = `
       <span aria-hidden="true"></span>
       <div>
         <strong>RoAnalytics AI <small>${escapeHtml(formatDateTime(Date.now()))}</small></strong>
-        <p>${escapeHtml(message)}</p>
+        <p>${escapeHtml(limitAiChatMessage(message))}</p>
       </div>
     `;
   }
@@ -2701,8 +2743,13 @@ function appendAiChatMessage(role, message) {
 function updateAiChatMessage(article, message) {
   const paragraph = article?.querySelector("p");
   if (!paragraph) return;
-  paragraph.textContent = message;
+  paragraph.textContent = limitAiChatMessage(message);
   aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+function limitAiChatMessage(value, maxChars = MAX_AI_CHAT_RENDER_CHARS) {
+  const message = String(value || "");
+  return message.length > maxChars ? `${message.slice(0, Math.max(maxChars - 3, 0))}...` : message;
 }
 
 function setAiChatBusy(isBusy) {
@@ -2720,6 +2767,25 @@ function renderAiChatWelcome() {
   }
   if (aiChatInput) aiChatInput.value = "";
   if (aiChatTyping) aiChatTyping.hidden = true;
+  updateAiReadinessStatus();
+}
+
+function updateAiReadinessStatus() {
+  if (!chatInsightsStatus) return;
+  if (!authenticated) {
+    chatInsightsStatus.textContent = "Sign in to use AI analysis.";
+    return;
+  }
+  if (!selectedUniverseId) {
+    chatInsightsStatus.textContent = "Connect or select a Roblox game.";
+    return;
+  }
+
+  const selectedUniverse = knownUniverses.find((universe) => String(universe.id || "") === selectedUniverseId);
+  const hasAnyData = Number(selectedUniverse?.totalSamples || 0) > 0
+    || Number(selectedUniverse?.lastSeenAt || 0) > 0
+    || Boolean(selectedUniverse?.hasMapSnapshot);
+  chatInsightsStatus.textContent = hasAnyData ? "Ready" : "Waiting for analytics data...";
 }
 
 function getDateTimeMs(value) {
@@ -2728,13 +2794,26 @@ function getDateTimeMs(value) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function initializeDateFilterDefaults() {
+  if (movementToFilter && !movementToFilter.value) {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 0, 0);
+    movementToFilter.value = toDateTimeLocalValue(endOfToday);
+  }
+}
+
+function toDateTimeLocalValue(date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+  return localDate.toISOString().slice(0, 16);
+}
+
 function syncDateFilterDisplays() {
   if (movementFromDisplay) {
-    movementFromDisplay.textContent = formatDateFilterDisplay(movementFromFilter?.value, "Select start date");
+    movementFromDisplay.textContent = formatDateFilterDisplay(movementFromFilter?.value, "All data");
   }
 
   if (movementToDisplay) {
-    movementToDisplay.textContent = formatDateFilterDisplay(movementToFilter?.value, "Select end date");
+    movementToDisplay.textContent = formatDateFilterDisplay(movementToFilter?.value, "No end date");
   }
 }
 
@@ -2759,15 +2838,12 @@ function renderChatInsights(data) {
   chatInsightsMode.textContent = data.mode === "ai" ? "AI analysis" : "Not analyzed";
 
   if (!data.questions.length) {
-    chatInsightsStatus.textContent = data.sourceLogCount
-      ? `No saved chat question groups yet. ${data.questionLikeCount || 0} question-like messages are available; AI Insights can still use movement, death, and leave samples.`
-      : "No chat question groups yet. AI Insights can still use movement, death, and leave samples.";
+    updateAiReadinessStatus();
     commonQuestionList.innerHTML = "";
     return;
   }
 
-  const generatedText = data.generatedAt ? ` Last run: ${formatDateTime(data.generatedAt)}.` : "";
-  chatInsightsStatus.textContent = `AI grouped ${data.questions.length} question theme${data.questions.length === 1 ? "" : "s"} from ${data.questionLikeCount || 0} question-like messages.${generatedText}`;
+  updateAiReadinessStatus();
   commonQuestionList.innerHTML = data.questions.map(renderCommonQuestion).join("");
 }
 

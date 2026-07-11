@@ -1322,12 +1322,13 @@ body.isResizingLayout {
 .heatmapToolbar {
   position: absolute;
   top: 22px;
-  left: 50%;
+  left: 22px;
+  right: 22px;
   z-index: 5;
   display: flex;
   justify-content: center;
   margin: 0;
-  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .heatmapPresets {
@@ -1335,6 +1336,13 @@ body.isResizingLayout {
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+  pointer-events: auto;
+}
+
+.aiAnalysisModeButton {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .heatmapFilters {
@@ -1743,6 +1751,8 @@ body.isResizingLayout {
 .botMessage {
   display: grid;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
   color: var(--nav-text);
   line-height: 1.55;
 }
@@ -1759,6 +1769,10 @@ body.isResizingLayout {
 }
 
 .botMessage p {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: pre-wrap;
 }
 
@@ -2642,8 +2656,8 @@ body.isResizingLayout {
   }
 
   .heatmapToolbar {
-    width: max-content;
-    max-width: calc(100% - 44px);
+    width: auto;
+    max-width: none;
   }
 
   .adminUserMeta {
@@ -2736,7 +2750,15 @@ body.isResizingLayout {
 
   .heatmapToolbar {
     top: 18px;
-    width: calc(100% - 36px);
+    left: 18px;
+    right: 18px;
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .heatmapPresets {
+    width: calc(100% - 130px);
+    justify-content: flex-start;
   }
 
   .heatmapLegend {
