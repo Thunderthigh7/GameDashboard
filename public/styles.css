@@ -1716,6 +1716,10 @@ small,
   font-size: 13px;
 }
 
+.botMessage p {
+  white-space: pre-wrap;
+}
+
 .botMessage small,
 .userMessage small {
   margin-left: 7px;
@@ -1776,6 +1780,12 @@ small,
   border-radius: 8px;
   background: linear-gradient(135deg, #8f48ff, #6428ee);
   cursor: pointer;
+}
+
+.chatComposer input:disabled,
+.chatComposer button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .chatComposer button::before {

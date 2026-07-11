@@ -182,24 +182,20 @@
                     <button class="miniIconButton" type="button" aria-label="Filter chat analysis"></button>
                   </div>
                   <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
-                  <div class="chatBotMessages">
+                  <div class="chatBotMessages" id="aiChatMessages">
                     <article class="botMessage assistantMessage">
                       <span aria-hidden="true"></span>
                       <div>
-                        <strong>RoAnalytics AI <small>10:30 AM</small></strong>
+                        <strong>RoAnalytics AI <small>Ready</small></strong>
                         <p>Welcome. Ask me anything about player behavior, traffic patterns, or game insights.</p>
                       </div>
                     </article>
-                    <article class="botMessage userMessage">
-                      <strong>homie106 <small>10:31 AM</small></strong>
-                      <p>Show me the most active areas in my game</p>
-                    </article>
                     <div class="commonQuestionList" id="commonQuestionList"></div>
-                    <div class="typingDots" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <div class="typingDots" id="aiChatTyping" aria-hidden="true" hidden><span></span><span></span><span></span></div>
                   </div>
                   <div class="chatComposer">
-                    <input type="text" value="" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
-                    <button type="button" aria-label="Send chat prompt"></button>
+                    <input id="aiChatInput" type="text" value="" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
+                    <button id="aiChatSendButton" type="button" aria-label="Send chat prompt"></button>
                   </div>
                   <small>AI responses may not always be accurate.</small>
                   <span class="insightMode" id="chatInsightsMode">Not analyzed</span>

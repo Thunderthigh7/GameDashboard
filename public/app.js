@@ -71,6 +71,10 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
+const aiChatMessages = document.querySelector("#aiChatMessages");
+const aiChatInput = document.querySelector("#aiChatInput");
+const aiChatSendButton = document.querySelector("#aiChatSendButton");
+const aiChatTyping = document.querySelector("#aiChatTyping");
 const runChatInsightsButton = document.querySelector("#runChatInsightsButton");
 const aiAutomationToggle = document.querySelector("#aiAutomationToggle");
 const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
@@ -102,6 +106,7 @@ let authenticated = false;
 let authenticatedUser = null;
 let lastAdminPlans = [];
 let activeView = getViewFromHash();
+let aiChatBusy = false;
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -158,6 +163,12 @@ function bindEvents() {
   });
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
   refreshChatLogsButton.addEventListener("click", loadChatLogs);
+  aiChatSendButton?.addEventListener("click", sendAiChatPrompt);
+  aiChatInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    sendAiChatPrompt();
+  });
   refreshMovementButton?.addEventListener("click", loadSignalAreaCards);
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
@@ -301,6 +312,8 @@ function setAuthenticated(value, user = null) {
     if (ownedGamesStatus) ownedGamesStatus.textContent = "Sign in to load Roblox games.";
     chatLogsStatus.textContent = "Sign in to view chat logs.";
     chatInsightsStatus.textContent = "Sign in to view chat insights.";
+    setAiChatBusy(false);
+    renderAiChatWelcome();
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
     if (adminNavLink) adminNavLink.hidden = true;
     if (adminUserList) adminUserList.innerHTML = "";
@@ -1374,6 +1387,7 @@ function selectUniverse(value) {
   selectedUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
   selectedChatLogId = "";
   updateSelectedUniverse();
+  renderAiChatWelcome();
   renderIntegrationStatusCard();
   renderSetupChecklist();
   loadAiAutomationSettings();
@@ -1808,6 +1822,84 @@ function buildAiInsightsQuery() {
 
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+async function sendAiChatPrompt() {
+  if (!aiChatInput || !aiChatSendButton || aiChatBusy) return;
+
+  const prompt = aiChatInput.value.trim();
+  if (!prompt) return;
+
+  if (!selectedUniverseId) {
+    chatInsightsStatus.textContent = "Select a universe before asking the AI chatbot.";
+    return;
+  }
+
+  appendAiChatMessage("user", prompt);
+  aiChatInput.value = "";
+  setAiChatBusy(true);
+  chatInsightsStatus.textContent = "Asking AI about current dashboard data...";
+
+  try {
+    const data = await request(`/api/ai-chat${buildAiInsightsQuery()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    appendAiChatMessage("assistant", data.answer || "I could not find an answer in the current data.");
+    chatInsightsStatus.textContent = data.model
+      ? `AI answer generated from current dashboard data using ${data.model}.`
+      : "AI answer generated from current dashboard data.";
+  } catch (error) {
+    handleAuthError(error);
+    const message = formatRequestError(error);
+    appendAiChatMessage("assistant", message);
+    chatInsightsStatus.textContent = message;
+  } finally {
+    setAiChatBusy(false);
+  }
+}
+
+function appendAiChatMessage(role, message) {
+  if (!aiChatMessages) return;
+
+  const article = document.createElement("article");
+  article.dataset.aiChatMessage = role;
+  article.className = role === "user" ? "botMessage userMessage" : "botMessage assistantMessage";
+
+  if (role === "user") {
+    article.innerHTML = `
+      <strong>${escapeHtml(authenticatedUser?.username || "You")} <small>${escapeHtml(formatDateTime(Date.now()))}</small></strong>
+      <p>${escapeHtml(message)}</p>
+    `;
+  } else {
+    article.innerHTML = `
+      <span aria-hidden="true"></span>
+      <div>
+        <strong>RoAnalytics AI <small>${escapeHtml(formatDateTime(Date.now()))}</small></strong>
+        <p>${escapeHtml(message)}</p>
+      </div>
+    `;
+  }
+
+  aiChatMessages.insertBefore(article, aiChatTyping || null);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+function setAiChatBusy(isBusy) {
+  aiChatBusy = Boolean(isBusy);
+  if (aiChatSendButton) aiChatSendButton.disabled = aiChatBusy;
+  if (aiChatInput) aiChatInput.disabled = aiChatBusy || !authenticated;
+  if (aiChatTyping) aiChatTyping.hidden = !aiChatBusy;
+}
+
+function renderAiChatWelcome() {
+  if (!aiChatMessages) return;
+  for (const message of aiChatMessages.querySelectorAll("[data-ai-chat-message]")) {
+    message.remove();
+  }
+  if (aiChatInput) aiChatInput.value = "";
+  if (aiChatTyping) aiChatTyping.hidden = true;
 }
 
 function getDateTimeMs(value) {

@@ -64,9 +64,13 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-mini";
 const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || DEFAULT_OPENAI_INSIGHTS_MODEL;
 const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
+const OPENAI_CHATBOT_MODEL = process.env.OPENAI_CHATBOT_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
 const OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS", 1600);
 const OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS", 1800);
+const OPENAI_CHATBOT_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_CHATBOT_MAX_OUTPUT_TOKENS", 700);
 const OPENAI_TOKEN_ESTIMATE_CHARS_PER_TOKEN = cleanEnvInteger("OPENAI_TOKEN_ESTIMATE_CHARS_PER_TOKEN", 3);
+const MAX_AI_CHAT_PROMPT_CHARS = cleanEnvInteger("MAX_AI_CHAT_PROMPT_CHARS", 800);
+const MAX_AI_CHAT_CONTEXT_CHARS = cleanEnvInteger("MAX_AI_CHAT_CONTEXT_CHARS", 12_000);
 const USAGE_LIMITS = {
   aiRequestsPerMonth: cleanEnvInteger("USAGE_AI_REQUESTS_PER_MONTH", 25),
   openAiTokensPerMonth: cleanEnvInteger("USAGE_OPENAI_TOKENS_PER_MONTH", 500_000),
@@ -496,6 +500,32 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (url.pathname === "/api/ai-chat" && req.method === "POST") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      let body;
+      try {
+        body = await readJsonBody(req, 12 * 1024);
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
+
+      try {
+        const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
+        await assertUsageAvailable(usageContext, "aiRequests", 1);
+        await assertUsageAvailable(usageContext, "openAiTokens", 1);
+        return sendJson(res, 200, await answerAiChat({
+          universeId: url.searchParams.get("universeId"),
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+          target: url.searchParams.get("target") || url.searchParams.get("player"),
+          prompt: body.prompt,
+        }, usageContext));
+      } catch (error) {
+        if (error.code === "USAGE_LIMIT") return sendUsageLimitError(res, error);
+        return sendJson(res, 400, { error: error.message });
+      }
+    }
+
     if (url.pathname === "/api/movement-heatmap" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getMovementHeatmapFromQuery(url.searchParams));
@@ -615,6 +645,7 @@ function getAiHealthStatus() {
     defaultModel: DEFAULT_OPENAI_INSIGHTS_MODEL,
     chatInsights: getOpenAiModelHealth(OPENAI_CHAT_INSIGHTS_MODEL),
     areaInsights: getOpenAiModelHealth(OPENAI_AREA_INSIGHTS_MODEL),
+    chatbot: getOpenAiModelHealth(OPENAI_CHATBOT_MODEL),
     approvedModels: Object.entries(OPENAI_MODEL_PRICING)
       .filter(([, pricing]) => pricing.approved)
       .map(([model, pricing]) => ({
@@ -3990,6 +4021,256 @@ async function analyzeAllAiInsights(rawFilters = {}, usageContext = {}) {
 
   await persistAiInsightsReport(report);
   return report;
+}
+
+async function answerAiChat(rawFilters = {}, usageContext = {}) {
+  const prompt = cleanString(rawFilters.prompt, MAX_AI_CHAT_PROMPT_CHARS);
+  if (!prompt) {
+    throw new Error("Ask a question first.");
+  }
+
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
+  }
+
+  const filters = await normalizeMovementFilters(rawFilters);
+  if (!filters.universeId) {
+    throw new Error("Pick a universe before asking the AI chatbot.");
+  }
+
+  const context = await buildAiChatDataContext(filters);
+  const contextText = compactJsonForAi(context, MAX_AI_CHAT_CONTEXT_CHARS);
+  const requestBody = {
+    model: OPENAI_CHATBOT_MODEL,
+    store: false,
+    reasoning: { effort: "low" },
+    max_output_tokens: OPENAI_CHATBOT_MAX_OUTPUT_TOKENS,
+    text: { verbosity: "low" },
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: [
+              "You are RoAnalytics AI, a Roblox analytics assistant inside a dashboard.",
+              "Answer only from the provided dashboard data context.",
+              "Be concise, direct, and useful for a Roblox game owner.",
+              "If the data is missing or too thin, say that clearly and suggest the exact tracking/action needed.",
+              "Do not invent exact numbers, locations, or causes that are not in the context.",
+              "Prefer bullets only when they make the answer easier to scan.",
+            ].join(" "),
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              question: prompt,
+              dashboardData: contextText,
+            }),
+          },
+        ],
+      },
+    ],
+  };
+
+  await assertOpenAiRequestTokenBudget(usageContext, requestBody, OPENAI_CHATBOT_MAX_OUTPUT_TOKENS);
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error?.message || payload.error || `OpenAI request failed with ${response.status}`);
+  }
+
+  await recordOpenAiUsage({
+    usageContext,
+    feature: "dashboard_chatbot",
+    model: OPENAI_CHATBOT_MODEL,
+    payload,
+  });
+
+  const answer = cleanString(getOpenAiOutputText(payload), 4000);
+  if (!answer) {
+    throw new Error("AI response did not include an answer.");
+  }
+
+  return {
+    universeId: filters.universeId,
+    answer,
+    model: OPENAI_CHATBOT_MODEL,
+    generatedAt: Date.now(),
+    contextSummary: {
+      movementSamples: context.totals.movementSamples,
+      deathSamples: context.totals.deathSamples,
+      leaveSamples: context.totals.leaveSamples,
+      chatLogs: context.totals.chatLogs,
+      aiAreas: context.aiAreas.length,
+    },
+  };
+}
+
+async function buildAiChatDataContext(filters = {}) {
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  const movement = rollup ? getMovementHeatmapFromRollup(rollup, filters) : getMovementHeatmap(filters);
+  const deaths = rollup ? getDeathHeatmapFromRollup(rollup, filters) : getDeathHeatmap(filters);
+  const leaves = rollup ? getLeaveHeatmapFromRollup(rollup, filters) : getLeaveHeatmap(filters);
+  const chat = rollup ? getChatLogsFromRollup(rollup, filters) : getChatLogs(filters);
+  const computed = rollup ? getComputedAreaClustersFromRollup(rollup, filters) : {
+    ...getAiAreaAnalysisWithoutStoredInsights(filters),
+    mode: "computed",
+    signalAreas: getComputedSignalAreas(filters),
+  };
+  const storedReport = await readObjectStorageAiReport(filters.universeId);
+  const chatInsights = await getStoredChatInsights(filters);
+  const mapPayload = await getMapSnapshot({ universeId: filters.universeId });
+  const mapSnapshot = mapPayload.snapshot || null;
+  const aiAreaPayload = storedReport?.areaAnalysis?.mode === "ai"
+    ? storedReport.areaAnalysis
+    : applyStoredAiAreaInsights(computed);
+
+  return {
+    universeId: filters.universeId,
+    generatedAt: Date.now(),
+    filters: getMovementFilterSummary(filters),
+    source: rollup ? "b2-rollup" : "live-memory",
+    totals: {
+      movementSamples: movement.sampleCount || movement.returnedCount || movement.samples?.length || 0,
+      deathSamples: deaths.sampleCount || deaths.returnedCount || deaths.samples?.length || 0,
+      leaveSamples: leaves.sampleCount || leaves.returnedCount || leaves.samples?.length || 0,
+      chatLogs: chat.logCount || chat.logs?.length || 0,
+      mapParts: mapSnapshot?.partCount || 0,
+    },
+    topSignalAreas: {
+      movement: summarizeSignalAreas(computed.signalAreas?.movement),
+      deaths: summarizeSignalAreas(computed.signalAreas?.deaths),
+      leaves: summarizeSignalAreas(computed.signalAreas?.leaves),
+      chat: summarizeSignalAreas(computed.signalAreas?.chat),
+    },
+    aiAreas: summarizeAiAreas(aiAreaPayload?.areas),
+    commonQuestions: summarizeCommonQuestions(chatInsights?.questions),
+    recentChat: summarizeRecentChat(chat?.logs),
+    heatmaps: {
+      movement: summarizeHeatmapSamples(movement.samples),
+      deaths: summarizeHeatmapSamples(deaths.samples),
+      leaves: summarizeHeatmapSamples(leaves.samples),
+    },
+    map: summarizeMapSnapshot(mapSnapshot),
+  };
+}
+
+function compactJsonForAi(value, maxChars) {
+  const text = JSON.stringify(value);
+  const limit = Math.max(cleanFiniteInteger(maxChars), 1000);
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}... [context truncated to fit budget]`;
+}
+
+function summarizeSignalAreas(areas = []) {
+  return (Array.isArray(areas) ? areas : []).slice(0, 5).map((area) => ({
+    rank: cleanInteger(area.rank),
+    x: roundCoordinate(area.x),
+    y: roundCoordinate(area.y),
+    z: roundCoordinate(area.z),
+    count: cleanFiniteInteger(area.count),
+    sampleCount: cleanFiniteInteger(area.sampleCount),
+    percent: cleanFiniteInteger(area.percent),
+  }));
+}
+
+function summarizeAiAreas(areas = []) {
+  return (Array.isArray(areas) ? areas : []).slice(0, 5).map((area) => ({
+    rank: cleanInteger(area.rank),
+    label: cleanString(area.label || area.title, 120),
+    x: roundCoordinate(area.x),
+    y: roundCoordinate(area.y),
+    z: roundCoordinate(area.z),
+    movementCount: cleanFiniteInteger(area.movementCount),
+    deathCount: cleanFiniteInteger(area.deathCount),
+    leaveCount: cleanFiniteInteger(area.leaveCount),
+    chatCount: cleanFiniteInteger(area.chatCount),
+    summary: cleanString(area.summary, 500),
+    recommendation: cleanString(area.recommendation, 500),
+    topMessages: Array.isArray(area.topMessages)
+      ? area.topMessages.slice(0, 3).map((message) => cleanString(message, 180))
+      : [],
+  }));
+}
+
+function summarizeCommonQuestions(questions = []) {
+  return (Array.isArray(questions) ? questions : []).slice(0, 5).map((question) => ({
+    title: cleanString(question.title, 180),
+    mentions: cleanFiniteInteger(question.mentions),
+    playerCount: cleanFiniteInteger(question.playerCount),
+    examples: Array.isArray(question.examples)
+      ? question.examples.slice(0, 2).map((example) => cleanString(example.message, 180))
+      : [],
+  }));
+}
+
+function summarizeRecentChat(logs = []) {
+  return (Array.isArray(logs) ? logs : []).slice(0, 25).map((log) => ({
+    username: cleanString(log.username, 80),
+    userId: cleanInteger(log.userId),
+    message: cleanString(log.message, 220),
+    sentAt: cleanInteger(log.sentAt),
+    x: roundCoordinate(log.x),
+    y: roundCoordinate(log.y),
+    z: roundCoordinate(log.z),
+  }));
+}
+
+function summarizeHeatmapSamples(samples = []) {
+  return (Array.isArray(samples) ? samples : []).slice(0, 12).map((sample) => ({
+    x: roundCoordinate(sample.x),
+    y: roundCoordinate(sample.y),
+    z: roundCoordinate(sample.z),
+    weight: cleanFiniteInteger(sample.weight || sample.count || 1),
+    sampledAt: cleanInteger(sample.sampledAt || sample.sentAt || sample.receivedAt),
+  }));
+}
+
+function summarizeMapSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    partCount: cleanFiniteInteger(snapshot.partCount || snapshot.parts?.length),
+    capturedAt: cleanInteger(snapshot.capturedAt || snapshot.receivedAt),
+    bounds: snapshot.bounds ? {
+      width: roundCoordinate(snapshot.bounds.width),
+      height: roundCoordinate(snapshot.bounds.height),
+      depth: roundCoordinate(snapshot.bounds.depth),
+      center: snapshot.bounds.center ? {
+        x: roundCoordinate(snapshot.bounds.center.x),
+        y: roundCoordinate(snapshot.bounds.center.y),
+        z: roundCoordinate(snapshot.bounds.center.z),
+      } : null,
+    } : null,
+    sampleParts: Array.isArray(snapshot.parts)
+      ? snapshot.parts.slice(0, 20).map((part) => ({
+        name: cleanString(part.name, 120),
+        className: cleanString(part.className, 60),
+        x: roundCoordinate(part.position?.x),
+        y: roundCoordinate(part.position?.y),
+        z: roundCoordinate(part.position?.z),
+      }))
+      : [],
+  };
+}
+
+function roundCoordinate(value) {
+  const number = cleanFiniteNumber(value);
+  return Number.isFinite(number) ? Math.round(number * 10) / 10 : null;
 }
 
 async function settleAsync(callback) {
