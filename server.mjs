@@ -61,10 +61,10 @@ const ROBLOX_OAUTH_STATE_COOKIE = "roblox_oauth_state";
 const DASHBOARD_AUTH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const ROBLOX_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-mini";
-const OPENAI_CHAT_INSIGHTS_MODEL = process.env.OPENAI_CHAT_INSIGHTS_MODEL || DEFAULT_OPENAI_INSIGHTS_MODEL;
-const OPENAI_AREA_INSIGHTS_MODEL = process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
-const OPENAI_CHATBOT_MODEL = process.env.OPENAI_CHATBOT_MODEL || OPENAI_CHAT_INSIGHTS_MODEL;
+const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-nano";
+const OPENAI_CHAT_INSIGHTS_MODEL = normalizeOpenAiConfiguredModel(process.env.OPENAI_CHAT_INSIGHTS_MODEL || DEFAULT_OPENAI_INSIGHTS_MODEL);
+const OPENAI_AREA_INSIGHTS_MODEL = normalizeOpenAiConfiguredModel(process.env.OPENAI_AREA_INSIGHTS_MODEL || OPENAI_CHAT_INSIGHTS_MODEL);
+const OPENAI_CHATBOT_MODEL = normalizeOpenAiConfiguredModel(process.env.OPENAI_CHATBOT_MODEL || OPENAI_CHAT_INSIGHTS_MODEL);
 const OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_CHAT_INSIGHTS_MAX_OUTPUT_TOKENS", 1600);
 const OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_AREA_INSIGHTS_MAX_OUTPUT_TOKENS", 1800);
 const OPENAI_CHATBOT_MAX_OUTPUT_TOKENS = cleanEnvInteger("OPENAI_CHATBOT_MAX_OUTPUT_TOKENS", 700);
@@ -79,10 +79,33 @@ const USAGE_LIMITS = {
   backblazeUploadedBytesPerMonth: cleanEnvInteger("USAGE_B2_UPLOAD_BYTES_PER_MONTH", 2_000_000_000),
   backblazeDownloadedBytesPerMonth: cleanEnvInteger("USAGE_B2_DOWNLOAD_BYTES_PER_MONTH", 5_000_000_000),
 };
-const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.75);
-const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.075);
-const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 4.5);
+const OPENAI_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_INPUT_USD_PER_1M", 0.2);
+const OPENAI_CACHED_INPUT_USD_PER_1M = cleanEnvNumber("OPENAI_CACHED_INPUT_USD_PER_1M", 0.02);
+const OPENAI_OUTPUT_USD_PER_1M = cleanEnvNumber("OPENAI_OUTPUT_USD_PER_1M", 1.25);
 const OPENAI_MODEL_PRICING = {
+  "gpt-5.4-nano": {
+    approved: true,
+    inputUsdPer1M: 0.2,
+    cachedInputUsdPer1M: 0.02,
+    outputUsdPer1M: 1.25,
+    notes: "Default lowest-cost AI insights and chatbot model.",
+  },
+  "gpt-5.4 nano": {
+    approved: true,
+    canonicalModel: "gpt-5.4-nano",
+    inputUsdPer1M: 0.2,
+    cachedInputUsdPer1M: 0.02,
+    outputUsdPer1M: 1.25,
+    notes: "Human-readable alias for gpt-5.4-nano.",
+  },
+  "nano": {
+    approved: true,
+    canonicalModel: "gpt-5.4-nano",
+    inputUsdPer1M: 0.2,
+    cachedInputUsdPer1M: 0.02,
+    outputUsdPer1M: 1.25,
+    notes: "Short alias for gpt-5.4-nano.",
+  },
   "gpt-5.4-mini": {
     approved: true,
     inputUsdPer1M: 0.75,
@@ -5502,6 +5525,14 @@ function getOpenAiPricingForModel(model) {
 
 function cleanOpenAiModelName(model) {
   return String(model || "").trim().toLowerCase();
+}
+
+function normalizeOpenAiConfiguredModel(model) {
+  const cleanModel = String(model || "").trim();
+  const lowerModel = cleanModel.toLowerCase();
+  if (lowerModel === "nano" || lowerModel === "gpt-5.4 nano") return "gpt-5.4-nano";
+  if (lowerModel === "mini" || lowerModel === "gpt-5.4 mini") return "gpt-5.4-mini";
+  return cleanModel;
 }
 
 async function resetStoredUsageEventsForUser(targetUser, adminUser) {
