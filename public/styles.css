@@ -1422,23 +1422,6 @@ small,
   line-height: 1.45;
 }
 
-.mapAiCallout {
-  position: absolute;
-  left: 150px;
-  top: 76px;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 14px;
-  width: min(340px, calc(100% - 420px));
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(16, 24, 56, 0.86);
-  box-shadow: var(--overlay-shadow);
-  padding: 18px;
-}
-
-.mapAiCallout > span,
 .botMessage > span {
   display: grid;
   place-items: center;
@@ -1448,7 +1431,6 @@ small,
   background: linear-gradient(135deg, #315bff, #8b3cff);
 }
 
-.mapAiCallout > span::before,
 .botMessage > span::before {
   content: "";
   width: 12px;
@@ -1456,15 +1438,6 @@ small,
   border-radius: 4px;
   background: white;
   transform: rotate(45deg);
-}
-
-.mapAiCallout strong {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.mapAiCallout p {
-  line-height: 1.45;
 }
 
 .mapViewDock {
@@ -2642,10 +2615,6 @@ small,
     min-height: 520px;
   }
 
-  .mapAiCallout {
-    width: min(340px, calc(100% - 220px));
-  }
-
   .heatmapToolbar {
     width: max-content;
     max-width: calc(100% - 44px);
@@ -2732,12 +2701,6 @@ small,
   .aiCardRow,
   .heatmapFilters {
     grid-template-columns: 1fr;
-  }
-
-  .mapAiCallout {
-    left: 18px;
-    top: 86px;
-    width: min(360px, calc(100% - 36px));
   }
 
   .heatmapToolbar {
