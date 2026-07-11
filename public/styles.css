@@ -1387,7 +1387,7 @@ small,
 
 .heatmapLegend {
   left: 22px;
-  top: 76px;
+  top: 22px;
   display: grid;
   gap: 10px;
   padding: 18px 20px;
@@ -1405,7 +1405,7 @@ small,
 .heatmapOverlay {
   right: 20px;
   left: auto;
-  top: 76px;
+  top: 22px;
   display: grid;
   gap: 12px;
   width: min(216px, calc(100% - 40px));
@@ -2710,12 +2710,12 @@ small,
 
   .heatmapLegend {
     left: 18px;
-    top: 240px;
+    top: 18px;
   }
 
   .heatmapOverlay {
     right: 18px;
-    top: 240px;
+    top: 18px;
   }
 
   .mapViewDock {
