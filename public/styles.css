@@ -1478,8 +1478,9 @@ small,
 
 .dockIconButton.active {
   border-color: transparent;
-  background: transparent;
+  background: linear-gradient(135deg, #c770ff, #7c3cff);
   color: white;
+  box-shadow: 0 0 0 1px rgba(190, 117, 255, 0.3), 0 10px 24px rgba(124, 60, 255, 0.24);
 }
 
 .dockIconButton::before,
@@ -1505,11 +1506,6 @@ small,
   height: 13px;
   border-radius: 999px;
   background: currentColor;
-}
-
-.areasDockButton.active,
-.heatmapDockButton.active {
-  color: #b965ff;
 }
 
 .heatmapDockButton::before {
