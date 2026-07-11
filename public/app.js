@@ -109,6 +109,7 @@ let authenticatedUser = null;
 let lastAdminPlans = [];
 let activeView = getViewFromHash();
 let aiChatBusy = false;
+const loadedViews = new Set();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -116,6 +117,7 @@ window.isDashboardAuthenticated = () => authenticated;
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
 const MAX_SIGNAL_AREAS = 5;
+const UNIVERSE_SCOPED_VIEWS = new Set(["areas", "ai-runs", "chat"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -363,6 +365,7 @@ async function checkAuth() {
 function setAuthenticated(value, user = null) {
   authenticated = value;
   authenticatedUser = authenticated ? user : null;
+  loadedViews.clear();
   document.body.classList.toggle("isLocked", !authenticated);
   accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
   if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
@@ -431,24 +434,9 @@ function setAuthenticated(value, user = null) {
 async function loadDashboardData() {
   const didNotifyUniverseChange = await loadUniverses();
   renderActiveView({ suppressOverviewEvent: didNotifyUniverseChange });
-  startChatRefresh();
-  startSignalRefresh();
   window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
     detail: { universeId: selectedUniverseId },
   }));
-
-  const backgroundTasks = [
-    loadOwnedGames(),
-    loadAccountUsage(),
-    loadAiAutomationSettings(),
-    loadChatLogs(),
-    loadSignalAreaCards(),
-  ];
-  if (authenticatedUser?.isAdmin) {
-    backgroundTasks.push(loadAdminUsers(), loadReconciliations());
-  }
-
-  await Promise.allSettled(backgroundTasks);
 }
 
 function getViewFromHash() {
@@ -532,6 +520,10 @@ function renderActiveView(options = {}) {
   };
   pageTitle.textContent = viewCopy[activeView]?.title || viewCopy.overview.title;
   pageSubtitle.textContent = viewCopy[activeView]?.subtitle || viewCopy.overview.subtitle;
+  updateViewRefreshTimers();
+  window.dispatchEvent(new CustomEvent("dashboard:viewChanged", {
+    detail: { view: activeView, universeId: selectedUniverseId },
+  }));
 
   if (authenticated && activeView === "overview" && !options.suppressOverviewEvent) {
     window.dispatchEvent(new CustomEvent("dashboard:overviewShown", {
@@ -539,21 +531,43 @@ function renderActiveView(options = {}) {
     }));
   }
 
-  if (authenticated && activeView === "areas") {
-    loadSignalAreaCards();
+  loadActiveViewData(activeView);
+}
+
+function updateViewRefreshTimers() {
+  if (!authenticated) {
+    stopChatRefresh();
+    stopSignalRefresh();
+    return;
   }
 
-  if (authenticated && activeView === "admin" && authenticatedUser?.isAdmin) {
+  if (activeView === "chat" && selectedUniverseId) startChatRefresh();
+  else stopChatRefresh();
+
+  if (activeView === "areas" && selectedUniverseId) startSignalRefresh();
+  else stopSignalRefresh();
+}
+
+function loadActiveViewData(view, options = {}) {
+  if (!authenticated) return;
+  if (!selectedUniverseId && UNIVERSE_SCOPED_VIEWS.has(view)) return;
+  if (!options.force && loadedViews.has(view)) return;
+  loadedViews.add(view);
+
+  if (view === "areas") {
+    loadSignalAreaCards();
+  } else if (view === "ai-runs") {
+    loadAiAutomationSettings();
+    loadAiReportHistory();
+  } else if (view === "chat") {
+    loadChatLogs();
+  } else if (view === "usage") {
+    loadAccountUsage();
+  } else if (view === "connect") {
+    loadOwnedGames();
+  } else if (view === "admin" && authenticatedUser?.isAdmin) {
     loadAdminUsers();
     loadReconciliations();
-  }
-
-  if (authenticated && activeView === "usage") {
-    loadAccountUsage();
-  }
-
-  if (authenticated && activeView === "connect") {
-    loadOwnedGames();
   }
 }
 
@@ -1486,9 +1500,8 @@ function selectUniverse(value) {
   renderAiChatWelcome();
   renderIntegrationStatusCard();
   renderSetupChecklist();
-  loadAiAutomationSettings();
-  loadChatLogs();
-  loadSignalAreaCards();
+  loadedViews.clear();
+  loadActiveViewData(activeView, { force: true });
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
   }));

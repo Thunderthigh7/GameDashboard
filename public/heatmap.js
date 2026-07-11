@@ -1,4 +1,4 @@
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "/vendor/three.module.min.js";
 
 const canvas = document.querySelector("#movementHeatmapCanvas");
 const aiAreaCard = document.querySelector("#aiAreaCard");
@@ -70,6 +70,9 @@ let latestAreaAnalysisMode = "none";
 let focusedSignalArea = null;
 let heatmapRefreshTimer = null;
 let renderedUniverseId = "";
+let activeDashboardView = "overview";
+const mapSnapshotCache = new Map();
+const MAX_RENDERED_MAP_PARTS = 3500;
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -106,7 +109,7 @@ if (canvas) {
   }
   window.addEventListener("dashboard:analyticsReady", () => {
     resizeScene();
-    startHeatmapRefresh();
+    if (activeDashboardView === "overview") startHeatmapRefresh();
   });
   window.addEventListener("dashboard:authChanged", (event) => {
     if (!event.detail?.authenticated) {
@@ -115,11 +118,24 @@ if (canvas) {
   });
   window.addEventListener("dashboard:universeChanged", () => {
     resizeScene();
+    if (activeDashboardView !== "overview") return;
     loadHeatmap({ resetView: true });
   });
   window.addEventListener("dashboard:overviewShown", () => {
+    activeDashboardView = "overview";
     resizeScene();
+    startHeatmapRefresh();
     loadHeatmap();
+  });
+  window.addEventListener("dashboard:viewChanged", (event) => {
+    activeDashboardView = event.detail?.view || "overview";
+    if (activeDashboardView === "overview") {
+      resizeScene();
+      startHeatmapRefresh();
+      return;
+    }
+
+    stopHeatmapRefresh();
   });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
@@ -285,11 +301,7 @@ async function loadHeatmap(options = {}) {
       headers: { Accept: "application/json" },
     }).then(readJsonResponse);
 
-    const mapPromise = universeId
-      ? fetch(`/api/map-snapshot?universeId=${encodeURIComponent(universeId)}`, {
-        headers: { Accept: "application/json" },
-      }).then(readJsonResponse).catch((error) => ({ mapError: error.message }))
-      : Promise.resolve({ snapshot: null });
+    const mapPromise = getCachedMapSnapshotPayload(universeId);
 
     const [payload, mapPayload] = await Promise.all([samplePromise, mapPromise]);
     const mapSnapshot = mapPayload.snapshot || null;
@@ -306,7 +318,7 @@ async function loadHeatmap(options = {}) {
     });
     renderedUniverseId = String(universeId);
 
-    const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
+    const mapText = getMapStatusText(mapSnapshot);
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
     sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
     if (activeHeatmapMode === "ai-analysis" && payload.mode !== "ai") {
@@ -339,14 +351,8 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
 
   let mapSnapshot = latestMapSnapshot;
   if (universeId && (!mapSnapshot || String(mapSnapshot.universeId || "") !== String(universeId))) {
-    try {
-      const mapPayload = await fetch(`/api/map-snapshot?universeId=${encodeURIComponent(universeId)}`, {
-        headers: { Accept: "application/json" },
-      }).then(readJsonResponse);
-      mapSnapshot = mapPayload.snapshot || null;
-    } catch {
-      mapSnapshot = null;
-    }
+    const mapPayload = await getCachedMapSnapshotPayload(universeId);
+    mapSnapshot = mapPayload.snapshot || null;
   }
 
   const samplePayload = normalizeHeatmapPayload(payload);
@@ -402,6 +408,37 @@ function getEmptyHeatmapStatus(modeText, suffix = "") {
 function startHeatmapRefresh() {
   stopHeatmapRefresh();
   heatmapRefreshTimer = window.setInterval(loadHeatmap, 15000);
+}
+
+function getCachedMapSnapshotPayload(universeId) {
+  const cleanUniverseId = String(universeId || "").trim();
+  if (!cleanUniverseId) return Promise.resolve({ snapshot: null });
+
+  const cacheKey = `${cleanUniverseId}:${MAX_RENDERED_MAP_PARTS}`;
+  const cached = mapSnapshotCache.get(cacheKey);
+  if (cached) return cached;
+
+  const request = fetch(`/api/map-snapshot?universeId=${encodeURIComponent(cleanUniverseId)}&maxParts=${MAX_RENDERED_MAP_PARTS}`, {
+    headers: { Accept: "application/json" },
+  })
+    .then(readJsonResponse)
+    .catch((error) => {
+      mapSnapshotCache.delete(cacheKey);
+      return { mapError: error.message };
+    });
+
+  mapSnapshotCache.set(cacheKey, request);
+  return request;
+}
+
+function getMapStatusText(snapshot) {
+  if (!snapshot?.partCount) return "";
+  const totalParts = Number(snapshot.partCount) || 0;
+  const returnedParts = Number(snapshot.returnedPartCount || snapshot.parts?.length || totalParts) || 0;
+  if (returnedParts > 0 && totalParts > returnedParts) {
+    return ` Map: ${returnedParts} / ${totalParts} parts shown.`;
+  }
+  return ` Map: ${totalParts} parts.`;
 }
 
 function stopHeatmapRefresh() {
@@ -1712,7 +1749,7 @@ function renderMapSnapshot(snapshot, center, entries = []) {
   mapGroup = new THREE.Group();
   mapGroup.name = "UploadedMapSnapshot";
 
-  const parts = snapshot.parts.slice(0, 8000);
+  const parts = snapshot.parts.slice(0, MAX_RENDERED_MAP_PARTS);
   const entryBounds = entries.length ? getBounds(entries) : null;
   const heatContext = activeRenderMode === "heatmap" && activeHeatmapMode !== "ai-analysis"
     ? createSurfaceHeatContext(entries, center, snapshot)

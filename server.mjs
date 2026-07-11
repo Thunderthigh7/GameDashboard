@@ -596,6 +596,7 @@ const server = http.createServer(async (req, res) => {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getMapSnapshot({
         universeId: url.searchParams.get("universeId"),
+        maxParts: url.searchParams.get("maxParts"),
       }));
     }
 
@@ -2569,10 +2570,20 @@ async function getMapSnapshot(filters = {}) {
     mapSnapshotsByUniverseId.set(universeKey, snapshot);
   }
 
+  const maxParts = cleanFiniteInteger(filters.maxParts);
+  const responseSnapshot = snapshot && maxParts > 0 && Array.isArray(snapshot.parts) && snapshot.parts.length > maxParts
+    ? {
+      ...snapshot,
+      partCount: cleanFiniteInteger(snapshot.partCount || snapshot.parts.length),
+      returnedPartCount: maxParts,
+      parts: snapshot.parts.slice(0, maxParts),
+    }
+    : snapshot || null;
+
   return {
     ok: true,
     universeId,
-    snapshot: snapshot || null,
+    snapshot: responseSnapshot,
   };
 }
 
@@ -7376,7 +7387,11 @@ async function serveStatic(res, relativePath) {
 
   try {
     const content = await fs.readFile(filePath);
-    res.writeHead(200, { "Content-Type": contentType(filePath) });
+    const headers = { "Content-Type": contentType(filePath) };
+    if (relativePath.startsWith("vendor/")) {
+      headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    }
+    res.writeHead(200, headers);
     res.end(content);
   } catch {
     sendJson(res, 404, { error: "Not found" });
