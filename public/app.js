@@ -1698,6 +1698,9 @@ async function loadSelectedAiReport() {
 }
 
 function renderAiReport(report) {
+  const areaCount = Array.isArray(report.areaAnalysis?.areas) ? report.areaAnalysis.areas.length : 0;
+  const hasChatQuestions = Array.isArray(report.chatInsights?.questions) && report.chatInsights.questions.length > 0;
+
   if (report.chatInsights) {
     renderChatInsights(report.chatInsights);
   } else {
@@ -1705,10 +1708,21 @@ function renderAiReport(report) {
     commonQuestionList.innerHTML = "";
   }
 
+  if (!hasChatQuestions && areaCount) {
+    const generatedText = report.generatedAt ? ` Last run: ${formatDateTime(report.generatedAt)}.` : "";
+    chatInsightsMode.textContent = report.mode === "partial" ? "Partial AI" : "AI analysis";
+    chatInsightsStatus.textContent = `AI analyzed ${areaCount} map area${areaCount === 1 ? "" : "s"} from tracked movement, death, leave, and chat samples.${generatedText}`;
+    commonQuestionList.innerHTML = "";
+  }
+
   if (report.areaAnalysis) {
     window.dispatchEvent(new CustomEvent("dashboard:aiAreaAnalysisUpdated", {
       detail: { universeId: selectedUniverseId, analysis: report.areaAnalysis },
     }));
+  }
+
+  if (!hasChatQuestions && !areaCount && report.errors?.length) {
+    chatInsightsStatus.textContent = report.errors.map((error) => error.message).join(" ");
   }
 }
 
@@ -1766,7 +1780,7 @@ async function saveAiAutomationSettings() {
 async function runChatInsightsAnalysis() {
   runChatInsightsButton.disabled = true;
   chatInsightsMode.textContent = "Running AI";
-  chatInsightsStatus.textContent = "Running AI across chat questions and map areas...";
+  chatInsightsStatus.textContent = "Running AI across movement, death, leave, and chat samples...";
 
   try {
     if (!selectedUniverseId) {
@@ -1777,19 +1791,7 @@ async function runChatInsightsAnalysis() {
 
     const query = buildAiInsightsQuery();
     const data = await request(`/api/ai-insights/analyze${query}`, { method: "POST" });
-
-    if (data.chatInsights) {
-      renderChatInsights(data.chatInsights);
-    } else {
-      chatInsightsMode.textContent = "Partial AI";
-      commonQuestionList.innerHTML = "";
-    }
-
-    if (data.areaAnalysis) {
-      window.dispatchEvent(new CustomEvent("dashboard:aiAreaAnalysisUpdated", {
-        detail: { universeId: selectedUniverseId, analysis: data.areaAnalysis },
-      }));
-    }
+    renderAiReport(data);
 
     if (data.errors?.length) {
       const errorText = data.errors.map((error) => error.message).join(" ");
@@ -1940,8 +1942,8 @@ function renderChatInsights(data) {
 
   if (!data.questions.length) {
     chatInsightsStatus.textContent = data.sourceLogCount
-      ? `No AI report saved yet. ${data.questionLikeCount || 0} question-like messages are ready; run AI Insights when you want a paid analysis.`
-      : "No chat data yet. Start a live server with chat tracking enabled before running AI Insights.";
+      ? `No saved chat question groups yet. ${data.questionLikeCount || 0} question-like messages are available; AI Insights can still use movement, death, and leave samples.`
+      : "No chat question groups yet. AI Insights can still use movement, death, and leave samples.";
     commonQuestionList.innerHTML = "";
     return;
   }

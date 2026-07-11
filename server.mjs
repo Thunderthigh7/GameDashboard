@@ -3512,14 +3512,14 @@ function getAiAreaAnalysis(filters = {}) {
 
 async function analyzeAiAreaInsights(rawFilters = {}, usageContext = {}) {
   const filters = await normalizeMovementFilters(rawFilters);
-  const basePayload = getAiAreaAnalysisWithoutStoredInsights(filters);
-
-  if (!OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not configured.");
-  }
+  const basePayload = await getAiAreaAnalysisBasePayload(filters);
 
   if (!basePayload.areas.length) {
     throw new Error("No map areas are available to analyze.");
+  }
+
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
   }
 
   try {
@@ -3535,6 +3535,18 @@ async function analyzeAiAreaInsights(rawFilters = {}, usageContext = {}) {
 function getAiAreaAnalysisWithoutStoredInsights(filters = {}) {
   const events = getAiAnalysisEvents(filters);
   return getAiAreaAnalysisFromEvents(filters, events, "algorithm");
+}
+
+async function getAiAreaAnalysisBasePayload(filters = {}) {
+  const rollup = await getObjectStorageRollup(filters.universeId);
+  if (!rollup) return getAiAreaAnalysisWithoutStoredInsights(filters);
+
+  const events = getAiAnalysisEventsFromRollup(rollup, filters);
+  return {
+    ...getAiAreaAnalysisFromEvents(filters, events, "algorithm"),
+    source: "b2-rollup",
+    signalAreas: getComputedSignalAreasFromRollup(rollup, filters),
+  };
 }
 
 function getAiAreaAnalysisFromEvents(filters = {}, events = [], mode = "algorithm") {
@@ -3986,12 +3998,21 @@ async function analyzeChatInsights(filters = {}, usageContext = {}) {
     .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
     .filter((log) => isQuestionLikeMessage(log.message));
 
-  if (!OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not configured.");
+  if (candidateLogs.length === 0) {
+    return {
+      universeId: chatPayload.universeId,
+      sourceLogCount: chatPayload.logCount,
+      analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
+      questionLikeCount: 0,
+      maxMessagesAnalyzed: MAX_CHAT_MESSAGES_FOR_INSIGHTS,
+      generatedAt: null,
+      mode: "none",
+      questions: [],
+    };
   }
 
-  if (candidateLogs.length === 0) {
-    throw new Error("No question-like chat messages are available to analyze.");
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
   }
 
   try {
@@ -4028,6 +4049,18 @@ async function analyzeAllAiInsights(rawFilters = {}, usageContext = {}) {
     throw new Error(errors.map((error) => error.message).join(" "));
   }
 
+  const chatInsights = chatResult.status === "fulfilled" ? chatResult.value : null;
+  const areaAnalysis = areaResult.status === "fulfilled" ? areaResult.value : null;
+  const hasChatAi = chatInsights?.mode === "ai" && Array.isArray(chatInsights.questions) && chatInsights.questions.length > 0;
+  const hasAreaAi = areaAnalysis?.mode === "ai" && Array.isArray(areaAnalysis.areas) && areaAnalysis.areas.length > 0;
+
+  if (!hasChatAi && !hasAreaAi) {
+    if (errors.length) {
+      throw new Error(errors.map((error) => error.message).join(" "));
+    }
+    throw new Error("No movement, death, leave, or chat samples are available to analyze.");
+  }
+
   const report = {
     universeId: cleanInteger(filters.universeId) || null,
     generatedAt: Date.now(),
@@ -4038,8 +4071,8 @@ async function analyzeAllAiInsights(rawFilters = {}, usageContext = {}) {
       mapAreas: areaResult.status,
     },
     errors,
-    chatInsights: chatResult.status === "fulfilled" ? chatResult.value : null,
-    areaAnalysis: areaResult.status === "fulfilled" ? areaResult.value : null,
+    chatInsights,
+    areaAnalysis,
   };
 
   await persistAiInsightsReport(report);
@@ -4080,6 +4113,7 @@ async function answerAiChat(rawFilters = {}, usageContext = {}) {
               "Answer only from the provided dashboard data context.",
               "Be concise, direct, and useful for a Roblox game owner.",
               "If the data is missing or too thin, say that clearly and suggest the exact tracking/action needed.",
+              "Chat logs are optional; when chat is empty, still answer from movement, deaths, leaves, map areas, heatmaps, and saved AI analysis.",
               "Do not invent exact numbers, locations, or causes that are not in the context.",
               "Prefer bullets only when they make the answer easier to scan.",
             ].join(" "),
