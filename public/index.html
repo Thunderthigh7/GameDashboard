@@ -136,18 +136,16 @@
                       <span id="movementHeatmapStatus">Waiting for movement samples...</span>
                     </div>
                     <div class="mapViewDock">
-                      <button class="dockIconButton view2dDockButton" type="button" data-map-view="2d" aria-label="2D view" title="2D View">
-                        <span>2D</span>
-                      </button>
-                      <button class="dockIconButton view3dDockButton active" type="button" data-map-view="3d" aria-label="3D view" title="3D View">
-                        <span>3D View</span>
-                      </button>
                       <button class="dockIconButton areasDockButton active" type="button" data-heatmap-render="points" aria-label="Areas view" title="Areas">
                         <span>Areas</span>
                       </button>
                       <button class="dockIconButton heatmapDockButton" type="button" data-heatmap-render="heatmap" aria-label="Heatmap view" title="Heatmap">
                         <span>Heatmap</span>
                       </button>
+                    </div>
+                    <div class="mapCameraToggle" aria-label="Map camera view">
+                      <button class="cameraToggleButton" type="button" data-map-view="2d">2D</button>
+                      <button class="cameraToggleButton active" type="button" data-map-view="3d">3D</button>
                     </div>
                     <div class="aiAreaCard" id="aiAreaCard" hidden>
                       <div class="aiAreaCardHeader">
