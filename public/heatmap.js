@@ -1,4 +1,4 @@
-import * as THREE from "/vendor/three.module.min.js";
+import * as THREE from "/vendor/three.module.min.js?v=165";
 
 const canvas = document.querySelector("#movementHeatmapCanvas");
 const aiAreaCard = document.querySelector("#aiAreaCard");

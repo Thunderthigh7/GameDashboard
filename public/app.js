@@ -109,6 +109,8 @@ let authenticatedUser = null;
 let lastAdminPlans = [];
 let activeView = getViewFromHash();
 let aiChatBusy = false;
+let aiChatHistory = [];
+let heatmapModulePromise = null;
 let universeRequestSequence = 0;
 let signalAreaRequestSequence = 0;
 let signalAreaRequestState = null;
@@ -124,6 +126,9 @@ let reconciliationRequestSequence = 0;
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
+
+const DASHBOARD_ASSET_VERSION = "20260711-1";
+const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -173,6 +178,19 @@ async function init() {
   bindEvents();
   syncDateFilterDisplays();
   await checkAuth();
+}
+
+function loadHeatmapModule() {
+  if (heatmapModulePromise) return heatmapModulePromise;
+  heatmapModulePromise = import(`/heatmap.js?v=${DASHBOARD_ASSET_VERSION}`)
+    .then(() => {
+      if (authenticated) notifyAnalyticsReady();
+    })
+    .catch((error) => {
+      heatmapModulePromise = null;
+      console.error("Could not load the heatmap module.", error);
+    });
+  return heatmapModulePromise;
 }
 
 function bindEvents() {
@@ -570,6 +588,7 @@ function setAuthenticated(value, user = null) {
   for (const panel of protectedDashboardPanels) {
     panel.hidden = !authenticated;
   }
+  if (authenticated) loadHeatmapModule();
   renderActiveView();
 
   window.dispatchEvent(new CustomEvent("dashboard:authChanged", {
@@ -2536,29 +2555,124 @@ async function sendAiChatPrompt() {
   aiChatInput.value = "";
   setAiChatBusy(true);
   chatInsightsStatus.textContent = "Asking AI about current dashboard data...";
+  let assistantArticle = null;
+  let streamedAnswer = "";
 
   try {
-    const data = await request(`/api/ai-chat${buildAiInsightsQuery()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-    appendAiChatMessage("assistant", data.answer || "I could not find an answer in the current data.");
+    const history = aiChatHistory.slice(-MAX_AI_CHAT_HISTORY_MESSAGES);
+    const data = await requestAiChatStream(
+      `/api/ai-chat${buildAiInsightsQuery()}`,
+      { prompt, history },
+      (delta) => {
+        streamedAnswer += delta;
+        if (!assistantArticle) assistantArticle = appendAiChatMessage("assistant", "");
+        updateAiChatMessage(assistantArticle, streamedAnswer);
+        if (aiChatTyping) aiChatTyping.hidden = true;
+      },
+    );
+    const answer = data.answer || streamedAnswer || "I could not find an answer in the current data.";
+    if (!assistantArticle) assistantArticle = appendAiChatMessage("assistant", answer);
+    else updateAiChatMessage(assistantArticle, answer);
+    aiChatHistory.push(
+      { role: "user", content: prompt },
+      { role: "assistant", content: answer },
+    );
+    if (aiChatHistory.length > MAX_AI_CHAT_HISTORY_MESSAGES) {
+      aiChatHistory = aiChatHistory.slice(-MAX_AI_CHAT_HISTORY_MESSAGES);
+    }
     chatInsightsStatus.textContent = data.model
       ? `AI answer generated from current dashboard data using ${data.model}.`
       : "AI answer generated from current dashboard data.";
   } catch (error) {
     handleAuthError(error);
     const message = formatRequestError(error);
-    appendAiChatMessage("assistant", message);
+    if (assistantArticle && streamedAnswer) {
+      updateAiChatMessage(assistantArticle, `${streamedAnswer}\n\nResponse interrupted: ${message}`);
+    } else {
+      appendAiChatMessage("assistant", message);
+    }
     chatInsightsStatus.textContent = message;
   } finally {
     setAiChatBusy(false);
   }
 }
 
+async function requestAiChatStream(url, payload, onDelta) {
+  const response = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: {
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    let message = `Request failed (${response.status})`;
+    try {
+      const errorPayload = responseText ? JSON.parse(responseText) : {};
+      message = errorPayload.error || message;
+    } catch {
+      if (responseText) message = responseText;
+    }
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  if (!response.body) throw new Error("AI response stream was unavailable.");
+
+  const decoder = new TextDecoder();
+  const reader = response.body.getReader();
+  let buffer = "";
+  let result = null;
+
+  const processFrame = (frame) => {
+    let eventName = "message";
+    const dataLines = [];
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event:")) eventName = line.slice(6).trim();
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (!dataLines.length) return;
+
+    let eventPayload;
+    try {
+      eventPayload = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+
+    if (eventName === "delta" && typeof eventPayload.delta === "string") {
+      onDelta(eventPayload.delta);
+    } else if (eventName === "done") {
+      result = eventPayload;
+    } else if (eventName === "error") {
+      throw new Error(eventPayload.error || "AI response failed.");
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer = `${buffer}${decoder.decode(value || new Uint8Array(), { stream: !done })}`.replace(/\r\n/g, "\n");
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      processFrame(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+    }
+    if (done) break;
+  }
+
+  if (buffer.trim()) processFrame(buffer.trim());
+  if (!result) throw new Error("AI response ended before completion.");
+  return result;
+}
+
 function appendAiChatMessage(role, message) {
-  if (!aiChatMessages) return;
+  if (!aiChatMessages) return null;
 
   const article = document.createElement("article");
   article.dataset.aiChatMessage = role;
@@ -2581,6 +2695,14 @@ function appendAiChatMessage(role, message) {
 
   aiChatMessages.insertBefore(article, aiChatTyping || null);
   aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  return article;
+}
+
+function updateAiChatMessage(article, message) {
+  const paragraph = article?.querySelector("p");
+  if (!paragraph) return;
+  paragraph.textContent = message;
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
 }
 
 function setAiChatBusy(isBusy) {
@@ -2592,6 +2714,7 @@ function setAiChatBusy(isBusy) {
 
 function renderAiChatWelcome() {
   if (!aiChatMessages) return;
+  aiChatHistory = [];
   for (const message of aiChatMessages.querySelectorAll("[data-ai-chat-message]")) {
     message.remove();
   }
