@@ -1444,16 +1444,17 @@ small,
   position: absolute;
   left: 50%;
   bottom: 26px;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 1px solid var(--line);
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 999px;
-  background: rgba(6, 11, 25, 0.82);
-  box-shadow: var(--overlay-shadow);
-  padding: 10px;
+  background: rgba(8, 15, 32, 0.86);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  padding: 7px 10px;
   transform: translateX(-50%);
+  backdrop-filter: blur(12px);
 }
 
 .dockIconButton {
@@ -1462,25 +1463,25 @@ small,
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  gap: 10px;
-  min-width: 118px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  padding: 0 16px;
+  padding: 0;
   font-weight: 900;
   cursor: pointer;
 }
 
 .dockIconButton.active {
-  border-color: rgba(124, 60, 255, 0.54);
-  background: var(--purple);
+  border-color: transparent;
+  background: transparent;
   color: white;
 }
 
-.dockIconButton::before {
+.dockIconButton::before,
+.dockIconButton::after {
   content: "";
   position: relative;
   display: block;
@@ -1488,57 +1489,110 @@ small,
   box-sizing: border-box;
 }
 
-.areasDockButton::before {
-  width: 5px;
-  height: 5px;
-  border: 2px solid currentColor;
+.dockIconButton span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.view3dDockButton {
+  gap: 8px;
+  width: auto;
+  min-width: 112px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 16px;
+}
+
+.view3dDockButton.active {
+  background: linear-gradient(135deg, #c770ff, #7c3cff);
+  color: white;
+  box-shadow: 0 0 0 1px rgba(190, 117, 255, 0.3), 0 10px 24px rgba(124, 60, 255, 0.24);
+}
+
+.view2dDockButton.active {
+  background: rgba(124, 60, 255, 0.28);
+  color: white;
+}
+
+.view3dDockButton span {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: nowrap;
+}
+
+.view3dDockButton::before {
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid currentColor;
   border-radius: 2px;
-  box-shadow:
-    8px 0 0 -2px currentColor,
-    0 8px 0 -2px currentColor,
-    8px 8px 0 -2px currentColor;
+}
+
+.view3dDockButton::after {
+  display: none;
+}
+
+.view2dDockButton::before,
+.view2dDockButton::after {
+  position: absolute;
+}
+
+.view2dDockButton::before {
+  left: 8px;
+  top: 8px;
+  width: 11px;
+  height: 11px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+.view2dDockButton::after {
+  left: 11px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  transform: rotate(-35deg);
+  transform-origin: left center;
+}
+
+.areasDockButton::before {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.areasDockButton.active,
+.heatmapDockButton.active {
+  color: #b965ff;
 }
 
 .heatmapDockButton::before {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 35% 35%, #ef4444 0 24%, transparent 25%),
-    radial-gradient(circle at 66% 40%, #facc15 0 20%, transparent 21%),
-    radial-gradient(circle at 50% 70%, #2563eb 0 28%, transparent 29%);
+  width: 16px;
+  height: 16px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  border-radius: 2px;
 }
 
-.mapCameraToggle {
+.heatmapDockButton::after {
   position: absolute;
-  right: 24px;
-  bottom: 26px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  background: transparent;
-}
-
-.mapCameraButton {
-  min-width: 54px;
-  height: 42px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  background: rgba(6, 11, 25, 0.42);
-  color: var(--nav-text);
-  font-weight: 900;
-  cursor: pointer;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(8px);
-}
-
-.mapCameraButton.active {
-  border-color: rgba(124, 60, 255, 0.8);
-  background: rgba(124, 60, 255, 0.38);
-  color: white;
-  box-shadow: 0 0 0 1px rgba(124, 60, 255, 0.28), 0 10px 24px rgba(0, 0, 0, 0.18);
+  right: 7px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
 }
 
 .aiAreaCard {
@@ -2711,18 +2765,8 @@ small,
 
   .mapViewDock {
     max-width: calc(100% - 32px);
-    gap: 12px;
-    padding: 10px 14px;
-  }
-
-  .mapCameraToggle {
-    right: 18px;
-    bottom: 86px;
-  }
-
-  .mapCameraButton {
-    min-width: 48px;
-    height: 38px;
+    gap: 7px;
+    padding: 7px 9px;
   }
 
   .integrationStatusHeader {
