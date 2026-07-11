@@ -80,6 +80,8 @@ const aiAutomationToggle = document.querySelector("#aiAutomationToggle");
 const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
 const aiReportSelect = document.querySelector("#aiReportSelect");
 const commonQuestionList = document.querySelector("#commonQuestionList");
+const sidebarResizeHandle = document.querySelector("#sidebarResizeHandle");
+const chatPanelResizeHandle = document.querySelector("#chatPanelResizeHandle");
 const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
 const movementFromDisplay = document.querySelector("#movementFromDisplay");
@@ -114,11 +116,18 @@ window.isDashboardAuthenticated = () => authenticated;
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
 const MAX_SIGNAL_AREAS = 5;
+const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
+const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
+const SIDEBAR_WIDTH_MIN = 208;
+const SIDEBAR_WIDTH_MAX = 360;
+const CHAT_PANEL_WIDTH_MIN = 300;
+const CHAT_PANEL_WIDTH_MAX = 560;
 
 init();
 
 async function init() {
   showAuthError();
+  applyStoredLayoutSizes();
   bindEvents();
   syncDateFilterDisplays();
   await checkAuth();
@@ -182,6 +191,20 @@ function bindEvents() {
   reconciliationList?.addEventListener("click", (event) => {
     const deleteButton = event.target.closest("[data-delete-reconciliation]");
     if (deleteButton) deleteReconciliation(deleteButton);
+  });
+  bindLayoutResizer(sidebarResizeHandle, {
+    storageKey: SIDEBAR_WIDTH_STORAGE_KEY,
+    cssVariable: "--sidebar-width",
+    min: SIDEBAR_WIDTH_MIN,
+    max: SIDEBAR_WIDTH_MAX,
+    getWidth: (event) => event.clientX,
+  });
+  bindLayoutResizer(chatPanelResizeHandle, {
+    storageKey: CHAT_PANEL_WIDTH_STORAGE_KEY,
+    cssVariable: "--chat-panel-width",
+    min: CHAT_PANEL_WIDTH_MIN,
+    max: CHAT_PANEL_WIDTH_MAX,
+    getWidth: (event) => window.innerWidth - event.clientX,
   });
   adminUserList?.addEventListener("click", (event) => {
     const resetButton = event.target.closest("[data-reset-usage-user]");
@@ -257,6 +280,75 @@ function bindEvents() {
   window.addEventListener("hashchange", () => {
     setActiveView(getViewFromHash(), { updateHash: false });
   });
+}
+
+function applyStoredLayoutSizes() {
+  applyStoredLayoutSize(SIDEBAR_WIDTH_STORAGE_KEY, "--sidebar-width", SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX);
+  applyStoredLayoutSize(CHAT_PANEL_WIDTH_STORAGE_KEY, "--chat-panel-width", CHAT_PANEL_WIDTH_MIN, CHAT_PANEL_WIDTH_MAX);
+}
+
+function applyStoredLayoutSize(storageKey, cssVariable, min, max) {
+  const stored = getStoredLayoutWidth(storageKey);
+  if (!stored) return;
+  setLayoutWidth(cssVariable, stored, min, max);
+}
+
+function bindLayoutResizer(handle, options) {
+  if (!handle) return;
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (window.matchMedia("(max-width: 860px)").matches) return;
+
+    event.preventDefault();
+    handle.setPointerCapture?.(event.pointerId);
+    document.body.classList.add("isResizingLayout");
+
+    const update = (nextEvent) => {
+      const width = setLayoutWidth(options.cssVariable, options.getWidth(nextEvent), options.min, options.max);
+      storeLayoutWidth(options.storageKey, width);
+      window.dispatchEvent(new Event("resize"));
+    };
+    const stop = () => {
+      document.body.classList.remove("isResizingLayout");
+      handle.removeEventListener("pointermove", update);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+      window.dispatchEvent(new Event("resize"));
+    };
+
+    update(event);
+    handle.addEventListener("pointermove", update);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  });
+}
+
+function setLayoutWidth(cssVariable, value, min, max) {
+  const width = clampLayoutWidth(value, min, max);
+  document.documentElement.style.setProperty(cssVariable, `${width}px`);
+  return width;
+}
+
+function clampLayoutWidth(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(Math.max(Math.round(number), min), max);
+}
+
+function getStoredLayoutWidth(storageKey) {
+  try {
+    return Number(window.localStorage.getItem(storageKey));
+  } catch {
+    return 0;
+  }
+}
+
+function storeLayoutWidth(storageKey, width) {
+  try {
+    window.localStorage.setItem(storageKey, String(width));
+  } catch {
+    // Resizing still works for the current page if storage is unavailable.
+  }
 }
 
 async function checkAuth() {

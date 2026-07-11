@@ -9,6 +9,7 @@
   <body class="isLocked">
     <div class="appShell">
       <aside class="sidebar" hidden>
+        <button class="layoutResizeHandle sidebarResizeHandle" id="sidebarResizeHandle" type="button" aria-label="Resize dashboard sidebar"></button>
         <div class="brand">
           <div class="brandMark" aria-hidden="true"></div>
           <div>
@@ -174,12 +175,12 @@
                 </section>
 
                 <article class="panel chatInsights chatBotPanel">
+                  <button class="layoutResizeHandle chatPanelResizeHandle" id="chatPanelResizeHandle" type="button" aria-label="Resize chat analysis panel"></button>
                   <div class="chatBotHeader">
                     <div>
                       <h2>Chat Analysis</h2>
                       <p><span></span>Live</p>
                     </div>
-                    <button class="miniIconButton" type="button" aria-label="Filter chat analysis"></button>
                   </div>
                   <p class="status" id="chatInsightsStatus">Waiting for chat insights...</p>
                   <div class="chatBotMessages" id="aiChatMessages">
