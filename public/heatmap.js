@@ -75,6 +75,8 @@ let activeCacheScope = "";
 let heatmapLoadSequence = 0;
 let heatmapRequestState = null;
 let renderedMapSignature = "";
+let pendingAreaAnalysisRender = null;
+let deferredAreaAnalysisRenderedAt = 0;
 const mapSnapshotCache = new Map();
 const mapSnapshotRequests = new Map();
 const heatmapPayloadCache = new Map();
@@ -132,6 +134,8 @@ if (canvas) {
       stopHeatmapRefresh();
       stopAnimation();
       abortHeatmapRequest();
+      pendingAreaAnalysisRender = null;
+      deferredAreaAnalysisRenderedAt = 0;
       const previousScope = activeCacheScope;
       activeCacheScope = "";
       if (previousScope) clearPersistentCacheScope(previousScope);
@@ -141,15 +145,23 @@ if (canvas) {
     activeCacheScope = getCacheScope();
     if (activeDashboardView === "overview") startAnimation();
   });
-  window.addEventListener("dashboard:universeChanged", () => {
+  window.addEventListener("dashboard:universeChanged", (event) => {
+    const universeId = String(event.detail?.universeId || "");
+    deferredAreaAnalysisRenderedAt = 0;
+    if (pendingAreaAnalysisRender?.universeId && pendingAreaAnalysisRender.universeId !== universeId) {
+      pendingAreaAnalysisRender = null;
+    }
     resizeScene();
-    if (activeDashboardView !== "overview") return;
+    if (activeDashboardView !== "overview" || document.hidden) return;
     loadHeatmap({ resetView: true });
   });
   window.addEventListener("dashboard:overviewShown", () => {
     activeDashboardView = "overview";
     resizeScene();
     startHeatmapRefresh();
+    if (document.hidden) return;
+    if (renderPendingAreaAnalysis()) return;
+    if (Date.now() - deferredAreaAnalysisRenderedAt < 1000) return;
     loadHeatmap();
   });
   window.addEventListener("dashboard:viewChanged", (event) => {
@@ -176,6 +188,13 @@ if (canvas) {
   });
   window.addEventListener("dashboard:aiAreaAnalysisUpdated", (event) => {
     if (event.detail?.analysis) {
+      if (activeDashboardView !== "overview" || document.hidden) {
+        pendingAreaAnalysisRender = {
+          universeId: String(event.detail?.universeId || ""),
+          analysis: event.detail.analysis,
+        };
+        return;
+      }
       renderAreaAnalysisPayload(event.detail.analysis, { statusPrefix: "Loaded saved AI area analysis" });
       return;
     }
@@ -189,6 +208,17 @@ if (canvas) {
   });
   window.addEventListener("resize", resizeScene);
   window.addEventListener("dashboard:visibilityChanged", handleVisibilityChange);
+}
+
+function renderPendingAreaAnalysis() {
+  if (!pendingAreaAnalysisRender || document.hidden) return false;
+  const pending = pendingAreaAnalysisRender;
+  pendingAreaAnalysisRender = null;
+  const selectedUniverseId = String(window.getSelectedUniverseId?.() || "");
+  if (pending.universeId && pending.universeId !== selectedUniverseId) return false;
+  renderAreaAnalysisPayload(pending.analysis, { statusPrefix: "Loaded saved AI area analysis" });
+  deferredAreaAnalysisRenderedAt = Date.now();
+  return true;
 }
 
 function initScene() {
@@ -309,7 +339,7 @@ function handleVisibilityChange() {
     resizeScene();
     startAnimation();
     startHeatmapRefresh();
-    loadHeatmap();
+    if (!renderPendingAreaAnalysis()) loadHeatmap();
   }
 }
 

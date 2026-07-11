@@ -116,8 +116,14 @@ let chatLogRequestSequence = 0;
 let chatLogRequestState = null;
 let chatInsightsRequestSequence = 0;
 let aiReportHistoryRequestSequence = 0;
+let aiReportRequestSequence = 0;
+let aiAutomationSettingsRequestSequence = 0;
+let usageRequestSequence = 0;
+let adminUsersRequestSequence = 0;
+let reconciliationRequestSequence = 0;
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
+const aiReportPayloadCache = new Map();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -141,6 +147,20 @@ const DASHBOARD_SESSION_CACHE_PREFIX = "roanalytics.dashboard.v2";
 const UNIVERSE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SIGNAL_CACHE_FRESH_MS = 12 * 1000;
 const SIGNAL_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const USAGE_CACHE_FRESH_MS = 30 * 1000;
+const USAGE_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const ADMIN_CACHE_FRESH_MS = 30 * 1000;
+const ADMIN_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+const AI_REPORT_HISTORY_CACHE_FRESH_MS = 20 * 1000;
+const AI_REPORT_HISTORY_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+const AI_REPORT_LATEST_CACHE_MS = 20 * 1000;
+const AI_REPORT_VERSION_CACHE_MS = 24 * 60 * 60 * 1000;
+const AI_REPORT_MISSING_CACHE_MS = 20 * 1000;
+const AI_AUTOMATION_CACHE_FRESH_MS = 30 * 1000;
+const AI_AUTOMATION_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const MAX_AI_REPORT_MEMORY_CACHE_ENTRIES = 8;
+const MAX_AI_REPORT_SESSION_CACHE_ENTRIES = 6;
+const MAX_AI_REPORT_SESSION_CACHE_CHARS = 1_000_000;
 const MAX_SIGNAL_SESSION_CACHE_ENTRIES = 8;
 const MAX_SIGNAL_SESSION_CACHE_CHARS = 1_000_000;
 const MAX_SESSION_CACHE_CHARS = 1_500_000;
@@ -172,7 +192,7 @@ function bindEvents() {
 
   refreshUniversesButton?.addEventListener("click", loadUniverses);
   refreshIntegrationStatusButton?.addEventListener("click", loadUniverses);
-  refreshUsageButton?.addEventListener("click", loadAccountUsage);
+  refreshUsageButton?.addEventListener("click", () => loadAccountUsage({ force: true }));
   usagePlanOptions?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-select-plan]");
     if (button) selectPlan(button.dataset.selectPlan || "");
@@ -207,8 +227,8 @@ function bindEvents() {
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
-  refreshAdminUsersButton?.addEventListener("click", loadAdminUsers);
-  refreshReconciliationButton?.addEventListener("click", loadReconciliations);
+  refreshAdminUsersButton?.addEventListener("click", () => loadAdminUsers({ force: true }));
+  refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     saveReconciliation();
@@ -437,6 +457,16 @@ function writeScopedSessionCache(namespace, key, payload) {
   }
 }
 
+function removeScopedSessionCache(namespace, key) {
+  const storageKey = getScopedSessionCacheKey(namespace, key);
+  if (!storageKey) return;
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // Session storage is optional; the next live request still refreshes the view.
+  }
+}
+
 function pruneScopedSignalAreaCache() {
   const scope = resolveDashboardCacheScope();
   if (!scope) return;
@@ -504,6 +534,12 @@ function abortActiveDashboardRequests() {
   chatLogRequestSequence += 1;
   chatInsightsRequestSequence += 1;
   aiReportHistoryRequestSequence += 1;
+  aiReportRequestSequence += 1;
+  aiAutomationSettingsRequestSequence += 1;
+  usageRequestSequence += 1;
+  adminUsersRequestSequence += 1;
+  reconciliationRequestSequence += 1;
+  aiReportPayloadCache.clear();
   inFlightGetRequests.clear();
 }
 
@@ -520,6 +556,10 @@ function setAuthenticated(value, user = null) {
   const previousCacheScope = resolveDashboardCacheScope();
   authenticated = value;
   authenticatedUser = authenticated ? user : null;
+  if (authenticated && activeView === "admin" && !authenticatedUser?.isAdmin) {
+    activeView = "overview";
+    if (window.location.hash === "#admin") window.history.replaceState(null, "", "#overview");
+  }
   loadedViews.clear();
   document.body.classList.toggle("isLocked", !authenticated);
   accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
@@ -720,7 +760,13 @@ function updateViewRefreshTimers() {
 function loadActiveViewData(view, options = {}) {
   if (!authenticated) return;
   if (!selectedUniverseId && UNIVERSE_SCOPED_VIEWS.has(view)) return;
-  if (!options.force && loadedViews.has(view)) return;
+  if (!options.force && loadedViews.has(view)) {
+    if (view === "ai-runs") {
+      loadAiAutomationSettings();
+      loadAiReportHistory();
+    }
+    return;
+  }
   loadedViews.add(view);
 
   if (view === "areas") {
@@ -764,21 +810,35 @@ function stopSignalRefresh() {
   }
 }
 
-async function loadAdminUsers() {
+async function loadAdminUsers(options = {}) {
   if (!authenticatedUser?.isAdmin || !adminUserList) return;
 
-  adminUsersStatus.textContent = "Loading users...";
+  const force = Boolean(options?.force);
+  const requestSequence = ++adminUsersRequestSequence;
+  const cached = force ? null : readScopedSessionCache("admin-users", "summary", ADMIN_CACHE_MAX_AGE_MS);
+  if (cached?.payload) renderAdminUsers(cached.payload);
+  if (cached && Date.now() - cached.storedAt < ADMIN_CACHE_FRESH_MS) {
+    setAdminButtonsDisabled(false);
+    return;
+  }
+
+  const hadRenderedData = Boolean(cached?.payload || adminUserList.childElementCount);
+  if (!hadRenderedData) adminUsersStatus.textContent = "Loading users...";
   setAdminButtonsDisabled(true);
 
   try {
-    const data = await request("/api/admin/users");
+    const data = await request(force ? "/api/admin/users?fresh=1" : "/api/admin/users");
+    if (requestSequence !== adminUsersRequestSequence) return;
+    writeScopedSessionCache("admin-users", "summary", data);
     renderAdminUsers(data);
   } catch (error) {
+    if (requestSequence !== adminUsersRequestSequence) return;
     handleAuthError(error);
+    if (!authenticated) return;
     adminUsersStatus.textContent = error.message;
-    adminUserList.innerHTML = "";
+    if (!hadRenderedData) adminUserList.innerHTML = "";
   } finally {
-    setAdminButtonsDisabled(false);
+    if (requestSequence === adminUsersRequestSequence) setAdminButtonsDisabled(false);
   }
 }
 
@@ -793,6 +853,7 @@ async function resetAdminUsage(button) {
 
   adminUsersStatus.textContent = `Resetting usage for ${username}...`;
   setAdminButtonsDisabled(true);
+  const requestSequence = ++adminUsersRequestSequence;
 
   try {
     const data = await request("/api/admin/usage/reset", {
@@ -800,15 +861,23 @@ async function resetAdminUsage(button) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
+    if (requestSequence !== adminUsersRequestSequence || !authenticated) return;
+    writeScopedSessionCache("admin-users", "summary", data);
+    removeScopedSessionCache("account-usage", "current");
+    removeScopedSessionCache("admin-reconciliations", "summary");
+    loadedViews.delete("usage");
     renderAdminUsers(data);
     const deletedEvents = data.reset?.deletedEvents || 0;
     adminUsersStatus.textContent = `Usage reset for ${data.reset?.targetUsername || username}. Deleted ${formatCompactNumber(deletedEvents)} usage events.`;
+    if (activeView === "admin") void loadReconciliations({ force: true });
     if (activeView === "usage") loadAccountUsage();
   } catch (error) {
+    if (requestSequence !== adminUsersRequestSequence) return;
     handleAuthError(error);
+    if (!authenticated) return;
     adminUsersStatus.textContent = error.message;
   } finally {
-    setAdminButtonsDisabled(false);
+    if (requestSequence === adminUsersRequestSequence) setAdminButtonsDisabled(false);
   }
 }
 
@@ -825,6 +894,7 @@ async function saveAdminUserPlan(button) {
   const controls = card?.querySelectorAll("[data-admin-plan-user], [data-admin-save-plan-user]") || [];
   for (const control of controls) control.disabled = true;
   adminUsersStatus.textContent = `Changing plan for ${username}...`;
+  const requestSequence = ++adminUsersRequestSequence;
 
   try {
     const data = await request("/api/admin/users/plan", {
@@ -832,10 +902,16 @@ async function saveAdminUserPlan(button) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, planKey }),
     });
+    if (requestSequence !== adminUsersRequestSequence || !authenticated) return;
+    writeScopedSessionCache("admin-users", "summary", data);
+    removeScopedSessionCache("account-usage", "current");
+    loadedViews.delete("usage");
     renderAdminUsers(data);
     adminUsersStatus.textContent = `${data.planChange?.targetUsername || username} is now on ${data.planChange?.planName || "the selected plan"}.`;
   } catch (error) {
+    if (requestSequence !== adminUsersRequestSequence) return;
     handleAuthError(error);
+    if (!authenticated) return;
     adminUsersStatus.textContent = formatRequestError(error);
     for (const control of controls) control.disabled = false;
   }
@@ -858,27 +934,43 @@ function renderAdminUsers(data) {
 
 function setAdminButtonsDisabled(disabled) {
   if (refreshAdminUsersButton) refreshAdminUsersButton.disabled = disabled;
-  for (const button of document.querySelectorAll("[data-reset-usage-user]")) {
-    button.disabled = disabled || !authenticatedUser?.isAdmin;
+  for (const control of document.querySelectorAll("[data-reset-usage-user], [data-admin-plan-user], [data-admin-save-plan-user]")) {
+    control.disabled = disabled || !authenticatedUser?.isAdmin;
   }
 }
 
-async function loadReconciliations() {
+async function loadReconciliations(options = {}) {
   if (!authenticatedUser?.isAdmin || !reconciliationList) return;
 
-  if (reconciliationStatus) reconciliationStatus.textContent = "Loading reconciliation...";
+  const force = Boolean(options?.force);
+  const requestSequence = ++reconciliationRequestSequence;
+  const cached = force ? null : readScopedSessionCache("admin-reconciliations", "summary", ADMIN_CACHE_MAX_AGE_MS);
+  if (cached?.payload) renderReconciliations(cached.payload);
+  if (cached && Date.now() - cached.storedAt < ADMIN_CACHE_FRESH_MS) {
+    setReconciliationFormDisabled(false);
+    return;
+  }
+
+  const hadRenderedData = Boolean(cached?.payload || reconciliationList.childElementCount);
+  if (!hadRenderedData && reconciliationStatus) reconciliationStatus.textContent = "Loading reconciliation...";
   setReconciliationFormDisabled(true);
 
   try {
-    const data = await request("/api/admin/reconciliations");
+    const data = await request(force ? "/api/admin/reconciliations?fresh=1" : "/api/admin/reconciliations");
+    if (requestSequence !== reconciliationRequestSequence) return;
+    writeScopedSessionCache("admin-reconciliations", "summary", data);
     renderReconciliations(data);
   } catch (error) {
+    if (requestSequence !== reconciliationRequestSequence) return;
     handleAuthError(error);
+    if (!authenticated) return;
     if (reconciliationStatus) reconciliationStatus.textContent = error.message;
-    if (reconciliationStats) reconciliationStats.innerHTML = "";
-    if (reconciliationList) reconciliationList.innerHTML = "";
+    if (!hadRenderedData) {
+      if (reconciliationStats) reconciliationStats.innerHTML = "";
+      if (reconciliationList) reconciliationList.innerHTML = "";
+    }
   } finally {
-    setReconciliationFormDisabled(false);
+    if (requestSequence === reconciliationRequestSequence) setReconciliationFormDisabled(false);
   }
 }
 
@@ -887,6 +979,7 @@ async function saveReconciliation() {
 
   if (reconciliationStatus) reconciliationStatus.textContent = "Saving reconciliation...";
   setReconciliationFormDisabled(true);
+  const requestSequence = ++reconciliationRequestSequence;
 
   try {
     const data = await request("/api/admin/reconciliations", {
@@ -901,13 +994,17 @@ async function saveReconciliation() {
         notes: reconciliationNotes?.value || "",
       }),
     });
+    if (requestSequence !== reconciliationRequestSequence || !authenticated) return;
+    writeScopedSessionCache("admin-reconciliations", "summary", data);
     renderReconciliations(data);
     if (reconciliationStatus) reconciliationStatus.textContent = "Reconciliation saved.";
   } catch (error) {
+    if (requestSequence !== reconciliationRequestSequence) return;
     handleAuthError(error);
+    if (!authenticated) return;
     if (reconciliationStatus) reconciliationStatus.textContent = error.message;
   } finally {
-    setReconciliationFormDisabled(false);
+    if (requestSequence === reconciliationRequestSequence) setReconciliationFormDisabled(false);
   }
 }
 
@@ -920,16 +1017,21 @@ async function deleteReconciliation(button) {
 
   if (reconciliationStatus) reconciliationStatus.textContent = `Deleting ${month}...`;
   setReconciliationFormDisabled(true);
+  const requestSequence = ++reconciliationRequestSequence;
 
   try {
     const data = await request(`/api/admin/reconciliations/${encodeURIComponent(month)}`, { method: "DELETE" });
+    if (requestSequence !== reconciliationRequestSequence || !authenticated) return;
+    writeScopedSessionCache("admin-reconciliations", "summary", data);
     renderReconciliations(data);
     if (reconciliationStatus) reconciliationStatus.textContent = `Deleted reconciliation for ${month}.`;
   } catch (error) {
+    if (requestSequence !== reconciliationRequestSequence) return;
     handleAuthError(error);
+    if (!authenticated) return;
     if (reconciliationStatus) reconciliationStatus.textContent = error.message;
   } finally {
-    setReconciliationFormDisabled(false);
+    if (requestSequence === reconciliationRequestSequence) setReconciliationFormDisabled(false);
   }
 }
 
@@ -1014,21 +1116,43 @@ function setReconciliationFormDisabled(disabled) {
   }
 }
 
-async function loadAccountUsage() {
+async function loadAccountUsage(options = {}) {
   if (!authenticated || !usageMetricGrid) return;
 
-  usageStatus.textContent = "Loading usage...";
+  const force = Boolean(options?.force);
+  const requestSequence = ++usageRequestSequence;
+  const cached = readScopedSessionCache("account-usage", "current", USAGE_CACHE_MAX_AGE_MS);
+  const hasCachedPayload = Boolean(cached?.payload?.usage && cached?.payload?.period);
+
+  if (hasCachedPayload) {
+    renderAccountUsage(cached.payload);
+    if (!force && Date.now() - cached.storedAt < USAGE_CACHE_FRESH_MS) return cached.payload;
+    if (usageStatus) usageStatus.textContent = force ? "Refreshing usage..." : "Refreshing usage in the background...";
+  } else if (usageStatus) {
+    usageStatus.textContent = "Loading usage...";
+  }
   if (refreshUsageButton) refreshUsageButton.disabled = true;
 
   try {
-    const data = await request("/api/account/usage");
+    const needsExactRefresh = force || hasCachedPayload;
+    const data = await request(needsExactRefresh ? "/api/account/usage?refresh=1" : "/api/account/usage");
+    if (requestSequence !== usageRequestSequence || !authenticated) return null;
     renderAccountUsage(data);
+    writeScopedSessionCache("account-usage", "current", data);
+    return data;
   } catch (error) {
+    if (requestSequence !== usageRequestSequence) return null;
     handleAuthError(error);
-    usageStatus.textContent = formatRequestError(error);
-    usageMetricGrid.innerHTML = "";
+    if (!authenticated) return null;
+    if (hasCachedPayload) {
+      usageStatus.textContent = `Showing cached usage. Refresh failed: ${formatRequestError(error)}`;
+    } else {
+      usageStatus.textContent = formatRequestError(error);
+      usageMetricGrid.innerHTML = "";
+    }
+    return null;
   } finally {
-    if (refreshUsageButton) refreshUsageButton.disabled = false;
+    if (requestSequence === usageRequestSequence && refreshUsageButton) refreshUsageButton.disabled = false;
   }
 }
 
@@ -1110,6 +1234,7 @@ function renderPlanOption(plan) {
 async function selectPlan(planKey) {
   if (!planKey || !usagePlanOptions) return;
 
+  usageRequestSequence += 1;
   const buttons = usagePlanOptions.querySelectorAll("[data-select-plan]");
   for (const button of buttons) button.disabled = true;
   if (usageStatus) usageStatus.textContent = "Updating plan...";
@@ -1120,11 +1245,17 @@ async function selectPlan(planKey) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ planKey }),
     });
+    if (!authenticated) return;
+    usageRequestSequence += 1;
     renderAccountUsage(data);
+    writeScopedSessionCache("account-usage", "current", data);
+    removeScopedSessionCache("admin-users", "summary");
+    loadedViews.delete("admin");
     if (usageStatus) usageStatus.textContent = `Plan changed to ${data.plan || "selected plan"}.`;
     await loadOwnedGames();
   } catch (error) {
     handleAuthError(error);
+    if (!authenticated) return;
     if (usageStatus) usageStatus.textContent = formatRequestError(error);
     await loadAccountUsage();
   }
@@ -1350,6 +1481,11 @@ async function createProject() {
       body: JSON.stringify({ universeId }),
     });
     showProjectSecret(data.secret || "", data.project);
+    usageRequestSequence += 1;
+    removeScopedSessionCache("account-usage", "current");
+    loadedViews.delete("usage");
+    removeScopedSessionCache("admin-users", "summary");
+    loadedViews.delete("admin");
     if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Copy the Roblox secret now.";
     await loadUniverses();
     await loadOwnedGames();
@@ -1407,6 +1543,11 @@ async function unlinkProject(projectId, button) {
 
   try {
     await request(`/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+    usageRequestSequence += 1;
+    removeScopedSessionCache("account-usage", "current");
+    loadedViews.delete("usage");
+    removeScopedSessionCache("admin-users", "summary");
+    loadedViews.delete("admin");
     if (ownedGamesStatus) ownedGamesStatus.textContent = `${label} was unlinked and its stored analytics data was deleted.`;
     await loadUniverses();
     await loadOwnedGames();
@@ -2023,27 +2164,48 @@ async function loadChatInsights() {
   } catch (error) {
     if (requestSequence !== chatInsightsRequestSequence || universeId !== selectedUniverseId) return;
     handleAuthError(error);
+    if (!authenticated) return;
     chatInsightsStatus.textContent = formatRequestError(error);
     commonQuestionList.innerHTML = "";
     renderAiReportHistory([]);
   }
 }
 
-async function loadAiReportHistory() {
+async function loadAiReportHistory(options = {}) {
   if (!authenticated || !selectedUniverseId || !aiReportSelect) return;
 
   const requestSequence = ++aiReportHistoryRequestSequence;
   const universeId = selectedUniverseId;
+  const cacheKey = String(universeId);
+  const cached = readScopedSessionCache(
+    "ai-report-history",
+    cacheKey,
+    AI_REPORT_HISTORY_CACHE_MAX_AGE_MS,
+  );
+  const hasCachedReports = Array.isArray(cached?.payload?.reports);
+  if (hasCachedReports) renderAiReportHistory(cached.payload.reports);
+
+  if (!options.force && hasCachedReports && Date.now() - cached.storedAt < AI_REPORT_HISTORY_CACHE_FRESH_MS) {
+    return cached.payload.reports;
+  }
 
   try {
     const query = `?universeId=${encodeURIComponent(universeId)}`;
-    const data = await request(`/api/ai-insights/reports${query}`);
+    const data = await request(`/api/ai-insights/reports${query}`, { dedupe: !options.force });
     if (requestSequence !== aiReportHistoryRequestSequence || universeId !== selectedUniverseId) return;
-    renderAiReportHistory(data.reports || []);
+    const reports = Array.isArray(data.reports) ? data.reports : [];
+    if (!reports.length && cached?.payload?.reports?.length) {
+      return cached.payload.reports;
+    }
+    writeScopedSessionCache("ai-report-history", cacheKey, { reports });
+    renderAiReportHistory(reports);
+    return reports;
   } catch (error) {
     if (requestSequence !== aiReportHistoryRequestSequence || universeId !== selectedUniverseId) return;
     handleAuthError(error);
-    renderAiReportHistory([]);
+    if (!authenticated) return [];
+    if (!hasCachedReports) renderAiReportHistory([]);
+    return hasCachedReports ? cached.payload.reports : [];
   }
 }
 
@@ -2051,6 +2213,7 @@ function renderAiReportHistory(reports) {
   if (!aiReportSelect) return;
 
   const cleanReports = Array.isArray(reports) ? reports : [];
+  const selectedValue = String(aiReportSelect.value || "");
   aiReportSelect.disabled = !selectedUniverseId || !cleanReports.length;
   aiReportSelect.innerHTML = [
     `<option value="">Latest saved report</option>`,
@@ -2061,27 +2224,143 @@ function renderAiReportHistory(reports) {
       return `<option value="${escapeHtml(generatedAt)}">${escapeHtml(label)}</option>`;
     }),
   ].join("");
+  if (selectedValue && cleanReports.some((report) => String(report.generatedAt || "") === selectedValue)) {
+    aiReportSelect.value = selectedValue;
+  }
 }
 
 async function loadSelectedAiReport() {
   if (!authenticated || !selectedUniverseId || !aiReportSelect) return;
 
+  const requestSequence = ++aiReportRequestSequence;
+  const universeId = selectedUniverseId;
+  const generatedAt = String(aiReportSelect.value || "");
+  const params = new URLSearchParams();
+  params.set("universeId", universeId);
+  if (generatedAt) params.set("generatedAt", generatedAt);
+  const requestUrl = `/api/ai-insights/report?${params.toString()}`;
+  const cacheKey = `${resolveDashboardCacheScope()}:${requestUrl}`;
+  const cached = getAiReportPayloadCache(cacheKey, generatedAt, requestUrl);
+  if (cached) {
+    applySelectedAiReportResponse(cached.payload, { requestSequence, universeId, generatedAt });
+    return cached.payload;
+  }
+
   try {
-    const params = new URLSearchParams();
-    params.set("universeId", selectedUniverseId);
-    if (aiReportSelect.value) params.set("generatedAt", aiReportSelect.value);
-
-    const data = await request(`/api/ai-insights/report?${params.toString()}`);
-    if (!data.report) {
-      chatInsightsStatus.textContent = "Saved AI report was not found.";
-      return;
-    }
-
-    renderAiReport(data.report);
+    const data = await request(requestUrl);
+    if (!isCurrentAiReportRequest({ requestSequence, universeId, generatedAt })) return;
+    setAiReportPayloadCache(cacheKey, data, { generatedAt, requestUrl });
+    applySelectedAiReportResponse(data, { requestSequence, universeId, generatedAt });
+    return data;
   } catch (error) {
+    if (!isCurrentAiReportRequest({ requestSequence, universeId, generatedAt })) return;
     handleAuthError(error);
+    if (!authenticated) return;
     chatInsightsStatus.textContent = formatRequestError(error);
   }
+}
+
+function applySelectedAiReportResponse(data, context) {
+  if (!isCurrentAiReportRequest(context)) return;
+  if (!data?.report) {
+    chatInsightsStatus.textContent = "Saved AI report was not found.";
+    return;
+  }
+  renderAiReport(data.report);
+}
+
+function isCurrentAiReportRequest(context) {
+  return context.requestSequence === aiReportRequestSequence
+    && context.universeId === selectedUniverseId
+    && context.generatedAt === String(aiReportSelect?.value || "");
+}
+
+function getAiReportPayloadCache(cacheKey, generatedAt, requestUrl = "") {
+  let cached = aiReportPayloadCache.get(cacheKey);
+  if (!cached && generatedAt && requestUrl) {
+    const persisted = readScopedSessionCache("ai-report", requestUrl, AI_REPORT_VERSION_CACHE_MS);
+    if (persisted?.payload?.report) {
+      cached = { storedAt: persisted.storedAt, payload: persisted.payload };
+      aiReportPayloadCache.set(cacheKey, cached);
+      trimAiReportPayloadMemoryCache();
+    }
+  }
+  if (!cached) return null;
+  const maxAgeMs = cached.payload?.report
+    ? (generatedAt ? AI_REPORT_VERSION_CACHE_MS : AI_REPORT_LATEST_CACHE_MS)
+    : AI_REPORT_MISSING_CACHE_MS;
+  if (Date.now() - cached.storedAt <= maxAgeMs) return cached;
+  aiReportPayloadCache.delete(cacheKey);
+  return null;
+}
+
+function setAiReportPayloadCache(cacheKey, payload, options = {}) {
+  aiReportPayloadCache.delete(cacheKey);
+  aiReportPayloadCache.set(cacheKey, { storedAt: Date.now(), payload });
+  trimAiReportPayloadMemoryCache();
+  if (options.generatedAt && options.requestUrl && payload?.report) {
+    pruneScopedAiReportCache();
+    writeScopedSessionCache("ai-report", options.requestUrl, payload);
+    pruneScopedAiReportCache();
+  }
+}
+
+function trimAiReportPayloadMemoryCache() {
+  while (aiReportPayloadCache.size > MAX_AI_REPORT_MEMORY_CACHE_ENTRIES) {
+    aiReportPayloadCache.delete(aiReportPayloadCache.keys().next().value);
+  }
+}
+
+function pruneScopedAiReportCache() {
+  const scope = resolveDashboardCacheScope();
+  if (!scope) return;
+  const prefix = `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:ai-report:`;
+  try {
+    const entries = [];
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      const serialized = window.sessionStorage.getItem(key) || "";
+      let storedAt = 0;
+      try {
+        storedAt = Number(JSON.parse(serialized || "null")?.storedAt) || 0;
+      } catch {
+        storedAt = 0;
+      }
+      if (!storedAt || Date.now() - storedAt > AI_REPORT_VERSION_CACHE_MS) {
+        window.sessionStorage.removeItem(key);
+      } else {
+        entries.push({ key, storedAt, size: serialized.length });
+      }
+    }
+
+    entries.sort((a, b) => b.storedAt - a.storedAt);
+    let keptEntries = 0;
+    let keptChars = 0;
+    for (const entry of entries) {
+      const fits = keptEntries < MAX_AI_REPORT_SESSION_CACHE_ENTRIES
+        && keptChars + entry.size <= MAX_AI_REPORT_SESSION_CACHE_CHARS;
+      if (fits) {
+        keptEntries += 1;
+        keptChars += entry.size;
+      } else {
+        window.sessionStorage.removeItem(entry.key);
+      }
+    }
+  } catch {
+    // Saved report caching is optional and must not block object-storage reads.
+  }
+}
+
+function cacheGeneratedAiReport(report, universeId) {
+  const scope = resolveDashboardCacheScope();
+  const latestUrl = `/api/ai-insights/report?universeId=${encodeURIComponent(universeId)}`;
+  aiReportPayloadCache.delete(`${scope}:${latestUrl}`);
+  const generatedAt = String(report?.generatedAt || "");
+  if (!generatedAt) return;
+  const params = new URLSearchParams({ universeId: String(universeId), generatedAt });
+  const requestUrl = `/api/ai-insights/report?${params.toString()}`;
+  setAiReportPayloadCache(`${scope}:${requestUrl}`, { report }, { generatedAt, requestUrl });
 }
 
 function renderAiReport(report) {
@@ -2113,7 +2392,7 @@ function renderAiReport(report) {
   }
 }
 
-async function loadAiAutomationSettings() {
+async function loadAiAutomationSettings(options = {}) {
   if (!authenticated || !aiAutomationToggle) return;
   if (!selectedUniverseId) {
     aiAutomationToggle.checked = false;
@@ -2121,17 +2400,36 @@ async function loadAiAutomationSettings() {
     return;
   }
 
-  try {
-    const data = await request(`/api/ai-insights/settings?universeId=${encodeURIComponent(selectedUniverseId)}`);
-    const isAuto = data.mode !== "manual";
-    aiAutomationToggle.checked = isAuto;
-    aiAutomationStatus.textContent = isAuto
-      ? "Runs every hour"
-      : "Manual only";
-  } catch (error) {
-    handleAuthError(error);
-    if (aiAutomationStatus) aiAutomationStatus.textContent = error.message;
+  const requestSequence = ++aiAutomationSettingsRequestSequence;
+  const universeId = selectedUniverseId;
+  aiAutomationToggle.disabled = false;
+  const cacheKey = String(universeId);
+  const cached = readScopedSessionCache("ai-automation", cacheKey, AI_AUTOMATION_CACHE_MAX_AGE_MS);
+  if (cached?.payload) renderAiAutomationSettings(cached.payload);
+  if (!options.force && cached?.payload && Date.now() - cached.storedAt < AI_AUTOMATION_CACHE_FRESH_MS) {
+    return cached.payload;
   }
+
+  try {
+    const data = await request(`/api/ai-insights/settings?universeId=${encodeURIComponent(universeId)}`);
+    if (requestSequence !== aiAutomationSettingsRequestSequence || universeId !== selectedUniverseId) return;
+    writeScopedSessionCache("ai-automation", cacheKey, data);
+    renderAiAutomationSettings(data);
+    return data;
+  } catch (error) {
+    if (requestSequence !== aiAutomationSettingsRequestSequence || universeId !== selectedUniverseId) return;
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (!cached?.payload && aiAutomationStatus) aiAutomationStatus.textContent = error.message;
+  }
+}
+
+function renderAiAutomationSettings(settings) {
+  const isAuto = settings?.mode !== "manual";
+  aiAutomationToggle.checked = isAuto;
+  aiAutomationStatus.textContent = isAuto
+    ? "Runs every hour"
+    : "Manual only";
 }
 
 async function saveAiAutomationSettings() {
@@ -2144,23 +2442,29 @@ async function saveAiAutomationSettings() {
 
   aiAutomationToggle.disabled = true;
   aiAutomationStatus.textContent = "Saving...";
+  const requestSequence = ++aiAutomationSettingsRequestSequence;
+  const universeId = selectedUniverseId;
 
   try {
     const mode = aiAutomationToggle.checked ? "auto" : "manual";
-    const data = await request(`/api/ai-insights/settings?universeId=${encodeURIComponent(selectedUniverseId)}`, {
+    const data = await request(`/api/ai-insights/settings?universeId=${encodeURIComponent(universeId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     });
-    aiAutomationStatus.textContent = data.mode === "manual"
-      ? "Manual only"
-      : "Runs every hour";
+    if (requestSequence !== aiAutomationSettingsRequestSequence || universeId !== selectedUniverseId) return;
+    writeScopedSessionCache("ai-automation", String(universeId), data);
+    renderAiAutomationSettings(data);
   } catch (error) {
+    if (requestSequence !== aiAutomationSettingsRequestSequence || universeId !== selectedUniverseId) return;
     handleAuthError(error);
+    if (!authenticated) return;
     aiAutomationToggle.checked = !aiAutomationToggle.checked;
     aiAutomationStatus.textContent = error.message;
   } finally {
-    aiAutomationToggle.disabled = false;
+    if (requestSequence === aiAutomationSettingsRequestSequence && universeId === selectedUniverseId) {
+      aiAutomationToggle.disabled = false;
+    }
   }
 }
 
@@ -2176,8 +2480,11 @@ async function runChatInsightsAnalysis() {
       return;
     }
 
+    const universeId = selectedUniverseId;
     const query = buildAiInsightsQuery();
     const data = await request(`/api/ai-insights/analyze${query}`, { method: "POST" });
+    if (universeId !== selectedUniverseId) return;
+    cacheGeneratedAiReport(data, universeId);
     renderAiReport(data);
 
     if (data.errors?.length) {
@@ -2186,12 +2493,13 @@ async function runChatInsightsAnalysis() {
       chatInsightsMode.textContent = "Partial AI";
     }
 
-    await loadAiReportHistory();
+    await loadAiReportHistory({ force: true });
     if (aiReportSelect && data.generatedAt) {
       aiReportSelect.value = String(data.generatedAt);
     }
   } catch (error) {
     handleAuthError(error);
+    if (!authenticated) return;
     chatInsightsStatus.textContent = formatRequestError(error);
     chatInsightsMode.textContent = "AI failed";
   } finally {

@@ -73,7 +73,12 @@ const ANALYTICS_RESPONSE_CACHE_MS = cleanEnvInteger("ANALYTICS_RESPONSE_CACHE_MS
 const MAX_ANALYTICS_RESPONSE_CACHE_ENTRIES = cleanEnvInteger("MAX_ANALYTICS_RESPONSE_CACHE_ENTRIES", 32);
 const UNIVERSE_ROLLUP_READ_CONCURRENCY = Math.max(1, cleanEnvInteger("UNIVERSE_ROLLUP_READ_CONCURRENCY", 4));
 const MONTHLY_USAGE_SNAPSHOT_DEBOUNCE_MS = cleanEnvInteger("MONTHLY_USAGE_SNAPSHOT_DEBOUNCE_MS", 100);
+const CURRENT_USAGE_SNAPSHOT_MAX_AGE_MS = cleanEnvInteger("CURRENT_USAGE_SNAPSHOT_MAX_AGE_MS", 15 * 60 * 1000);
 const USAGE_QUOTA_CACHE_MS = cleanEnvInteger("USAGE_QUOTA_CACHE_MS", 1000);
+const ACCOUNT_USAGE_RESPONSE_CACHE_MS = cleanEnvInteger("ACCOUNT_USAGE_RESPONSE_CACHE_MS", 30 * 1000);
+const MAX_ACCOUNT_USAGE_RESPONSE_CACHE_ENTRIES = Math.max(1, cleanEnvInteger("MAX_ACCOUNT_USAGE_RESPONSE_CACHE_ENTRIES", 200));
+const ADMIN_RESPONSE_CACHE_MS = cleanEnvInteger("ADMIN_RESPONSE_CACHE_MS", 60 * 1000);
+const ADMIN_SNAPSHOT_REFRESH_CONCURRENCY = Math.max(1, cleanEnvInteger("ADMIN_SNAPSHOT_REFRESH_CONCURRENCY", 2));
 const MONGO_MAX_POOL_SIZE = Math.max(5, cleanEnvInteger("MONGO_MAX_POOL_SIZE", 10));
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const DEFAULT_OPENAI_INSIGHTS_MODEL = "gpt-5.4-nano";
@@ -276,12 +281,22 @@ const analyticsResponseCache = new Map();
 const analyticsResponseRequests = new Map();
 const analyticsDataVersionByUniverseId = new Map();
 const monthlyUsageSnapshotRefreshes = new Map();
+const monthlyUsageSnapshotEnsureRequests = new Map();
+const usageSnapshotVersionByUserId = new Map();
+const usageSnapshotWriteLocks = new Map();
 const usageQuotaCache = new Map();
 const usageQuotaRequests = new Map();
 const usageQuotaVersionByUserId = new Map();
+const accountUsageResponseCache = new Map();
+const accountUsageResponseRequests = new Map();
+const accountUsageResponseVersionByUserId = new Map();
 const objectStorageReadReservationsByUserId = new Map();
 const objectStorageReadReservationLocks = new Map();
 const rawObjectStorageCleanupByUniverse = new Map();
+const adminResponseCache = new Map();
+const adminResponseRequests = new Map();
+const adminResponseVersions = new Map();
+const LOCAL_USAGE_SNAPSHOT_STORE_LOCK_KEY = "__local_monthly_usage_store__";
 const OBJECT_STORAGE_ROLLUP_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_CACHE_MS", 60 * 1000);
 let persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
 let persistedMapUniverseIdsRequest = null;
@@ -404,7 +419,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/account/usage" && req.method === "GET") {
-      return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+      return sendJson(res, 200, await getCachedAccountUsageSummary(auth.userId, {
+        force: url.searchParams.get("refresh") === "1",
+      }));
     }
 
     if (url.pathname === "/api/account/plan" && req.method === "POST") {
@@ -417,7 +434,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 403, { error: "Admin access required" });
       }
 
-      return sendJson(res, 200, await getAdminUserSummaries());
+      return sendJson(res, 200, await getCachedAdminResponse(
+        "users",
+        getAdminUserSummaries,
+        { force: url.searchParams.get("fresh") === "1" },
+      ));
     }
 
     if (url.pathname === "/api/admin/users/plan" && req.method === "POST") {
@@ -435,7 +456,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 403, { error: "Admin access required" });
       }
 
-      return sendJson(res, 200, await getAdminReconciliations());
+      return sendJson(res, 200, await getCachedAdminResponse(
+        "reconciliations",
+        getAdminReconciliations,
+        { force: url.searchParams.get("fresh") === "1" },
+      ));
     }
 
     if (url.pathname === "/api/admin/reconciliations" && req.method === "POST") {
@@ -467,7 +492,7 @@ const server = http.createServer(async (req, res) => {
 
       const deleted = await deleteAdminReconciliation(reconciliationMatch[1]);
       if (!deleted) return sendJson(res, 404, { error: "Reconciliation record not found" });
-      return sendJson(res, 200, await getAdminReconciliations());
+      return sendJson(res, 200, await getCachedAdminResponse("reconciliations", getAdminReconciliations, { force: true }));
     }
 
     if (url.pathname === "/api/admin/usage/reset" && req.method === "POST") {
@@ -489,8 +514,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       const reset = await resetStoredUsageEventsForUser(targetUser, user);
+      invalidateAdminResponseCache("users", "reconciliations");
       return sendJson(res, 200, {
-        ...await getAdminUserSummaries(),
+        ...await getCachedAdminResponse("users", getAdminUserSummaries, { force: true }),
         reset,
       });
     }
@@ -513,12 +539,22 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/ai-insights/reports" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getAiInsightReportsFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(
+        auth.userId,
+        "ai-report-history",
+        url.searchParams,
+        () => getAiInsightReportsFromQuery(url.searchParams),
+      ));
     }
 
     if (url.pathname === "/api/ai-insights/report" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      return sendJson(res, 200, await getAiInsightReportFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(
+        auth.userId,
+        "ai-report",
+        url.searchParams,
+        () => getAiInsightReportFromQuery(url.searchParams),
+      ));
     }
 
     if (url.pathname === "/api/ai-insights/settings" && req.method === "GET") {
@@ -1615,7 +1651,7 @@ async function handleAdminUserPlanUpdate(req, res, adminUser) {
   if (!updated) return sendJson(res, 404, { error: "User not found." });
 
   return sendJson(res, 200, {
-    ...await getAdminUserSummaries(),
+    ...await getCachedAdminResponse("users", getAdminUserSummaries, { force: true }),
     planChange: {
       targetUserId: targetUser.id,
       targetUsername: targetUser.username || targetUser.robloxUsername || targetUser.id,
@@ -5919,6 +5955,63 @@ function normalizeOpenAiConfiguredModel(model) {
   return cleanModel;
 }
 
+function getUsageSnapshotVersion(userId) {
+  const cleanUserId = cleanString(userId, 120);
+  return cleanUserId ? cleanFiniteInteger(usageSnapshotVersionByUserId.get(cleanUserId)) : 0;
+}
+
+function bumpUsageSnapshotVersion(userId) {
+  const cleanUserId = cleanString(userId, 120);
+  if (!cleanUserId) return 0;
+  const version = getUsageSnapshotVersion(cleanUserId) + 1;
+  usageSnapshotVersionByUserId.set(cleanUserId, version);
+  return version;
+}
+
+function cancelScheduledMonthlyUsageSnapshotRefreshes(userId) {
+  const cleanUserId = cleanString(userId, 120);
+  if (!cleanUserId) return;
+  const prefix = `${cleanUserId}:`;
+  for (const [key, state] of monthlyUsageSnapshotRefreshes) {
+    if (!key.startsWith(prefix)) continue;
+    if (state.timer) clearTimeout(state.timer);
+    monthlyUsageSnapshotRefreshes.delete(key);
+  }
+}
+
+async function withUsageSnapshotWriteLock(userId, callback) {
+  const cleanUserId = cleanString(userId, 120);
+  if (!cleanUserId) return callback();
+
+  const previous = usageSnapshotWriteLocks.get(cleanUserId) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  usageSnapshotWriteLocks.set(cleanUserId, current);
+  await previous;
+  try {
+    return await callback();
+  } finally {
+    release();
+    if (usageSnapshotWriteLocks.get(cleanUserId) === current) {
+      usageSnapshotWriteLocks.delete(cleanUserId);
+    }
+  }
+}
+
+async function withUsageSnapshotWriteLocks(userIds, callback) {
+  const ids = [...new Set((Array.isArray(userIds) ? userIds : [])
+    .map((userId) => cleanString(userId, 120))
+    .filter(Boolean))].sort();
+  const acquire = (index) => (
+    index >= ids.length
+      ? callback()
+      : withUsageSnapshotWriteLock(ids[index], () => acquire(index + 1))
+  );
+  return acquire(0);
+}
+
 async function resetStoredUsageEventsForUser(targetUser, adminUser) {
   const userId = cleanString(targetUser?.id, 120);
   if (!userId) {
@@ -5932,41 +6025,56 @@ async function resetStoredUsageEventsForUser(targetUser, adminUser) {
   }
 
   const resetAt = Date.now();
+  bumpUsageSnapshotVersion(userId);
+  cancelScheduledMonthlyUsageSnapshotRefreshes(userId);
+  invalidateUsageQuotaCache(userId);
+  invalidateAccountUsageResponseCache(userId);
   const db = await getMongoDb();
-  invalidateUsageQuotaCache(userId);
 
-  if (db) {
-    const [eventResult, monthlyResult] = await Promise.all([
-      db.collection("usage_events").deleteMany({ userId }),
-      db.collection("monthly_user_usage").deleteMany({ userId }),
-    ]);
-    invalidateUsageQuotaCache(userId);
-    return {
-      resetAt,
-      deletedEvents: cleanFiniteInteger(eventResult.deletedCount),
-      deletedMonthlyUsageRecords: cleanFiniteInteger(monthlyResult.deletedCount),
-      resetBy: getAdminResetLabel(adminUser),
-      targetUserId: userId,
-      targetUsername: getAdminResetLabel(targetUser),
-    };
-  }
+  return withUsageSnapshotWriteLocks(
+    db ? [userId] : [LOCAL_USAGE_SNAPSHOT_STORE_LOCK_KEY, userId],
+    async () => {
+      try {
+        if (db) {
+          const [eventResult, monthlyResult] = await Promise.all([
+            db.collection("usage_events").deleteMany({ userId }),
+            db.collection("monthly_user_usage").deleteMany({ userId }),
+          ]);
+          invalidateUsageQuotaCache(userId);
+          invalidateAccountUsageResponseCache(userId);
+          return {
+            resetAt,
+            deletedEvents: cleanFiniteInteger(eventResult.deletedCount),
+            deletedMonthlyUsageRecords: cleanFiniteInteger(monthlyResult.deletedCount),
+            resetBy: getAdminResetLabel(adminUser),
+            targetUserId: userId,
+            targetUsername: getAdminResetLabel(targetUser),
+          };
+        }
 
-  const events = await readUsageEvents();
-  const remainingEvents = events.filter((event) => event?.userId !== userId);
-  await writeUsageEvents(remainingEvents);
-  const monthlyRecords = await readMonthlyUserUsageRecords();
-  const remainingMonthlyRecords = monthlyRecords.filter((record) => record?.userId !== userId);
-  await writeMonthlyUserUsageRecords(remainingMonthlyRecords);
-  invalidateUsageQuotaCache(userId);
+        const events = await readUsageEvents();
+        const remainingEvents = events.filter((event) => event?.userId !== userId);
+        await writeUsageEvents(remainingEvents);
+        const monthlyRecords = await readMonthlyUserUsageRecords();
+        const remainingMonthlyRecords = monthlyRecords.filter((record) => record?.userId !== userId);
+        await writeMonthlyUserUsageRecords(remainingMonthlyRecords);
+        invalidateUsageQuotaCache(userId);
+        invalidateAccountUsageResponseCache(userId);
 
-  return {
-    resetAt,
-    deletedEvents: events.length - remainingEvents.length,
-    deletedMonthlyUsageRecords: monthlyRecords.length - remainingMonthlyRecords.length,
-    resetBy: getAdminResetLabel(adminUser),
-    targetUserId: userId,
-    targetUsername: getAdminResetLabel(targetUser),
-  };
+        return {
+          resetAt,
+          deletedEvents: events.length - remainingEvents.length,
+          deletedMonthlyUsageRecords: monthlyRecords.length - remainingMonthlyRecords.length,
+          resetBy: getAdminResetLabel(adminUser),
+          targetUserId: userId,
+          targetUsername: getAdminResetLabel(targetUser),
+        };
+      } finally {
+        // Invalidate refreshes that began while the reset was waiting on storage.
+        bumpUsageSnapshotVersion(userId);
+      }
+    },
+  );
 }
 
 function getAdminResetLabel(user) {
@@ -6328,7 +6436,7 @@ async function recordUsage(entry) {
   if (db) {
     await db.collection("usage_events").insertOne(event);
     invalidateUsageQuotaCache(userId);
-    scheduleMonthlyUsageSnapshotRefresh(userId, event.month);
+    scheduleMonthlyUsageSnapshotRefresh(userId, event.month, bumpUsageSnapshotVersion(userId));
     return event;
   }
 
@@ -6336,11 +6444,11 @@ async function recordUsage(entry) {
   events.push(event);
   await writeUsageEvents(events);
   invalidateUsageQuotaCache(userId);
-  scheduleMonthlyUsageSnapshotRefresh(userId, event.month);
+  scheduleMonthlyUsageSnapshotRefresh(userId, event.month, bumpUsageSnapshotVersion(userId));
   return event;
 }
 
-function scheduleMonthlyUsageSnapshotRefresh(userId, month) {
+function scheduleMonthlyUsageSnapshotRefresh(userId, month, usageVersion = getUsageSnapshotVersion(userId)) {
   const cleanUserId = typeof userId === "string" ? userId : "";
   const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
   if (!cleanUserId) return;
@@ -6349,10 +6457,11 @@ function scheduleMonthlyUsageSnapshotRefresh(userId, month) {
   const existing = monthlyUsageSnapshotRefreshes.get(key);
   if (existing) {
     existing.dirty = true;
+    existing.usageVersion = Math.max(cleanFiniteInteger(existing.usageVersion), cleanFiniteInteger(usageVersion));
     return;
   }
 
-  const state = { dirty: false, timer: null };
+  const state = { dirty: false, timer: null, usageVersion: cleanFiniteInteger(usageVersion) };
   monthlyUsageSnapshotRefreshes.set(key, state);
   state.timer = setTimeout(() => {
     state.timer = null;
@@ -6365,7 +6474,16 @@ async function runMonthlyUsageSnapshotRefresh(key, state, userId, month) {
   try {
     do {
       state.dirty = false;
-      await refreshMonthlyUserUsageSnapshot(userId, month);
+      const expectedVersion = state.usageVersion;
+      const record = await refreshMonthlyUserUsageSnapshot(userId, month, expectedVersion);
+      if (
+        !record
+        && monthlyUsageSnapshotRefreshes.get(key) === state
+        && getUsageSnapshotVersion(userId) !== expectedVersion
+      ) {
+        state.usageVersion = getUsageSnapshotVersion(userId);
+        state.dirty = true;
+      }
     } while (state.dirty);
   } catch (error) {
     console.warn("Monthly usage snapshot refresh failed:", error.message || String(error));
@@ -6381,49 +6499,214 @@ async function getMonthlyUsage(userId, month = getUsageMonthKey(Date.now())) {
   if (!cleanUserId) return createEmptyUsageSummary(month);
 
   let summary;
-  const user = await findUserById(cleanUserId);
-  const db = await getMongoDb();
+  const [user, db, storageUsage] = await Promise.all([
+    findUserById(cleanUserId),
+    getMongoDb(),
+    getObjectStorageUsageForUser(cleanUserId),
+  ]);
   if (db) {
-    const events = await db.collection("usage_events")
-      .find({ userId: cleanUserId, month })
-      .project({ _id: 0 })
-      .toArray();
-    summary = aggregateUsageEvents(events, month);
+    summary = (await aggregateUsageSummariesFromMongo(db, [cleanUserId], month)).get(cleanUserId)
+      || createEmptyUsageSummary(month);
   } else {
     const events = await readUsageEvents();
     summary = aggregateUsageEvents(events.filter((event) => event.userId === cleanUserId && event.month === month), month);
   }
 
   return applyPlanToUsageSummary(
-    mergeObjectStorageUsage(summary, await getObjectStorageUsageForUser(cleanUserId)),
+    mergeObjectStorageUsage(summary, storageUsage),
     user,
   );
 }
 
+async function aggregateUsageSummariesFromMongo(db, userIds, month = null) {
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const summaryMonth = cleanUsageMonth(month) || (month === "lifetime" ? "lifetime" : getUsageMonthKey(Date.now()));
+  const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(summaryMonth)]));
+  if (!db || !ids.length) return summaries;
+
+  const match = { userId: { $in: ids } };
+  const cleanMonth = cleanUsageMonth(month);
+  if (cleanMonth) match.month = cleanMonth;
+
+  const [rows, modelRows] = await Promise.all([
+    db.collection("usage_events").aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$userId",
+          aiRequests: { $sum: { $cond: [{ $eq: ["$provider", "openai"] }, 1, 0] } },
+          openAiTokens: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ["$provider", "openai"] }, { $eq: ["$unit", "tokens"] }] },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          cachedOpenAiInputTokens: {
+            $sum: {
+              $cond: [
+                { $eq: ["$provider", "openai"] },
+                { $ifNull: ["$metadata.cachedInputTokens", 0] },
+                0,
+              ],
+            },
+          },
+          aiEstimatedCostUsd: {
+            $sum: {
+              $cond: [
+                { $eq: ["$provider", "openai"] },
+                { $ifNull: ["$estimatedCostUsd", 0] },
+                0,
+              ],
+            },
+          },
+          backblazeUploadedBytes: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ["$provider", "backblaze"] }, { $eq: ["$feature", "object_storage_upload"] }, { $eq: ["$unit", "bytes"] }] },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          backblazeDownloadedBytes: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ["$provider", "backblaze"] }, { $eq: ["$feature", "object_storage_download"] }, { $eq: ["$unit", "bytes"] }] },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          backblazeSkippedRawAnalyticsBytes: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ["$provider", "backblaze"] }, { $eq: ["$feature", "raw_analytics_storage_cap_skip"] }, { $eq: ["$unit", "bytes"] }] },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          events: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ["$feature", "presence_ingest"] }, { $eq: ["$unit", "events"] }] },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          mapUploads: {
+            $sum: {
+              $cond: [
+                { $eq: ["$feature", "map_snapshot_upload"] },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          failedIngests: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ["$unit", "failure"] },
+                    { $regexMatch: { input: { $ifNull: ["$feature", ""] }, regex: "_failed$" } },
+                  ],
+                },
+                { $ifNull: ["$quantity", 0] },
+                0,
+              ],
+            },
+          },
+          estimatedCostUsd: { $sum: { $ifNull: ["$estimatedCostUsd", 0] } },
+        },
+      },
+    ]).toArray(),
+    db.collection("usage_events").aggregate([
+      {
+        $match: {
+          ...match,
+          provider: "openai",
+          "metadata.model": { $type: "string", $ne: "" },
+        },
+      },
+      {
+        $group: {
+          _id: { userId: "$userId", model: "$metadata.model" },
+          count: { $sum: 1 },
+          lastCreatedAt: { $max: "$createdAt" },
+        },
+      },
+    ]).toArray(),
+  ]);
+
+  for (const row of rows) {
+    const userId = cleanString(row?._id, 120);
+    if (!summaries.has(userId)) continue;
+    summaries.set(userId, {
+      ...createEmptyUsageSummary(summaryMonth),
+      aiRequests: cleanFiniteInteger(row.aiRequests),
+      openAiTokens: cleanFiniteInteger(row.openAiTokens),
+      cachedOpenAiInputTokens: cleanFiniteInteger(row.cachedOpenAiInputTokens),
+      aiEstimatedCostUsd: roundMoney(row.aiEstimatedCostUsd),
+      backblazeUploadedBytes: cleanFiniteInteger(row.backblazeUploadedBytes),
+      backblazeDownloadedBytes: cleanFiniteInteger(row.backblazeDownloadedBytes),
+      backblazeSkippedRawAnalyticsBytes: cleanFiniteInteger(row.backblazeSkippedRawAnalyticsBytes),
+      events: cleanFiniteInteger(row.events),
+      failedIngests: cleanFiniteInteger(row.failedIngests),
+      mapUploads: cleanFiniteInteger(row.mapUploads),
+      estimatedCostUsd: roundMoney(row.estimatedCostUsd),
+    });
+  }
+
+  const latestModelAtByUser = new Map();
+  for (const row of modelRows) {
+    const userId = cleanString(row?._id?.userId, 120);
+    const model = cleanString(row?._id?.model, 120);
+    const summary = summaries.get(userId);
+    if (!summary || !model) continue;
+    summary.openAiModelUsage[model] = cleanFiniteInteger(row.count);
+    const lastCreatedAt = cleanInteger(row.lastCreatedAt);
+    if (lastCreatedAt >= cleanInteger(latestModelAtByUser.get(userId))) {
+      latestModelAtByUser.set(userId, lastCreatedAt);
+      summary.currentOpenAiModel = model;
+    }
+  }
+
+  return summaries;
+}
+
 async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now())) {
   const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
-  const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(month)]));
+  const emptySummaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(month)]));
+  let summaries = emptySummaries;
   if (!ids.length) return summaries;
 
-  const users = await readUsers();
+  const dbPromise = getMongoDb();
+  const summariesPromise = dbPromise.then(async (db) => {
+    if (db) return aggregateUsageSummariesFromMongo(db, ids, month);
+    const events = (await readUsageEvents()).filter((event) => ids.includes(event.userId) && event.month === month);
+    const eventsByUser = new Map();
+    for (const event of events) {
+      const userEvents = eventsByUser.get(event.userId) || [];
+      userEvents.push(event);
+      eventsByUser.set(event.userId, userEvents);
+    }
+    const localSummaries = new Map();
+    for (const id of ids) localSummaries.set(id, aggregateUsageEvents(eventsByUser.get(id) || [], month));
+    return localSummaries;
+  });
+  const [users, storageByUser, aggregatedSummaries] = await Promise.all([
+    readUsersForUsage(ids),
+    getObjectStorageUsageByUserIds(ids),
+    summariesPromise,
+  ]);
+  summaries = aggregatedSummaries;
   const usersById = new Map(users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user]));
-  const db = await getMongoDb();
-  const events = db
-    ? await db.collection("usage_events").find({ userId: { $in: ids }, month }).project({ _id: 0 }).toArray()
-    : (await readUsageEvents()).filter((event) => ids.includes(event.userId) && event.month === month);
 
-  const eventsByUser = new Map();
-  for (const event of events) {
-    const userEvents = eventsByUser.get(event.userId) || [];
-    userEvents.push(event);
-    eventsByUser.set(event.userId, userEvents);
-  }
-
-  for (const id of ids) {
-    summaries.set(id, aggregateUsageEvents(eventsByUser.get(id) || [], month));
-  }
-
-  const storageByUser = await getObjectStorageUsageByUserIds(ids);
   for (const id of ids) {
     summaries.set(id, mergeObjectStorageUsage(
       summaries.get(id) || createEmptyUsageSummary(month),
@@ -6435,52 +6718,120 @@ async function getUsageSummaryByUserIds(userIds, month = getUsageMonthKey(Date.n
   return summaries;
 }
 
-async function refreshMonthlyUserUsageSnapshot(userId, month = getUsageMonthKey(Date.now())) {
+async function refreshMonthlyUserUsageSnapshot(
+  userId,
+  month = getUsageMonthKey(Date.now()),
+  expectedVersion = getUsageSnapshotVersion(userId),
+) {
   const cleanUserId = typeof userId === "string" ? userId : "";
   const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
   if (!cleanUserId) return null;
 
-  const usage = (await getUsageSummaryByUserIds([cleanUserId], cleanMonth)).get(cleanUserId)
-    || createEmptyUsageSummary(cleanMonth);
-  const record = {
-    userId: cleanUserId,
+  const records = await refreshMonthlyUserUsageSnapshots([cleanUserId], cleanMonth, {
+    expectedVersions: new Map([[cleanUserId, cleanFiniteInteger(expectedVersion)]]),
+  });
+  return records.find((record) => record.userId === cleanUserId) || null;
+}
+
+async function refreshMonthlyUserUsageSnapshots(userIds, month = getUsageMonthKey(Date.now()), options = {}) {
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
+  if (!ids.length) return [];
+
+  const providedVersions = options.expectedVersions instanceof Map ? options.expectedVersions : null;
+  const expectedVersions = new Map(ids.map((userId) => [
+    userId,
+    providedVersions?.has(userId)
+      ? cleanFiniteInteger(providedVersions.get(userId))
+      : getUsageSnapshotVersion(userId),
+  ]));
+  const usageByUser = await getUsageSummaryByUserIds(ids, cleanMonth);
+  const updatedAt = Date.now();
+  const snapshotRecords = ids.map((userId) => ({
+    userId,
     month: cleanMonth,
-    usage,
-    updatedAt: Date.now(),
-  };
+    usage: usageByUser.get(userId) || createEmptyUsageSummary(cleanMonth),
+    updatedAt,
+  }));
 
   const db = await getMongoDb();
-  if (db) {
-    await db.collection("monthly_user_usage").replaceOne(
-      { userId: cleanUserId, month: cleanMonth },
-      record,
-      { upsert: true },
-    );
-    return record;
-  }
+  const writeLockIds = db ? ids : [LOCAL_USAGE_SNAPSHOT_STORE_LOCK_KEY, ...ids];
+  return withUsageSnapshotWriteLocks(writeLockIds, async () => {
+    const currentRecords = snapshotRecords.filter((record) => (
+      getUsageSnapshotVersion(record.userId) === expectedVersions.get(record.userId)
+    ));
+    if (!currentRecords.length) return [];
 
-  const records = await readMonthlyUserUsageRecords();
-  const nextRecords = records.filter((entry) => !(entry.userId === cleanUserId && entry.month === cleanMonth));
-  nextRecords.push(record);
-  await writeMonthlyUserUsageRecords(nextRecords);
-  return record;
+    if (db) {
+      await db.collection("monthly_user_usage").bulkWrite(currentRecords.map((record) => ({
+        replaceOne: {
+          filter: { userId: record.userId, month: cleanMonth },
+          replacement: record,
+          upsert: true,
+        },
+      })), { ordered: false });
+      return currentRecords;
+    }
+
+    const records = await readMonthlyUserUsageRecords();
+    const replacedUserIds = new Set(currentRecords.map((record) => record.userId));
+    const nextRecords = records.filter((entry) => !(replacedUserIds.has(entry.userId) && entry.month === cleanMonth));
+    nextRecords.push(...currentRecords);
+    await writeMonthlyUserUsageRecords(nextRecords);
+    return currentRecords;
+  });
 }
 
 async function ensureMonthlyUsageSnapshotsForUserIds(userIds, months = [getUsageMonthKey(Date.now())]) {
-  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
+  const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))].sort();
   const cleanMonths = [...new Set((Array.isArray(months) ? months : [months])
     .map((month) => cleanUsageMonth(month))
-    .filter(Boolean))];
+    .filter(Boolean))].sort();
   if (!ids.length || !cleanMonths.length) return;
 
-  for (const month of cleanMonths) {
-    for (const userId of ids) {
-      await refreshMonthlyUserUsageSnapshot(userId, month);
+  const requestKey = `${cleanMonths.join(",")}|${ids.join(",")}`;
+  const existingRequest = monthlyUsageSnapshotEnsureRequests.get(requestKey);
+  if (existingRequest) return existingRequest;
+
+  const request = (async () => {
+    const db = await getMongoDb();
+    const records = db
+      ? await db.collection("monthly_user_usage").find({
+        userId: { $in: ids },
+        month: { $in: cleanMonths },
+      }).project({ _id: 0, userId: 1, month: 1, updatedAt: 1 }).toArray()
+      : (await readMonthlyUserUsageRecords()).filter((record) => ids.includes(record.userId) && cleanMonths.includes(record.month));
+    const snapshotsByKey = new Map(records.map((record) => [`${record.userId}:${record.month}`, record]));
+    const currentMonth = getUsageMonthKey(Date.now());
+    const now = Date.now();
+    const hasFreshSnapshot = (userId, month) => {
+      const record = snapshotsByKey.get(`${userId}:${month}`);
+      if (!record) return false;
+      if (month !== currentMonth || CURRENT_USAGE_SNAPSHOT_MAX_AGE_MS <= 0) return true;
+      const updatedAt = cleanInteger(record.updatedAt);
+      return updatedAt > 0 && now - updatedAt <= CURRENT_USAGE_SNAPSHOT_MAX_AGE_MS;
+    };
+    const missingByMonth = cleanMonths
+      .map((month) => ({
+        month,
+        userIds: ids.filter((userId) => !hasFreshSnapshot(userId, month)),
+      }))
+      .filter((entry) => entry.userIds.length);
+    await mapWithConcurrency(
+      missingByMonth,
+      db ? ADMIN_SNAPSHOT_REFRESH_CONCURRENCY : 1,
+      (entry) => refreshMonthlyUserUsageSnapshots(entry.userIds, entry.month),
+    );
+  })().finally(() => {
+    if (monthlyUsageSnapshotEnsureRequests.get(requestKey) === request) {
+      monthlyUsageSnapshotEnsureRequests.delete(requestKey);
     }
-  }
+  });
+  monthlyUsageSnapshotEnsureRequests.set(requestKey, request);
+  return request;
 }
 
-async function getMonthlyUsageSnapshotSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now())) {
+async function getMonthlyUsageSnapshotSummaryByUserIds(userIds, month = getUsageMonthKey(Date.now()), knownUsers = null) {
   const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
   const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
   const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary(cleanMonth)]));
@@ -6491,7 +6842,7 @@ async function getMonthlyUsageSnapshotSummaryByUserIds(userIds, month = getUsage
     ? await db.collection("monthly_user_usage").find({ userId: { $in: ids }, month: cleanMonth }).project({ _id: 0 }).toArray()
     : (await readMonthlyUserUsageRecords()).filter((record) => ids.includes(record.userId) && record.month === cleanMonth);
 
-  const users = await readUsers();
+  const users = Array.isArray(knownUsers) ? knownUsers : await readUsersForUsage(ids);
   const usersById = new Map(users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user]));
   for (const record of records) {
     const userId = cleanString(record?.userId, 120);
@@ -6502,30 +6853,38 @@ async function getMonthlyUsageSnapshotSummaryByUserIds(userIds, month = getUsage
   return summaries;
 }
 
-async function getLifetimeUsageSummaryByUserIds(userIds) {
+async function getLifetimeUsageSummaryByUserIds(userIds, knownUsers = null) {
   const ids = [...new Set(userIds.filter((id) => typeof id === "string" && id))];
-  const summaries = new Map(ids.map((id) => [id, createEmptyUsageSummary("lifetime")]));
+  const emptySummaries = new Map(ids.map((id) => [id, createEmptyUsageSummary("lifetime")]));
+  let summaries = emptySummaries;
   if (!ids.length) return summaries;
 
-  const users = await readUsers();
+  const dbPromise = getMongoDb();
+  const summariesPromise = dbPromise.then(async (db) => {
+    if (db) return aggregateUsageSummariesFromMongo(db, ids, "lifetime");
+    const events = (await readUsageEvents()).filter((event) => ids.includes(event.userId));
+    const eventsByUser = new Map();
+    for (const event of events) {
+      const userEvents = eventsByUser.get(event.userId) || [];
+      userEvents.push(event);
+      eventsByUser.set(event.userId, userEvents);
+    }
+    const localSummaries = new Map();
+    for (const id of ids) localSummaries.set(id, aggregateUsageEvents(eventsByUser.get(id) || [], "lifetime"));
+    return localSummaries;
+  });
+  const [users, storageByUser, aggregatedSummaries] = await Promise.all([
+    Array.isArray(knownUsers) ? Promise.resolve(knownUsers) : readUsersForUsage(ids),
+    getObjectStorageUsageByUserIds(ids),
+    summariesPromise,
+  ]);
+  summaries = aggregatedSummaries;
   const usersById = new Map(users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user]));
-  const db = await getMongoDb();
-  const events = db
-    ? await db.collection("usage_events").find({ userId: { $in: ids } }).project({ _id: 0 }).toArray()
-    : (await readUsageEvents()).filter((event) => ids.includes(event.userId));
 
-  const eventsByUser = new Map();
-  for (const event of events) {
-    const userEvents = eventsByUser.get(event.userId) || [];
-    userEvents.push(event);
-    eventsByUser.set(event.userId, userEvents);
-  }
-
-  const storageByUser = await getObjectStorageUsageByUserIds(ids);
   for (const id of ids) {
     summaries.set(id, applyPlanToUsageSummary(
       mergeObjectStorageUsage(
-        aggregateUsageEvents(eventsByUser.get(id) || [], "lifetime"),
+        summaries.get(id) || createEmptyUsageSummary("lifetime"),
         storageByUser.get(id) || createEmptyObjectStorageUsage(),
       ),
       usersById.get(id),
@@ -6535,12 +6894,89 @@ async function getLifetimeUsageSummaryByUserIds(userIds) {
   return summaries;
 }
 
-async function getAccountUsageSummary(userId) {
-  const [usage, projects, user] = await Promise.all([
-    getMonthlyUsage(userId),
+async function getCachedAccountUsageSummary(userId, options = {}) {
+  const cleanUserId = cleanString(userId, 120);
+  if (!cleanUserId) return getAccountUsageSummary(cleanUserId, options);
+
+  const force = Boolean(options?.force);
+  if (force) invalidateAccountUsageResponseCache(cleanUserId);
+
+  const cached = accountUsageResponseCache.get(cleanUserId);
+  if (!force && cached && Date.now() - cached.cachedAt < ACCOUNT_USAGE_RESPONSE_CACHE_MS) {
+    return cached.payload;
+  }
+
+  const requestKey = `${cleanUserId}:${force ? "exact" : "snapshot"}`;
+  if (accountUsageResponseRequests.has(requestKey)) return accountUsageResponseRequests.get(requestKey);
+
+  const version = cleanFiniteInteger(accountUsageResponseVersionByUserId.get(cleanUserId));
+  const request = getAccountUsageSummary(cleanUserId, { exact: force })
+    .then((payload) => {
+      if (version === cleanFiniteInteger(accountUsageResponseVersionByUserId.get(cleanUserId))) {
+        accountUsageResponseCache.delete(cleanUserId);
+        accountUsageResponseCache.set(cleanUserId, { cachedAt: Date.now(), payload });
+        trimAccountUsageResponseCache();
+      }
+      return payload;
+    })
+    .finally(() => {
+      if (accountUsageResponseRequests.get(requestKey) === request) {
+        accountUsageResponseRequests.delete(requestKey);
+      }
+    });
+  accountUsageResponseRequests.set(requestKey, request);
+  return request;
+}
+
+function invalidateAccountUsageResponseCache(userId) {
+  const cleanUserId = cleanString(userId, 120);
+  if (!cleanUserId) return;
+  accountUsageResponseVersionByUserId.set(
+    cleanUserId,
+    cleanFiniteInteger(accountUsageResponseVersionByUserId.get(cleanUserId)) + 1,
+  );
+  accountUsageResponseCache.delete(cleanUserId);
+  accountUsageResponseRequests.delete(`${cleanUserId}:snapshot`);
+  accountUsageResponseRequests.delete(`${cleanUserId}:exact`);
+}
+
+function trimAccountUsageResponseCache() {
+  const now = Date.now();
+  for (const [userId, entry] of accountUsageResponseCache) {
+    if (now - entry.cachedAt >= ACCOUNT_USAGE_RESPONSE_CACHE_MS) accountUsageResponseCache.delete(userId);
+  }
+  while (accountUsageResponseCache.size > MAX_ACCOUNT_USAGE_RESPONSE_CACHE_ENTRIES) {
+    accountUsageResponseCache.delete(accountUsageResponseCache.keys().next().value);
+  }
+}
+
+async function getMonthlyUsageSnapshotForAccount(userId, month = getUsageMonthKey(Date.now())) {
+  const cleanUserId = cleanString(userId, 120);
+  const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
+  if (!cleanUserId) return null;
+
+  const db = await getMongoDb();
+  const record = db
+    ? await db.collection("monthly_user_usage").findOne(
+      { userId: cleanUserId, month: cleanMonth },
+      { projection: { _id: 0, usage: 1 } },
+    )
+    : (await readMonthlyUserUsageRecords()).find((entry) => (
+      entry.userId === cleanUserId && entry.month === cleanMonth
+    ));
+  return record?.usage && typeof record.usage === "object" ? record.usage : null;
+}
+
+async function getAccountUsageSummary(userId, options = {}) {
+  const usagePromise = options?.exact
+    ? getMonthlyUsage(userId)
+    : getMonthlyUsageSnapshotForAccount(userId).then((usage) => usage || getMonthlyUsage(userId));
+  const [baseUsage, projects, user] = await Promise.all([
+    usagePromise,
     getUserProjects(userId),
     findUserById(userId),
   ]);
+  const usage = applyPlanToUsageSummary(baseUsage, user);
   const now = Date.now();
   const period = getUsagePeriod(now);
   const plan = getUserPlan(user);
@@ -6911,6 +7347,52 @@ async function readUsers() {
   }
 }
 
+async function readUsersForUsage(userIds = []) {
+  const ids = [...new Set((Array.isArray(userIds) ? userIds : [])
+    .map((id) => cleanString(id, 120))
+    .filter(Boolean))];
+  const db = await getMongoDb();
+  if (db) {
+    const filter = ids.length ? { id: { $in: ids } } : {};
+    return db.collection("users")
+      .find(filter)
+      .project({ _id: 0, id: 1, planKey: 1 })
+      .toArray();
+  }
+
+  const users = await readUsers();
+  return ids.length ? users.filter((user) => ids.includes(user.id)) : users;
+}
+
+async function readAdminUsers() {
+  const db = await getMongoDb();
+  if (!db) return readUsers();
+  return db.collection("users")
+    .find({})
+    .project({
+      _id: 0,
+      id: 1,
+      username: 1,
+      planKey: 1,
+      authProvider: 1,
+      robloxUserId: 1,
+      robloxUsername: 1,
+      robloxDisplayName: 1,
+      createdAt: 1,
+      lastLoginAt: 1,
+    })
+    .toArray();
+}
+
+async function readAdminProjects() {
+  const db = await getMongoDb();
+  if (!db) return readProjects();
+  return db.collection("projects")
+    .find({})
+    .project({ _id: 0, id: 1, ownerUserId: 1, universeId: 1, name: 1, createdAt: 1 })
+    .toArray();
+}
+
 async function writeUsers(users) {
   await fs.mkdir(path.dirname(userStorePath), { recursive: true });
   const payload = JSON.stringify({ users }, null, 2);
@@ -6921,6 +7403,7 @@ async function createUser(user) {
   const db = await getMongoDb();
   if (db) {
     await db.collection("users").insertOne(user);
+    invalidateAdminResponseCache("users", "reconciliations");
     return;
   }
 
@@ -6940,6 +7423,7 @@ async function createUser(user) {
 
   users.push(user);
   await writeUsers(users);
+  invalidateAdminResponseCache("users", "reconciliations");
 }
 
 async function findOrCreateRobloxUser(robloxUser) {
@@ -7052,7 +7536,11 @@ async function updateUserPlan(userId, planKey) {
       { id: cleanUserId },
       { $set: { planKey: cleanKey, planUpdatedAt: updatedAt } }
     );
-    if (result.matchedCount > 0) invalidateUsageQuotaCache(cleanUserId);
+    if (result.matchedCount > 0) {
+      invalidateUsageQuotaCache(cleanUserId);
+      invalidateAccountUsageResponseCache(cleanUserId);
+      invalidateAdminResponseCache("users", "reconciliations");
+    }
     return result.matchedCount > 0;
   }
 
@@ -7064,17 +7552,60 @@ async function updateUserPlan(userId, planKey) {
   user.planUpdatedAt = updatedAt;
   await writeUsers(users);
   invalidateUsageQuotaCache(cleanUserId);
+  invalidateAccountUsageResponseCache(cleanUserId);
+  invalidateAdminResponseCache("users", "reconciliations");
   return true;
+}
+
+async function getCachedAdminResponse(cacheKey, loader, options = {}) {
+  const key = cleanString(cacheKey, 64);
+  if (!key || ADMIN_RESPONSE_CACHE_MS <= 0) return loader();
+
+  const cached = adminResponseCache.get(key);
+  if (!options.force && cached && Date.now() - cached.cachedAt < ADMIN_RESPONSE_CACHE_MS) {
+    return cached.payload;
+  }
+
+  const existingRequest = adminResponseRequests.get(key);
+  if (existingRequest) return existingRequest;
+
+  const version = cleanFiniteInteger(adminResponseVersions.get(key));
+  const request = Promise.resolve()
+    .then(loader)
+    .then((payload) => {
+      if (version === cleanFiniteInteger(adminResponseVersions.get(key))) {
+        adminResponseCache.set(key, { cachedAt: Date.now(), payload });
+      }
+      return payload;
+    })
+    .finally(() => {
+      if (adminResponseRequests.get(key) === request) adminResponseRequests.delete(key);
+    });
+  adminResponseRequests.set(key, request);
+  return request;
+}
+
+function invalidateAdminResponseCache(...cacheKeys) {
+  for (const cacheKey of cacheKeys.flat()) {
+    const key = cleanString(cacheKey, 64);
+    if (!key) continue;
+    adminResponseVersions.set(key, cleanFiniteInteger(adminResponseVersions.get(key)) + 1);
+    adminResponseCache.delete(key);
+    adminResponseRequests.delete(key);
+  }
 }
 
 async function getAdminUserSummaries() {
   const [users, projects] = await Promise.all([
-    readUsers(),
-    readProjects(),
+    readAdminUsers(),
+    readAdminProjects(),
   ]);
-  await ensureMonthlyUsageSnapshotsForUserIds(users.map((user) => user.id));
-  const usageByUser = await getUsageSummaryByUserIds(users.map((user) => user.id));
-  const lifetimeUsageByUser = await getLifetimeUsageSummaryByUserIds(users.map((user) => user.id));
+  const userIds = users.map((user) => user.id);
+  await ensureMonthlyUsageSnapshotsForUserIds(userIds);
+  const [usageByUser, lifetimeUsageByUser] = await Promise.all([
+    getMonthlyUsageSnapshotSummaryByUserIds(userIds, getUsageMonthKey(Date.now()), users),
+    getLifetimeUsageSummaryByUserIds(userIds, users),
+  ]);
   const projectsByOwner = new Map();
 
   for (const project of projects) {
@@ -7134,9 +7665,11 @@ async function getAdminUserSummaries() {
 }
 
 async function getAdminReconciliations() {
-  const records = await readReconciliations();
   const currentMonth = getUsageMonthKey(Date.now());
-  const currentEstimate = await getUsageEstimateForMonth(currentMonth);
+  const [records, currentEstimate] = await Promise.all([
+    readReconciliations(),
+    getUsageEstimateForMonth(currentMonth),
+  ]);
   return {
     currentMonth,
     currentEstimate,
@@ -7183,16 +7716,16 @@ async function saveAdminReconciliation(input, adminUser) {
 
   await upsertReconciliation(record);
   return {
-    ...await getAdminReconciliations(),
+    ...await getCachedAdminResponse("reconciliations", getAdminReconciliations, { force: true }),
     record: serializeReconciliation(record),
   };
 }
 
 async function getUsageEstimateForMonth(month) {
   const cleanMonth = cleanUsageMonth(month) || getUsageMonthKey(Date.now());
-  const users = await readUsers();
+  const users = await readUsersForUsage();
   await ensureMonthlyUsageSnapshotsForUserIds(users.map((user) => user.id), [cleanMonth]);
-  const usageByUser = await getMonthlyUsageSnapshotSummaryByUserIds(users.map((user) => user.id), cleanMonth);
+  const usageByUser = await getMonthlyUsageSnapshotSummaryByUserIds(users.map((user) => user.id), cleanMonth, users);
   const summaries = [...usageByUser.values()];
   const totals = aggregateUsageSummaries(summaries);
   return {
@@ -7247,6 +7780,7 @@ async function upsertReconciliation(record) {
   const db = await getMongoDb();
   if (db) {
     await db.collection("reconciliations").replaceOne({ month: record.month }, record, { upsert: true });
+    invalidateAdminResponseCache("reconciliations");
     return;
   }
 
@@ -7254,6 +7788,7 @@ async function upsertReconciliation(record) {
   const nextRecords = records.filter((item) => item.month !== record.month);
   nextRecords.push(record);
   await writeReconciliations(nextRecords);
+  invalidateAdminResponseCache("reconciliations");
 }
 
 async function deleteAdminReconciliation(month) {
@@ -7263,6 +7798,7 @@ async function deleteAdminReconciliation(month) {
   const db = await getMongoDb();
   if (db) {
     const result = await db.collection("reconciliations").deleteOne({ month: cleanMonth });
+    if (result.deletedCount > 0) invalidateAdminResponseCache("reconciliations");
     return result.deletedCount > 0;
   }
 
@@ -7270,6 +7806,7 @@ async function deleteAdminReconciliation(month) {
   const nextRecords = records.filter((record) => record.month !== cleanMonth);
   if (nextRecords.length === records.length) return false;
   await writeReconciliations(nextRecords);
+  invalidateAdminResponseCache("reconciliations");
   return true;
 }
 
@@ -7682,6 +8219,8 @@ async function createProject(project) {
   const db = await getMongoDb();
   if (db) {
     await db.collection("projects").insertOne(project);
+    invalidateAccountUsageResponseCache(project.ownerUserId);
+    invalidateAdminResponseCache("users");
     return;
   }
 
@@ -7694,6 +8233,8 @@ async function createProject(project) {
 
   projects.push(project);
   await writeProjects(projects);
+  invalidateAccountUsageResponseCache(project.ownerUserId);
+  invalidateAdminResponseCache("users");
 }
 
 async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotatedAt) {
@@ -7731,6 +8272,10 @@ async function deleteProject(projectId, ownerUserId) {
       { id: projectId, ownerUserId },
       { projection: { _id: 0 } }
     );
+    if (project?.value || project) {
+      invalidateAccountUsageResponseCache(ownerUserId);
+      invalidateAdminResponseCache("users");
+    }
     return project?.value || project || null;
   }
 
@@ -7740,6 +8285,8 @@ async function deleteProject(projectId, ownerUserId) {
 
   const [project] = projects.splice(projectIndex, 1);
   await writeProjects(projects);
+  invalidateAccountUsageResponseCache(ownerUserId);
+  invalidateAdminResponseCache("users");
   return project;
 }
 
