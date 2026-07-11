@@ -47,6 +47,8 @@ const usagePlanOptions = document.querySelector("#usagePlanOptions");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
+const universeSelectorButton = document.querySelector("#universeSelectorButton");
+const universeDropdownMenu = document.querySelector("#universeDropdownMenu");
 const refreshUniversesButton = document.querySelector("#refreshUniversesButton");
 const projectForm = document.querySelector("#projectForm");
 const ownedGameSelect = document.querySelector("#ownedGameSelect");
@@ -127,7 +129,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260711-2";
+const DASHBOARD_ASSET_VERSION = "20260711-3";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -237,6 +239,13 @@ function bindEvents() {
     }
   });
   universeSelect.addEventListener("change", () => selectUniverse(universeSelect.value));
+  universeSelectorButton?.addEventListener("click", toggleUniverseDropdown);
+  universeSelectorButton?.addEventListener("keydown", handleUniverseTriggerKeydown);
+  universeDropdownMenu?.addEventListener("click", handleUniverseDropdownClick);
+  universeDropdownMenu?.addEventListener("keydown", handleUniverseDropdownKeydown);
+  document.addEventListener("pointerdown", handleUniverseDropdownOutsidePointer);
+  window.addEventListener("resize", positionUniverseDropdown);
+  window.addEventListener("scroll", positionUniverseDropdown, true);
   refreshChatLogsButton.addEventListener("click", () => loadChatLogs({ includeInsights: true }));
   aiChatSendButton?.addEventListener("click", sendAiChatPrompt);
   aiChatInput?.addEventListener("keydown", (event) => {
@@ -351,6 +360,7 @@ function bindEvents() {
 
 function handleDashboardVisibilityChange() {
   if (document.hidden) {
+    closeUniverseDropdown();
     stopChatRefresh();
     stopSignalRefresh();
   } else {
@@ -613,6 +623,7 @@ function setAuthenticated(value, user = null) {
     selectedUniverseLabel.textContent = "No universe selected";
     universeSelect.innerHTML = `<option value="">Sign in to load universes</option>`;
     universeSelect.disabled = true;
+    syncUniverseSelectorControl();
     if (projectSecretBox) projectSecretBox.hidden = true;
     if (projectSecretValue) projectSecretValue.textContent = "";
     if (projectSecretTarget) projectSecretTarget.textContent = "";
@@ -1670,6 +1681,138 @@ function renderUniverseOption(universe) {
   return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label)}</option>`;
 }
 
+function syncUniverseSelectorControl() {
+  if (!universeSelectorButton || !universeDropdownMenu) return;
+  closeUniverseDropdown();
+  const canSelect = authenticated && !universeSelect.disabled && knownUniverses.length > 0;
+  universeSelectorButton.disabled = !canSelect;
+  universeSelectorButton.setAttribute("aria-label", selectedUniverseId
+    ? `Select universe. Current: ${selectedUniverseLabel.textContent || selectedUniverseId}`
+    : "Select universe");
+  universeDropdownMenu.innerHTML = knownUniverses.map(renderUniverseDropdownOption).join("");
+}
+
+function renderUniverseDropdownOption(universe) {
+  const id = String(universe.id || "");
+  const label = String(universe.name || `Universe ${id}`);
+  const selected = id === selectedUniverseId;
+  return `
+    <button class="universeDropdownOption" type="button" role="option" tabindex="-1" data-universe-option="${escapeHtml(id)}" aria-selected="${selected ? "true" : "false"}">
+      <strong>${escapeHtml(label)}</strong>
+      <small>Universe ${escapeHtml(id)}</small>
+    </button>
+  `;
+}
+
+function toggleUniverseDropdown() {
+  if (!universeDropdownMenu || !universeSelectorButton || universeSelectorButton.disabled) return;
+  if (universeDropdownMenu.hidden) openUniverseDropdown();
+  else closeUniverseDropdown();
+}
+
+function openUniverseDropdown(options = {}) {
+  if (!universeDropdownMenu || !universeSelectorButton || universeSelectorButton.disabled || !knownUniverses.length) return;
+  universeDropdownMenu.hidden = false;
+  universeSelectorButton.setAttribute("aria-expanded", "true");
+  positionUniverseDropdown();
+
+  const selectedOption = universeDropdownMenu.querySelector('[aria-selected="true"]');
+  selectedOption?.scrollIntoView({ block: "nearest" });
+  if (options.focus === "last") {
+    getUniverseDropdownOptions().at(-1)?.focus();
+  } else if (options.focus) {
+    (selectedOption || getUniverseDropdownOptions()[0])?.focus();
+  }
+}
+
+function closeUniverseDropdown(options = {}) {
+  if (!universeDropdownMenu || !universeSelectorButton) return;
+  universeDropdownMenu.hidden = true;
+  universeDropdownMenu.removeAttribute("data-placement");
+  universeDropdownMenu.style.removeProperty("top");
+  universeDropdownMenu.style.removeProperty("right");
+  universeDropdownMenu.style.removeProperty("bottom");
+  universeDropdownMenu.style.removeProperty("left");
+  universeDropdownMenu.style.removeProperty("width");
+  universeDropdownMenu.style.removeProperty("max-height");
+  universeSelectorButton.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus) universeSelectorButton.focus();
+}
+
+function positionUniverseDropdown() {
+  if (!universeDropdownMenu || !universeSelectorButton || universeDropdownMenu.hidden) return;
+  const rect = universeSelectorButton.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  const gap = 8;
+  const edge = 8;
+  const spaceAbove = Math.max(rect.top - gap - edge, 0);
+  const spaceBelow = Math.max(viewportHeight - rect.bottom - gap - edge, 0);
+  const preferredHeight = Math.min(universeDropdownMenu.scrollHeight, 320);
+  const opensUp = spaceAbove > spaceBelow && spaceAbove >= Math.min(preferredHeight, 140);
+  const availableHeight = opensUp ? spaceAbove : spaceBelow;
+  const menuWidth = Math.max(Math.min(rect.width, viewportWidth - edge * 2), 0);
+  const left = Math.min(Math.max(rect.left, edge), Math.max(viewportWidth - menuWidth - edge, edge));
+
+  universeDropdownMenu.dataset.placement = opensUp ? "top" : "bottom";
+  universeDropdownMenu.style.left = `${Math.round(left)}px`;
+  universeDropdownMenu.style.width = `${Math.round(menuWidth)}px`;
+  universeDropdownMenu.style.maxHeight = `${Math.max(Math.min(preferredHeight, availableHeight), 72)}px`;
+  if (opensUp) {
+    universeDropdownMenu.style.top = "auto";
+    universeDropdownMenu.style.bottom = `${Math.round(viewportHeight - rect.top + gap)}px`;
+  } else {
+    universeDropdownMenu.style.top = `${Math.round(rect.bottom + gap)}px`;
+    universeDropdownMenu.style.bottom = "auto";
+  }
+}
+
+function handleUniverseDropdownClick(event) {
+  const option = event.target.closest("[data-universe-option]");
+  if (!option) return;
+  const universeId = option.dataset.universeOption || "";
+  closeUniverseDropdown();
+  selectUniverse(universeId);
+  universeSelectorButton?.focus();
+}
+
+function handleUniverseTriggerKeydown(event) {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  openUniverseDropdown({ focus: event.key === "ArrowUp" ? "last" : "selected" });
+}
+
+function handleUniverseDropdownKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeUniverseDropdown({ restoreFocus: true });
+    return;
+  }
+
+  const options = getUniverseDropdownOptions();
+  if (!options.length) return;
+  const currentIndex = Math.max(options.indexOf(document.activeElement), 0);
+  let nextIndex = null;
+  if (event.key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, options.length - 1);
+  if (event.key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = options.length - 1;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  options[nextIndex].focus();
+  options[nextIndex].scrollIntoView({ block: "nearest" });
+}
+
+function handleUniverseDropdownOutsidePointer(event) {
+  if (!universeDropdownMenu || universeDropdownMenu.hidden) return;
+  if (universeSelectorButton?.contains(event.target) || universeDropdownMenu.contains(event.target)) return;
+  closeUniverseDropdown();
+}
+
+function getUniverseDropdownOptions() {
+  return universeDropdownMenu ? [...universeDropdownMenu.querySelectorAll("[data-universe-option]")] : [];
+}
+
 function renderConnectedGames() {
   if (!connectedGameList) return;
   connectedGameList.innerHTML = knownUniverses.length
@@ -1862,6 +2005,7 @@ function renderIntegrationSignal(label, active, count = null) {
 }
 
 function selectUniverse(value) {
+  closeUniverseDropdown();
   const cleanValue = String(value || "").trim();
   const knownIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
   const previousUniverseId = selectedUniverseId;
@@ -2109,6 +2253,7 @@ function updateSelectedUniverse() {
   } else {
     selectedUniverseLabel.textContent = "No universe selected";
   }
+  syncUniverseSelectorControl();
 }
 
 async function loadChatLogs(options = {}) {

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260711-2">
+    <link rel="stylesheet" href="/styles.css?v=20260711-3">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -30,13 +30,17 @@
 
         <div class="sidebarFooter">
           <div class="universeSelector">
-            <div class="gameThumb"></div>
-            <div>
-              <strong>Selected Universe</strong>
-              <small id="selectedUniverseLabel">All stored data</small>
-            </div>
+            <button class="universeSelectorButton" id="universeSelectorButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="universeDropdownMenu" disabled>
+              <span class="gameThumb" aria-hidden="true"></span>
+              <span class="universeSelectorText">
+                <strong>Selected Universe</strong>
+                <small id="selectedUniverseLabel">No universe selected</small>
+              </span>
+              <span class="universeSelectorChevron" aria-hidden="true"></span>
+            </button>
+            <div class="universeDropdownMenu" id="universeDropdownMenu" role="listbox" aria-label="Universe" hidden></div>
             <label class="srOnly" for="universeSelect">Universe</label>
-            <select id="universeSelect" disabled>
+            <select id="universeSelect" hidden tabindex="-1" aria-hidden="true" disabled>
               <option value="">Loading universes...</option>
             </select>
           </div>
@@ -499,6 +503,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260711-2"></script>
+    <script defer src="/app.js?v=20260711-3"></script>
   </body>
 </html>

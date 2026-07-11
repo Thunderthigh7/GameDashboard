@@ -428,14 +428,36 @@ body.isResizingLayout {
 }
 
 .universeSelector {
+  position: relative;
+}
+
+.universeSelectorButton {
   display: grid;
-  grid-template-columns: 42px 1fr;
+  grid-template-columns: 42px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
   border: 1px solid rgba(80, 99, 150, 0.32);
   border-radius: 10px;
   background: rgba(13, 20, 38, 0.72);
   padding: 14px 12px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.universeSelectorButton:hover:not(:disabled),
+.universeSelectorButton:focus-visible,
+.universeSelectorButton[aria-expanded="true"] {
+  border-color: rgba(124, 60, 255, 0.72);
+  background: rgba(18, 27, 50, 0.94);
+  outline: none;
+}
+
+.universeSelectorButton:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 
 .gameThumb {
@@ -445,37 +467,97 @@ body.isResizingLayout {
   background: linear-gradient(135deg, #3b82f6, #22c55e);
 }
 
-.universeSelector strong {
+.universeSelectorText {
+  display: block;
+  min-width: 0;
+}
+
+.universeSelectorText strong {
   display: block;
   color: var(--text);
   font-size: 12px;
   line-height: 1.2;
 }
 
-.universeSelector select {
-  grid-column: 1 / -1;
-}
-
-.universeSelector select {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid rgba(80, 99, 150, 0.28);
-  border-radius: 8px;
-  background: rgba(7, 12, 27, 0.46);
-  color: var(--text);
-  padding: 0 9px;
-}
-
-.universeSelector .status {
-  margin-top: 0;
-  font-size: 12px;
-}
-
-.universeSelector small {
+.universeSelectorText small {
   display: block;
+  min-width: 0;
   margin-top: 4px;
+  overflow: hidden;
   color: var(--nav-text);
   line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.universeSelectorChevron {
+  width: 10px;
+  height: 10px;
+  justify-self: end;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: var(--nav-text);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.universeSelectorButton[aria-expanded="true"] .universeSelectorChevron {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.universeDropdownMenu {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  gap: 4px;
+  max-height: 320px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(80, 99, 150, 0.55);
+  border-radius: 10px;
+  background: #0b1327;
+  box-shadow: 0 18px 45px rgba(1, 5, 18, 0.52);
+  padding: 6px;
+}
+
+.universeDropdownOption {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--nav-text);
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.universeDropdownOption:hover,
+.universeDropdownOption:focus-visible,
+.universeDropdownOption[aria-selected="true"] {
+  background: rgba(124, 60, 255, 0.2);
+  color: var(--text);
+  outline: none;
+}
+
+.universeDropdownOption strong,
+.universeDropdownOption small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.universeDropdownOption strong {
+  font-size: 13px;
+}
+
+.universeDropdownOption small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .sidebarFooter > .status {
@@ -698,31 +780,10 @@ body.isResizingLayout {
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 0 12px;
+  padding: 0 10px;
   font: inherit;
   font-weight: 650;
   cursor: pointer;
-}
-
-.sidebarLogoutButton::before {
-  content: "";
-  width: 16px;
-  height: 16px;
-  margin-right: 12px;
-  border: 2px solid currentColor;
-  border-right: 0;
-  border-radius: 4px 0 0 4px;
-}
-
-.sidebarLogoutButton::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  margin-left: -22px;
-  margin-right: 14px;
-  border-top: 2px solid currentColor;
-  border-right: 2px solid currentColor;
-  transform: rotate(45deg);
 }
 
 .projectForm {
