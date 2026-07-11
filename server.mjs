@@ -4217,7 +4217,6 @@ async function buildAiChatDataContext(filters = {}) {
     },
     aiAreas: summarizeAiAreas(aiAreaPayload?.areas),
     commonQuestions: summarizeCommonQuestions(chatInsights?.questions),
-    recentChat: summarizeRecentChat(chat?.logs),
     heatmaps: {
       movement: summarizeHeatmapSamples(movement.samples),
       deaths: summarizeHeatmapSamples(deaths.samples),
@@ -4273,18 +4272,6 @@ function summarizeCommonQuestions(questions = []) {
     examples: Array.isArray(question.examples)
       ? question.examples.slice(0, 2).map((example) => cleanString(example.message, 180))
       : [],
-  }));
-}
-
-function summarizeRecentChat(logs = []) {
-  return (Array.isArray(logs) ? logs : []).slice(0, 25).map((log) => ({
-    username: cleanString(log.username, 80),
-    userId: cleanInteger(log.userId),
-    message: cleanString(log.message, 220),
-    sentAt: cleanInteger(log.sentAt),
-    x: roundCoordinate(log.x),
-    y: roundCoordinate(log.y),
-    z: roundCoordinate(log.z),
   }));
 }
 
