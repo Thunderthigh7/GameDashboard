@@ -352,10 +352,14 @@ function getModeText(label) {
 
 function setHeatmapEmptyState(isEmpty) {
   if (emptyState) emptyState.hidden = !isEmpty;
-  if (heatmapLegend) heatmapLegend.hidden = isEmpty;
-  if (heatmapOverlay) heatmapOverlay.hidden = isEmpty;
+  syncMapOverlayVisibility(isEmpty);
   canvas?.classList.toggle("isEmpty", isEmpty);
   if (isEmpty) hideAiAreaCard();
+}
+
+function syncMapOverlayVisibility(isEmpty = false) {
+  if (heatmapLegend) heatmapLegend.hidden = Boolean(isEmpty) || activeRenderMode !== "heatmap";
+  if (heatmapOverlay) heatmapOverlay.hidden = Boolean(isEmpty);
 }
 
 function setHeatmapEmptyCopy(title, message) {
@@ -434,6 +438,7 @@ function setHeatmapMode(mode, options = {}) {
       button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
     }
   }
+  syncMapOverlayVisibility(canvas?.classList.contains("isEmpty"));
 
   return loadHeatmap({ focusArea: options.focusArea || null });
 }
@@ -452,6 +457,7 @@ function setRenderMode(mode) {
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
+  syncMapOverlayVisibility(canvas?.classList.contains("isEmpty"));
 
   if (activeRenderMode === "heatmap") {
     loadHeatmap();

@@ -1405,7 +1405,7 @@ small,
 .heatmapOverlay {
   right: 20px;
   left: auto;
-  top: 130px;
+  top: 76px;
   display: grid;
   gap: 12px;
   width: min(216px, calc(100% - 40px));
