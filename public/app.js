@@ -337,25 +337,26 @@ function setAuthenticated(value, user = null) {
 }
 
 async function loadDashboardData() {
-  await loadUniverses();
-  await loadOwnedGames();
-  await loadAccountUsage();
-  await loadAiAutomationSettings();
-  await loadChatLogs();
-  await loadSignalAreaCards();
-  if (authenticatedUser?.isAdmin) {
-    await loadAdminUsers();
-    await loadReconciliations();
-  }
-  renderActiveView();
+  const didNotifyUniverseChange = await loadUniverses();
+  renderActiveView({ suppressOverviewEvent: didNotifyUniverseChange });
   startChatRefresh();
   startSignalRefresh();
   window.dispatchEvent(new CustomEvent("dashboard:analyticsReady", {
     detail: { universeId: selectedUniverseId },
   }));
-  window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
-    detail: { universeId: selectedUniverseId },
-  }));
+
+  const backgroundTasks = [
+    loadOwnedGames(),
+    loadAccountUsage(),
+    loadAiAutomationSettings(),
+    loadChatLogs(),
+    loadSignalAreaCards(),
+  ];
+  if (authenticatedUser?.isAdmin) {
+    backgroundTasks.push(loadAdminUsers(), loadReconciliations());
+  }
+
+  await Promise.allSettled(backgroundTasks);
 }
 
 function getViewFromHash() {
@@ -393,7 +394,7 @@ function setActiveView(view, options = {}) {
   renderActiveView();
 }
 
-function renderActiveView() {
+function renderActiveView(options = {}) {
   for (const panel of viewPanels) {
     panel.hidden = !authenticated || panel.dataset.viewPanel !== activeView;
   }
@@ -440,7 +441,7 @@ function renderActiveView() {
   pageTitle.textContent = viewCopy[activeView]?.title || viewCopy.overview.title;
   pageSubtitle.textContent = viewCopy[activeView]?.subtitle || viewCopy.overview.subtitle;
 
-  if (authenticated && activeView === "overview") {
+  if (authenticated && activeView === "overview" && !options.suppressOverviewEvent) {
     window.dispatchEvent(new CustomEvent("dashboard:overviewShown", {
       detail: { universeId: selectedUniverseId },
     }));
@@ -985,7 +986,7 @@ async function loadUniverses() {
       renderSetupChecklist();
       updateSelectedUniverse();
       loadSignalAreaCards();
-      return;
+      return false;
     }
 
     const availableIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
@@ -1006,11 +1007,14 @@ async function loadUniverses() {
       window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
         detail: { universeId: selectedUniverseId },
       }));
+      return true;
     }
+    return false;
   } catch (error) {
     universesStatus.textContent = error.message;
     renderIntegrationStatusCard({ error: error.message });
     renderSetupChecklist();
+    return false;
   } finally {
     if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = false;
   }
