@@ -19,7 +19,6 @@ const emptyState = document.querySelector("#heatmapEmptyState");
 const emptyMessage = document.querySelector("#heatmapEmptyMessage");
 const heatmapLegend = document.querySelector(".heatmapLegend");
 const heatmapOverlay = document.querySelector(".heatmapOverlay");
-const mapViewLabel = document.querySelector("#mapViewLabel");
 const playerFilter = document.querySelector("#movementPlayerFilter");
 const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
@@ -2102,9 +2101,6 @@ function remember3dView() {
 function syncCameraViewButtons() {
   for (const button of mapViewButtons) {
     button.classList.toggle("active", button.dataset.mapView === activeCameraView);
-  }
-  if (mapViewLabel) {
-    mapViewLabel.textContent = activeCameraView === "2d" ? "2D View" : "3D View";
   }
 }
 
