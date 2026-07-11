@@ -69,6 +69,7 @@ let selectedAiArea = null;
 let latestAreaAnalysisMode = "none";
 let focusedSignalArea = null;
 let heatmapRefreshTimer = null;
+let renderedUniverseId = "";
 const movementKeys = new Set();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -298,10 +299,12 @@ async function loadHeatmap(options = {}) {
     if (activeHeatmapMode === "ai-analysis") {
       latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "none";
     }
+    const shouldResetView = Boolean(options.resetView) && String(universeId) !== renderedUniverseId;
     renderScene(latestSamples, latestMapSnapshot, {
-      resetView: Boolean(options.resetView),
+      resetView: shouldResetView,
       suppressFallbackAreas: activeHeatmapMode === "ai-analysis" && payload.mode !== "ai",
     });
+    renderedUniverseId = String(universeId);
 
     const mapText = mapSnapshot?.partCount ? ` Map: ${mapSnapshot.partCount} parts.` : "";
     const mapErrorText = mapPayload.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
@@ -350,10 +353,12 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
   latestSamples = samplePayload.samples;
   latestMapSnapshot = mapSnapshot;
   latestAreaAnalysisMode = payload.mode === "ai" ? "ai" : "none";
+  const shouldResetView = !viewInitialized || (universeId && String(universeId) !== renderedUniverseId);
   renderScene(latestSamples, latestMapSnapshot, {
-    resetView: true,
+    resetView: shouldResetView,
     suppressFallbackAreas: payload.mode !== "ai",
   });
+  if (universeId) renderedUniverseId = String(universeId);
 
   const areaCount = samplePayload.returnedCount || 0;
   const eventCount = payload.eventCount || 0;
