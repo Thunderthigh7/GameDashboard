@@ -121,7 +121,11 @@ const inFlightGetRequests = new Map();
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
-window.getDashboardCacheScope = () => getDashboardCacheScope();
+const resolveDashboardCacheScope = () => {
+  const username = String(authenticatedUser?.username || "").trim().toLowerCase();
+  return authenticated && username ? encodeURIComponent(username) : "";
+};
+window.getDashboardCacheScope = resolveDashboardCacheScope;
 
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
@@ -159,7 +163,7 @@ function bindEvents() {
   });
 
   logoutButton.addEventListener("click", async () => {
-    const cacheScope = getDashboardCacheScope();
+    const cacheScope = resolveDashboardCacheScope();
     await request("/api/auth/logout", { method: "POST" });
     clearDashboardSessionCache(cacheScope);
     await window.clearDashboardPersistentCache?.(cacheScope);
@@ -390,13 +394,8 @@ function storeLayoutWidth(storageKey, width) {
   }
 }
 
-function getDashboardCacheScope() {
-  const username = String(authenticatedUser?.username || "").trim().toLowerCase();
-  return authenticated && username ? encodeURIComponent(username) : "";
-}
-
 function getScopedSessionCacheKey(namespace, key = "") {
-  const scope = getDashboardCacheScope();
+  const scope = resolveDashboardCacheScope();
   if (!scope) return "";
   return `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:${namespace}:${key}`;
 }
@@ -439,7 +438,7 @@ function writeScopedSessionCache(namespace, key, payload) {
 }
 
 function pruneScopedSignalAreaCache() {
-  const scope = getDashboardCacheScope();
+  const scope = resolveDashboardCacheScope();
   if (!scope) return;
   const prefix = `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:signal-areas:`;
 
@@ -482,7 +481,7 @@ function pruneScopedSignalAreaCache() {
   }
 }
 
-function clearDashboardSessionCache(scope = getDashboardCacheScope()) {
+function clearDashboardSessionCache(scope = resolveDashboardCacheScope()) {
   if (!scope) return;
   const prefix = `${DASHBOARD_SESSION_CACHE_PREFIX}:${scope}:`;
 
@@ -518,7 +517,7 @@ async function checkAuth() {
 }
 
 function setAuthenticated(value, user = null) {
-  const previousCacheScope = getDashboardCacheScope();
+  const previousCacheScope = resolveDashboardCacheScope();
   authenticated = value;
   authenticatedUser = authenticated ? user : null;
   loadedViews.clear();
