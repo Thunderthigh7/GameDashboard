@@ -1463,13 +1463,15 @@ small,
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 28px;
+  width: auto;
+  min-width: 104px;
   height: 28px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 9px;
   background: transparent;
   color: var(--muted);
-  padding: 0;
+  gap: 8px;
+  padding: 0 14px;
   font-weight: 900;
   cursor: pointer;
 }
@@ -1490,11 +1492,11 @@ small,
 }
 
 .dockIconButton span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
   white-space: nowrap;
 }
 
