@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260711-5">
+    <link rel="stylesheet" href="/styles.css?v=20260712-1">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -19,15 +19,29 @@
         </div>
 
         <nav class="sideNav" aria-label="Dashboard sections">
-          <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
-          <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
-          <a href="#events" data-dashboard-view="events"><span class="navIcon eventsIcon" aria-hidden="true"></span><span>Events</span></a>
-          <a href="#funnels" data-dashboard-view="funnels"><span class="navIcon funnelsIcon" aria-hidden="true"></span><span>Funnels</span></a>
-          <a href="#ai-runs" data-dashboard-view="ai-runs"><span class="navIcon aiRunsIcon" aria-hidden="true"></span><span>AI Runs</span></a>
-          <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
-          <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
-          <a href="#connect" data-dashboard-view="connect"><span class="navIcon connectIcon" aria-hidden="true"></span><span>Connect Universe</span></a>
-          <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden><span class="navIcon adminIcon" aria-hidden="true"></span><span>Admin</span></a>
+          <div class="navGroup overviewNavGroup">
+            <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
+          </div>
+
+          <section class="navGroup" aria-labelledby="analyticsNavLabel">
+            <h2 class="navGroupLabel" id="analyticsNavLabel">Analytics</h2>
+            <div class="navGroupLinks">
+              <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
+              <a href="#events" data-dashboard-view="events"><span class="navIcon eventsIcon" aria-hidden="true"></span><span>Events</span></a>
+              <a href="#funnels" data-dashboard-view="funnels"><span class="navIcon funnelsIcon" aria-hidden="true"></span><span>Funnels</span></a>
+              <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
+              <a href="#ai-runs" data-dashboard-view="ai-runs"><span class="navIcon aiRunsIcon" aria-hidden="true"></span><span>AI Runs</span></a>
+            </div>
+          </section>
+
+          <section class="navGroup" aria-labelledby="setupNavLabel">
+            <h2 class="navGroupLabel" id="setupNavLabel">Setup</h2>
+            <div class="navGroupLinks">
+              <a href="#connect" data-dashboard-view="connect"><span class="navIcon connectIcon" aria-hidden="true"></span><span>Connect Universe</span></a>
+              <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden><span class="navIcon adminIcon" aria-hidden="true"></span><span>Admin</span></a>
+              <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
+            </div>
+          </section>
         </nav>
 
         <div class="sidebarFooter">
