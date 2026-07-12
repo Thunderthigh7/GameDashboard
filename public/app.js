@@ -175,7 +175,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260712-8";
+const DASHBOARD_ASSET_VERSION = "20260712-9";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -2362,16 +2362,15 @@ function renderCustomEvents(payload = {}) {
 
   if (selectedEventTitle) selectedEventTitle.textContent = selected?.name || "Select an event";
   if (selectedEventSubtitle) {
-    const seriesNote = selected?.seriesTruncated ? " Chart shows the latest 240 active intervals." : "";
     selectedEventSubtitle.textContent = selected
-      ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.${seriesNote}`
+      ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
       : "The event timeline will appear here.";
   }
   const hasSelectedEvent = Boolean(selected?.name);
   if (eventMoreButton) eventMoreButton.disabled = !hasSelectedEvent;
   if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = !hasSelectedEvent;
   if (!hasSelectedEvent) closeEventMoreMenu();
-  updateEventIntervalControl(selected?.bucketMs);
+  updateEventIntervalControl(selected);
   renderCustomEventChart(selected?.series || [], selected?.bucketMs);
   renderCustomEventProperties(selected?.properties || []);
   renderRecentCustomEvents(selected?.recentEvents || []);
@@ -2447,11 +2446,23 @@ function formatEventChartLabel(value, bucketMs) {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function updateEventIntervalControl(bucketMs) {
+function updateEventIntervalControl(selectedEvent) {
   if (!eventIntervalSelect) return;
+  const availableIntervals = new Set(selectedEvent?.availableIntervals || []);
+  for (const option of eventIntervalSelect.options) {
+    if (option.value === "auto") continue;
+    const isAvailable = !selectedEvent || availableIntervals.has(option.value);
+    option.hidden = !isAvailable;
+    option.disabled = !isAvailable;
+  }
+
+  const forcedInterval = selectedEvent?.selectedInterval;
+  if (forcedInterval && forcedInterval !== selectedEventInterval) {
+    selectedEventInterval = forcedInterval;
+  }
   const autoOption = eventIntervalSelect.querySelector('option[value="auto"]');
   if (autoOption && selectedEventInterval === "auto") {
-    autoOption.textContent = `Auto (${formatEventInterval(bucketMs || 60 * 60 * 1000)})`;
+    autoOption.textContent = `Auto (${formatEventInterval(selectedEvent?.bucketMs || 60 * 60 * 1000)})`;
   }
   if (eventIntervalSelect.value !== selectedEventInterval) eventIntervalSelect.value = selectedEventInterval;
 }

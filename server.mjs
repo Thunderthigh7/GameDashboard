@@ -4055,8 +4055,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     uniqueSessions: sessionIds.size,
     averageValue: numericValueCount ? numericValueTotal / numericValueCount : null,
     bucketMs: eventSeries.bucketMs,
-    seriesSparse: eventSeries.sparse,
-    seriesTruncated: eventSeries.truncated,
+    availableIntervals: eventSeries.availableIntervals,
+    selectedInterval: eventSeries.selectedInterval,
     series: eventSeries.buckets,
     properties: summarizeCustomEventProperties(events),
     recentEvents: events.slice(0, MAX_CUSTOM_EVENT_RECENT_RESPONSE),
@@ -4078,30 +4078,21 @@ function buildCustomEventSeries(events, filters = {}) {
     24 * 60 * 60 * 1000,
     7 * 24 * 60 * 60 * 1000,
   ];
-  const requestedBucketMs = CUSTOM_EVENT_INTERVALS_MS.get(normalizeCustomEventInterval(filters.interval));
-  let bucketMs = requestedBucketMs
-    || autoIntervals.find((intervalMs) => Math.ceil(spanMs / intervalMs) <= 30)
-    || autoIntervals.at(-1);
-  const scalableIntervals = [...new Set([...CUSTOM_EVENT_INTERVALS_MS.values(), ...autoIntervals])].sort((left, right) => left - right);
-  if (!requestedBucketMs && Math.ceil(spanMs / bucketMs) > MAX_CUSTOM_EVENT_SERIES_BUCKETS) {
-    bucketMs = scalableIntervals.find((intervalMs) => (
-      intervalMs >= bucketMs && Math.ceil(spanMs / intervalMs) <= MAX_CUSTOM_EVENT_SERIES_BUCKETS
-    )) || scalableIntervals.at(-1);
-  }
+  const requestedInterval = normalizeCustomEventInterval(filters.interval);
+  const requestedBucketMs = CUSTOM_EVENT_INTERVALS_MS.get(requestedInterval);
+  const intervalEntries = [...CUSTOM_EVENT_INTERVALS_MS.entries()].sort((left, right) => left[1] - right[1]);
+  const availableIntervals = intervalEntries
+    .filter(([, intervalMs]) => Math.ceil(spanMs / intervalMs) <= MAX_CUSTOM_EVENT_SERIES_BUCKETS)
+    .map(([key]) => key);
+  const smallestAvailableInterval = availableIntervals[0] || "auto";
+  const selectedInterval = requestedBucketMs && availableIntervals.includes(requestedInterval)
+    ? requestedInterval
+    : (requestedBucketMs ? smallestAvailableInterval : "auto");
+  const bucketMs = selectedInterval === "auto"
+    ? (autoIntervals.find((intervalMs) => Math.ceil(spanMs / intervalMs) <= 30) || Math.ceil(spanMs / 30))
+    : CUSTOM_EVENT_INTERVALS_MS.get(selectedInterval);
   const bucketStart = Math.floor(fromMs / bucketMs) * bucketMs;
   const bucketEnd = Math.max(Math.ceil(toMs / bucketMs) * bucketMs, bucketStart + bucketMs);
-  const bucketCount = Math.ceil((bucketEnd - bucketStart) / bucketMs);
-  if (requestedBucketMs && bucketCount > MAX_CUSTOM_EVENT_SERIES_BUCKETS) {
-    const occupiedBuckets = buildOccupiedCustomEventBuckets(events, bucketMs, bucketStart, bucketEnd);
-    const truncated = occupiedBuckets.length > MAX_CUSTOM_EVENT_SERIES_BUCKETS;
-    return {
-      bucketMs,
-      sparse: true,
-      truncated,
-      buckets: truncated ? occupiedBuckets.slice(-MAX_CUSTOM_EVENT_SERIES_BUCKETS) : occupiedBuckets,
-    };
-  }
-
   const buckets = [];
   const byStart = new Map();
   for (let timestamp = bucketStart; timestamp < bucketEnd; timestamp += bucketMs) {
@@ -4119,37 +4110,14 @@ function buildCustomEventSeries(events, filters = {}) {
   }
   return {
     bucketMs,
-    sparse: false,
-    truncated: false,
+    availableIntervals,
+    selectedInterval,
     buckets: buckets.map((bucket) => ({
       start: bucket.start,
       count: bucket.count,
       uniquePlayers: bucket.playerIds.size,
     })),
   };
-}
-
-function buildOccupiedCustomEventBuckets(events, bucketMs, bucketStart, bucketEnd) {
-  const byStart = new Map();
-  for (const event of events) {
-    const occurredAt = cleanTimestampMs(event.occurredAt) || cleanTimestampMs(event.receivedAt);
-    const start = Math.floor(occurredAt / bucketMs) * bucketMs;
-    if (start < bucketStart || start >= bucketEnd) continue;
-    let bucket = byStart.get(start);
-    if (!bucket) {
-      bucket = { start, count: 0, playerIds: new Set() };
-      byStart.set(start, bucket);
-    }
-    bucket.count += 1;
-    if (cleanInteger(event.userId) > 0) bucket.playerIds.add(cleanInteger(event.userId));
-  }
-  return [...byStart.values()]
-    .sort((left, right) => left.start - right.start)
-    .map((bucket) => ({
-      start: bucket.start,
-      count: bucket.count,
-      uniquePlayers: bucket.playerIds.size,
-    }));
 }
 
 function normalizeCustomEventInterval(value) {
