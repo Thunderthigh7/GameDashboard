@@ -175,7 +175,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260712-7";
+const DASHBOARD_ASSET_VERSION = "20260712-8";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -2362,8 +2362,9 @@ function renderCustomEvents(payload = {}) {
 
   if (selectedEventTitle) selectedEventTitle.textContent = selected?.name || "Select an event";
   if (selectedEventSubtitle) {
+    const seriesNote = selected?.seriesTruncated ? " Chart shows the latest 240 active intervals." : "";
     selectedEventSubtitle.textContent = selected
-      ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
+      ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.${seriesNote}`
       : "The event timeline will appear here.";
   }
   const hasSelectedEvent = Boolean(selected?.name);
@@ -2371,12 +2372,12 @@ function renderCustomEvents(payload = {}) {
   if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = !hasSelectedEvent;
   if (!hasSelectedEvent) closeEventMoreMenu();
   updateEventIntervalControl(selected?.bucketMs);
-  renderCustomEventChart(selected?.series || []);
+  renderCustomEventChart(selected?.series || [], selected?.bucketMs);
   renderCustomEventProperties(selected?.properties || []);
   renderRecentCustomEvents(selected?.recentEvents || []);
 }
 
-function renderCustomEventChart(series) {
+function renderCustomEventChart(series, selectedBucketMs) {
   if (!eventChart) return;
   if (!series.length || !series.some((bucket) => Number(bucket.count) > 0)) {
     eventChart.innerHTML = '<p class="status">No events in this date range.</p>';
@@ -2387,25 +2388,30 @@ function renderCustomEventChart(series) {
   const axisMax = getEventChartAxisMax(maxCount);
   const tickCount = 4;
   const ticks = Array.from({ length: tickCount + 1 }, (_, index) => axisMax - ((axisMax / tickCount) * index));
-  const bucketMs = getSeriesBucketMs(series);
-  const chartWidth = Math.max(680, series.length * 54);
-  const bars = series.map((bucket) => {
+  const bucketMs = Number(selectedBucketMs) || getSeriesBucketMs(series);
+  const bucketCount = series.length;
+  const bucketWidth = bucketCount > 120 ? 6 : bucketCount > 72 ? 10 : bucketCount > 36 ? 18 : 44;
+  const bucketGap = bucketCount > 120 ? 2 : bucketCount > 72 ? 3 : bucketCount > 36 ? 4 : 7;
+  const chartWidth = Math.max(680, (bucketCount * (bucketWidth + bucketGap)) + 16);
+  const labelStep = Math.max(1, Math.ceil(bucketCount / 24));
+  const bars = series.map((bucket, index) => {
     const count = Number(bucket.count) || 0;
     const height = count > 0 ? Math.max((count / axisMax) * 100, 2.5) : 0;
     const label = formatEventChartLabel(bucket.start, bucketMs);
+    const showLabel = index % labelStep === 0 || index === bucketCount - 1;
     return `
       <div class="eventChartBucket" title="${escapeHtml(label)}: ${formatCompactNumber(count)} events, ${formatCompactNumber(bucket.uniquePlayers)} players">
         <div class="eventChartBarArea" style="--event-bar-height: ${height.toFixed(2)}%">
           <strong>${count > 0 ? formatCompactNumber(count) : ""}</strong>
           <span class="eventChartBar" style="height: ${height.toFixed(2)}%"></span>
         </div>
-        <small>${escapeHtml(label)}</small>
+        <small>${showLabel ? escapeHtml(label) : ""}</small>
       </div>
     `;
   }).join("");
 
   eventChart.innerHTML = `
-    <div class="eventChartFrame" style="--event-chart-width: ${chartWidth}px">
+    <div class="eventChartFrame" style="--event-chart-width: ${chartWidth}px; --event-bucket-width: ${bucketWidth}px; --event-bucket-gap: ${bucketGap}px">
       <div class="eventYAxis">
         <span class="eventYAxisTitle">Events</span>
         <div class="eventYAxisTicks">${ticks.map((tick) => `<span>${formatCompactNumber(tick)}</span>`).join("")}</div>
@@ -2444,7 +2450,9 @@ function formatEventChartLabel(value, bucketMs) {
 function updateEventIntervalControl(bucketMs) {
   if (!eventIntervalSelect) return;
   const autoOption = eventIntervalSelect.querySelector('option[value="auto"]');
-  if (autoOption) autoOption.textContent = `Auto (${formatEventInterval(bucketMs || 60 * 60 * 1000)})`;
+  if (autoOption && selectedEventInterval === "auto") {
+    autoOption.textContent = `Auto (${formatEventInterval(bucketMs || 60 * 60 * 1000)})`;
+  }
   if (eventIntervalSelect.value !== selectedEventInterval) eventIntervalSelect.value = selectedEventInterval;
 }
 
