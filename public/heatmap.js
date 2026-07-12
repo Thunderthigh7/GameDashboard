@@ -15,6 +15,8 @@ const refreshButton = document.querySelector("#refreshMovementButton");
 const centerButton = document.querySelector("#centerMovementButton");
 const sampleCount = document.querySelector("#movementSampleCount");
 const statusLine = document.querySelector("#movementHeatmapStatus");
+const mapPartCountBox = document.querySelector("#mapPartCountBox");
+const mapPartCountValue = document.querySelector("#mapPartCountValue");
 const emptyState = document.querySelector("#heatmapEmptyState");
 const emptyMessage = document.querySelector("#heatmapEmptyMessage");
 const heatmapLegend = document.querySelector(".heatmapLegend");
@@ -360,6 +362,7 @@ function loadHeatmap(options = {}) {
     setHeatmapEmptyState(true);
     setHeatmapEmptyCopy("Pick universe first", "Connect or select a Roblox game to view map analytics.");
     sampleCount.textContent = "0 samples";
+    updateMapPartCount(null);
     statusLine.textContent = "Pick universe first";
     renderScene([], null, {
       resetView: Boolean(options.resetView),
@@ -537,6 +540,7 @@ function applyHeatmapPayload(payload, mapPayload, context) {
   const mapText = getMapStatusText(mapSnapshot);
   const mapErrorText = mapPayload?.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
   sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
+  updateMapPartCount(mapSnapshot);
   if (activeHeatmapMode === "ai-analysis" && payload.mode !== "ai") {
     statusLine.textContent = `${payload.message || "Run AI Insights to generate AI area analysis."}${mapErrorText}`;
   } else if (samplePayload.returnedCount || mapSnapshot?.partCount) {
@@ -613,6 +617,7 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
   const areaCount = samplePayload.returnedCount || 0;
   const eventCount = payload.eventCount || 0;
   sampleCount.textContent = `${areaCount} AI area${areaCount === 1 ? "" : "s"}`;
+  updateMapPartCount(mapSnapshot);
   statusLine.textContent = areaCount
     ? `${options.statusPrefix || "Loaded AI area analysis"} from ${eventCount} signal${eventCount === 1 ? "" : "s"}.`
     : payload.message || "Run AI Insights to generate AI area analysis.";
@@ -632,6 +637,13 @@ function setHeatmapEmptyState(isEmpty) {
 function syncMapOverlayVisibility(isEmpty = false) {
   if (heatmapLegend) heatmapLegend.hidden = Boolean(isEmpty) || activeRenderMode !== "heatmap";
   if (heatmapOverlay) heatmapOverlay.hidden = Boolean(isEmpty);
+  if (mapPartCountBox) mapPartCountBox.hidden = Boolean(isEmpty);
+}
+
+function updateMapPartCount(snapshot) {
+  if (!mapPartCountValue) return;
+  const count = Number(snapshot?.partCount || snapshot?.returnedPartCount || snapshot?.parts?.length) || 0;
+  mapPartCountValue.textContent = Math.max(0, count).toLocaleString();
 }
 
 function setHeatmapEmptyCopy(title, message) {

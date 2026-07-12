@@ -1456,6 +1456,7 @@ body.isResizingLayout {
 
 .heatmapLegend,
 .heatmapOverlay,
+.mapPartCountBox,
 .aiAreaCard {
   position: absolute;
   border: 1px solid var(--line);
@@ -1465,7 +1466,8 @@ body.isResizingLayout {
 }
 
 .heatmapLegend,
-.heatmapOverlay {
+.heatmapOverlay,
+.mapPartCountBox {
   z-index: 2;
   pointer-events: none;
 }
@@ -1491,11 +1493,9 @@ body.isResizingLayout {
   right: 20px;
   left: auto;
   top: 22px;
-  display: grid;
-  gap: 12px;
-  width: min(216px, calc(100% - 40px));
-  max-width: none;
-  padding: 24px 22px;
+  width: auto;
+  max-width: calc(100% - 40px);
+  padding: 14px 16px;
 }
 
 .heatmapOverlay strong {
@@ -1503,8 +1503,20 @@ body.isResizingLayout {
   font-size: 16px;
 }
 
-.heatmapOverlay span {
-  line-height: 1.45;
+.mapPartCountBox {
+  left: 20px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mapPartCountBox strong {
+  color: var(--text);
+  font-size: 13px;
 }
 
 .botMessage > span {
@@ -2729,106 +2741,546 @@ body.isResizingLayout {
 .eventOverview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
-.eventOverview > div {
+.eventMetricCard {
   display: grid;
-  gap: 6px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  min-height: 116px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 14px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(13, 20, 43, 0.94), rgba(9, 15, 31, 0.84));
+  padding: 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
-.eventOverview span {
+.eventMetricCard > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.eventMetricIcon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(124, 60, 255, 0.42);
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, rgba(142, 75, 255, 0.32), rgba(72, 25, 159, 0.34));
+  color: #a56bff;
+  box-shadow: inset 0 0 20px rgba(124, 60, 255, 0.1);
+}
+
+.eventMetricIcon svg {
+  width: 31px;
+  height: 31px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventMetricCard > div > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
+  letter-spacing: 0.025em;
   text-transform: uppercase;
 }
 
-.eventOverview strong {
-  font-size: 24px;
+.eventMetricCard > div > strong {
+  color: var(--text);
+  font-size: clamp(28px, 2vw, 36px);
+  line-height: 1;
+}
+
+.eventMetricCard small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eventChartPanel {
-  min-height: 360px;
+  min-width: 0;
+  min-height: 400px;
+  overflow: visible;
+  border-color: rgba(124, 60, 255, 0.72);
+  box-shadow: inset 2px 0 0 rgba(124, 60, 255, 0.64), var(--shadow);
+}
+
+.eventChartHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+
+.eventChartHeader > div:first-child {
+  min-width: 0;
+}
+
+.eventChartHeader h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  font-size: 18px;
+}
+
+.eventChartHeader p {
+  margin-top: 8px;
+}
+
+.selectedEventName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #b9a5ff;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.selectedEventName::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #8b5cf6;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.65);
+}
+
+.eventChartActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.eventIntervalSelect,
+.eventMoreButton {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background-color: rgba(10, 17, 35, 0.9);
+  color: var(--nav-text);
+}
+
+.eventIntervalSelect {
+  min-width: 144px;
+  padding: 0 34px 0 12px;
+  cursor: pointer;
+}
+
+.eventMoreMenu {
+  position: relative;
+}
+
+.eventMoreButton {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.eventMoreButton svg {
+  width: 19px;
+  height: 19px;
+  fill: currentColor;
+}
+
+.eventMoreButton:hover:not(:disabled),
+.eventMoreButton[aria-expanded="true"] {
+  border-color: rgba(124, 60, 255, 0.7);
+  color: white;
+}
+
+.eventMoreButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.eventMorePopover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 170px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #0a1123;
+  padding: 6px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+}
+
+.eventDeleteAction {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #fb7185;
+  padding: 0 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eventDeleteAction:hover,
+.eventDeleteAction:focus-visible {
+  background: rgba(244, 63, 94, 0.12);
+  outline: none;
+}
+
+.eventDeleteAction svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .eventChart {
+  min-width: 0;
+  min-height: 300px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 60, 255, 0.45) transparent;
+}
+
+.eventChartFrame {
+  display: grid;
+  grid-template-columns: 52px minmax(var(--event-chart-width, 680px), 1fr);
+  width: 100%;
+  min-width: calc(52px + var(--event-chart-width, 680px));
+  height: 270px;
+}
+
+.eventYAxis {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-width: 0;
+  padding-bottom: 48px;
+}
+
+.eventYAxisTitle {
+  align-self: center;
+  color: var(--nav-text);
+  font-size: 11px;
+  font-weight: 700;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.eventYAxisTicks {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-direction: column;
+  padding-right: 8px;
+}
+
+.eventYAxisTicks span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.eventChartPlot {
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid rgba(91, 111, 164, 0.4);
+}
+
+.eventChartGrid {
+  position: absolute;
+  inset: 0 0 48px;
+  display: flex;
+  justify-content: space-between;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.eventChartGrid span {
+  width: 100%;
+  border-top: 1px dashed rgba(80, 99, 150, 0.24);
+}
+
+.eventChartBars {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: stretch;
-  gap: 6px;
-  min-height: 260px;
-  overflow-x: auto;
-  padding: 18px 4px 0;
+  gap: 7px;
+  padding: 0 8px;
 }
 
 .eventChartBucket {
   display: grid;
-  grid-template-rows: 24px 1fr 42px;
-  align-items: end;
-  justify-items: center;
-  flex: 1 0 34px;
-  min-width: 34px;
-  height: 240px;
+  grid-template-rows: minmax(0, 1fr) 48px;
+  flex: 1 0 44px;
+  min-width: 44px;
 }
 
-.eventChartBucket > strong {
-  color: var(--muted);
+.eventChartBarArea {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.eventChartBarArea strong {
+  position: absolute;
+  bottom: calc(var(--event-bar-height, 0%) + 5px);
+  color: var(--nav-text);
   font-size: 11px;
 }
 
-.eventChartBucket > span {
+.eventChartBar {
   display: block;
-  width: min(28px, 78%);
-  min-height: 2px;
-  border-radius: 5px 5px 2px 2px;
+  width: min(30px, 76%);
+  min-height: 0;
+  border-radius: 4px 4px 1px 1px;
   background: linear-gradient(180deg, #a78bfa, #6d28d9);
-  box-shadow: 0 8px 24px rgba(124, 60, 255, 0.2);
+  box-shadow: 0 7px 20px rgba(124, 60, 255, 0.2);
 }
 
-.eventChartBucket > small {
-  width: 64px;
+.eventChartBucket small {
+  align-self: start;
+  justify-self: center;
+  width: 62px;
+  margin-top: 10px;
   color: var(--muted);
   font-size: 10px;
   line-height: 1.2;
   text-align: center;
-  transform: rotate(-24deg);
+  white-space: nowrap;
+  transform: rotate(-18deg);
   transform-origin: center;
+}
+
+.eventChartLegend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 4px;
+  color: var(--nav-text);
+  font-size: 11px;
+}
+
+.eventChartLegend i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #a78bfa, #6d28d9);
 }
 
 .eventBreakdownGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(320px, 0.85fr) minmax(480px, 1.35fr);
   gap: 18px;
 }
 
-.eventPropertyItem,
+.eventBreakdownCard,
+.eventRecentCard {
+  min-width: 0;
+}
+
+.eventDataCardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.eventDataCardHeader > div {
+  min-width: 0;
+}
+
+.eventDataCardHeader h2 {
+  font-size: 18px;
+}
+
+.eventDataCardHeader p {
+  margin-top: 5px;
+}
+
+.eventDataCardIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  color: #9361ff;
+}
+
+.eventDataCardIcon svg {
+  width: 24px;
+  height: 24px;
+  fill: rgba(147, 97, 255, 0.18);
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventBoltIcon svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.eventPropertyTable,
+.recentEventTable {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.eventPropertyTable .eventPropertyList,
+.recentEventTable .recentEventList {
+  gap: 0;
+}
+
+.eventPropertyTableHeader,
+.eventPropertyItem {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.35fr) minmax(70px, 0.55fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 380px;
+}
+
+.eventPropertyTableHeader,
+.recentEventTableHeader {
+  min-height: 34px;
+  border-bottom: 1px solid var(--line);
+  color: var(--nav-text);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.eventPropertyItem {
+  min-height: 52px;
+  border-bottom: 1px solid rgba(80, 99, 150, 0.24);
+}
+
+.eventPropertyItem > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.eventPropertyItem > span {
+  min-width: 0;
+  color: var(--nav-text);
+  font-size: 12px;
+}
+
+.eventPropertyItem > b {
+  color: var(--text);
+  font-size: 13px;
+  text-align: right;
+}
+
+.eventPropertyItem .eventPropertyPill {
+  display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(124, 60, 255, 0.62);
+  border-radius: 5px;
+  background: rgba(124, 60, 255, 0.11);
+  color: #b894ff;
+  padding: 5px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventPropertyItem .eventPropertyTextValue {
+  color: var(--nav-text);
+}
+
+.recentEventTableHeader,
 .recentEventItem {
   display: grid;
-  gap: 6px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
+  grid-template-columns: minmax(150px, 0.95fr) minmax(128px, 0.8fr) minmax(150px, 1fr) minmax(210px, 1.35fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 700px;
 }
 
-.eventPropertyItem:first-child,
-.recentEventItem:first-child {
-  border-top: 0;
-  padding-top: 0;
+.recentEventTableHeader {
+  padding: 0 4px;
 }
 
 .recentEventItem {
-  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1fr);
-  align-items: start;
+  min-height: 36px;
+  border-bottom: 1px solid rgba(80, 99, 150, 0.24);
+  padding: 4px;
+  color: var(--nav-text);
+  font-size: 12px;
 }
 
-.recentEventItem p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
+.recentEventPlayer {
+  display: flex !important;
+  align-items: center;
+  gap: 7px !important;
+}
+
+.recentEventPlayer svg {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: #925dff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.recentEventPlayer strong,
+.recentEventName,
+.recentEventItem time,
+.recentEventItem code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentEventItem time {
+  color: var(--nav-text);
+}
+
+.recentEventName {
+  display: block !important;
+  color: var(--nav-text);
+}
+
+.recentEventItem code {
+  display: block;
+  color: #b78cff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.eventPropertyList > .status,
+.recentEventList > .status {
+  padding: 18px 0;
 }
 
 .funnelsLayout {
@@ -3149,6 +3601,14 @@ body.isResizingLayout {
     grid-template-columns: 1fr;
   }
 
+  .eventOverview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eventBreakdownGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .funnelsLayout {
     grid-template-columns: 1fr;
   }
@@ -3265,9 +3725,21 @@ body.isResizingLayout {
   }
 
   .eventOverview,
-  .eventBreakdownGrid,
   .funnelOverview {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .eventBreakdownGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventChartHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eventChartActions {
+    justify-content: flex-end;
   }
 
   .funnelBuilderFields {
@@ -3295,6 +3767,11 @@ body.isResizingLayout {
   .heatmapOverlay {
     right: 18px;
     top: 18px;
+  }
+
+  .mapPartCountBox {
+    left: 18px;
+    bottom: 82px;
   }
 
   .mapViewDock {
@@ -3346,5 +3823,20 @@ body.isResizingLayout {
 
   #movementHeatmapCanvas {
     height: 440px;
+  }
+}
+
+@media (max-width: 560px) {
+  .eventOverview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventChartActions {
+    justify-content: stretch;
+  }
+
+  .eventIntervalSelect {
+    flex: 1;
+    min-width: 0;
   }
 }

@@ -81,6 +81,10 @@ const eventNameCount = document.querySelector("#eventNameCount");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
+const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
+const eventMoreButton = document.querySelector("#eventMoreButton");
+const eventMorePopover = document.querySelector("#eventMorePopover");
+const deleteSelectedEventButton = document.querySelector("#deleteSelectedEventButton");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventList = document.querySelector("#recentEventList");
 const newFunnelButton = document.querySelector("#newFunnelButton");
@@ -161,6 +165,7 @@ let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
+let selectedEventInterval = "auto";
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
 let currentFunnels = [];
@@ -170,7 +175,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260711-5";
+const DASHBOARD_ASSET_VERSION = "20260712-7";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -296,6 +301,18 @@ function bindEvents() {
     selectedCustomEventName = button.dataset.eventName || "";
     loadCustomEvents({ force: true });
   });
+  eventIntervalSelect?.addEventListener("change", () => {
+    selectedEventInterval = eventIntervalSelect.value || "auto";
+    loadCustomEvents({ force: true });
+  });
+  eventMoreButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleEventMoreMenu();
+  });
+  eventMorePopover?.addEventListener("click", (event) => event.stopPropagation());
+  deleteSelectedEventButton?.addEventListener("click", deleteSelectedCustomEvent);
+  document.addEventListener("pointerdown", handleEventMoreOutsidePointer);
+  document.addEventListener("keydown", handleEventMoreEscape);
   newFunnelButton?.addEventListener("click", startNewFunnel);
   refreshFunnelsButton?.addEventListener("click", () => loadFunnels({ force: true }));
   addFunnelStepButton?.addEventListener("click", () => addFunnelStep());
@@ -767,6 +784,7 @@ function getViewFromHash() {
 function setActiveView(view, options = {}) {
   const requestedView = view === "areas" || view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
+  if (activeView !== "events") closeEventMoreMenu();
   if (options.updateHash) {
     const nextHash = activeView === "areas"
       ? "#areas"
@@ -2232,6 +2250,56 @@ function buildSignalAreaQuery() {
   return query ? `?${query}` : "";
 }
 
+function toggleEventMoreMenu(forceOpen) {
+  if (!eventMorePopover || !eventMoreButton || eventMoreButton.disabled) return;
+  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : eventMorePopover.hidden;
+  eventMorePopover.hidden = !shouldOpen;
+  eventMoreButton.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen) deleteSelectedEventButton?.focus();
+}
+
+function closeEventMoreMenu(options = {}) {
+  if (!eventMorePopover || !eventMoreButton) return;
+  eventMorePopover.hidden = true;
+  eventMoreButton.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus) eventMoreButton.focus();
+}
+
+function handleEventMoreOutsidePointer(event) {
+  if (eventMorePopover?.hidden) return;
+  if (eventMoreButton?.contains(event.target) || eventMorePopover?.contains(event.target)) return;
+  closeEventMoreMenu();
+}
+
+function handleEventMoreEscape(event) {
+  if (event.key !== "Escape" || eventMorePopover?.hidden) return;
+  closeEventMoreMenu({ restoreFocus: true });
+}
+
+async function deleteSelectedCustomEvent() {
+  const eventName = selectedCustomEventName;
+  const universeId = selectedUniverseId;
+  if (!eventName || !universeId) return;
+  if (!window.confirm(`Delete all stored records for ${eventName}? New records logged later will still appear.`)) return;
+
+  closeEventMoreMenu();
+  if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = true;
+  if (eventMoreButton) eventMoreButton.disabled = true;
+  eventsStatus.textContent = `Deleting ${eventName}...`;
+  const params = new URLSearchParams({ universeId, eventName });
+  try {
+    await request(`/api/events?${params.toString()}`, { method: "DELETE" });
+    selectedCustomEventName = "";
+    await loadCustomEvents({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) eventsStatus.textContent = formatRequestError(error);
+  } finally {
+    if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = !selectedCustomEventName;
+    if (eventMoreButton) eventMoreButton.disabled = !selectedCustomEventName;
+  }
+}
+
 async function loadCustomEvents(options = {}) {
   if (!authenticated || !eventsStatus) return;
   const requestSequence = ++customEventsRequestSequence;
@@ -2252,6 +2320,7 @@ async function loadCustomEvents(options = {}) {
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
   if (selectedCustomEventName) params.set("eventName", selectedCustomEventName);
+  params.set("interval", selectedEventInterval);
   if (options.force) params.set("fresh", "1");
 
   try {
@@ -2297,6 +2366,11 @@ function renderCustomEvents(payload = {}) {
       ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
       : "The event timeline will appear here.";
   }
+  const hasSelectedEvent = Boolean(selected?.name);
+  if (eventMoreButton) eventMoreButton.disabled = !hasSelectedEvent;
+  if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = !hasSelectedEvent;
+  if (!hasSelectedEvent) closeEventMoreMenu();
+  updateEventIntervalControl(selected?.bucketMs);
   renderCustomEventChart(selected?.series || []);
   renderCustomEventProperties(selected?.properties || []);
   renderRecentCustomEvents(selected?.recentEvents || []);
@@ -2310,27 +2384,98 @@ function renderCustomEventChart(series) {
   }
 
   const maxCount = Math.max(...series.map((bucket) => Number(bucket.count) || 0), 1);
-  eventChart.innerHTML = series.map((bucket) => {
-    const height = Math.max(((Number(bucket.count) || 0) / maxCount) * 100, Number(bucket.count) > 0 ? 4 : 0);
-    const label = new Date(Number(bucket.start)).toLocaleString([], { month: "short", day: "numeric", hour: "numeric" });
+  const axisMax = getEventChartAxisMax(maxCount);
+  const tickCount = 4;
+  const ticks = Array.from({ length: tickCount + 1 }, (_, index) => axisMax - ((axisMax / tickCount) * index));
+  const bucketMs = getSeriesBucketMs(series);
+  const chartWidth = Math.max(680, series.length * 54);
+  const bars = series.map((bucket) => {
+    const count = Number(bucket.count) || 0;
+    const height = count > 0 ? Math.max((count / axisMax) * 100, 2.5) : 0;
+    const label = formatEventChartLabel(bucket.start, bucketMs);
     return `
-      <div class="eventChartBucket" title="${escapeHtml(label)}: ${formatCompactNumber(bucket.count)} events, ${formatCompactNumber(bucket.uniquePlayers)} players">
-        <strong>${Number(bucket.count) > 0 ? formatCompactNumber(bucket.count) : ""}</strong>
-        <span style="height: ${height.toFixed(2)}%"></span>
+      <div class="eventChartBucket" title="${escapeHtml(label)}: ${formatCompactNumber(count)} events, ${formatCompactNumber(bucket.uniquePlayers)} players">
+        <div class="eventChartBarArea" style="--event-bar-height: ${height.toFixed(2)}%">
+          <strong>${count > 0 ? formatCompactNumber(count) : ""}</strong>
+          <span class="eventChartBar" style="height: ${height.toFixed(2)}%"></span>
+        </div>
         <small>${escapeHtml(label)}</small>
       </div>
     `;
   }).join("");
+
+  eventChart.innerHTML = `
+    <div class="eventChartFrame" style="--event-chart-width: ${chartWidth}px">
+      <div class="eventYAxis">
+        <span class="eventYAxisTitle">Events</span>
+        <div class="eventYAxisTicks">${ticks.map((tick) => `<span>${formatCompactNumber(tick)}</span>`).join("")}</div>
+      </div>
+      <div class="eventChartPlot">
+        <div class="eventChartGrid" aria-hidden="true">${ticks.map(() => "<span></span>").join("")}</div>
+        <div class="eventChartBars">${bars}</div>
+      </div>
+    </div>
+    <div class="eventChartLegend"><i aria-hidden="true"></i><span>Events</span></div>
+  `;
+}
+
+function getEventChartAxisMax(maxCount) {
+  const roughStep = Math.max(maxCount / 4, 1);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalized = roughStep / magnitude;
+  const niceStep = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return Math.max(niceStep * magnitude * Math.ceil(maxCount / (niceStep * magnitude)), 4);
+}
+
+function getSeriesBucketMs(series) {
+  if (series.length < 2) return 60 * 60 * 1000;
+  return Math.max(Number(series[1]?.start) - Number(series[0]?.start), 60 * 1000);
+}
+
+function formatEventChartLabel(value, bucketMs) {
+  const date = new Date(Number(value));
+  if (!Number.isFinite(date.getTime())) return "--";
+  if (bucketMs < 24 * 60 * 60 * 1000) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function updateEventIntervalControl(bucketMs) {
+  if (!eventIntervalSelect) return;
+  const autoOption = eventIntervalSelect.querySelector('option[value="auto"]');
+  if (autoOption) autoOption.textContent = `Auto (${formatEventInterval(bucketMs || 60 * 60 * 1000)})`;
+  if (eventIntervalSelect.value !== selectedEventInterval) eventIntervalSelect.value = selectedEventInterval;
+}
+
+function formatEventInterval(value) {
+  const milliseconds = Number(value) || 0;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (milliseconds >= day && milliseconds % day === 0) return `${milliseconds / day}d`;
+  if (milliseconds >= hour && milliseconds % hour === 0) return `${milliseconds / hour}h`;
+  return `${Math.max(1, Math.round(milliseconds / minute))}m`;
 }
 
 function renderCustomEventProperties(properties) {
   if (!eventPropertyList) return;
   eventPropertyList.innerHTML = properties.length
     ? properties.map((property) => {
-      const detail = property.type === "number"
-        ? `Average ${formatEventNumber(property.average)} · ${formatEventNumber(property.min)}–${formatEventNumber(property.max)}`
-        : (property.topValues || []).map((entry) => `${entry.value} (${formatCompactNumber(entry.count)})`).join(" · ");
-      return `<div class="eventPropertyItem"><strong>${escapeHtml(property.name)}</strong><span>${escapeHtml(detail || "No values")}</span></div>`;
+      const topEntry = property.topValues?.[0];
+      const topValue = property.type === "number"
+        ? '<span class="eventPropertyTextValue">Average</span>'
+        : (topEntry
+          ? `<span class="eventPropertyPill">${escapeHtml(topEntry.value)} (${formatCompactNumber(topEntry.count)})</span>`
+          : '<span class="eventPropertyTextValue">No values</span>');
+      const average = property.type === "number" ? formatEventNumber(property.average) : "--";
+      return `
+        <div class="eventPropertyItem">
+          <strong>${escapeHtml(property.name)}</strong>
+          <span>${topValue}</span>
+          <b>${escapeHtml(average)}</b>
+        </div>
+      `;
     }).join("")
     : '<p class="status">No properties were sent with this event.</p>';
 }
@@ -2340,17 +2485,35 @@ function renderRecentCustomEvents(events) {
   recentEventList.innerHTML = events.length
     ? events.map((event) => {
       const player = event.username || (event.userId ? `Player ${event.userId}` : "Server event");
-      const propertySummary = Object.entries(event.properties || {}).slice(0, 4)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(" · ");
+      const properties = event.properties || {};
+      const propertyEntries = Object.entries(properties);
+      const featuredProperty = propertyEntries.find(([, value]) => typeof value === "string") || propertyEntries[0];
+      const eventLabel = featuredProperty
+        ? `${featuredProperty[0]}: ${featuredProperty[1]}`
+        : (selectedCustomEventName || event.eventName || "Event");
+      const payload = JSON.stringify(properties);
+      const payloadPreview = payload.length > 180 ? `${payload.slice(0, 177)}...` : payload;
+      const occurredAt = Number(event.occurredAt || event.receivedAt || 0);
+      const dateTime = Number.isFinite(occurredAt) && occurredAt > 0 ? new Date(occurredAt).toISOString() : "";
       return `
         <div class="recentEventItem">
-          <span><strong>${escapeHtml(player)}</strong><small>${formatFullDate(event.occurredAt)}</small></span>
-          <p>${escapeHtml(propertySummary || "No properties")}</p>
+          <span class="recentEventPlayer">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3" /><path d="M5.5 20c.4-4.5 2.6-7 6.5-7s6.1 2.5 6.5 7" /></svg>
+            <strong>${escapeHtml(player)}</strong>
+          </span>
+          <time datetime="${escapeHtml(dateTime)}">${escapeHtml(formatRecentEventTime(occurredAt))}</time>
+          <span class="recentEventName">${escapeHtml(eventLabel)}</span>
+          <code>${escapeHtml(payloadPreview === "{}" ? "No properties" : payloadPreview)}</code>
         </div>
       `;
     }).join("")
     : '<p class="status">No recent records for this event.</p>';
+}
+
+function formatRecentEventTime(value) {
+  const date = new Date(Number(value));
+  if (!Number.isFinite(date.getTime())) return "--";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function formatEventNumber(value) {

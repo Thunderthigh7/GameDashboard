@@ -55,6 +55,17 @@ const MAX_CUSTOM_EVENTS_PER_UNIVERSE = 25_000;
 const MAX_CUSTOM_EVENT_PROPERTIES = 20;
 const MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE = 200;
 const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 30;
+const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
+const CUSTOM_EVENT_INTERVALS_MS = new Map([
+  ["1m", 60 * 1000],
+  ["5m", 5 * 60 * 1000],
+  ["15m", 15 * 60 * 1000],
+  ["1h", 60 * 60 * 1000],
+  ["6h", 6 * 60 * 60 * 1000],
+  ["12h", 12 * 60 * 60 * 1000],
+  ["1d", 24 * 60 * 60 * 1000],
+  ["7d", 7 * 24 * 60 * 60 * 1000],
+]);
 const MAX_FUNNELS_PER_UNIVERSE = 50;
 const MAX_FUNNEL_STEPS = 10;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
@@ -268,6 +279,7 @@ const leaveSamplesByUniverseId = new Map();
 const leaveSampleIdsByUniverseId = new Map();
 const customEventsByUniverseId = new Map();
 const customEventIdsByUniverseId = new Map();
+const customEventDeletionCutoffsByUniverseId = new Map();
 const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
@@ -554,6 +566,10 @@ const server = http.createServer(async (req, res) => {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getCustomEventsFromQuery(url.searchParams));
       return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "custom-events", url.searchParams, () => getCustomEventsFromQuery(url.searchParams)));
+    }
+
+    if (url.pathname === "/api/events" && req.method === "DELETE") {
+      return handleCustomEventDelete(req, res, auth, url.searchParams);
     }
 
     if (url.pathname === "/api/funnels" && req.method === "GET") {
@@ -1060,6 +1076,7 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("reconciliations").createIndex({ updatedAt: -1 }),
     db.collection("funnels").createIndex({ id: 1 }, { unique: true }),
     db.collection("funnels").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
+    db.collection("custom_event_deletions").createIndex({ universeId: 1, eventName: 1 }, { unique: true }),
   ]);
 }
 
@@ -3857,6 +3874,7 @@ async function getCustomEventsFromQuery(searchParams) {
   const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedEventName = normalizeCustomEventName(searchParams.get("eventName"));
+  const interval = normalizeCustomEventInterval(searchParams.get("interval"));
   const { events, hasRollup } = await getCustomEventRecords({ universeId, fromMs, toMs });
 
   const catalogByName = new Map();
@@ -3896,7 +3914,7 @@ async function getCustomEventsFromQuery(searchParams) {
   return {
     universeId: universeId || null,
     source: hasRollup ? "b2-rollup+live" : "live",
-    filters: { from: fromMs || null, to: toMs || null },
+    filters: { from: fromMs || null, to: toMs || null, interval },
     totals: {
       events: events.length,
       eventNames: catalog.length,
@@ -3904,8 +3922,82 @@ async function getCustomEventsFromQuery(searchParams) {
       uniqueSessions: new Set(events.map((event) => cleanString(event.sessionId, 180)).filter(Boolean)).size,
     },
     events: catalog,
-    selectedEvent: selectedEventName ? buildCustomEventDetail(selectedEventName, selectedEvents, { fromMs, toMs }) : null,
+    selectedEvent: selectedEventName ? buildCustomEventDetail(selectedEventName, selectedEvents, { fromMs, toMs, interval }) : null,
   };
+}
+
+async function handleCustomEventDelete(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const eventName = normalizeCustomEventName(searchParams.get("eventName"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  if (!eventName) return sendJson(res, 400, { error: "Select an event to delete" });
+
+  const universeKey = String(universeId);
+  const deletedAt = Date.now();
+  const currentEvents = customEventsByUniverseId.get(universeKey) || [];
+  const remainingEvents = currentEvents.filter((event) => normalizeCustomEventName(event?.eventName) !== eventName);
+  const memoryDeleted = currentEvents.length - remainingEvents.length;
+  customEventsByUniverseId.set(universeKey, remainingEvents);
+  customEventIdsByUniverseId.set(universeKey, new Set(remainingEvents.map((event) => cleanString(event?.id, 180)).filter(Boolean)));
+
+  const deletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
+  deletionCutoffs.set(eventName, deletedAt);
+  customEventDeletionCutoffsByUniverseId.set(universeKey, deletionCutoffs);
+
+  let mongoDeleted = 0;
+  try {
+    const db = await getMongoDb();
+    if (db) {
+      const [deleteResult] = await Promise.all([
+        db.collection("custom_events").deleteMany({ universeId, eventName }),
+        db.collection("custom_event_deletions").updateOne(
+          { universeId, eventName },
+          { $set: { universeId, eventName, deletedAt, ownerUserId: auth.userId, updatedAt: deletedAt } },
+          { upsert: true },
+        ),
+      ]);
+      mongoDeleted = cleanFiniteInteger(deleteResult.deletedCount);
+    }
+  } catch (error) {
+    console.warn(`Could not persist deletion for custom event ${eventName}:`, error.message || error);
+  }
+
+  invalidateAnalyticsResponses(universeId);
+  return sendJson(res, 200, {
+    ok: true,
+    universeId,
+    eventName,
+    deletedAt,
+    deletedRecords: Math.max(memoryDeleted, mongoDeleted),
+  });
+}
+
+async function getCustomEventDeletionCutoffs(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const universeKey = String(cleanUniverseId);
+  const cached = customEventDeletionCutoffsByUniverseId.get(universeKey);
+  if (cached) return cached;
+
+  const cutoffs = new Map();
+  try {
+    const db = await getMongoDb();
+    if (db) {
+      const deletions = await db.collection("custom_event_deletions")
+        .find({ universeId: cleanUniverseId }, { projection: { _id: 0, eventName: 1, deletedAt: 1 } })
+        .toArray();
+      for (const deletion of deletions) {
+        const eventName = normalizeCustomEventName(deletion?.eventName);
+        const deletedAt = cleanTimestampMs(deletion?.deletedAt);
+        if (eventName && deletedAt > 0) cutoffs.set(eventName, deletedAt);
+      }
+    }
+    customEventDeletionCutoffsByUniverseId.set(universeKey, cutoffs);
+  } catch (error) {
+    console.warn(`Could not load custom event deletions for universe ${cleanUniverseId}:`, error.message || error);
+  }
+  return cutoffs;
 }
 
 async function getCustomEventRecords(filters = {}) {
@@ -3924,11 +4016,16 @@ async function getCustomEventRecords(filters = {}) {
     if (id) eventsById.set(id, event);
   }
 
+  const deletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
   const events = [...eventsById.values()].filter((event) => {
     const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
     if (fromMs > 0 && occurredAt < fromMs) return false;
     if (toMs > 0 && occurredAt > toMs) return false;
-    return Boolean(normalizeCustomEventName(event?.eventName));
+    const eventName = normalizeCustomEventName(event?.eventName);
+    if (!eventName) return false;
+    const deletedAt = cleanTimestampMs(deletionCutoffs.get(eventName));
+    if (deletedAt > 0 && occurredAt <= deletedAt) return false;
+    return true;
   });
   return {
     events,
@@ -3950,13 +4047,15 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     }
   }
 
+  const eventSeries = buildCustomEventSeries(events, filters);
   return {
     name: eventName,
     count: events.length,
     uniquePlayers: playerIds.size,
     uniqueSessions: sessionIds.size,
     averageValue: numericValueCount ? numericValueTotal / numericValueCount : null,
-    series: buildCustomEventSeries(events, filters),
+    bucketMs: eventSeries.bucketMs,
+    series: eventSeries.buckets,
     properties: summarizeCustomEventProperties(events),
     recentEvents: events.slice(0, MAX_CUSTOM_EVENT_RECENT_RESPONSE),
   };
@@ -3970,14 +4069,23 @@ function buildCustomEventSeries(events, filters = {}) {
   const fromMs = cleanInteger(filters.fromMs) || (timestamps.length ? Math.min(...timestamps) : now - 24 * 60 * 60 * 1000);
   const toMs = cleanInteger(filters.toMs) || (timestamps.length ? Math.max(...timestamps) : now);
   const spanMs = Math.max(toMs - fromMs, 60 * 60 * 1000);
-  const intervals = [
+  const autoIntervals = [
     60 * 60 * 1000,
     6 * 60 * 60 * 1000,
     12 * 60 * 60 * 1000,
     24 * 60 * 60 * 1000,
     7 * 24 * 60 * 60 * 1000,
   ];
-  const bucketMs = intervals.find((interval) => Math.ceil(spanMs / interval) <= 30) || intervals.at(-1);
+  const requestedBucketMs = CUSTOM_EVENT_INTERVALS_MS.get(normalizeCustomEventInterval(filters.interval));
+  let bucketMs = requestedBucketMs
+    || autoIntervals.find((intervalMs) => Math.ceil(spanMs / intervalMs) <= 30)
+    || autoIntervals.at(-1);
+  const scalableIntervals = [...new Set([...CUSTOM_EVENT_INTERVALS_MS.values(), ...autoIntervals])].sort((left, right) => left - right);
+  if (Math.ceil(spanMs / bucketMs) > MAX_CUSTOM_EVENT_SERIES_BUCKETS) {
+    bucketMs = scalableIntervals.find((intervalMs) => (
+      intervalMs >= bucketMs && Math.ceil(spanMs / intervalMs) <= MAX_CUSTOM_EVENT_SERIES_BUCKETS
+    )) || scalableIntervals.at(-1);
+  }
   const bucketStart = Math.floor(fromMs / bucketMs) * bucketMs;
   const bucketEnd = Math.max(Math.ceil(toMs / bucketMs) * bucketMs, bucketStart + bucketMs);
   const buckets = [];
@@ -3995,11 +4103,19 @@ function buildCustomEventSeries(events, filters = {}) {
     bucket.count += 1;
     if (cleanInteger(event.userId) > 0) bucket.playerIds.add(cleanInteger(event.userId));
   }
-  return buckets.map((bucket) => ({
-    start: bucket.start,
-    count: bucket.count,
-    uniquePlayers: bucket.playerIds.size,
-  }));
+  return {
+    bucketMs,
+    buckets: buckets.map((bucket) => ({
+      start: bucket.start,
+      count: bucket.count,
+      uniquePlayers: bucket.playerIds.size,
+    })),
+  };
+}
+
+function normalizeCustomEventInterval(value) {
+  const interval = cleanString(value, 12).toLowerCase();
+  return CUSTOM_EVENT_INTERVALS_MS.has(interval) ? interval : "auto";
 }
 
 function summarizeCustomEventProperties(events) {
@@ -9199,6 +9315,7 @@ function clearUniverseRuntimeData(universeKey) {
     leaveSampleIdsByUniverseId,
     customEventsByUniverseId,
     customEventIdsByUniverseId,
+    customEventDeletionCutoffsByUniverseId,
     mapSnapshotsByUniverseId,
     chatInsightsByScope,
     areaInsightsByScope,
@@ -9230,6 +9347,7 @@ async function deleteMongoUniverseData(universeId) {
     "death_samples",
     "leave_samples",
     "custom_events",
+    "custom_event_deletions",
     "funnels",
     "map_snapshots",
     "map_snapshot_chunks",
