@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260712-1">
+    <link rel="stylesheet" href="/styles.css?v=20260712-2">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -20,26 +20,102 @@
 
         <nav class="sideNav" aria-label="Dashboard sections">
           <div class="navGroup overviewNavGroup">
-            <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
+            <a class="active" href="#overview" data-dashboard-view="overview">
+              <span class="navIconTile" aria-hidden="true">
+                <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                  <path d="M3.5 10.5 12 3.5l8.5 7" />
+                  <path d="M5.5 9.2V20h13V9.2" />
+                  <path d="M9.5 20v-6h5v6" />
+                </svg>
+              </span>
+              <span>Overview</span>
+            </a>
           </div>
 
           <section class="navGroup" aria-labelledby="analyticsNavLabel">
             <h2 class="navGroupLabel" id="analyticsNavLabel">Analytics</h2>
             <div class="navGroupLinks">
-              <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
-              <a href="#events" data-dashboard-view="events"><span class="navIcon eventsIcon" aria-hidden="true"></span><span>Events</span></a>
-              <a href="#funnels" data-dashboard-view="funnels"><span class="navIcon funnelsIcon" aria-hidden="true"></span><span>Funnels</span></a>
-              <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
-              <a href="#ai-runs" data-dashboard-view="ai-runs"><span class="navIcon aiRunsIcon" aria-hidden="true"></span><span>AI Runs</span></a>
+              <a href="#areas" data-dashboard-view="areas">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <rect x="3.5" y="3.5" width="6" height="6" rx="2" />
+                    <rect x="14.5" y="3.5" width="6" height="6" rx="2" />
+                    <rect x="3.5" y="14.5" width="6" height="6" rx="2" />
+                    <rect x="14.5" y="14.5" width="6" height="6" rx="2" />
+                  </svg>
+                </span>
+                <span>Areas</span>
+              </a>
+              <a href="#events" data-dashboard-view="events">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M3 20.5h18" />
+                    <path d="M5.5 20.5v-5M9.5 20.5V10M13.5 20.5v-8M17.5 20.5V5" />
+                  </svg>
+                </span>
+                <span>Events</span>
+              </a>
+              <a href="#funnels" data-dashboard-view="funnels">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <circle cx="5" cy="5" r="2" />
+                    <circle cx="19" cy="8" r="2" />
+                    <circle cx="8" cy="19" r="2" />
+                    <path d="M6.8 5.9 17 7.5M5.7 6.9 7.5 17" />
+                  </svg>
+                </span>
+                <span>Funnels</span>
+              </a>
+              <a href="#chat" data-dashboard-view="chat">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M6 4.5h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9l-5 3v-13a3 3 0 0 1 2-3Z" />
+                  </svg>
+                </span>
+                <span>Chat Analysis</span>
+              </a>
+              <a href="#ai-runs" data-dashboard-view="ai-runs">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 3c.8 4.6 3.4 7.2 8 8-4.6.8-7.2 3.4-8 8-.8-4.6-3.4-7.2-8-8 4.6-.8 7.2-3.4 8-8Z" />
+                  </svg>
+                </span>
+                <span>AI Runs</span>
+              </a>
             </div>
           </section>
 
           <section class="navGroup" aria-labelledby="setupNavLabel">
             <h2 class="navGroupLabel" id="setupNavLabel">Setup</h2>
             <div class="navGroupLinks">
-              <a href="#connect" data-dashboard-view="connect"><span class="navIcon connectIcon" aria-hidden="true"></span><span>Connect Universe</span></a>
-              <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden><span class="navIcon adminIcon" aria-hidden="true"></span><span>Admin</span></a>
-              <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
+              <a href="#connect" data-dashboard-view="connect">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="m9.5 14.5-2 2A3.2 3.2 0 0 1 3 12l3-3a3.2 3.2 0 0 1 4.5 0" />
+                    <path d="m14.5 9.5 2-2A3.2 3.2 0 0 1 21 12l-3 3a3.2 3.2 0 0 1-4.5 0" />
+                    <path d="m8.5 15.5 7-7" />
+                  </svg>
+                </span>
+                <span>Connect Universe</span>
+              </a>
+              <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden>
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 3 20 6.5v5.8c0 4.2-3.1 7.2-8 8.7-4.9-1.5-8-4.5-8-8.7V6.5L12 3Z" />
+                    <path d="m12 9 2.5 2.5L12 14l-2.5-2.5L12 9Z" />
+                  </svg>
+                </span>
+                <span>Admin</span>
+              </a>
+              <a href="#usage" data-dashboard-view="usage">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M4 4v16h16" />
+                    <path d="m6.5 16 4-4 3 2 5-6" />
+                  </svg>
+                </span>
+                <span>Usage</span>
+              </a>
             </div>
           </section>
         </nav>

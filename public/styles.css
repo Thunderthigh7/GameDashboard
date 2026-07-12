@@ -264,11 +264,11 @@ body.isResizingLayout {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 46px;
+  min-height: 52px;
   border: 1px solid transparent;
   border-radius: 10px;
   color: var(--nav-text);
-  padding: 0 14px;
+  padding: 0 10px;
   text-decoration: none;
   font-size: 14px;
   font-weight: 650;
@@ -278,206 +278,29 @@ body.isResizingLayout {
   flex: 1;
 }
 
-.navIcon {
-  position: relative;
-  display: block;
+.navIconTile {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 38px;
+  height: 38px;
   margin-right: 12px;
-  color: currentColor;
+  border: 1px solid rgba(111, 126, 211, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(20, 30, 80, 0.8), rgba(9, 14, 48, 0.62));
+  color: #aab8ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 8px 18px rgba(0, 0, 0, 0.14);
 }
 
-.navIcon::before,
-.navIcon::after {
-  content: "";
-  position: absolute;
-  box-sizing: border-box;
-}
-
-.homeIcon::before {
-  left: 6px;
-  top: 11px;
-  width: 16px;
-  height: 12px;
-  border: 2px solid currentColor;
-  border-top: 0;
-  border-radius: 3px;
-}
-
-.homeIcon::after {
-  left: 7px;
-  top: 5px;
-  width: 14px;
-  height: 14px;
-  border-left: 2px solid currentColor;
-  border-top: 2px solid currentColor;
-  transform: rotate(45deg);
-}
-
-.areaIcon::before {
-  left: 5px;
-  top: 5px;
-  width: 7px;
-  height: 7px;
-  border: 2px solid currentColor;
-  border-radius: 3px;
-  box-shadow:
-    11px 0 0 -2px currentColor,
-    0 11px 0 -2px currentColor,
-    11px 11px 0 -2px currentColor;
-}
-
-.areaIcon::after {
-  left: 13px;
-  top: 13px;
-  width: 3px;
-  height: 3px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.aiRunsIcon::before {
-  left: 6px;
-  top: 6px;
-  width: 16px;
-  height: 16px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-}
-
-.aiRunsIcon::after {
-  left: 12px;
-  top: 4px;
-  width: 4px;
-  height: 20px;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow:
-    -6px 6px 0 -1px currentColor,
-    6px 6px 0 -1px currentColor;
-  transform: rotate(45deg);
-}
-
-.chatIcon::before {
-  left: 4px;
-  top: 6px;
-  width: 19px;
-  height: 15px;
-  border: 2px solid currentColor;
-  border-radius: 4px;
-}
-
-.chatIcon::after {
-  left: 14px;
-  top: 19px;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(35deg);
-}
-
-.usageIcon::before {
-  left: 6px;
-  bottom: 5px;
-  width: 3px;
-  height: 10px;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow:
-    6px -5px 0 currentColor,
-    12px -10px 0 currentColor;
-}
-
-.usageIcon::after {
-  left: 5px;
-  bottom: 4px;
-  width: 16px;
-  height: 19px;
-  border-left: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  opacity: 0.35;
-}
-
-.eventsIcon::before {
-  left: 5px;
-  bottom: 5px;
-  width: 4px;
-  height: 8px;
-  border-radius: 2px 2px 0 0;
-  background: currentColor;
-  box-shadow: 7px -5px 0 currentColor, 14px -12px 0 currentColor;
-}
-
-.eventsIcon::after {
-  left: 4px;
-  bottom: 4px;
-  width: 19px;
-  height: 18px;
-  border-left: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  opacity: 0.38;
-}
-
-.funnelsIcon::before {
-  left: 4px;
-  top: 6px;
-  width: 6px;
-  height: 6px;
-  border: 2px solid currentColor;
-  border-radius: 50%;
-  box-shadow: 13px 7px 0 -2px var(--sidebar), 13px 7px 0 0 currentColor, 0 14px 0 -2px var(--sidebar), 0 14px 0 0 currentColor;
-}
-
-.funnelsIcon::after {
-  left: 10px;
-  top: 10px;
-  width: 12px;
-  height: 12px;
-  border-top: 2px solid currentColor;
-  border-left: 2px solid currentColor;
-  transform: rotate(29deg);
-}
-
-.connectIcon::before {
-  left: 5px;
-  top: 13px;
-  width: 12px;
-  height: 8px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-  transform: rotate(-42deg);
-}
-
-.connectIcon::after {
-  right: 5px;
-  top: 7px;
-  width: 12px;
-  height: 8px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-  transform: rotate(-42deg);
-}
-
-.adminIcon::before {
-  left: 6px;
-  top: 4px;
-  width: 16px;
-  height: 19px;
-  border: 2px solid currentColor;
-  border-radius: 5px 5px 8px 8px;
-  clip-path: polygon(50% 0, 100% 18%, 100% 62%, 50% 100%, 0 62%, 0 18%);
-}
-
-.adminIcon::after {
-  left: 12px;
-  top: 10px;
-  width: 5px;
-  height: 9px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(38deg);
+.navIcon {
+  display: block;
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sideNav a.active {
@@ -485,6 +308,13 @@ body.isResizingLayout {
   background: linear-gradient(135deg, rgba(124, 60, 255, 0.95), rgba(31, 38, 121, 0.62));
   color: white;
   box-shadow: 0 16px 36px rgba(96, 50, 255, 0.24);
+}
+
+.sideNav a.active .navIconTile {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 20px rgba(46, 17, 142, 0.28);
 }
 
 .sideNav a.active .navIcon {
