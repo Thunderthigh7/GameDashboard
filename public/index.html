@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260712-2">
+    <link rel="stylesheet" href="/styles.css?v=20260712-4">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -121,24 +121,17 @@
         </nav>
 
         <div class="sidebarFooter">
-          <div class="universeSelector">
-            <button class="universeSelectorButton" id="universeSelectorButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="universeDropdownMenu" disabled>
-              <span class="gameThumb" aria-hidden="true"></span>
-              <span class="universeSelectorText">
-                <strong>Selected Universe</strong>
-                <small id="selectedUniverseLabel">No universe selected</small>
-              </span>
-              <span class="universeSelectorChevron" aria-hidden="true"></span>
-            </button>
-            <div class="universeDropdownMenu" id="universeDropdownMenu" role="listbox" aria-label="Universe" hidden></div>
-            <label class="srOnly" for="universeSelect">Universe</label>
-            <select id="universeSelect" hidden tabindex="-1" aria-hidden="true" disabled>
-              <option value="">Loading universes...</option>
-            </select>
-          </div>
           <p class="status" id="universesStatus">Loading...</p>
           <section class="authControls" id="authControls" hidden>
-            <button class="sidebarLogoutButton" id="logoutButton" type="button">Log out</button>
+            <button class="sidebarLogoutButton" id="logoutButton" type="button">
+              <span class="logoutIconTile" aria-hidden="true">
+                <svg class="logoutIcon" viewBox="0 0 24 24" focusable="false">
+                  <path d="M10 5H6.5A2.5 2.5 0 0 0 4 7.5v9A2.5 2.5 0 0 0 6.5 19H10" />
+                  <path d="M13 8.5 16.5 12 13 15.5M8 12h8.5" />
+                </svg>
+              </span>
+              <span>Logout</span>
+            </button>
           </section>
         </div>
       </aside>
@@ -150,7 +143,7 @@
             <p id="pageSubtitle">Roblox game analytics powered by live heartbeat data.</p>
           </div>
           <div class="topbarActions">
-            <div class="topbarFilters" aria-label="Heatmap date range">
+            <div class="topbarFilters" aria-label="Dashboard filters">
               <div class="fieldGroup compactField dateDisplayField">
                 <label for="movementFromFilter">From</label>
                 <div class="dateDisplayControl">
@@ -164,6 +157,21 @@
                   <span id="movementToDisplay">Today</span>
                   <input id="movementToFilter" type="datetime-local">
                 </div>
+              </div>
+              <div class="universeSelector topbarUniverseSelector">
+                <button class="universeSelectorButton" id="universeSelectorButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="universeDropdownMenu" disabled>
+                  <span class="gameThumb" aria-hidden="true"></span>
+                  <span class="universeSelectorText">
+                    <strong>Selected Universe</strong>
+                    <small id="selectedUniverseLabel">No universe selected</small>
+                  </span>
+                  <span class="universeSelectorChevron" aria-hidden="true"></span>
+                </button>
+                <div class="universeDropdownMenu" id="universeDropdownMenu" role="listbox" aria-label="Universe" hidden></div>
+                <label class="srOnly" for="universeSelect">Universe</label>
+                <select id="universeSelect" hidden tabindex="-1" aria-hidden="true" disabled>
+                  <option value="">Loading universes...</option>
+                </select>
               </div>
             </div>
             <div class="topbarButtonGroup">
