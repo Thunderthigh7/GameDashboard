@@ -71,6 +71,18 @@ const refreshMovementButton = document.querySelector("#refreshMovementButton");
 const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
+const refreshEventsButton = document.querySelector("#refreshEventsButton");
+const eventsStatus = document.querySelector("#eventsStatus");
+const eventCatalog = document.querySelector("#eventCatalog");
+const eventTotalCount = document.querySelector("#eventTotalCount");
+const eventUniquePlayers = document.querySelector("#eventUniquePlayers");
+const eventUniqueSessions = document.querySelector("#eventUniqueSessions");
+const eventNameCount = document.querySelector("#eventNameCount");
+const selectedEventTitle = document.querySelector("#selectedEventTitle");
+const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
+const eventChart = document.querySelector("#eventChart");
+const eventPropertyList = document.querySelector("#eventPropertyList");
+const recentEventList = document.querySelector("#recentEventList");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const aiChatMessages = document.querySelector("#aiChatMessages");
@@ -125,11 +137,13 @@ let aiAutomationSettingsRequestSequence = 0;
 let usageRequestSequence = 0;
 let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
+let customEventsRequestSequence = 0;
+let selectedCustomEventName = "";
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260711-3";
+const DASHBOARD_ASSET_VERSION = "20260711-4";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -145,7 +159,7 @@ window.getDashboardCacheScope = resolveDashboardCacheScope;
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
 const MAX_SIGNAL_AREAS = 5;
-const UNIVERSE_SCOPED_VIEWS = new Set(["areas", "ai-runs", "chat"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["areas", "events", "ai-runs", "chat"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -247,6 +261,13 @@ function bindEvents() {
   window.addEventListener("resize", positionUniverseDropdown);
   window.addEventListener("scroll", positionUniverseDropdown, true);
   refreshChatLogsButton.addEventListener("click", () => loadChatLogs({ includeInsights: true }));
+  refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
+  eventCatalog?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-event-name]");
+    if (!button) return;
+    selectedCustomEventName = button.dataset.eventName || "";
+    loadCustomEvents({ force: true });
+  });
   aiChatSendButton?.addEventListener("click", sendAiChatPrompt);
   aiChatInput?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -294,10 +315,12 @@ function bindEvents() {
   movementFromFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     loadSignalAreaCards({ force: true });
+    if (activeView === "events") loadCustomEvents({ force: true });
   });
   movementToFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     loadSignalAreaCards({ force: true });
+    if (activeView === "events") loadCustomEvents({ force: true });
   });
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
@@ -368,6 +391,7 @@ function handleDashboardVisibilityChange() {
     if (authenticated && selectedUniverseId) {
       if (activeView === "chat") loadChatLogs({ includeInsights: false });
       if (activeView === "areas") loadSignalAreaCards();
+      if (activeView === "events") loadCustomEvents();
     }
   }
 
@@ -570,6 +594,7 @@ function abortActiveDashboardRequests() {
   usageRequestSequence += 1;
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
+  customEventsRequestSequence += 1;
   aiReportPayloadCache.clear();
   inFlightGetRequests.clear();
 }
@@ -683,6 +708,7 @@ function notifyAnalyticsReady() {
 
 function getViewFromHash() {
   if (window.location.hash === "#areas") return "areas";
+  if (window.location.hash === "#events") return "events";
   if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#usage") return "usage";
@@ -692,22 +718,24 @@ function getViewFromHash() {
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "areas" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "areas" || view === "events" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
     const nextHash = activeView === "areas"
       ? "#areas"
-      : activeView === "ai-runs"
-        ? "#ai-runs"
-        : activeView === "chat"
-          ? "#chat"
-          : activeView === "usage"
-            ? "#usage"
-            : activeView === "connect"
-              ? "#connect"
-              : activeView === "admin"
-                ? "#admin"
-                : "#overview";
+      : activeView === "events"
+        ? "#events"
+        : activeView === "ai-runs"
+          ? "#ai-runs"
+          : activeView === "chat"
+            ? "#chat"
+            : activeView === "usage"
+              ? "#usage"
+              : activeView === "connect"
+                ? "#connect"
+                : activeView === "admin"
+                  ? "#admin"
+                  : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -738,6 +766,10 @@ function renderActiveView(options = {}) {
     areas: {
       title: "Areas",
       subtitle: "Computed movement, drop-off, death, and chat hotspots.",
+    },
+    events: {
+      title: "Events",
+      subtitle: "Automatic charts for events logged by your Roblox server.",
     },
     "ai-runs": {
       title: "AI Runs",
@@ -797,6 +829,8 @@ function loadActiveViewData(view, options = {}) {
     if (view === "ai-runs") {
       loadAiAutomationSettings();
       loadAiReportHistory();
+    } else if (view === "events") {
+      loadCustomEvents();
     }
     return;
   }
@@ -804,6 +838,8 @@ function loadActiveViewData(view, options = {}) {
 
   if (view === "areas") {
     loadSignalAreaCards();
+  } else if (view === "events") {
+    loadCustomEvents();
   } else if (view === "ai-runs") {
     loadAiAutomationSettings();
     loadAiReportHistory();
@@ -1850,6 +1886,7 @@ function renderConnectedGame(universe) {
           ${renderIntegrationSignal("Deaths", Boolean(status.signals?.deaths), status.counts?.deaths)}
           ${renderIntegrationSignal("Leaves", Boolean(status.signals?.leaves), status.counts?.leaves)}
           ${renderIntegrationSignal("Chat", Boolean(status.signals?.chat), status.counts?.chat)}
+          ${renderIntegrationSignal("Events", Boolean(status.signals?.events), status.counts?.events)}
         </div>
       </div>
       <div class="connectedGameActions">
@@ -1888,7 +1925,8 @@ function renderIntegrationStatusCard(options = {}) {
     integrationSignalList.innerHTML = renderIntegrationSignal("Movement", false)
       + renderIntegrationSignal("Deaths", false)
       + renderIntegrationSignal("Leaves", false)
-      + renderIntegrationSignal("Chat", false);
+      + renderIntegrationSignal("Chat", false)
+      + renderIntegrationSignal("Events", false);
     integrationStatusMessage.textContent = authenticated
       ? "Connect a Roblox game to start receiving analytics data."
       : "Sign in to check integration status.";
@@ -1912,7 +1950,8 @@ function renderIntegrationStatusCard(options = {}) {
   integrationSignalList.innerHTML = renderIntegrationSignal("Movement", Boolean(signals.movement), counts.movement)
     + renderIntegrationSignal("Deaths", Boolean(signals.deaths), counts.deaths)
     + renderIntegrationSignal("Leaves", Boolean(signals.leaves), counts.leaves)
-    + renderIntegrationSignal("Chat", Boolean(signals.chat), counts.chat);
+    + renderIntegrationSignal("Chat", Boolean(signals.chat), counts.chat)
+    + renderIntegrationSignal("Events", Boolean(signals.events), counts.events);
 
   if (failedIngests > 0) {
     integrationStatusMessage.textContent = "Data is coming in, but recent ingests failed. Check the game secret and server logs before a client test.";
@@ -1991,6 +2030,7 @@ function getActiveSignalText(signals = {}) {
   if (signals.deaths) active.push("deaths");
   if (signals.leaves) active.push("leaves");
   if (signals.chat) active.push("chat");
+  if (signals.events) active.push("events");
   return active.length ? `Active signals: ${active.join(", ")}.` : "No active signals yet.";
 }
 
@@ -2016,6 +2056,7 @@ function selectUniverse(value) {
   signalAreaRequestState = null;
   signalAreaRequestSequence += 1;
   selectedChatLogId = "";
+  selectedCustomEventName = "";
   updateSelectedUniverse();
   renderAiChatWelcome();
   renderIntegrationStatusCard();
@@ -2112,6 +2153,133 @@ function buildSignalAreaQuery() {
 
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+async function loadCustomEvents(options = {}) {
+  if (!authenticated || !eventsStatus) return;
+  const requestSequence = ++customEventsRequestSequence;
+  const universeId = selectedUniverseId;
+
+  if (!universeId) {
+    renderCustomEvents({ totals: {}, events: [], selectedEvent: null });
+    eventsStatus.textContent = "Connect or select a Roblox game to view events.";
+    return;
+  }
+
+  eventsStatus.textContent = "Loading events...";
+  if (refreshEventsButton) refreshEventsButton.disabled = true;
+  const params = new URLSearchParams();
+  params.set("universeId", universeId);
+  const from = getDateTimeMs(movementFromFilter?.value);
+  const to = getDateTimeMs(movementToFilter?.value);
+  if (from) params.set("from", String(from));
+  if (to) params.set("to", String(to));
+  if (selectedCustomEventName) params.set("eventName", selectedCustomEventName);
+  if (options.force) params.set("fresh", "1");
+
+  try {
+    const payload = await request(`/api/events?${params.toString()}`, { dedupe: !options.force });
+    if (requestSequence !== customEventsRequestSequence || universeId !== selectedUniverseId) return;
+    renderCustomEvents(payload);
+    eventsStatus.textContent = payload.totals?.events
+      ? `${formatCompactNumber(payload.totals.events)} events across ${formatCompactNumber(payload.totals.eventNames)} names.`
+      : "No custom events yet. Call Logger.Log from a Roblox server script.";
+  } catch (error) {
+    if (requestSequence !== customEventsRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) eventsStatus.textContent = formatRequestError(error);
+  } finally {
+    if (requestSequence === customEventsRequestSequence && refreshEventsButton) refreshEventsButton.disabled = false;
+  }
+}
+
+function renderCustomEvents(payload = {}) {
+  const totals = payload.totals || {};
+  if (eventTotalCount) eventTotalCount.textContent = formatCompactNumber(totals.events);
+  if (eventUniquePlayers) eventUniquePlayers.textContent = formatCompactNumber(totals.uniquePlayers);
+  if (eventUniqueSessions) eventUniqueSessions.textContent = formatCompactNumber(totals.uniqueSessions);
+  if (eventNameCount) eventNameCount.textContent = formatCompactNumber(totals.eventNames);
+
+  const catalog = Array.isArray(payload.events) ? payload.events : [];
+  const selected = payload.selectedEvent || null;
+  selectedCustomEventName = selected?.name || "";
+  if (eventCatalog) {
+    eventCatalog.innerHTML = catalog.length
+      ? catalog.map((item) => `
+        <button class="eventCatalogItem ${item.name === selectedCustomEventName ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}">
+          <span><strong>${escapeHtml(item.name)}</strong><small>${formatRelativeTime(item.lastSeenAt)}</small></span>
+          <em>${formatCompactNumber(item.count)}</em>
+        </button>
+      `).join("")
+      : '<p class="status">Logged event names will appear here automatically.</p>';
+  }
+
+  if (selectedEventTitle) selectedEventTitle.textContent = selected?.name || "Select an event";
+  if (selectedEventSubtitle) {
+    selectedEventSubtitle.textContent = selected
+      ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
+      : "The event timeline will appear here.";
+  }
+  renderCustomEventChart(selected?.series || []);
+  renderCustomEventProperties(selected?.properties || []);
+  renderRecentCustomEvents(selected?.recentEvents || []);
+}
+
+function renderCustomEventChart(series) {
+  if (!eventChart) return;
+  if (!series.length || !series.some((bucket) => Number(bucket.count) > 0)) {
+    eventChart.innerHTML = '<p class="status">No events in this date range.</p>';
+    return;
+  }
+
+  const maxCount = Math.max(...series.map((bucket) => Number(bucket.count) || 0), 1);
+  eventChart.innerHTML = series.map((bucket) => {
+    const height = Math.max(((Number(bucket.count) || 0) / maxCount) * 100, Number(bucket.count) > 0 ? 4 : 0);
+    const label = new Date(Number(bucket.start)).toLocaleString([], { month: "short", day: "numeric", hour: "numeric" });
+    return `
+      <div class="eventChartBucket" title="${escapeHtml(label)}: ${formatCompactNumber(bucket.count)} events, ${formatCompactNumber(bucket.uniquePlayers)} players">
+        <strong>${Number(bucket.count) > 0 ? formatCompactNumber(bucket.count) : ""}</strong>
+        <span style="height: ${height.toFixed(2)}%"></span>
+        <small>${escapeHtml(label)}</small>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderCustomEventProperties(properties) {
+  if (!eventPropertyList) return;
+  eventPropertyList.innerHTML = properties.length
+    ? properties.map((property) => {
+      const detail = property.type === "number"
+        ? `Average ${formatEventNumber(property.average)} · ${formatEventNumber(property.min)}–${formatEventNumber(property.max)}`
+        : (property.topValues || []).map((entry) => `${entry.value} (${formatCompactNumber(entry.count)})`).join(" · ");
+      return `<div class="eventPropertyItem"><strong>${escapeHtml(property.name)}</strong><span>${escapeHtml(detail || "No values")}</span></div>`;
+    }).join("")
+    : '<p class="status">No properties were sent with this event.</p>';
+}
+
+function renderRecentCustomEvents(events) {
+  if (!recentEventList) return;
+  recentEventList.innerHTML = events.length
+    ? events.map((event) => {
+      const player = event.username || (event.userId ? `Player ${event.userId}` : "Server event");
+      const propertySummary = Object.entries(event.properties || {}).slice(0, 4)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(" · ");
+      return `
+        <div class="recentEventItem">
+          <span><strong>${escapeHtml(player)}</strong><small>${formatFullDate(event.occurredAt)}</small></span>
+          <p>${escapeHtml(propertySummary || "No properties")}</p>
+        </div>
+      `;
+    }).join("")
+    : '<p class="status">No recent records for this event.</p>';
+}
+
+function formatEventNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(number);
 }
 
 function renderSignalLoading(container, label) {

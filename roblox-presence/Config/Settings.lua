@@ -21,6 +21,11 @@ Settings.MaxDeathSamplesPerPayload = 100
 Settings.MaxPendingDeathSamples = 500
 Settings.MaxLeaveSamplesPerPayload = 100
 Settings.MaxPendingLeaveSamples = 500
+Settings.MaxCustomEventsPerPayload = 200
+Settings.MaxPendingCustomEvents = 1000
+Settings.MaxCustomEventPayloadBytes = 96 * 1024
+Settings.MaxCustomEventProperties = 20
+Settings.MaxCustomEventStringLength = 240
 Settings.ShutdownFlushTimeout = 8
 Settings.Debug = true
 

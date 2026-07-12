@@ -80,6 +80,7 @@ console.log(JSON.stringify({
     movementSampleCount: rollup.movement.samples.length,
     deathSampleCount: rollup.deaths.samples.length,
     leaveSampleCount: rollup.leaves.samples.length,
+    customEventCount: rollup.customEvents.samples.length,
     rollupWriteSkipped: skipAllRollupWrites || failedRawObjectUniverseIds.has(rollup.universeId),
     rollupWriteSkipReason: skipAllRollupWrites
       ? "unparseable_failed_raw_object_key"
@@ -169,6 +170,8 @@ function ingestJsonLines(text, objectKey) {
       addEventSample(rollup.deaths, event, "diedAt");
     } else if (event.type === "leave") {
       addEventSample(rollup.leaves, event, "leftAt");
+    } else if (event.type === "custom_event") {
+      addCustomEvent(rollup, event);
     }
   }
 }
@@ -178,7 +181,7 @@ function getUniverseRollup(universeId) {
   let rollup = rollupsByUniverseId.get(key);
   if (!rollup) {
     rollup = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       universeId,
       generatedAt: Date.now(),
       window: {
@@ -203,6 +206,10 @@ function getUniverseRollup(universeId) {
         samples: [],
       },
       leaves: {
+        sampleCount: 0,
+        samples: [],
+      },
+      customEvents: {
         sampleCount: 0,
         samples: [],
       },
@@ -328,6 +335,45 @@ function addEventSample(target, event, timestampField) {
   trimNewestSamples(target.samples, MAX_EVENT_SAMPLES, compareEventSamples);
 }
 
+function addCustomEvent(rollup, event) {
+  const eventName = cleanString(event.eventName, 64).toLowerCase();
+  if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName)) return;
+
+  rollup.customEvents.sampleCount += 1;
+  rollup.customEvents.samples.push({
+    id: cleanString(event.id, 180) || `${event.jobId || "job"}:${eventName}:${event.userId || 0}:${event.occurredAt || event.receivedAt || Date.now()}`,
+    universeId: rollup.universeId,
+    placeId: cleanPositiveInteger(event.placeId, 0),
+    jobId: cleanString(event.jobId, 128),
+    eventName,
+    userId: cleanPositiveInteger(event.userId, 0) || null,
+    username: cleanString(event.username, 64),
+    displayName: cleanString(event.displayName, 64),
+    sessionId: cleanString(event.sessionId, 180),
+    value: typeof event.value === "number" ? cleanFiniteNumberOrNull(event.value) : null,
+    properties: cleanCustomEventProperties(event.properties),
+    x: cleanFiniteNumberOrNull(event.x),
+    y: cleanFiniteNumberOrNull(event.y),
+    z: cleanFiniteNumberOrNull(event.z),
+    occurredAt: cleanTimestamp(event.occurredAt) || cleanTimestamp(event.receivedAt),
+    receivedAt: cleanTimestamp(event.receivedAt),
+  });
+  trimNewestSamples(rollup.customEvents.samples, MAX_EVENT_SAMPLES, compareCustomEvents);
+}
+
+function cleanCustomEventProperties(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).slice(0, 20).filter(([key, entry]) => (
+    /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(key)
+    && ((typeof entry === "string" && entry.length <= 240) || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry)))
+  )));
+}
+
+function compareCustomEvents(left, right) {
+  return (cleanTimestamp(right.occurredAt) || cleanTimestamp(right.receivedAt))
+    - (cleanTimestamp(left.occurredAt) || cleanTimestamp(left.receivedAt));
+}
+
 function finalizeRollup(rollup) {
   rollup.rawObjectCount = rollup.rawObjectKeys.size;
   rollup.rawObjectKeys = [...rollup.rawObjectKeys].sort();
@@ -339,8 +385,10 @@ function finalizeRollup(rollup) {
   delete rollup.movement.cells;
   rollup.deaths.samples.sort(compareEventSamples);
   rollup.leaves.samples.sort(compareEventSamples);
+  rollup.customEvents.samples.sort(compareCustomEvents);
   rollup.deaths.samples = rollup.deaths.samples.slice(0, MAX_EVENT_SAMPLES);
   rollup.leaves.samples = rollup.leaves.samples.slice(0, MAX_EVENT_SAMPLES);
+  rollup.customEvents.samples = rollup.customEvents.samples.slice(0, MAX_EVENT_SAMPLES);
 }
 
 async function writeRollup(rollup) {

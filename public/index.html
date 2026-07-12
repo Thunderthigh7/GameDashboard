@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260711-3">
+    <link rel="stylesheet" href="/styles.css?v=20260711-4">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -21,6 +21,7 @@
         <nav class="sideNav" aria-label="Dashboard sections">
           <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
           <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
+          <a href="#events" data-dashboard-view="events"><span class="navIcon eventsIcon" aria-hidden="true"></span><span>Events</span></a>
           <a href="#ai-runs" data-dashboard-view="ai-runs"><span class="navIcon aiRunsIcon" aria-hidden="true"></span><span>AI Runs</span></a>
           <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
           <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
@@ -274,6 +275,54 @@
           </aside>
         </section>
 
+        <section class="viewPage eventsPage" data-view-panel="events" hidden>
+          <div class="eventsLayout">
+            <aside class="panel eventCatalogPanel">
+              <div class="sectionHeader">
+                <div>
+                  <h2>Tracked Events</h2>
+                  <p>Events appear automatically after Roblox logs them.</p>
+                </div>
+                <button class="button secondary compact" id="refreshEventsButton" type="button">Refresh</button>
+              </div>
+              <p class="status" id="eventsStatus">Waiting for events...</p>
+              <div class="eventCatalog" id="eventCatalog"></div>
+            </aside>
+
+            <section class="eventDetailColumn">
+              <div class="eventOverview" id="eventOverview">
+                <div><span>Total events</span><strong id="eventTotalCount">0</strong></div>
+                <div><span>Unique players</span><strong id="eventUniquePlayers">0</strong></div>
+                <div><span>Unique sessions</span><strong id="eventUniqueSessions">0</strong></div>
+                <div><span>Event names</span><strong id="eventNameCount">0</strong></div>
+              </div>
+
+              <article class="panel eventChartPanel">
+                <div class="sectionHeader">
+                  <div>
+                    <h2 id="selectedEventTitle">Select an event</h2>
+                    <p id="selectedEventSubtitle">The event timeline will appear here.</p>
+                  </div>
+                </div>
+                <div class="eventChart" id="eventChart" aria-label="Event count over time"></div>
+              </article>
+
+              <div class="eventBreakdownGrid">
+                <article class="panel dataCard">
+                  <h2>Property breakdowns</h2>
+                  <p>Top categories and numeric averages sent with this event.</p>
+                  <div class="eventPropertyList" id="eventPropertyList"></div>
+                </article>
+                <article class="panel dataCard">
+                  <h2>Recent events</h2>
+                  <p>Latest accepted records for integration testing.</p>
+                  <div class="recentEventList" id="recentEventList"></div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <section class="viewPage chatAnalysisPage" data-view-panel="chat" hidden>
           <article class="panel dataCard chatLogs">
             <div class="sectionHeader">
@@ -503,6 +552,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260711-3"></script>
+    <script defer src="/app.js?v=20260711-4"></script>
   </body>
 </html>

@@ -362,6 +362,26 @@ body.isResizingLayout {
   opacity: 0.35;
 }
 
+.eventsIcon::before {
+  left: 5px;
+  bottom: 5px;
+  width: 4px;
+  height: 8px;
+  border-radius: 2px 2px 0 0;
+  background: currentColor;
+  box-shadow: 7px -5px 0 currentColor, 14px -12px 0 currentColor;
+}
+
+.eventsIcon::after {
+  left: 4px;
+  bottom: 4px;
+  width: 19px;
+  height: 18px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.38;
+}
+
 .connectIcon::before {
   left: 5px;
   top: 13px;
@@ -2678,6 +2698,188 @@ body.isResizingLayout {
   margin-top: 12px;
 }
 
+.eventsLayout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.eventCatalogPanel,
+.eventDetailColumn,
+.eventPropertyList,
+.recentEventList {
+  display: grid;
+  gap: 12px;
+}
+
+.eventCatalogPanel {
+  position: sticky;
+  top: 116px;
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
+}
+
+.eventCatalog {
+  display: grid;
+  gap: 7px;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.eventCatalogItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text);
+  padding: 11px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eventCatalogItem:hover,
+.eventCatalogItem.active {
+  border-color: rgba(124, 60, 255, 0.72);
+  background: var(--purple-soft);
+}
+
+.eventCatalogItem span,
+.recentEventItem span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.eventCatalogItem strong,
+.eventCatalogItem small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eventCatalogItem small,
+.recentEventItem small,
+.eventPropertyItem span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.eventCatalogItem em {
+  color: #c4b5fd;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.eventOverview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.eventOverview > div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 14px;
+}
+
+.eventOverview span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eventOverview strong {
+  font-size: 24px;
+}
+
+.eventChartPanel {
+  min-height: 360px;
+}
+
+.eventChart {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 260px;
+  overflow-x: auto;
+  padding: 18px 4px 0;
+}
+
+.eventChartBucket {
+  display: grid;
+  grid-template-rows: 24px 1fr 42px;
+  align-items: end;
+  justify-items: center;
+  flex: 1 0 34px;
+  min-width: 34px;
+  height: 240px;
+}
+
+.eventChartBucket > strong {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.eventChartBucket > span {
+  display: block;
+  width: min(28px, 78%);
+  min-height: 2px;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, #a78bfa, #6d28d9);
+  box-shadow: 0 8px 24px rgba(124, 60, 255, 0.2);
+}
+
+.eventChartBucket > small {
+  width: 64px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  transform: rotate(-24deg);
+  transform-origin: center;
+}
+
+.eventBreakdownGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.eventPropertyItem,
+.recentEventItem {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.eventPropertyItem:first-child,
+.recentEventItem:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.recentEventItem {
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.recentEventItem p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 [hidden] {
   display: none;
 }
@@ -2723,6 +2925,20 @@ body.isResizingLayout {
 
   .adminUserMeta {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .eventsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .eventCatalogPanel {
+    position: static;
+    max-height: none;
+  }
+
+  .eventCatalog {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    max-height: 300px;
   }
 }
 
@@ -2807,6 +3023,11 @@ body.isResizingLayout {
   .aiCardRow,
   .heatmapFilters {
     grid-template-columns: 1fr;
+  }
+
+  .eventOverview,
+  .eventBreakdownGrid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .heatmapToolbar {

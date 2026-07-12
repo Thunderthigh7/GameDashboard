@@ -6,6 +6,10 @@ function PresenceService.SendHeartbeat()
 	return Methods.SendHeartbeat()
 end
 
+function PresenceService.Log(eventName, info, player)
+	return Methods.Log(eventName, info, player)
+end
+
 function PresenceService.Start()
 	warn("[PresenceService] API Start called:", script:GetFullName())
 	Methods.Start()

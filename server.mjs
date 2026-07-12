@@ -48,6 +48,11 @@ const MAX_DEATH_SAMPLES_RESPONSE = 5000;
 const MAX_LEAVE_SAMPLES_PER_PAYLOAD = 200;
 const MAX_LEAVE_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_LEAVE_SAMPLES_RESPONSE = 5000;
+const MAX_CUSTOM_EVENTS_PER_PAYLOAD = 200;
+const MAX_CUSTOM_EVENTS_PER_UNIVERSE = 25_000;
+const MAX_CUSTOM_EVENT_PROPERTIES = 20;
+const MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE = 200;
+const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 30;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_AI_ANALYSIS_AREAS = 5;
 const AI_ANALYSIS_CLUSTER_RADIUS = 44;
@@ -244,6 +249,7 @@ const ANALYTICS_COLLECTION_RETENTION_MS = {
   movement_rollups: 14 * 24 * 60 * 60 * 1000,
   death_samples: 14 * 24 * 60 * 60 * 1000,
   leave_samples: 14 * 24 * 60 * 60 * 1000,
+  custom_events: 14 * 24 * 60 * 60 * 1000,
 };
 
 const chatLogsByUniverseId = new Map();
@@ -256,6 +262,8 @@ const deathSamplesByUniverseId = new Map();
 const deathSampleIdsByUniverseId = new Map();
 const leaveSamplesByUniverseId = new Map();
 const leaveSampleIdsByUniverseId = new Map();
+const customEventsByUniverseId = new Map();
+const customEventIdsByUniverseId = new Map();
 const mapSnapshotsByUniverseId = new Map();
 const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
@@ -535,6 +543,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "chat-logs", url.searchParams, () => getChatLogsFromQuery(url.searchParams)));
+    }
+
+    if (url.pathname === "/api/events" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getCustomEventsFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "custom-events", url.searchParams, () => getCustomEventsFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
@@ -820,6 +834,7 @@ function getRuntimeDataCounts() {
       ...movementRollupsByUniverseId.keys(),
       ...deathSamplesByUniverseId.keys(),
       ...leaveSamplesByUniverseId.keys(),
+      ...customEventsByUniverseId.keys(),
       ...mapSnapshotsByUniverseId.keys(),
     ]).size,
     chatLogs: countMapEntries(chatLogsByUniverseId),
@@ -827,6 +842,7 @@ function getRuntimeDataCounts() {
     movementRollups: countMapEntries(movementRollupsByUniverseId),
     deathSamples: countMapEntries(deathSamplesByUniverseId),
     leaveSamples: countMapEntries(leaveSamplesByUniverseId),
+    customEvents: countMapEntries(customEventsByUniverseId),
   };
 }
 
@@ -1033,6 +1049,8 @@ async function ensureMongoAnalyticsIndexes(db) {
     ensureAnalyticsIndexes(db, "movement_rollups", "sampledAt"),
     ensureAnalyticsIndexes(db, "death_samples", "sampledAt"),
     ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
+    ensureAnalyticsIndexes(db, "custom_events", "occurredAt"),
+    db.collection("custom_events").createIndex({ universeId: 1, eventName: 1, occurredAt: -1 }),
   ]);
 }
 
@@ -1066,6 +1084,7 @@ async function hydrateRuntimeFromMongo(db) {
     ["movement_rollups", movementRollupsByUniverseId, movementRollupIdsByUniverseId, MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE],
     ["death_samples", deathSamplesByUniverseId, deathSampleIdsByUniverseId, MAX_DEATH_SAMPLES_PER_UNIVERSE],
     ["leave_samples", leaveSamplesByUniverseId, leaveSampleIdsByUniverseId, MAX_LEAVE_SAMPLES_PER_UNIVERSE],
+    ["custom_events", customEventsByUniverseId, customEventIdsByUniverseId, MAX_CUSTOM_EVENTS_PER_UNIVERSE],
   ];
 
   // Hydration runs in the background. Keeping it sequential leaves pool capacity
@@ -1124,6 +1143,7 @@ async function persistPresenceToMongo(presence) {
       upsertAnalyticsDocuments(db, "movement_rollups", presence.movementRollups),
       upsertAnalyticsDocuments(db, "death_samples", presence.deathSamples),
       upsertAnalyticsDocuments(db, "leave_samples", presence.leaveSamples),
+      upsertAnalyticsDocuments(db, "custom_events", presence.customEvents),
     ]);
 
     mongoStatus.connected = true;
@@ -1510,6 +1530,7 @@ function createPresenceJsonLines(presence) {
         movementRollups: presence.movementRollups.length,
         deathSamples: presence.deathSamples.length,
         leaveSamples: presence.leaveSamples.length,
+        customEvents: presence.customEvents.length,
       },
     },
     ...presence.chatLogs.map((event) => ({ type: "chat", ...event })),
@@ -1517,6 +1538,7 @@ function createPresenceJsonLines(presence) {
     ...presence.movementRollups.map((event) => ({ type: "movement_rollup", ...event })),
     ...presence.deathSamples.map((event) => ({ type: "death", ...event })),
     ...presence.leaveSamples.map((event) => ({ type: "leave", ...event })),
+    ...presence.customEvents.map((event) => ({ type: "custom_event", ...event })),
   ];
 
   return lines.map((line) => JSON.stringify(line)).join("\n") + "\n";
@@ -2047,7 +2069,8 @@ async function handlePresenceHeartbeat(req, res) {
   const savedMovementRollupCount = saveMovementRollups(presence.value);
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
-  if (savedChatCount + savedMovementCount + savedMovementRollupCount + savedDeathCount + savedLeaveCount > 0) {
+  const savedCustomEventCount = saveCustomEvents(presence.value);
+  if (savedChatCount + savedMovementCount + savedMovementRollupCount + savedDeathCount + savedLeaveCount + savedCustomEventCount > 0) {
     invalidateAnalyticsResponses(presence.value.universeId);
   }
   await persistPresenceToMongo(presence.value);
@@ -2066,6 +2089,7 @@ async function handlePresenceHeartbeat(req, res) {
         savedMovementRollupCount,
         savedDeathCount,
         savedLeaveCount,
+        savedCustomEventCount,
       },
     });
   }
@@ -2086,6 +2110,7 @@ async function handlePresenceHeartbeat(req, res) {
     savedMovementRollupCount,
     savedDeathCount,
     savedLeaveCount,
+    savedCustomEventCount,
     heatmap: getRobloxHeatmap(presence.value.universeId),
   });
 }
@@ -2273,6 +2298,12 @@ function normalizePresence(body) {
     jobId,
     receivedAt,
   });
+  const customEvents = normalizeCustomEvents(body.customEvents, {
+    universeId: cleanInteger(body.universeId),
+    placeId: cleanInteger(body.placeId),
+    jobId,
+    receivedAt,
+  });
 
   return {
     ok: true,
@@ -2290,8 +2321,65 @@ function normalizePresence(body) {
       movementRollups,
       deathSamples,
       leaveSamples,
+      customEvents,
     },
   };
+}
+
+function normalizeCustomEvents(value, context) {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, MAX_CUSTOM_EVENTS_PER_PAYLOAD).map((entry) => {
+    const eventName = normalizeCustomEventName(entry?.eventName || entry?.name);
+    const userId = cleanInteger(entry?.userId);
+    const x = cleanFiniteNumber(entry?.x);
+    const y = cleanFiniteNumber(entry?.y);
+    const z = cleanFiniteNumber(entry?.z);
+    const numericValue = typeof entry?.value === "number" ? cleanFiniteNumber(entry.value) : NaN;
+
+    return {
+      id: cleanString(entry?.id, 180),
+      universeId: context.universeId,
+      placeId: context.placeId,
+      jobId: context.jobId,
+      eventName,
+      userId: userId > 0 ? userId : null,
+      username: cleanString(entry?.username || entry?.nameOfPlayer, 64),
+      displayName: cleanString(entry?.displayName, 64),
+      sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
+      value: Number.isFinite(numericValue) ? numericValue : null,
+      properties: normalizeCustomEventProperties(entry?.properties),
+      x: Number.isFinite(x) ? x : null,
+      y: Number.isFinite(y) ? y : null,
+      z: Number.isFinite(z) ? z : null,
+      occurredAt: cleanTimestampMs(entry?.occurredAt) || context.receivedAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter((entry) => entry.eventName && entry.id);
+}
+
+function normalizeCustomEventName(value) {
+  const eventName = cleanString(value, 64).trim().toLowerCase();
+  return /^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName) ? eventName : "";
+}
+
+function normalizeCustomEventProperties(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  const properties = {};
+  for (const [rawKey, rawValue] of Object.entries(value).slice(0, MAX_CUSTOM_EVENT_PROPERTIES)) {
+    const key = cleanString(rawKey, 48).trim();
+    if (!/^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(key)) continue;
+
+    if (typeof rawValue === "string") {
+      properties[key] = cleanString(rawValue, 240);
+    } else if (typeof rawValue === "boolean") {
+      properties[key] = rawValue;
+    } else if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+      properties[key] = rawValue;
+    }
+  }
+  return properties;
 }
 
 function normalizeChatLogs(value, context) {
@@ -2585,6 +2673,35 @@ function saveLeaveSamples(presence) {
 
   leaveSamplesByUniverseId.set(universeKey, samples);
   leaveSampleIdsByUniverseId.set(universeKey, ids);
+  return savedCount;
+}
+
+function saveCustomEvents(presence) {
+  if (!presence.customEvents?.length || presence.universeId <= 0) return 0;
+
+  const universeKey = String(presence.universeId);
+  const events = customEventsByUniverseId.get(universeKey) || [];
+  const ids = customEventIdsByUniverseId.get(universeKey) || new Set();
+  const knownEventNames = new Set(events.map((event) => event.eventName));
+  let savedCount = 0;
+
+  for (const event of presence.customEvents) {
+    if (ids.has(event.id)) continue;
+    if (!knownEventNames.has(event.eventName) && knownEventNames.size >= MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE) continue;
+
+    ids.add(event.id);
+    knownEventNames.add(event.eventName);
+    events.push(event);
+    savedCount += 1;
+  }
+
+  while (events.length > MAX_CUSTOM_EVENTS_PER_UNIVERSE) {
+    const removed = events.shift();
+    if (removed?.id) ids.delete(removed.id);
+  }
+
+  customEventsByUniverseId.set(universeKey, events);
+  customEventIdsByUniverseId.set(universeKey, ids);
   return savedCount;
 }
 
@@ -3256,6 +3373,7 @@ function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
   const movementRollups = movementRollupsByUniverseId.get(key) || [];
   const deathSamples = deathSamplesByUniverseId.get(key) || [];
   const leaveSamples = leaveSamplesByUniverseId.get(key) || [];
+  const customEvents = customEventsByUniverseId.get(key) || [];
   const mapSnapshot = mapSnapshotsByUniverseId.get(key);
   const lastSeenAt = Math.max(
     getLastTimestamp(chatLogs, "receivedAt"),
@@ -3263,6 +3381,7 @@ function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
     getLastTimestamp(movementRollups, "receivedAt"),
     getLastTimestamp(deathSamples, "receivedAt"),
     getLastTimestamp(leaveSamples, "receivedAt"),
+    getLastTimestamp(customEvents, "receivedAt"),
     cleanInteger(mapSnapshot?.receivedAt),
   );
 
@@ -3273,7 +3392,8 @@ function buildUniverseSummary(universeId, hasPersistedMapSnapshot = false) {
     movementRollupCount: movementRollups.length,
     deathSampleCount: deathSamples.length,
     leaveSampleCount: leaveSamples.length,
-    totalSamples: chatLogs.length + movementSamples.length + movementRollups.reduce((sum, rollup) => sum + getSampleWeight(rollup), 0) + deathSamples.length + leaveSamples.length,
+    customEventCount: customEvents.length,
+    totalSamples: chatLogs.length + movementSamples.length + movementRollups.reduce((sum, rollup) => sum + getSampleWeight(rollup), 0) + deathSamples.length + leaveSamples.length + customEvents.length,
     hasMapSnapshot: Boolean(mapSnapshot) || hasPersistedMapSnapshot,
     lastSeenAt,
   };
@@ -3289,6 +3409,7 @@ function buildUniverseSummaryFromRollup(rollup, hasPersistedMapSnapshot = false)
     movementRollupCount: Array.isArray(rollup.movement?.samples) ? rollup.movement.samples.length : 0,
     deathSampleCount: cleanInteger(rollup.deaths?.sampleCount),
     leaveSampleCount: cleanInteger(rollup.leaves?.sampleCount),
+    customEventCount: cleanInteger(rollup.customEvents?.sampleCount),
     totalSamples,
     hasMapSnapshot: hasPersistedMapSnapshot,
     lastSeenAt: cleanInteger(rollup.lastSeenAt) || cleanInteger(rollup.generatedAt),
@@ -3300,6 +3421,7 @@ function buildUniverseIntegrationStatus(summary, recentFailureSummary = null) {
   const movementSampleCount = cleanFiniteInteger(summary?.movementSampleCount) + cleanFiniteInteger(summary?.movementRollupCount);
   const deathSampleCount = cleanFiniteInteger(summary?.deathSampleCount);
   const leaveSampleCount = cleanFiniteInteger(summary?.leaveSampleCount);
+  const customEventCount = cleanFiniteInteger(summary?.customEventCount);
 
   return {
     connected: true,
@@ -3310,12 +3432,14 @@ function buildUniverseIntegrationStatus(summary, recentFailureSummary = null) {
       deaths: deathSampleCount > 0,
       leaves: leaveSampleCount > 0,
       chat: chatLogCount > 0,
+      events: customEventCount > 0,
     },
     counts: {
       movement: movementSampleCount,
       deaths: deathSampleCount,
       leaves: leaveSampleCount,
       chat: chatLogCount,
+      events: customEventCount,
     },
     failedIngests24h: cleanFiniteInteger(recentFailureSummary?.count),
     lastFailureAt: cleanInteger(recentFailureSummary?.lastFailureAt) || null,
@@ -3326,7 +3450,8 @@ function rollupTotalSamples(rollup) {
   return (Array.isArray(rollup?.chatLogs) ? rollup.chatLogs.length : 0)
     + cleanInteger(rollup?.movement?.sampleCount)
     + cleanInteger(rollup?.deaths?.sampleCount)
-    + cleanInteger(rollup?.leaves?.sampleCount);
+    + cleanInteger(rollup?.leaves?.sampleCount)
+    + cleanInteger(rollup?.customEvents?.sampleCount);
 }
 
 function getLastTimestamp(entries, field) {
@@ -3658,6 +3783,180 @@ async function getRobloxHeatmapFromQuery(searchParams) {
   });
 
   return getRobloxHeatmap(filters.universeId, filters);
+}
+
+async function getCustomEventsFromQuery(searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
+  const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
+  const requestedEventName = normalizeCustomEventName(searchParams.get("eventName"));
+  const eventsById = new Map();
+  const rollup = await getObjectStorageRollup(universeId);
+
+  for (const event of rollup?.customEvents?.samples || []) {
+    const id = cleanString(event?.id, 180);
+    if (id) eventsById.set(id, event);
+  }
+  for (const event of customEventsByUniverseId.get(String(universeId)) || []) {
+    const id = cleanString(event?.id, 180);
+    if (id) eventsById.set(id, event);
+  }
+
+  const events = [...eventsById.values()].filter((event) => {
+    const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
+    if (fromMs > 0 && occurredAt < fromMs) return false;
+    if (toMs > 0 && occurredAt > toMs) return false;
+    return Boolean(normalizeCustomEventName(event?.eventName));
+  });
+  const catalogByName = new Map();
+  for (const event of events) {
+    const eventName = normalizeCustomEventName(event.eventName);
+    let summary = catalogByName.get(eventName);
+    if (!summary) {
+      summary = { name: eventName, count: 0, playerIds: new Set(), sessionIds: new Set(), lastSeenAt: 0 };
+      catalogByName.set(eventName, summary);
+    }
+    summary.count += 1;
+    if (cleanInteger(event.userId) > 0) summary.playerIds.add(cleanInteger(event.userId));
+    if (event.sessionId) summary.sessionIds.add(cleanString(event.sessionId, 180));
+    summary.lastSeenAt = Math.max(summary.lastSeenAt, cleanTimestampMs(event.occurredAt) || cleanTimestampMs(event.receivedAt));
+  }
+
+  const catalog = [...catalogByName.values()]
+    .map((summary) => ({
+      name: summary.name,
+      count: summary.count,
+      uniquePlayers: summary.playerIds.size,
+      uniqueSessions: summary.sessionIds.size,
+      lastSeenAt: summary.lastSeenAt,
+    }))
+    .sort((left, right) => right.lastSeenAt - left.lastSeenAt || right.count - left.count || left.name.localeCompare(right.name));
+  const selectedEventName = requestedEventName && catalogByName.has(requestedEventName)
+    ? requestedEventName
+    : (catalog[0]?.name || "");
+  const selectedEvents = selectedEventName
+    ? events.filter((event) => normalizeCustomEventName(event.eventName) === selectedEventName)
+    : [];
+  selectedEvents.sort((left, right) => (
+    (cleanTimestampMs(right.occurredAt) || cleanTimestampMs(right.receivedAt))
+    - (cleanTimestampMs(left.occurredAt) || cleanTimestampMs(left.receivedAt))
+  ));
+
+  return {
+    universeId: universeId || null,
+    source: rollup?.customEvents?.samples?.length ? "b2-rollup+live" : "live",
+    filters: { from: fromMs || null, to: toMs || null },
+    totals: {
+      events: events.length,
+      eventNames: catalog.length,
+      uniquePlayers: new Set(events.map((event) => cleanInteger(event.userId)).filter((userId) => userId > 0)).size,
+      uniqueSessions: new Set(events.map((event) => cleanString(event.sessionId, 180)).filter(Boolean)).size,
+    },
+    events: catalog,
+    selectedEvent: selectedEventName ? buildCustomEventDetail(selectedEventName, selectedEvents, { fromMs, toMs }) : null,
+  };
+}
+
+function buildCustomEventDetail(eventName, events, filters = {}) {
+  const playerIds = new Set();
+  const sessionIds = new Set();
+  let numericValueCount = 0;
+  let numericValueTotal = 0;
+  for (const event of events) {
+    if (cleanInteger(event.userId) > 0) playerIds.add(cleanInteger(event.userId));
+    if (event.sessionId) sessionIds.add(cleanString(event.sessionId, 180));
+    if (typeof event.value === "number" && Number.isFinite(event.value)) {
+      numericValueCount += 1;
+      numericValueTotal += event.value;
+    }
+  }
+
+  return {
+    name: eventName,
+    count: events.length,
+    uniquePlayers: playerIds.size,
+    uniqueSessions: sessionIds.size,
+    averageValue: numericValueCount ? numericValueTotal / numericValueCount : null,
+    series: buildCustomEventSeries(events, filters),
+    properties: summarizeCustomEventProperties(events),
+    recentEvents: events.slice(0, MAX_CUSTOM_EVENT_RECENT_RESPONSE),
+  };
+}
+
+function buildCustomEventSeries(events, filters = {}) {
+  const timestamps = events
+    .map((event) => cleanTimestampMs(event.occurredAt) || cleanTimestampMs(event.receivedAt))
+    .filter((timestamp) => timestamp > 0);
+  const now = Date.now();
+  const fromMs = cleanInteger(filters.fromMs) || (timestamps.length ? Math.min(...timestamps) : now - 24 * 60 * 60 * 1000);
+  const toMs = cleanInteger(filters.toMs) || (timestamps.length ? Math.max(...timestamps) : now);
+  const spanMs = Math.max(toMs - fromMs, 60 * 60 * 1000);
+  const intervals = [
+    60 * 60 * 1000,
+    6 * 60 * 60 * 1000,
+    12 * 60 * 60 * 1000,
+    24 * 60 * 60 * 1000,
+    7 * 24 * 60 * 60 * 1000,
+  ];
+  const bucketMs = intervals.find((interval) => Math.ceil(spanMs / interval) <= 30) || intervals.at(-1);
+  const bucketStart = Math.floor(fromMs / bucketMs) * bucketMs;
+  const bucketEnd = Math.max(Math.ceil(toMs / bucketMs) * bucketMs, bucketStart + bucketMs);
+  const buckets = [];
+  const byStart = new Map();
+  for (let timestamp = bucketStart; timestamp < bucketEnd; timestamp += bucketMs) {
+    const bucket = { start: timestamp, count: 0, playerIds: new Set() };
+    buckets.push(bucket);
+    byStart.set(timestamp, bucket);
+  }
+  for (const event of events) {
+    const occurredAt = cleanTimestampMs(event.occurredAt) || cleanTimestampMs(event.receivedAt);
+    const start = Math.floor(occurredAt / bucketMs) * bucketMs;
+    const bucket = byStart.get(start);
+    if (!bucket) continue;
+    bucket.count += 1;
+    if (cleanInteger(event.userId) > 0) bucket.playerIds.add(cleanInteger(event.userId));
+  }
+  return buckets.map((bucket) => ({
+    start: bucket.start,
+    count: bucket.count,
+    uniquePlayers: bucket.playerIds.size,
+  }));
+}
+
+function summarizeCustomEventProperties(events) {
+  const summaries = new Map();
+  for (const event of events) {
+    for (const [key, value] of Object.entries(event.properties || {})) {
+      let summary = summaries.get(key);
+      if (!summary) {
+        summary = { name: key, count: 0, numericCount: 0, total: 0, min: Infinity, max: -Infinity, values: new Map() };
+        summaries.set(key, summary);
+      }
+      summary.count += 1;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        summary.numericCount += 1;
+        summary.total += value;
+        summary.min = Math.min(summary.min, value);
+        summary.max = Math.max(summary.max, value);
+      } else if (summary.values.size < 100 || summary.values.has(String(value))) {
+        const label = cleanString(String(value), 120);
+        summary.values.set(label, (summary.values.get(label) || 0) + 1);
+      }
+    }
+  }
+
+  return [...summaries.values()].map((summary) => ({
+    name: summary.name,
+    count: summary.count,
+    type: summary.numericCount === summary.count ? "number" : "category",
+    average: summary.numericCount ? summary.total / summary.numericCount : null,
+    min: summary.numericCount ? summary.min : null,
+    max: summary.numericCount ? summary.max : null,
+    topValues: [...summary.values.entries()]
+      .map(([value, count]) => ({ value, count }))
+      .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value))
+      .slice(0, 5),
+  })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
 }
 
 async function normalizeMovementFilters(rawFilters = {}) {
@@ -5866,6 +6165,7 @@ function getPresenceUsageEventCount(presence) {
     + (Array.isArray(presence?.movementRollups) ? presence.movementRollups.length : 0)
     + (Array.isArray(presence?.deathSamples) ? presence.deathSamples.length : 0)
     + (Array.isArray(presence?.leaveSamples) ? presence.leaveSamples.length : 0)
+    + (Array.isArray(presence?.customEvents) ? presence.customEvents.length : 0)
   );
 }
 
@@ -8490,6 +8790,8 @@ function clearUniverseRuntimeData(universeKey) {
     deathSampleIdsByUniverseId,
     leaveSamplesByUniverseId,
     leaveSampleIdsByUniverseId,
+    customEventsByUniverseId,
+    customEventIdsByUniverseId,
     mapSnapshotsByUniverseId,
     chatInsightsByScope,
     areaInsightsByScope,
@@ -8520,6 +8822,7 @@ async function deleteMongoUniverseData(universeId) {
     "movement_rollups",
     "death_samples",
     "leave_samples",
+    "custom_events",
     "map_snapshots",
     "map_snapshot_chunks",
   ]) {

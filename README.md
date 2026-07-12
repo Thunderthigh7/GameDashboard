@@ -109,6 +109,19 @@ ServerScriptService
 
 `Start` is a server Script that requires `PresenceService.API` and calls `Start()`.
 
+Game server scripts can use that same API to send custom events:
+
+```lua
+local Logger = require(game.ServerScriptService.Server.Services.Game.PresenceService.API)
+
+Logger.Log("weapon_equipped", {
+	weapon = "Iron Sword",
+	rarity = "Common",
+}, player)
+```
+
+The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The logger adds player session, server time, universe, place, and character position. See `roblox-presence/README.md` for naming, property, and server-only requirements.
+
 The Studio heatmap plugin lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps.
 
 ## Backblaze B2 Analytics Storage

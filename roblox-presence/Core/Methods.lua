@@ -13,6 +13,7 @@ local pendingMovementRollups = {}
 local pendingMovementRollupOrder = {}
 local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
+local pendingCustomEvents = {}
 local lastPlayerPositions = {}
 local leaveSampledUserIds = {}
 local serverStartedAt = os.time()
@@ -20,6 +21,7 @@ local chatLogCounter = 0
 local movementSampleCounter = 0
 local deathSampleCounter = 0
 local leaveSampleCounter = 0
+local customEventCounter = 0
 
 local started = false
 local sending = false
@@ -86,6 +88,14 @@ end
 
 local function getMaxPendingLeaveSamples()
 	return Settings.MaxPendingLeaveSamples or 500
+end
+
+local function getMaxCustomEventsPerPayload()
+	return Settings.MaxCustomEventsPerPayload or 200
+end
+
+local function getMaxPendingCustomEvents()
+	return Settings.MaxPendingCustomEvents or 1000
 end
 
 local function getShutdownFlushTimeout()
@@ -283,6 +293,92 @@ local function queueLeaveSample(player)
 	debugWarn("Queued leave sample:", player.Name, player.UserId, position)
 end
 
+local function normalizeEventName(value)
+	local eventName = string.lower(tostring(value or ""))
+	if #eventName < 1 or #eventName > 64 or not string.match(eventName, "^[%a][%w_%.:%-]*$") then
+		return nil
+	end
+	return eventName
+end
+
+local function normalizeEventProperties(value)
+	if typeof(value) ~= "table" then
+		return {}
+	end
+
+	local properties = {}
+	local count = 0
+	for rawKey, rawValue in value do
+		if count >= (Settings.MaxCustomEventProperties or 20) then
+			break
+		end
+
+		local key = tostring(rawKey)
+		local valueType = typeof(rawValue)
+		local isFiniteNumber = valueType ~= "number" or (rawValue == rawValue and rawValue > -math.huge and rawValue < math.huge)
+		if #key >= 1 and #key <= 48 and string.match(key, "^[%a][%w_%.:%-]*$")
+			and isFiniteNumber and (valueType == "string" or valueType == "number" or valueType == "boolean") then
+			if valueType == "string" and #rawValue > (Settings.MaxCustomEventStringLength or 240) then
+				properties[key] = string.sub(rawValue, 1, Settings.MaxCustomEventStringLength or 240)
+			else
+				properties[key] = rawValue
+			end
+			count += 1
+		end
+	end
+	return properties
+end
+
+function Methods.Log(eventName, info, player)
+	local normalizedName = normalizeEventName(eventName)
+	if not normalizedName then
+		debugWarn("Rejected custom event with invalid name:", eventName)
+		return false
+	end
+	if player ~= nil and (typeof(player) ~= "Instance" or not player:IsA("Player")) then
+		debugWarn("Rejected custom event with invalid player:", normalizedName)
+		return false
+	end
+
+	local position
+	if player then
+		local character = player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		position = rootPart and rootPart.Position or lastPlayerPositions[player.UserId]
+		if rootPart then
+			lastPlayerPositions[player.UserId] = rootPart.Position
+		end
+	end
+
+	customEventCounter += 1
+	local occurredAt = os.time()
+	local event = {
+		id = game.JobId .. ":event:" .. tostring(customEventCounter),
+		eventName = normalizedName,
+		userId = player and player.UserId or nil,
+		username = player and player.Name or nil,
+		displayName = player and player.DisplayName or nil,
+		sessionId = player and (game.JobId .. ":" .. tostring(player.UserId) .. ":" .. tostring(playerJoinTimes[player.UserId] or occurredAt)) or game.JobId,
+		occurredAt = occurredAt,
+		properties = normalizeEventProperties(info),
+	}
+	if typeof(info) == "table" and typeof(info.value) == "number" and info.value == info.value and info.value > -math.huge and info.value < math.huge then
+		event.value = info.value
+	end
+	if position then
+		event.x = roundPosition(position.X)
+		event.y = roundPosition(position.Y)
+		event.z = roundPosition(position.Z)
+	end
+
+	table.insert(pendingCustomEvents, event)
+	while #pendingCustomEvents > getMaxPendingCustomEvents() do
+		table.remove(pendingCustomEvents, 1)
+	end
+	debugWarn("Queued custom event:", normalizedName, player and player.Name or "server")
+	return true
+end
+
 local function samplePlayerMovement()
 	for _, player in Players:GetPlayers() do
 		queueMovementSample(player)
@@ -393,7 +489,7 @@ local function processHeartbeatResponse(response)
 		return
 	end
 
-	debugWarn("Heartbeat response:", "savedChatCount", payload.savedChatCount or 0, "savedMovementCount", payload.savedMovementCount or 0, "savedDeathCount", payload.savedDeathCount or 0, "savedLeaveCount", payload.savedLeaveCount or 0)
+	debugWarn("Heartbeat response:", "savedChatCount", payload.savedChatCount or 0, "savedMovementCount", payload.savedMovementCount or 0, "savedDeathCount", payload.savedDeathCount or 0, "savedLeaveCount", payload.savedLeaveCount or 0, "savedCustomEventCount", payload.savedCustomEventCount or 0)
 end
 
 local function getPlayersPayload()
@@ -490,6 +586,30 @@ local function getLeaveSamplesPayload()
 	return leaveSamples
 end
 
+local function getCustomEventsPayload()
+	local customEvents = {}
+	local maxCustomEvents = getMaxCustomEventsPerPayload()
+	local maxPayloadBytes = Settings.MaxCustomEventPayloadBytes or (96 * 1024)
+	local payloadBytes = 0
+
+	for index = 1, math.min(#pendingCustomEvents, maxCustomEvents) do
+		local event = pendingCustomEvents[index]
+		local encodedOk, encoded = pcall(function()
+			return HttpService:JSONEncode(event)
+		end)
+		if encodedOk then
+			local eventBytes = #encoded + 1
+			if #customEvents > 0 and payloadBytes + eventBytes > maxPayloadBytes then
+				break
+			end
+			table.insert(customEvents, event)
+			payloadBytes += eventBytes
+		end
+	end
+
+	return customEvents
+end
+
 local function clearSentChatLogs(count)
 	for _ = 1, math.min(count, #pendingChatLogs) do
 		table.remove(pendingChatLogs, 1)
@@ -521,6 +641,12 @@ local function clearSentLeaveSamples(count)
 	end
 end
 
+local function clearSentCustomEvents(count)
+	for _ = 1, math.min(count, #pendingCustomEvents) do
+		table.remove(pendingCustomEvents, 1)
+	end
+end
+
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -535,6 +661,7 @@ local function buildPayload()
 		movementRollups = getMovementRollupsPayload(),
 		deathSamples = getDeathSamplesPayload(),
 		leaveSamples = getLeaveSamplesPayload(),
+		customEvents = getCustomEventsPayload(),
 	}
 end
 
@@ -553,7 +680,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples, "customEvents", #payload.customEvents)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -586,6 +713,7 @@ function Methods.SendHeartbeat()
 	clearSentMovementRollups(#payload.movementRollups)
 	clearSentDeathSamples(#payload.deathSamples)
 	clearSentLeaveSamples(#payload.leaveSamples)
+	clearSentCustomEvents(#payload.customEvents)
 	processHeartbeatResponse(response)
 
 	debugWarn("Heartbeat sent:", response.StatusCode, response.Body or "", "remainingChatLogs", #pendingChatLogs)
