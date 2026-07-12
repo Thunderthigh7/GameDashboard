@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260711-4">
+    <link rel="stylesheet" href="/styles.css?v=20260711-5">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -22,6 +22,7 @@
           <a class="active" href="#overview" data-dashboard-view="overview"><span class="navIcon homeIcon" aria-hidden="true"></span><span>Overview</span></a>
           <a href="#areas" data-dashboard-view="areas"><span class="navIcon areaIcon" aria-hidden="true"></span><span>Areas</span></a>
           <a href="#events" data-dashboard-view="events"><span class="navIcon eventsIcon" aria-hidden="true"></span><span>Events</span></a>
+          <a href="#funnels" data-dashboard-view="funnels"><span class="navIcon funnelsIcon" aria-hidden="true"></span><span>Funnels</span></a>
           <a href="#ai-runs" data-dashboard-view="ai-runs"><span class="navIcon aiRunsIcon" aria-hidden="true"></span><span>AI Runs</span></a>
           <a href="#chat" data-dashboard-view="chat"><span class="navIcon chatIcon" aria-hidden="true"></span><span>Chat Analysis</span></a>
           <a href="#usage" data-dashboard-view="usage"><span class="navIcon usageIcon" aria-hidden="true"></span><span>Usage</span></a>
@@ -323,6 +324,83 @@
           </div>
         </section>
 
+        <section class="viewPage funnelsPage" data-view-panel="funnels" hidden>
+          <div class="funnelsLayout">
+            <aside class="panel funnelCatalogPanel">
+              <div class="sectionHeader">
+                <div>
+                  <h2>Funnels</h2>
+                  <p>Saved conversion paths for this universe.</p>
+                </div>
+                <button class="button secondary compact" id="newFunnelButton" type="button">New</button>
+              </div>
+              <p class="status" id="funnelsStatus">Loading funnels...</p>
+              <div class="funnelCatalog" id="funnelCatalog"></div>
+            </aside>
+
+            <section class="funnelWorkspace">
+              <form class="panel funnelBuilder" id="funnelForm">
+                <div class="sectionHeader">
+                  <div>
+                    <h2 id="funnelBuilderTitle">Create Funnel</h2>
+                    <p>Choose the events players must complete in order.</p>
+                  </div>
+                </div>
+                <input id="funnelId" type="hidden">
+                <div class="funnelBuilderFields">
+                  <label class="fieldGroup" for="funnelName">
+                    <span>Name</span>
+                    <input id="funnelName" type="text" maxlength="80" placeholder="Tutorial completion" required>
+                  </label>
+                  <label class="fieldGroup" for="funnelWindowMinutes">
+                    <span>Conversion window</span>
+                    <select id="funnelWindowMinutes">
+                      <option value="10">10 minutes</option>
+                      <option value="30" selected>30 minutes</option>
+                      <option value="60">1 hour</option>
+                      <option value="360">6 hours</option>
+                      <option value="1440">24 hours</option>
+                      <option value="10080">7 days</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="funnelStepsHeader">
+                  <div>
+                    <strong>Ordered steps</strong>
+                    <span>Players must reach each event after the previous one.</span>
+                  </div>
+                  <button class="button secondary compact" id="addFunnelStepButton" type="button">Add step</button>
+                </div>
+                <div class="funnelStepEditor" id="funnelStepEditor"></div>
+                <p class="status" id="funnelFormStatus"></p>
+                <div class="funnelFormActions">
+                  <button class="button compact" id="saveFunnelButton" type="submit">Save funnel</button>
+                  <button class="button danger compact" id="deleteFunnelButton" type="button" hidden>Delete</button>
+                </div>
+              </form>
+
+              <article class="panel funnelResultsPanel">
+                <div class="sectionHeader">
+                  <div>
+                    <h2 id="funnelResultsTitle">Funnel results</h2>
+                    <p id="funnelResultsSubtitle">Save a funnel to calculate conversion and drop-off.</p>
+                  </div>
+                  <button class="button secondary compact" id="refreshFunnelsButton" type="button">Refresh</button>
+                </div>
+                <div class="funnelOverview" id="funnelOverview">
+                  <div><span>Entered</span><strong id="funnelEnteredCount">0</strong></div>
+                  <div><span>Completed</span><strong id="funnelCompletedCount">0</strong></div>
+                  <div><span>Conversion</span><strong id="funnelConversionRate">0%</strong></div>
+                  <div><span>Median time</span><strong id="funnelMedianTime">--</strong></div>
+                </div>
+                <div class="funnelResultSteps" id="funnelResultSteps">
+                  <p class="status">No funnel selected.</p>
+                </div>
+              </article>
+            </section>
+          </div>
+        </section>
+
         <section class="viewPage chatAnalysisPage" data-view-panel="chat" hidden>
           <article class="panel dataCard chatLogs">
             <div class="sectionHeader">
@@ -552,6 +630,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260711-4"></script>
+    <script defer src="/app.js?v=20260711-5"></script>
   </body>
 </html>

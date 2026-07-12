@@ -83,6 +83,27 @@ const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventList = document.querySelector("#recentEventList");
+const newFunnelButton = document.querySelector("#newFunnelButton");
+const refreshFunnelsButton = document.querySelector("#refreshFunnelsButton");
+const funnelsStatus = document.querySelector("#funnelsStatus");
+const funnelCatalog = document.querySelector("#funnelCatalog");
+const funnelForm = document.querySelector("#funnelForm");
+const funnelId = document.querySelector("#funnelId");
+const funnelName = document.querySelector("#funnelName");
+const funnelWindowMinutes = document.querySelector("#funnelWindowMinutes");
+const funnelStepEditor = document.querySelector("#funnelStepEditor");
+const addFunnelStepButton = document.querySelector("#addFunnelStepButton");
+const saveFunnelButton = document.querySelector("#saveFunnelButton");
+const deleteFunnelButton = document.querySelector("#deleteFunnelButton");
+const funnelFormStatus = document.querySelector("#funnelFormStatus");
+const funnelBuilderTitle = document.querySelector("#funnelBuilderTitle");
+const funnelResultsTitle = document.querySelector("#funnelResultsTitle");
+const funnelResultsSubtitle = document.querySelector("#funnelResultsSubtitle");
+const funnelEnteredCount = document.querySelector("#funnelEnteredCount");
+const funnelCompletedCount = document.querySelector("#funnelCompletedCount");
+const funnelConversionRate = document.querySelector("#funnelConversionRate");
+const funnelMedianTime = document.querySelector("#funnelMedianTime");
+const funnelResultSteps = document.querySelector("#funnelResultSteps");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const aiChatMessages = document.querySelector("#aiChatMessages");
@@ -114,6 +135,7 @@ const protectedDashboardPanels = document.querySelectorAll(
 
 let chatRefreshTimer;
 let signalRefreshTimer;
+let funnelRefreshTimer;
 let selectedUniverseId = "";
 let selectedChatLogId = "";
 let knownUniverses = [];
@@ -139,11 +161,16 @@ let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
+let funnelRequestSequence = 0;
+let selectedFunnelId = "";
+let currentFunnels = [];
+let currentFunnelEventNames = [];
+let isCreatingFunnel = false;
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260711-4";
+const DASHBOARD_ASSET_VERSION = "20260711-5";
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -158,8 +185,9 @@ window.getDashboardCacheScope = resolveDashboardCacheScope;
 
 const CHAT_REFRESH_MS = 5000;
 const SIGNAL_REFRESH_MS = 15000;
+const FUNNEL_REFRESH_MS = 15000;
 const MAX_SIGNAL_AREAS = 5;
-const UNIVERSE_SCOPED_VIEWS = new Set(["areas", "events", "ai-runs", "chat"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["areas", "events", "funnels", "ai-runs", "chat"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -268,6 +296,19 @@ function bindEvents() {
     selectedCustomEventName = button.dataset.eventName || "";
     loadCustomEvents({ force: true });
   });
+  newFunnelButton?.addEventListener("click", startNewFunnel);
+  refreshFunnelsButton?.addEventListener("click", () => loadFunnels({ force: true }));
+  addFunnelStepButton?.addEventListener("click", () => addFunnelStep());
+  funnelForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveFunnel();
+  });
+  deleteFunnelButton?.addEventListener("click", deleteSelectedFunnel);
+  funnelCatalog?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-funnel-id]");
+    if (button) selectFunnel(button.dataset.funnelId || "");
+  });
+  funnelStepEditor?.addEventListener("click", handleFunnelStepAction);
   aiChatSendButton?.addEventListener("click", sendAiChatPrompt);
   aiChatInput?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -316,11 +357,13 @@ function bindEvents() {
     syncDateFilterDisplays();
     loadSignalAreaCards({ force: true });
     if (activeView === "events") loadCustomEvents({ force: true });
+    if (activeView === "funnels") loadFunnels({ force: true });
   });
   movementToFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     loadSignalAreaCards({ force: true });
     if (activeView === "events") loadCustomEvents({ force: true });
+    if (activeView === "funnels") loadFunnels({ force: true });
   });
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
@@ -386,12 +429,14 @@ function handleDashboardVisibilityChange() {
     closeUniverseDropdown();
     stopChatRefresh();
     stopSignalRefresh();
+    stopFunnelRefresh();
   } else {
     updateViewRefreshTimers();
     if (authenticated && selectedUniverseId) {
       if (activeView === "chat") loadChatLogs({ includeInsights: false });
       if (activeView === "areas") loadSignalAreaCards();
       if (activeView === "events") loadCustomEvents();
+      if (activeView === "funnels") loadFunnels();
     }
   }
 
@@ -595,6 +640,7 @@ function abortActiveDashboardRequests() {
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
   customEventsRequestSequence += 1;
+  funnelRequestSequence += 1;
   aiReportPayloadCache.clear();
   inFlightGetRequests.clear();
 }
@@ -709,6 +755,7 @@ function notifyAnalyticsReady() {
 function getViewFromHash() {
   if (window.location.hash === "#areas") return "areas";
   if (window.location.hash === "#events") return "events";
+  if (window.location.hash === "#funnels") return "funnels";
   if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#usage") return "usage";
@@ -718,24 +765,26 @@ function getViewFromHash() {
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "areas" || view === "events" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "areas" || view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (options.updateHash) {
     const nextHash = activeView === "areas"
       ? "#areas"
       : activeView === "events"
         ? "#events"
-        : activeView === "ai-runs"
-          ? "#ai-runs"
-          : activeView === "chat"
-            ? "#chat"
-            : activeView === "usage"
-              ? "#usage"
-              : activeView === "connect"
-                ? "#connect"
-                : activeView === "admin"
-                  ? "#admin"
-                  : "#overview";
+        : activeView === "funnels"
+          ? "#funnels"
+          : activeView === "ai-runs"
+            ? "#ai-runs"
+            : activeView === "chat"
+              ? "#chat"
+              : activeView === "usage"
+                ? "#usage"
+                : activeView === "connect"
+                  ? "#connect"
+                  : activeView === "admin"
+                    ? "#admin"
+                    : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -770,6 +819,10 @@ function renderActiveView(options = {}) {
     events: {
       title: "Events",
       subtitle: "Automatic charts for events logged by your Roblox server.",
+    },
+    funnels: {
+      title: "Funnels",
+      subtitle: "Build ordered player journeys and measure conversion without republishing Roblox.",
     },
     "ai-runs": {
       title: "AI Runs",
@@ -812,6 +865,7 @@ function updateViewRefreshTimers() {
   if (!authenticated || document.hidden) {
     stopChatRefresh();
     stopSignalRefresh();
+    stopFunnelRefresh();
     return;
   }
 
@@ -820,6 +874,9 @@ function updateViewRefreshTimers() {
 
   if (activeView === "areas" && selectedUniverseId) startSignalRefresh();
   else stopSignalRefresh();
+
+  if (activeView === "funnels" && selectedUniverseId) startFunnelRefresh();
+  else stopFunnelRefresh();
 }
 
 function loadActiveViewData(view, options = {}) {
@@ -831,6 +888,8 @@ function loadActiveViewData(view, options = {}) {
       loadAiReportHistory();
     } else if (view === "events") {
       loadCustomEvents();
+    } else if (view === "funnels") {
+      loadFunnels();
     }
     return;
   }
@@ -840,6 +899,8 @@ function loadActiveViewData(view, options = {}) {
     loadSignalAreaCards();
   } else if (view === "events") {
     loadCustomEvents();
+  } else if (view === "funnels") {
+    loadFunnels();
   } else if (view === "ai-runs") {
     loadAiAutomationSettings();
     loadAiReportHistory();
@@ -876,6 +937,18 @@ function stopSignalRefresh() {
   if (signalRefreshTimer) {
     window.clearInterval(signalRefreshTimer);
     signalRefreshTimer = null;
+  }
+}
+
+function startFunnelRefresh() {
+  if (funnelRefreshTimer || document.hidden) return;
+  funnelRefreshTimer = window.setInterval(() => loadFunnels({ background: true }), FUNNEL_REFRESH_MS);
+}
+
+function stopFunnelRefresh() {
+  if (funnelRefreshTimer) {
+    window.clearInterval(funnelRefreshTimer);
+    funnelRefreshTimer = null;
   }
 }
 
@@ -2057,6 +2130,10 @@ function selectUniverse(value) {
   signalAreaRequestSequence += 1;
   selectedChatLogId = "";
   selectedCustomEventName = "";
+  selectedFunnelId = "";
+  currentFunnels = [];
+  currentFunnelEventNames = [];
+  isCreatingFunnel = false;
   updateSelectedUniverse();
   renderAiChatWelcome();
   renderIntegrationStatusCard();
@@ -2280,6 +2357,283 @@ function formatEventNumber(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "--";
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(number);
+}
+
+async function loadFunnels(options = {}) {
+  if (!authenticated || !funnelsStatus) return;
+  const requestSequence = ++funnelRequestSequence;
+  const universeId = selectedUniverseId;
+  if (!universeId) {
+    currentFunnels = [];
+    currentFunnelEventNames = [];
+    renderFunnelCatalog();
+    renderFunnelResults(null);
+    funnelsStatus.textContent = "Connect or select a Roblox game to build funnels.";
+    return;
+  }
+
+  if (!options.background) funnelsStatus.textContent = "Loading funnels...";
+  if (refreshFunnelsButton) refreshFunnelsButton.disabled = true;
+  const params = new URLSearchParams({ universeId });
+  const from = getDateTimeMs(movementFromFilter?.value);
+  const to = getDateTimeMs(movementToFilter?.value);
+  if (from) params.set("from", String(from));
+  if (to) params.set("to", String(to));
+
+  try {
+    const payload = await request(`/api/funnels?${params.toString()}`, { dedupe: !options.force });
+    if (requestSequence !== funnelRequestSequence || universeId !== selectedUniverseId) return;
+    const previouslyHadFunnels = currentFunnels.length > 0;
+    const previousSelectedFunnelId = selectedFunnelId;
+    currentFunnels = Array.isArray(payload.funnels) ? payload.funnels : [];
+    currentFunnelEventNames = [...new Set([
+      ...(payload.eventNames || []),
+      ...currentFunnels.flatMap((funnel) => funnel.steps || []),
+    ])].sort();
+
+    const selectedStillExists = currentFunnels.some((funnel) => funnel.id === selectedFunnelId);
+    if (!isCreatingFunnel && !selectedStillExists) {
+      selectedFunnelId = currentFunnels[0]?.id || "";
+    }
+    renderFunnelCatalog();
+    renderFunnelResults(getSelectedFunnel());
+    if ((!previouslyHadFunnels || previousSelectedFunnelId !== selectedFunnelId) && selectedFunnelId && !isCreatingFunnel) populateFunnelEditor(getSelectedFunnel());
+    if (!currentFunnels.length && !isCreatingFunnel) startNewFunnel();
+    funnelsStatus.textContent = currentFunnels.length
+      ? `${formatCompactNumber(currentFunnels.length)} saved funnel${currentFunnels.length === 1 ? "" : "s"}. Refreshes every 15 seconds.`
+      : (currentFunnelEventNames.length ? "No funnels yet. Choose events below to create one." : "Log an event before creating a funnel.");
+  } catch (error) {
+    if (requestSequence !== funnelRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) funnelsStatus.textContent = formatRequestError(error);
+  } finally {
+    if (requestSequence === funnelRequestSequence && refreshFunnelsButton) refreshFunnelsButton.disabled = false;
+  }
+}
+
+function getSelectedFunnel() {
+  return currentFunnels.find((funnel) => funnel.id === selectedFunnelId) || null;
+}
+
+function renderFunnelCatalog() {
+  if (!funnelCatalog) return;
+  funnelCatalog.innerHTML = currentFunnels.length
+    ? currentFunnels.map((funnel) => `
+      <button class="funnelCatalogItem ${funnel.id === selectedFunnelId && !isCreatingFunnel ? "active" : ""}" type="button" data-funnel-id="${escapeHtml(funnel.id)}">
+        <span>
+          <strong>${escapeHtml(funnel.name)}</strong>
+          <small>${formatCompactNumber(funnel.analytics?.entrySessions)} entered · ${formatEventNumber(funnel.analytics?.overallConversion)}% converted</small>
+        </span>
+        <em>${formatCompactNumber((funnel.steps || []).length)} steps</em>
+      </button>
+    `).join("")
+    : '<p class="status">Your saved funnels will appear here.</p>';
+}
+
+function selectFunnel(id) {
+  const funnel = currentFunnels.find((entry) => entry.id === id);
+  if (!funnel) return;
+  selectedFunnelId = funnel.id;
+  isCreatingFunnel = false;
+  populateFunnelEditor(funnel);
+  renderFunnelCatalog();
+  renderFunnelResults(funnel);
+}
+
+function startNewFunnel() {
+  selectedFunnelId = "";
+  isCreatingFunnel = true;
+  if (funnelId) funnelId.value = "";
+  if (funnelName) funnelName.value = "";
+  if (funnelWindowMinutes) funnelWindowMinutes.value = "30";
+  if (funnelBuilderTitle) funnelBuilderTitle.textContent = "Create Funnel";
+  if (deleteFunnelButton) deleteFunnelButton.hidden = true;
+  if (funnelFormStatus) funnelFormStatus.textContent = currentFunnelEventNames.length < 1
+    ? "Log an event before saving a funnel."
+    : "";
+  renderFunnelStepEditor(currentFunnelEventNames.slice(0, 2));
+  renderFunnelCatalog();
+  renderFunnelResults(null);
+  funnelName?.focus();
+}
+
+function populateFunnelEditor(funnel) {
+  if (!funnel) return;
+  if (funnelId) funnelId.value = funnel.id || "";
+  if (funnelName) funnelName.value = funnel.name || "";
+  if (funnelWindowMinutes) {
+    const minutes = String(funnel.conversionWindowMinutes || 30);
+    if (![...funnelWindowMinutes.options].some((option) => option.value === minutes)) {
+      funnelWindowMinutes.add(new Option(`${minutes} minutes`, minutes));
+    }
+    funnelWindowMinutes.value = minutes;
+  }
+  if (funnelBuilderTitle) funnelBuilderTitle.textContent = "Edit Funnel";
+  if (deleteFunnelButton) deleteFunnelButton.hidden = false;
+  if (funnelFormStatus) funnelFormStatus.textContent = "";
+  renderFunnelStepEditor(funnel.steps || []);
+}
+
+function renderFunnelStepEditor(steps) {
+  if (!funnelStepEditor) return;
+  const cleanSteps = Array.isArray(steps) && steps.length ? steps.slice(0, 10) : ["", ""];
+  while (cleanSteps.length < 2) cleanSteps.push("");
+  funnelStepEditor.innerHTML = cleanSteps.map((step, index) => `
+    <div class="funnelStepRow" data-funnel-step-index="${index}">
+      <span class="funnelStepNumber">${index + 1}</span>
+      <label>
+        <span class="srOnly">Step ${index + 1} event</span>
+        <select data-funnel-step-select ${currentFunnelEventNames.length ? "" : "disabled"}>
+          ${renderFunnelEventOptions(step)}
+        </select>
+      </label>
+      <div class="funnelStepActions">
+        <button type="button" data-funnel-step-action="up" aria-label="Move step up" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" data-funnel-step-action="down" aria-label="Move step down" ${index === cleanSteps.length - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" data-funnel-step-action="remove" aria-label="Remove step" ${cleanSteps.length <= 2 ? "disabled" : ""}>×</button>
+      </div>
+    </div>
+  `).join("");
+  if (addFunnelStepButton) addFunnelStepButton.disabled = cleanSteps.length >= 10 || !currentFunnelEventNames.length;
+  if (saveFunnelButton) saveFunnelButton.disabled = currentFunnelEventNames.length < 1;
+}
+
+function renderFunnelEventOptions(selectedName) {
+  if (!currentFunnelEventNames.length) return '<option value="">No logged events available</option>';
+  const names = selectedName && !currentFunnelEventNames.includes(selectedName)
+    ? [selectedName, ...currentFunnelEventNames]
+    : currentFunnelEventNames;
+  return names.map((name) => `<option value="${escapeHtml(name)}" ${name === selectedName ? "selected" : ""}>${escapeHtml(name)}</option>`).join("");
+}
+
+function getFunnelEditorSteps() {
+  return [...(funnelStepEditor?.querySelectorAll("[data-funnel-step-select]") || [])].map((select) => select.value);
+}
+
+function addFunnelStep() {
+  const steps = getFunnelEditorSteps();
+  if (steps.length >= 10 || !currentFunnelEventNames.length) return;
+  steps.push(currentFunnelEventNames.find((name) => !steps.includes(name)) || currentFunnelEventNames[0]);
+  renderFunnelStepEditor(steps);
+}
+
+function handleFunnelStepAction(event) {
+  const button = event.target.closest("[data-funnel-step-action]");
+  if (!button) return;
+  const row = button.closest("[data-funnel-step-index]");
+  const index = Number(row?.dataset.funnelStepIndex);
+  const steps = getFunnelEditorSteps();
+  const action = button.dataset.funnelStepAction;
+  if (action === "remove" && steps.length > 2) steps.splice(index, 1);
+  if (action === "up" && index > 0) [steps[index - 1], steps[index]] = [steps[index], steps[index - 1]];
+  if (action === "down" && index < steps.length - 1) [steps[index + 1], steps[index]] = [steps[index], steps[index + 1]];
+  renderFunnelStepEditor(steps);
+}
+
+async function saveFunnel() {
+  if (!selectedUniverseId || !funnelForm) return;
+  const steps = getFunnelEditorSteps();
+  const name = String(funnelName?.value || "").trim();
+  if (!name || steps.length < 2 || steps.some((step) => !step)) {
+    funnelFormStatus.textContent = "Enter a name and choose at least two event steps.";
+    return;
+  }
+
+  setFunnelFormDisabled(true);
+  funnelFormStatus.textContent = "Saving funnel...";
+  try {
+    const payload = await request("/api/funnels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: funnelId?.value || undefined,
+        universeId: Number(selectedUniverseId),
+        name,
+        conversionWindowMinutes: Number(funnelWindowMinutes?.value || 30),
+        steps,
+      }),
+    });
+    selectedFunnelId = payload.funnel?.id || "";
+    isCreatingFunnel = false;
+    funnelFormStatus.textContent = "Funnel saved.";
+    await loadFunnels({ force: true });
+    const saved = getSelectedFunnel();
+    if (saved) populateFunnelEditor(saved);
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) funnelFormStatus.textContent = formatRequestError(error);
+  } finally {
+    setFunnelFormDisabled(false);
+  }
+}
+
+async function deleteSelectedFunnel() {
+  const funnel = getSelectedFunnel();
+  if (!funnel || !selectedUniverseId) return;
+  if (!window.confirm(`Delete “${funnel.name}”?`)) return;
+
+  setFunnelFormDisabled(true);
+  funnelFormStatus.textContent = "Deleting funnel...";
+  try {
+    await request(`/api/funnels/${encodeURIComponent(funnel.id)}?universeId=${encodeURIComponent(selectedUniverseId)}`, { method: "DELETE" });
+    selectedFunnelId = "";
+    isCreatingFunnel = false;
+    await loadFunnels({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) funnelFormStatus.textContent = formatRequestError(error);
+  } finally {
+    setFunnelFormDisabled(false);
+  }
+}
+
+function setFunnelFormDisabled(disabled) {
+  for (const control of funnelForm?.querySelectorAll("input, select, button") || []) control.disabled = disabled;
+  if (!disabled) renderFunnelStepEditor(getFunnelEditorSteps());
+}
+
+function renderFunnelResults(funnel) {
+  const analytics = funnel?.analytics;
+  if (funnelResultsTitle) funnelResultsTitle.textContent = funnel ? funnel.name : "Funnel results";
+  if (funnelResultsSubtitle) funnelResultsSubtitle.textContent = funnel
+    ? `${formatCompactNumber(funnel.steps?.length)} ordered steps within ${formatDuration((funnel.conversionWindowMinutes || 0) * 60 * 1000)}.`
+    : "Save or select a funnel to calculate conversion and drop-off.";
+  if (funnelEnteredCount) funnelEnteredCount.textContent = formatCompactNumber(analytics?.entrySessions);
+  if (funnelCompletedCount) funnelCompletedCount.textContent = formatCompactNumber(analytics?.completedSessions);
+  if (funnelConversionRate) funnelConversionRate.textContent = `${formatEventNumber(analytics?.overallConversion)}%`;
+  if (funnelMedianTime) funnelMedianTime.textContent = analytics?.completedSessions ? formatDuration(analytics.medianCompletionMs) : "--";
+  if (!funnelResultSteps) return;
+
+  const steps = analytics?.steps || [];
+  const maxSessions = Math.max(...steps.map((step) => Number(step.sessions) || 0), 1);
+  funnelResultSteps.innerHTML = steps.length
+    ? steps.map((step) => `
+      <article class="funnelResultStep">
+        <div class="funnelResultStepHeader">
+          <span>${step.index}</span>
+          <div><strong>${escapeHtml(step.eventName)}</strong><small>${formatCompactNumber(step.uniquePlayers)} unique players</small></div>
+          <em>${formatEventNumber(step.conversionFromStart)}%</em>
+        </div>
+        <div class="funnelResultBar"><span style="width: ${Math.max((step.sessions / maxSessions) * 100, step.sessions ? 3 : 0).toFixed(2)}%"></span></div>
+        <div class="funnelResultMeta">
+          <span>${formatCompactNumber(step.sessions)} sessions</span>
+          <span>${step.index > 1 ? `${formatEventNumber(step.conversionFromPrevious)}% from previous` : "Entry step"}</span>
+          <span>${step.dropOffSessions ? `${formatCompactNumber(step.dropOffSessions)} dropped before next` : ""}</span>
+          <span>${step.averageTimeFromPreviousMs ? `Avg ${formatDuration(step.averageTimeFromPreviousMs)} from previous` : ""}</span>
+        </div>
+      </article>
+    `).join("")
+    : '<p class="status">No funnel selected.</p>';
+}
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.round((Number(milliseconds) || 0) / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
 function renderSignalLoading(container, label) {

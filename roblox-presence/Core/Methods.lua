@@ -19,6 +19,7 @@ local leaveSampledUserIds = {}
 local serverStartedAt = os.time()
 local chatLogCounter = 0
 local movementSampleCounter = 0
+local movementRollupCounter = 0
 local deathSampleCounter = 0
 local leaveSampleCounter = 0
 local customEventCounter = 0
@@ -198,8 +199,9 @@ local function queueMovementSample(player)
 	local rollup = pendingMovementRollups[rollupKey]
 
 	if not rollup then
+		movementRollupCounter += 1
 		rollup = {
-			id = game.JobId .. ":move-rollup:" .. rollupKey,
+			id = game.JobId .. ":move-rollup:" .. tostring(movementRollupCounter),
 			bucketStart = bucketStart,
 			bucketSizeSeconds = bucketSize,
 			gridSize = gridSize,
@@ -240,11 +242,12 @@ end
 
 local function queueDeathSample(player, character)
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then
+	local position = rootPart and rootPart.Position or lastPlayerPositions[player.UserId]
+	if not position then
+		debugWarn("Skipped death sample because no position was available:", player.Name, player.UserId)
 		return
 	end
 
-	local position = rootPart.Position
 	lastPlayerPositions[player.UserId] = position
 	deathSampleCounter += 1
 	table.insert(pendingDeathSamples, {

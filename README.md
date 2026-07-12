@@ -122,6 +122,12 @@ Logger.Log("weapon_equipped", {
 
 The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The logger adds player session, server time, universe, place, and character position. See `roblox-presence/README.md` for naming, property, and server-only requirements.
 
+## Website Funnels
+
+After custom events arrive, open **Funnels** and select **New**. A funnel contains 2–10 ordered event names plus a conversion window. Funnel definitions are saved per account and universe, so changing a funnel does not require another Roblox publish.
+
+Conversion is session-based: a session enters when it reaches step one, and it only reaches later steps when matching events occur after the previous step and inside the selected conversion window. The dashboard shows entry sessions, completed sessions, overall conversion, step drop-off, unique players, and time between steps. Results use the dashboard's current From/To date filters and refresh every 15 seconds while the Funnels page is open.
+
 The Studio heatmap plugin lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps.
 
 ## Backblaze B2 Analytics Storage

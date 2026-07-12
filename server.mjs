@@ -5,6 +5,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzip, gzipSync, gunzipSync } from "node:zlib";
+import { calculateFunnelAnalytics, groupCustomEventsBySession } from "./lib/funnels.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -15,6 +16,7 @@ const usageStorePath = path.join(__dirname, "data", "usage-events.json");
 const monthlyUserUsageStorePath = path.join(__dirname, "data", "monthly-user-usage.json");
 const objectStorageObjectStorePath = path.join(__dirname, "data", "object-storage-objects.json");
 const reconciliationStorePath = path.join(__dirname, "data", "reconciliations.json");
+const funnelStorePath = path.join(__dirname, "data", "funnels.json");
 
 loadLocalEnv();
 
@@ -53,6 +55,8 @@ const MAX_CUSTOM_EVENTS_PER_UNIVERSE = 25_000;
 const MAX_CUSTOM_EVENT_PROPERTIES = 20;
 const MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE = 200;
 const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 30;
+const MAX_FUNNELS_PER_UNIVERSE = 50;
+const MAX_FUNNEL_STEPS = 10;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_AI_ANALYSIS_AREAS = 5;
 const AI_ANALYSIS_CLUSTER_RADIUS = 44;
@@ -311,6 +315,7 @@ const OBJECT_STORAGE_ROLLUP_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_CA
 let persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
 let persistedMapUniverseIdsRequest = null;
 let persistedMapUniverseIdsVersion = 0;
+let localFunnelStoreLock = Promise.resolve();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
 const DEFAULT_AI_AUTOMATION_SETTINGS = {
@@ -549,6 +554,20 @@ const server = http.createServer(async (req, res) => {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getCustomEventsFromQuery(url.searchParams));
       return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "custom-events", url.searchParams, () => getCustomEventsFromQuery(url.searchParams)));
+    }
+
+    if (url.pathname === "/api/funnels" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      return sendJson(res, 200, await getFunnelsFromQuery(auth.userId, url.searchParams));
+    }
+
+    if (url.pathname === "/api/funnels" && req.method === "POST") {
+      return handleFunnelSave(req, res, auth);
+    }
+
+    const funnelMatch = url.pathname.match(/^\/api\/funnels\/([^/]+)$/);
+    if (funnelMatch && req.method === "DELETE") {
+      return handleFunnelDelete(req, res, auth, funnelMatch[1], url.searchParams);
     }
 
     if (url.pathname === "/api/chat-insights" && req.method === "GET") {
@@ -1039,6 +1058,8 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("object_storage_objects").createIndex({ universeId: 1 }),
     db.collection("reconciliations").createIndex({ month: 1 }, { unique: true }),
     db.collection("reconciliations").createIndex({ updatedAt: -1 }),
+    db.collection("funnels").createIndex({ id: 1 }, { unique: true }),
+    db.collection("funnels").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
   ]);
 }
 
@@ -2484,8 +2505,8 @@ function normalizeMovementRollups(value, context) {
       bucketEnd: bucketStart ? bucketStart + bucketSizeSeconds * 1000 : sampledAt,
       bucketSizeSeconds,
       gridSize,
-      gridX: cleanInteger(entry?.gridX),
-      gridZ: cleanInteger(entry?.gridZ),
+      gridX: cleanSignedInteger(entry?.gridX),
+      gridZ: cleanSignedInteger(entry?.gridZ),
       x: cleanFiniteNumber(entry?.x),
       y: cleanFiniteNumber(entry?.y),
       z: cleanFiniteNumber(entry?.z),
@@ -3137,13 +3158,13 @@ async function getUniverseSummaries(ownerUserId = null) {
 
     const summary = buildUniverseSummary(universeId, persistedMapUniverseIds.has(String(universeId)));
     const rollup = rollupsByUniverseId.get(String(universeId));
-    if (rollup && rollupTotalSamples(rollup) > summary.totalSamples) {
-      const rollupSummary = buildUniverseSummaryFromRollup(rollup, summary.hasMapSnapshot);
+    if (rollup) {
+      const mergedSummary = buildMergedUniverseSummary(universeId, rollup, summary.hasMapSnapshot);
       universes.push({
-        ...rollupSummary,
+        ...mergedSummary,
         projectId: project.id,
         name: project.name,
-        integrationStatus: buildUniverseIntegrationStatus(rollupSummary, recentFailuresByUniverseId.get(String(universeId))),
+        integrationStatus: buildUniverseIntegrationStatus(mergedSummary, recentFailuresByUniverseId.get(String(universeId))),
       });
     } else {
       universes.push({
@@ -3416,6 +3437,52 @@ function buildUniverseSummaryFromRollup(rollup, hasPersistedMapSnapshot = false)
   };
 }
 
+function buildMergedUniverseSummary(universeId, rollup, hasMapSnapshot = false) {
+  const filters = { universeId };
+  const movement = getCombinedMovementSamples(rollup, filters);
+  const deaths = getCombinedDeathSamples(rollup, filters);
+  const leaves = getCombinedLeaveSamples(rollup, filters);
+  const chat = getCombinedChatLogs(rollup, filters);
+  const customEvents = mergeAnalyticsSamples(
+    rollup?.customEvents?.samples || [],
+    customEventsByUniverseId.get(String(universeId)) || [],
+  );
+  const movementCount = movement.reduce((sum, sample) => sum + getSampleWeight(sample), 0);
+  const lastSeenAt = Math.max(
+    cleanInteger(rollup?.lastSeenAt),
+    getLatestAnalyticsTimestamp(movement),
+    getLatestAnalyticsTimestamp(deaths),
+    getLatestAnalyticsTimestamp(leaves),
+    getLatestAnalyticsTimestamp(chat),
+    getLatestAnalyticsTimestamp(customEvents),
+  );
+
+  return {
+    id: universeId,
+    chatLogCount: chat.length,
+    movementSampleCount: movementCount,
+    movementRollupCount: 0,
+    deathSampleCount: deaths.length,
+    leaveSampleCount: leaves.length,
+    customEventCount: customEvents.length,
+    totalSamples: chat.length + movementCount + deaths.length + leaves.length + customEvents.length,
+    hasMapSnapshot,
+    lastSeenAt,
+  };
+}
+
+function getLatestAnalyticsTimestamp(samples) {
+  return (samples || []).reduce((latest, sample) => Math.max(
+    latest,
+    cleanInteger(sample?.receivedAt),
+    cleanInteger(sample?.sampledAt),
+    cleanInteger(sample?.sentAt),
+    cleanInteger(sample?.occurredAt),
+    cleanInteger(sample?.diedAt),
+    cleanInteger(sample?.leftAt),
+  ), 0);
+}
+
 function buildUniverseIntegrationStatus(summary, recentFailureSummary = null) {
   const chatLogCount = cleanFiniteInteger(summary?.chatLogCount);
   const movementSampleCount = cleanFiniteInteger(summary?.movementSampleCount) + cleanFiniteInteger(summary?.movementRollupCount);
@@ -3596,7 +3663,7 @@ async function getMovementHeatmapFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const rollup = await getObjectStorageRollup(filters.universeId);
-  if (rollup) return getMovementHeatmapFromRollup(rollup, filters);
+  if (rollup) return getMovementHeatmapMergedWithLive(rollup, filters);
 
   return getMovementHeatmap(filters);
 }
@@ -3609,7 +3676,7 @@ async function getDeathHeatmapFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const rollup = await getObjectStorageRollup(filters.universeId);
-  if (rollup) return getDeathHeatmapFromRollup(rollup, filters);
+  if (rollup) return getDeathHeatmapMergedWithLive(rollup, filters);
 
   return getDeathHeatmap(filters);
 }
@@ -3622,7 +3689,7 @@ async function getLeaveHeatmapFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const rollup = await getObjectStorageRollup(filters.universeId);
-  if (rollup) return getLeaveHeatmapFromRollup(rollup, filters);
+  if (rollup) return getLeaveHeatmapMergedWithLive(rollup, filters);
 
   return getLeaveHeatmap(filters);
 }
@@ -3635,7 +3702,7 @@ async function getChatLogsFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const rollup = await getObjectStorageRollup(filters.universeId);
-  if (rollup) return getChatLogsFromRollup(rollup, filters);
+  if (rollup) return getChatLogsMergedWithLive(rollup, filters);
 
   return getChatLogs(filters);
 }
@@ -3715,10 +3782,10 @@ function getComputedSignalAreas(filters = {}) {
 
 function getComputedSignalAreasFromRollup(rollup, filters = {}) {
   return {
-    movement: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.movement?.samples || [], filters, { allowUserFilter: false }), "movement"),
-    leaves: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.leaves?.samples || [], filters), "leaves"),
-    deaths: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.deaths?.samples || [], filters), "deaths"),
-    chat: clusterSignalAreaSamples(getRollupSamplesForFilters(rollup.chatLogs || [], filters), "chat"),
+    movement: clusterSignalAreaSamples(getCombinedMovementSamples(rollup, filters), "movement"),
+    leaves: clusterSignalAreaSamples(getCombinedLeaveSamples(rollup, filters), "leaves"),
+    deaths: clusterSignalAreaSamples(getCombinedDeathSamples(rollup, filters), "deaths"),
+    chat: clusterSignalAreaSamples(getCombinedChatLogs(rollup, filters), "chat"),
   };
 }
 
@@ -3790,24 +3857,8 @@ async function getCustomEventsFromQuery(searchParams) {
   const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedEventName = normalizeCustomEventName(searchParams.get("eventName"));
-  const eventsById = new Map();
-  const rollup = await getObjectStorageRollup(universeId);
+  const { events, hasRollup } = await getCustomEventRecords({ universeId, fromMs, toMs });
 
-  for (const event of rollup?.customEvents?.samples || []) {
-    const id = cleanString(event?.id, 180);
-    if (id) eventsById.set(id, event);
-  }
-  for (const event of customEventsByUniverseId.get(String(universeId)) || []) {
-    const id = cleanString(event?.id, 180);
-    if (id) eventsById.set(id, event);
-  }
-
-  const events = [...eventsById.values()].filter((event) => {
-    const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
-    if (fromMs > 0 && occurredAt < fromMs) return false;
-    if (toMs > 0 && occurredAt > toMs) return false;
-    return Boolean(normalizeCustomEventName(event?.eventName));
-  });
   const catalogByName = new Map();
   for (const event of events) {
     const eventName = normalizeCustomEventName(event.eventName);
@@ -3844,7 +3895,7 @@ async function getCustomEventsFromQuery(searchParams) {
 
   return {
     universeId: universeId || null,
-    source: rollup?.customEvents?.samples?.length ? "b2-rollup+live" : "live",
+    source: hasRollup ? "b2-rollup+live" : "live",
     filters: { from: fromMs || null, to: toMs || null },
     totals: {
       events: events.length,
@@ -3854,6 +3905,34 @@ async function getCustomEventsFromQuery(searchParams) {
     },
     events: catalog,
     selectedEvent: selectedEventName ? buildCustomEventDetail(selectedEventName, selectedEvents, { fromMs, toMs }) : null,
+  };
+}
+
+async function getCustomEventRecords(filters = {}) {
+  const universeId = cleanInteger(filters.universeId);
+  const fromMs = cleanInteger(filters.fromMs);
+  const toMs = cleanInteger(filters.toMs);
+  const eventsById = new Map();
+  const rollup = await getObjectStorageRollup(universeId);
+
+  for (const event of rollup?.customEvents?.samples || []) {
+    const id = cleanString(event?.id, 180);
+    if (id) eventsById.set(id, event);
+  }
+  for (const event of customEventsByUniverseId.get(String(universeId)) || []) {
+    const id = cleanString(event?.id, 180);
+    if (id) eventsById.set(id, event);
+  }
+
+  const events = [...eventsById.values()].filter((event) => {
+    const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
+    if (fromMs > 0 && occurredAt < fromMs) return false;
+    if (toMs > 0 && occurredAt > toMs) return false;
+    return Boolean(normalizeCustomEventName(event?.eventName));
+  });
+  return {
+    events,
+    hasRollup: Boolean(rollup?.customEvents?.samples?.length),
   };
 }
 
@@ -3957,6 +4036,224 @@ function summarizeCustomEventProperties(events) {
       .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value))
       .slice(0, 5),
   })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+}
+
+async function getFunnelsFromQuery(ownerUserId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
+  const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
+  const [definitions, eventRecords] = await Promise.all([
+    readFunnelDefinitions(ownerUserId, universeId),
+    getCustomEventRecords({ universeId, fromMs, toMs }),
+  ]);
+  const events = eventRecords.events;
+  const eventNames = [...new Set(events.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean))].sort();
+  const sessions = groupCustomEventsBySession(events);
+
+  return {
+    universeId,
+    filters: { from: fromMs || null, to: toMs || null },
+    eventNames,
+    eventCount: events.length,
+    sessionCount: sessions.length,
+    funnels: definitions.map((definition) => ({
+      ...serializeFunnelDefinition(definition),
+      analytics: calculateFunnelAnalytics(definition, sessions),
+    })),
+  };
+}
+
+async function handleFunnelSave(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 32 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
+  const normalized = normalizeFunnelDefinition(body, {
+    ownerUserId: auth.userId,
+    universeId,
+  });
+  if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
+
+  try {
+    const funnel = await saveFunnelDefinition(normalized.value);
+    invalidateAnalyticsResponses(universeId);
+    return sendJson(res, 200, { ok: true, funnel: serializeFunnelDefinition(funnel) });
+  } catch (error) {
+    return sendJson(res, error.code === "FUNNEL_LIMIT" ? 409 : 400, { error: error.message });
+  }
+}
+
+async function handleFunnelDelete(req, res, auth, funnelId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
+  const deleted = await deleteFunnelDefinition(auth.userId, universeId, decodeURIComponent(funnelId));
+  if (!deleted) return sendJson(res, 404, { error: "Funnel not found" });
+  invalidateAnalyticsResponses(universeId);
+  return sendJson(res, 200, { ok: true, deletedId: deleted.id });
+}
+
+function normalizeFunnelDefinition(value, context) {
+  const name = cleanString(value?.name, 80);
+  if (!name) return { ok: false, error: "Enter a funnel name" };
+
+  const rawSteps = Array.isArray(value?.steps) ? value.steps : [];
+  if (rawSteps.length < 2 || rawSteps.length > MAX_FUNNEL_STEPS) {
+    return { ok: false, error: `Funnels need between 2 and ${MAX_FUNNEL_STEPS} steps` };
+  }
+  const steps = rawSteps.map(normalizeCustomEventName);
+  if (steps.some((step) => !step)) {
+    return { ok: false, error: "Every funnel step must be a valid logged event name" };
+  }
+
+  const conversionWindowMinutes = Number(value?.conversionWindowMinutes);
+  if (!Number.isSafeInteger(conversionWindowMinutes) || conversionWindowMinutes < 1 || conversionWindowMinutes > 43_200) {
+    return { ok: false, error: "Conversion window must be between 1 minute and 30 days" };
+  }
+
+  const now = Date.now();
+  return {
+    ok: true,
+    value: {
+      id: cleanString(value?.id, 120) || crypto.randomUUID(),
+      ownerUserId: context.ownerUserId,
+      universeId: context.universeId,
+      name,
+      steps,
+      conversionWindowMinutes,
+      createdAt: cleanInteger(value?.createdAt) || now,
+      updatedAt: now,
+    },
+  };
+}
+
+function serializeFunnelDefinition(funnel) {
+  return {
+    id: cleanString(funnel?.id, 120),
+    universeId: cleanInteger(funnel?.universeId),
+    name: cleanString(funnel?.name, 80),
+    steps: Array.isArray(funnel?.steps) ? funnel.steps.map(normalizeCustomEventName).filter(Boolean).slice(0, MAX_FUNNEL_STEPS) : [],
+    conversionWindowMinutes: cleanInteger(funnel?.conversionWindowMinutes),
+    createdAt: cleanInteger(funnel?.createdAt),
+    updatedAt: cleanInteger(funnel?.updatedAt),
+  };
+}
+
+async function readFunnelDefinitions(ownerUserId, universeId) {
+  const cleanOwnerUserId = cleanString(ownerUserId, 120);
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!cleanOwnerUserId || cleanUniverseId <= 0) return [];
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("funnels")
+      .find({ ownerUserId: cleanOwnerUserId, universeId: cleanUniverseId }, { projection: { _id: 0 } })
+      .sort({ updatedAt: -1 })
+      .limit(MAX_FUNNELS_PER_UNIVERSE)
+      .toArray();
+  }
+  const funnels = await readLocalFunnelStore();
+  return funnels
+    .filter((funnel) => funnel.ownerUserId === cleanOwnerUserId && cleanInteger(funnel.universeId) === cleanUniverseId)
+    .sort((left, right) => cleanInteger(right.updatedAt) - cleanInteger(left.updatedAt))
+    .slice(0, MAX_FUNNELS_PER_UNIVERSE);
+}
+
+async function saveFunnelDefinition(funnel) {
+  const db = await getMongoDb();
+  if (db) {
+    const existing = await db.collection("funnels").findOne({ id: funnel.id }, { projection: { _id: 0 } });
+    if (existing && (existing.ownerUserId !== funnel.ownerUserId || cleanInteger(existing.universeId) !== funnel.universeId)) {
+      throw new Error("Funnel not found");
+    }
+    if (!existing) {
+      const count = await db.collection("funnels").countDocuments({ ownerUserId: funnel.ownerUserId, universeId: funnel.universeId });
+      if (count >= MAX_FUNNELS_PER_UNIVERSE) throw createFunnelLimitError();
+    } else {
+      funnel.createdAt = cleanInteger(existing.createdAt) || funnel.createdAt;
+    }
+    await db.collection("funnels").replaceOne({ id: funnel.id }, funnel, { upsert: true });
+    return funnel;
+  }
+
+  return withLocalFunnelStoreLock(async () => {
+    const funnels = await readLocalFunnelStore();
+    const index = funnels.findIndex((entry) => entry.id === funnel.id);
+    if (index >= 0) {
+      const existing = funnels[index];
+      if (existing.ownerUserId !== funnel.ownerUserId || cleanInteger(existing.universeId) !== funnel.universeId) throw new Error("Funnel not found");
+      funnel.createdAt = cleanInteger(existing.createdAt) || funnel.createdAt;
+      funnels[index] = funnel;
+    } else {
+      const count = funnels.filter((entry) => entry.ownerUserId === funnel.ownerUserId && cleanInteger(entry.universeId) === funnel.universeId).length;
+      if (count >= MAX_FUNNELS_PER_UNIVERSE) throw createFunnelLimitError();
+      funnels.push(funnel);
+    }
+    await writeLocalFunnelStore(funnels);
+    return funnel;
+  });
+}
+
+async function deleteFunnelDefinition(ownerUserId, universeId, funnelId) {
+  const id = cleanString(funnelId, 120);
+  if (!id) return null;
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("funnels").findOneAndDelete(
+      { id, ownerUserId, universeId },
+      { projection: { _id: 0 } },
+    );
+  }
+  return withLocalFunnelStoreLock(async () => {
+    const funnels = await readLocalFunnelStore();
+    const index = funnels.findIndex((entry) => entry.id === id && entry.ownerUserId === ownerUserId && cleanInteger(entry.universeId) === universeId);
+    if (index < 0) return null;
+    const [deleted] = funnels.splice(index, 1);
+    await writeLocalFunnelStore(funnels);
+    return deleted;
+  });
+}
+
+function createFunnelLimitError() {
+  const error = new Error(`A universe can have up to ${MAX_FUNNELS_PER_UNIVERSE} funnels`);
+  error.code = "FUNNEL_LIMIT";
+  return error;
+}
+
+async function readLocalFunnelStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(funnelStorePath, "utf8"));
+    return Array.isArray(payload.funnels) ? payload.funnels : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalFunnelStore(funnels) {
+  await fs.mkdir(path.dirname(funnelStorePath), { recursive: true });
+  await fs.writeFile(funnelStorePath, JSON.stringify({ funnels }, null, 2));
+}
+
+async function withLocalFunnelStoreLock(operation) {
+  const previous = localFunnelStoreLock;
+  let release;
+  localFunnelStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
 }
 
 async function normalizeMovementFilters(rawFilters = {}) {
@@ -4182,6 +4479,97 @@ function getLeaveHeatmapFromRollup(rollup, filters = {}) {
   };
 }
 
+function getMovementHeatmapMergedWithLive(rollup, filters = {}) {
+  const universeId = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const samples = getCombinedMovementSamples(rollup, filters);
+  samples.sort((left, right) => getSampleWeight(right) - getSampleWeight(left) || right.sampledAt - left.sampledAt);
+  return {
+    universeId: universeId || null,
+    sampleCount: samples.reduce((sum, sample) => sum + getSampleWeight(sample), 0),
+    returnedCount: Math.min(samples.length, MAX_MOVEMENT_SAMPLES_RESPONSE),
+    maxSamplesPerUniverse: MAX_MOVEMENT_SAMPLES_PER_UNIVERSE,
+    source: "b2-rollup+live",
+    filters: getMovementFilterSummary(filters),
+    samples: samples.slice(0, MAX_MOVEMENT_SAMPLES_RESPONSE),
+  };
+}
+
+function getDeathHeatmapMergedWithLive(rollup, filters = {}) {
+  return buildMergedPointHeatmap({
+    rollup,
+    filters,
+    storedSamples: rollup.deaths?.samples || [],
+    liveSamples: getDeathSamplesForFilters(filters),
+    maxResponse: MAX_DEATH_SAMPLES_RESPONSE,
+    maxPerUniverse: MAX_DEATH_SAMPLES_PER_UNIVERSE,
+  });
+}
+
+function getLeaveHeatmapMergedWithLive(rollup, filters = {}) {
+  return buildMergedPointHeatmap({
+    rollup,
+    filters,
+    storedSamples: rollup.leaves?.samples || [],
+    liveSamples: getLeaveSamplesForFilters(filters),
+    maxResponse: MAX_LEAVE_SAMPLES_RESPONSE,
+    maxPerUniverse: MAX_LEAVE_SAMPLES_PER_UNIVERSE,
+  });
+}
+
+function buildMergedPointHeatmap({ rollup, filters, storedSamples, liveSamples, maxResponse, maxPerUniverse }) {
+  const universeId = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const stored = getRollupSamplesForFilters(storedSamples, filters);
+  const samples = mergeAnalyticsSamples(stored, liveSamples);
+  samples.sort((left, right) => right.sampledAt - left.sampledAt || right.receivedAt - left.receivedAt);
+  return {
+    universeId: universeId || null,
+    sampleCount: samples.length,
+    returnedCount: Math.min(samples.length, maxResponse),
+    maxSamplesPerUniverse: maxPerUniverse,
+    source: "b2-rollup+live",
+    filters: getMovementFilterSummary(filters),
+    samples: samples.slice(0, maxResponse),
+  };
+}
+
+function getCombinedMovementSamples(rollup, filters = {}) {
+  const stored = getRollupSamplesForFilters(rollup?.movement?.samples || [], filters, { allowUserFilter: false });
+  const liveRollups = getMovementRollupsForFilters(filters);
+  const live = liveRollups.length ? liveRollups.map(movementRollupToSample) : getMovementSamplesForFilters(filters);
+  return mergeAnalyticsSamples(stored, live);
+}
+
+function getCombinedDeathSamples(rollup, filters = {}) {
+  return mergeAnalyticsSamples(
+    getRollupSamplesForFilters(rollup?.deaths?.samples || [], filters),
+    getDeathSamplesForFilters(filters),
+  );
+}
+
+function getCombinedLeaveSamples(rollup, filters = {}) {
+  return mergeAnalyticsSamples(
+    getRollupSamplesForFilters(rollup?.leaves?.samples || [], filters),
+    getLeaveSamplesForFilters(filters),
+  );
+}
+
+function getCombinedChatLogs(rollup, filters = {}) {
+  return mergeAnalyticsSamples(
+    getRollupSamplesForFilters(rollup?.chatLogs || [], filters),
+    getChatLogs(filters).logs,
+  );
+}
+
+function mergeAnalyticsSamples(storedSamples, liveSamples) {
+  const merged = new Map();
+  let fallbackIndex = 0;
+  for (const sample of [...(storedSamples || []), ...(liveSamples || [])]) {
+    const id = cleanString(sample?.id, 180) || `fallback:${fallbackIndex++}:${cleanInteger(sample?.sampledAt) || cleanInteger(sample?.receivedAt)}`;
+    merged.set(id, sample);
+  }
+  return [...merged.values()];
+}
+
 function getAiAreaAnalysis(filters = {}) {
   return applyStoredAiAreaInsights(getAiAreaAnalysisWithoutStoredInsights(filters));
 }
@@ -4314,19 +4702,19 @@ function getAiAnalysisEvents(filters = {}) {
 function getAiAnalysisEventsFromRollup(rollup, filters = {}) {
   const events = [];
 
-  for (const sample of getRollupSamplesForFilters(rollup.movement?.samples || [], filters, { allowUserFilter: false })) {
+  for (const sample of getCombinedMovementSamples(rollup, filters)) {
     events.push(createAiAnalysisEvent("movement", sample, Math.max(1, Math.sqrt(getSampleWeight(sample)))));
   }
 
-  for (const sample of getRollupSamplesForFilters(rollup.deaths?.samples || [], filters)) {
+  for (const sample of getCombinedDeathSamples(rollup, filters)) {
     events.push(createAiAnalysisEvent("death", sample, 4));
   }
 
-  for (const sample of getRollupSamplesForFilters(rollup.leaves?.samples || [], filters)) {
+  for (const sample of getCombinedLeaveSamples(rollup, filters)) {
     events.push(createAiAnalysisEvent("leave", sample, 5));
   }
 
-  for (const log of getRollupSamplesForFilters(rollup.chatLogs || [], filters)) {
+  for (const log of getCombinedChatLogs(rollup, filters)) {
     if (!Number.isFinite(Number(log.x)) || !Number.isFinite(Number(log.y)) || !Number.isFinite(Number(log.z))) continue;
     events.push(createAiAnalysisEvent("chat", log, isQuestionLikeMessage(log.message) ? 3 : 1.5));
   }
@@ -4623,6 +5011,20 @@ function getChatLogsFromRollup(rollup, filters = {}) {
     source: "b2-rollup",
     filters: getMovementFilterSummary(filters),
     logs: filteredLogs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
+  };
+}
+
+function getChatLogsMergedWithLive(rollup, filters = {}) {
+  const universeId = cleanInteger(filters.universeId) || cleanInteger(rollup.universeId);
+  const logs = getCombinedChatLogs(rollup, filters);
+  logs.sort((left, right) => right.sentAt - left.sentAt || right.receivedAt - left.receivedAt);
+  return {
+    universeId: universeId || null,
+    logCount: logs.length,
+    maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
+    source: "b2-rollup+live",
+    filters: getMovementFilterSummary(filters),
+    logs: logs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
   };
 }
 
@@ -5002,10 +5404,10 @@ async function buildAiChatDataContext(filters = {}) {
     getStoredChatInsights(filters),
     getMapSnapshot({ universeId: filters.universeId }),
   ]);
-  const movement = rollup ? getMovementHeatmapFromRollup(rollup, filters) : getMovementHeatmap(filters);
-  const deaths = rollup ? getDeathHeatmapFromRollup(rollup, filters) : getDeathHeatmap(filters);
-  const leaves = rollup ? getLeaveHeatmapFromRollup(rollup, filters) : getLeaveHeatmap(filters);
-  const chat = rollup ? getChatLogsFromRollup(rollup, filters) : getChatLogs(filters);
+  const movement = rollup ? getMovementHeatmapMergedWithLive(rollup, filters) : getMovementHeatmap(filters);
+  const deaths = rollup ? getDeathHeatmapMergedWithLive(rollup, filters) : getDeathHeatmap(filters);
+  const leaves = rollup ? getLeaveHeatmapMergedWithLive(rollup, filters) : getLeaveHeatmap(filters);
+  const chat = rollup ? getChatLogsMergedWithLive(rollup, filters) : getChatLogs(filters);
   const computed = rollup ? getComputedAreaClustersFromRollup(rollup, filters) : {
     ...getAiAreaAnalysisWithoutStoredInsights(filters),
     mode: "computed",
@@ -5855,6 +6257,11 @@ function cleanString(value, maxLength) {
 function cleanInteger(value) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function cleanSignedInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : 0;
 }
 
 function cleanFiniteNumber(value) {
@@ -8823,6 +9230,7 @@ async function deleteMongoUniverseData(universeId) {
     "death_samples",
     "leave_samples",
     "custom_events",
+    "funnels",
     "map_snapshots",
     "map_snapshot_chunks",
   ]) {
@@ -8833,13 +9241,21 @@ async function deleteMongoUniverseData(universeId) {
 }
 
 async function deleteLocalUniverseData(universeId) {
+  let mapSnapshot = 0;
   try {
     await fs.unlink(getMapSnapshotPath(universeId));
-    return { mapSnapshot: 1 };
+    mapSnapshot = 1;
   } catch (error) {
-    if (error.code === "ENOENT") return { mapSnapshot: 0 };
-    throw error;
+    if (error.code !== "ENOENT") throw error;
   }
+
+  const deletedFunnels = await withLocalFunnelStoreLock(async () => {
+    const funnels = await readLocalFunnelStore();
+    const nextFunnels = funnels.filter((funnel) => cleanInteger(funnel.universeId) !== universeId);
+    if (nextFunnels.length !== funnels.length) await writeLocalFunnelStore(nextFunnels);
+    return funnels.length - nextFunnels.length;
+  });
+  return { mapSnapshot, funnels: deletedFunnels };
 }
 
 async function deleteObjectStorageUniverseData(universeId) {
