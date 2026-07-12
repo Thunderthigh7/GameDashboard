@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260712-4">
+    <link rel="stylesheet" href="/styles.css?v=20260712-5">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -121,7 +121,8 @@
         </nav>
 
         <div class="sidebarFooter">
-          <p class="status" id="universesStatus">Loading...</p>
+          <p class="status srOnly" id="universesStatus" aria-live="polite">Loading...</p>
+          <div class="account sidebarAccount" id="accountBox">Checking...</div>
           <section class="authControls" id="authControls" hidden>
             <button class="sidebarLogoutButton" id="logoutButton" type="button">
               <span class="logoutIconTile" aria-hidden="true">
@@ -173,9 +174,6 @@
                   <option value="">Loading universes...</option>
                 </select>
               </div>
-            </div>
-            <div class="topbarButtonGroup">
-              <div class="account" id="accountBox">Checking...</div>
             </div>
           </div>
         </header>
