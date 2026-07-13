@@ -36,21 +36,31 @@ This folder is synced by `default.project.json` and is not used by the website s
 
 ## Logging custom events
 
-Require the service API from a server script, then call `Log` with an event name, a flat information table, and the player. Events are delivered in the existing heartbeat batch and automatically appear on the website's **Events** page.
+Require the service API from a server script, then call `Log` with an event name, an information table, and the player. Events are delivered in the existing heartbeat batch and automatically appear on the website's **Events** page.
 
 ```lua
 local ServerScriptService = game:GetService("ServerScriptService")
 local Logger = require(ServerScriptService.Server.Services.Game.PresenceService.API)
 
 Logger.Log("weapon_equipped", {
-	weapon = "Iron Sword",
-	rarity = "Common",
+	weapon = {
+		name = "Iron Sword",
+		rarity = "Common",
+		stats = {
+			damage = 51,
+		},
+	},
+	tags = { "melee", "starter" },
 }, player)
 ```
 
 Event names must start with a letter and may contain letters, numbers, `_`, `.`, `:`, or `-`. Keep names stable and lowercase, such as `weapon_equipped` or `tutorial.step_completed`.
 
-Information values must be strings, numbers, or booleans. Up to 20 properties are accepted per event. The logger automatically includes the universe, place, server, event time, player, player session, and current character position. Pass the `Player` as the third argument so the event can participate in player funnels later.
+Property leaves must be strings, finite numbers, or booleans. Nested tables are flattened into stable paths such as `weapon.name` and `weapon.stats.damage`; arrays become repeated values such as `tags[]`. The Events page discovers every path automatically and lets you switch between their breakdowns.
+
+To keep analytics payloads bounded, one event accepts up to 20 property paths, 3 nested levels, 10 items from an array, and 40 total values. Strings are limited to 240 characters. The event is still logged if a value is unsupported or exceeds a limit, and Data Health reports that some properties were omitted. For item-level relationships inside a large array, log one event per item instead of sending a large inventory table.
+
+The logger automatically includes the universe, place, server, event time, player, player session, and current character position. Pass the `Player` as the third argument so the event can participate in player funnels later.
 
 Server-wide events may omit the player:
 

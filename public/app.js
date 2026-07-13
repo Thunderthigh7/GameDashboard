@@ -66,11 +66,13 @@ const projectSecretValue = document.querySelector("#projectSecretValue");
 const projectSecretTarget = document.querySelector("#projectSecretTarget");
 const copyProjectSecretButton = document.querySelector("#copyProjectSecretButton");
 const connectedGameList = document.querySelector("#connectedGameList");
-const refreshChatLogsButton = document.querySelector("#refreshChatLogsButton");
 const refreshMovementButton = document.querySelector("#refreshMovementButton");
 const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
+const chatMessageCount = document.querySelector("#chatMessageCount");
+const chatPlayerCount = document.querySelector("#chatPlayerCount");
+const chatLiveBadge = document.querySelector("#chatLiveBadge");
 const refreshEventsButton = document.querySelector("#refreshEventsButton");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventSelect = document.querySelector("#eventSelect");
@@ -87,6 +89,9 @@ const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
 const eventPropertySubtitle = document.querySelector("#eventPropertySubtitle");
+const eventPropertySelect = document.querySelector("#eventPropertySelect");
+const eventPropertySummary = document.querySelector("#eventPropertySummary");
+const eventPropertyTableHeader = document.querySelector("#eventPropertyTableHeader");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const viewAllPropertyValuesButton = document.querySelector("#viewAllPropertyValuesButton");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
@@ -181,7 +186,10 @@ let reconciliationRequestSequence = 0;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
+let selectedEventPropertyName = "";
 let eventPropertyValuesExpanded = false;
+let currentEventPropertySummaries = [];
+let currentSelectedEventCount = 0;
 let recentEventsExpanded = false;
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
@@ -192,7 +200,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260712-11";
+const DASHBOARD_ASSET_VERSION = "20260713-2";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -210,6 +218,7 @@ const resolveDashboardCacheScope = () => {
 window.getDashboardCacheScope = resolveDashboardCacheScope;
 
 const CHAT_REFRESH_MS = 5000;
+const RECENT_CHAT_LIMIT = 100;
 const SIGNAL_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const MAX_SIGNAL_AREAS = 5;
@@ -314,11 +323,14 @@ function bindEvents() {
   document.addEventListener("pointerdown", handleUniverseDropdownOutsidePointer);
   window.addEventListener("resize", positionUniverseDropdown);
   window.addEventListener("scroll", positionUniverseDropdown, true);
-  refreshChatLogsButton.addEventListener("click", () => loadChatLogs({ includeInsights: true }));
   refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
   eventSelect?.addEventListener("change", () => {
     selectedCustomEventName = eventSelect.value || "";
+    selectedEventPropertyName = "";
     eventPropertyValuesExpanded = false;
+    currentEventPropertySummaries = [];
+    currentSelectedEventCount = 0;
+    renderCustomEventProperties([], 0);
     recentEventsExpanded = false;
     loadCustomEvents({ force: true });
   });
@@ -326,9 +338,31 @@ function bindEvents() {
     selectedEventInterval = eventIntervalSelect.value || "auto";
     loadCustomEvents({ force: true });
   });
-  viewAllPropertyValuesButton?.addEventListener("click", () => {
-    eventPropertyValuesExpanded = !eventPropertyValuesExpanded;
-    loadCustomEvents({ force: true });
+  eventPropertySelect?.addEventListener("change", () => {
+    selectedEventPropertyName = eventPropertySelect.value || "";
+    eventPropertyValuesExpanded = false;
+    renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
+  });
+  viewAllPropertyValuesButton?.addEventListener("click", async () => {
+    const previousExpandedState = eventPropertyValuesExpanded;
+    const requestedExpandedState = !previousExpandedState;
+    const requestedEventName = selectedCustomEventName;
+    const requestedPropertyName = selectedEventPropertyName;
+    eventPropertyValuesExpanded = requestedExpandedState;
+    if (!requestedExpandedState) {
+      renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
+      return;
+    }
+    viewAllPropertyValuesButton.disabled = true;
+    const loaded = await loadCustomEvents({ force: true });
+    viewAllPropertyValuesButton.disabled = false;
+    if (!loaded
+      && selectedCustomEventName === requestedEventName
+      && selectedEventPropertyName === requestedPropertyName
+      && eventPropertyValuesExpanded === requestedExpandedState) {
+      eventPropertyValuesExpanded = previousExpandedState;
+      renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
+    }
   });
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
@@ -402,14 +436,30 @@ function bindEvents() {
   movementFromFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     loadSignalAreaCards({ force: true });
-    if (activeView === "events") loadCustomEvents({ force: true });
+    if (activeView === "events") {
+      selectedEventPropertyName = "";
+      eventPropertyValuesExpanded = false;
+      currentEventPropertySummaries = [];
+      currentSelectedEventCount = 0;
+      renderCustomEventProperties([], 0);
+      loadCustomEvents({ force: true });
+    }
     if (activeView === "funnels") loadFunnels({ force: true });
+    if (activeView === "chat") loadChatLogs({ includeInsights: true });
   });
   movementToFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     loadSignalAreaCards({ force: true });
-    if (activeView === "events") loadCustomEvents({ force: true });
+    if (activeView === "events") {
+      selectedEventPropertyName = "";
+      eventPropertyValuesExpanded = false;
+      currentEventPropertySummaries = [];
+      currentSelectedEventCount = 0;
+      renderCustomEventProperties([], 0);
+      loadCustomEvents({ force: true });
+    }
     if (activeView === "funnels") loadFunnels({ force: true });
+    if (activeView === "chat") loadChatLogs({ includeInsights: true });
   });
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
@@ -730,8 +780,10 @@ function setAuthenticated(value, user = null) {
     clearDashboardSessionCache(previousCacheScope);
     stopChatRefresh();
     stopSignalRefresh();
-    chatLogList.innerHTML = "";
-    commonQuestionList.innerHTML = "";
+    renderChatSummary();
+    setChatLiveState("waiting");
+    renderRecentChatEmpty("Sign in to view recent chat.");
+    renderCommonQuestionPlaceholders("Sign in to view player questions.");
     if (aiReportSelect) {
       aiReportSelect.innerHTML = `<option value="">Latest saved report</option>`;
       aiReportSelect.disabled = true;
@@ -938,6 +990,8 @@ function loadActiveViewData(view, options = {}) {
       loadCustomEvents();
     } else if (view === "funnels") {
       loadFunnels();
+    } else if (view === "chat") {
+      loadChatLogs({ includeInsights: true });
     }
     return;
   }
@@ -2178,13 +2232,20 @@ function selectUniverse(value) {
   signalAreaRequestSequence += 1;
   selectedChatLogId = "";
   selectedCustomEventName = "";
+  selectedEventPropertyName = "";
   eventPropertyValuesExpanded = false;
+  currentEventPropertySummaries = [];
+  currentSelectedEventCount = 0;
   recentEventsExpanded = false;
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
   isCreatingFunnel = false;
   setFunnelBuilderVisible(false);
+  renderChatSummary();
+  setChatLiveState(selectedUniverseId ? "loading" : "waiting");
+  renderRecentChatEmpty(selectedUniverseId ? "Loading recent chat..." : "Select a universe to view recent chat.");
+  renderCommonQuestionPlaceholders(selectedUniverseId ? "Loading player questions..." : "Select a universe to view player questions.");
   updateSelectedUniverse();
   renderAiChatWelcome();
   renderIntegrationStatusCard();
@@ -2284,17 +2345,19 @@ function buildSignalAreaQuery() {
 }
 
 async function loadCustomEvents(options = {}) {
-  if (!authenticated || !eventsStatus) return;
+  if (!authenticated || !eventsStatus) return false;
   const requestSequence = ++customEventsRequestSequence;
   const universeId = selectedUniverseId;
 
   if (!universeId) {
     renderCustomEvents({ totals: {}, events: [], selectedEvent: null });
+    eventPropertyList?.setAttribute("aria-busy", "false");
     eventsStatus.textContent = "Connect or select a Roblox game to view events.";
-    return;
+    return false;
   }
 
   eventsStatus.textContent = "Loading events...";
+  eventPropertyList?.setAttribute("aria-busy", "true");
   if (refreshEventsButton) refreshEventsButton.disabled = true;
   const params = new URLSearchParams();
   params.set("universeId", universeId);
@@ -2303,6 +2366,7 @@ async function loadCustomEvents(options = {}) {
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
   if (selectedCustomEventName) params.set("eventName", selectedCustomEventName);
+  if (selectedEventPropertyName) params.set("propertyName", selectedEventPropertyName);
   params.set("interval", selectedEventInterval);
   params.set("propertyValueLimit", String(eventPropertyValuesExpanded ? EVENT_PROPERTY_VALUE_EXPANDED_LIMIT : EVENT_PROPERTY_VALUE_LIMIT));
   params.set("recentLimit", String(recentEventsExpanded ? RECENT_EVENT_EXPANDED_LIMIT : RECENT_EVENT_LIMIT));
@@ -2310,17 +2374,22 @@ async function loadCustomEvents(options = {}) {
 
   try {
     const payload = await request(`/api/events?${params.toString()}`, { dedupe: !options.force });
-    if (requestSequence !== customEventsRequestSequence || universeId !== selectedUniverseId) return;
+    if (requestSequence !== customEventsRequestSequence || universeId !== selectedUniverseId) return false;
     renderCustomEvents(payload);
     eventsStatus.textContent = payload.totals?.events
       ? `${formatCompactNumber(payload.totals.events)} events across ${formatCompactNumber(payload.totals.eventNames)} names.`
       : "No custom events yet. Call Logger.Log from a Roblox server script.";
+    return true;
   } catch (error) {
-    if (requestSequence !== customEventsRequestSequence) return;
+    if (requestSequence !== customEventsRequestSequence) return false;
     handleAuthError(error);
     if (authenticated) eventsStatus.textContent = formatRequestError(error);
+    return false;
   } finally {
-    if (requestSequence === customEventsRequestSequence && refreshEventsButton) refreshEventsButton.disabled = false;
+    if (requestSequence === customEventsRequestSequence) {
+      if (refreshEventsButton) refreshEventsButton.disabled = false;
+      eventPropertyList?.setAttribute("aria-busy", "false");
+    }
   }
 }
 
@@ -2331,6 +2400,7 @@ function renderCustomEvents(payload = {}) {
   const previousEventName = selectedCustomEventName;
   selectedCustomEventName = selected?.name || "";
   if (previousEventName && previousEventName !== selectedCustomEventName) {
+    selectedEventPropertyName = "";
     eventPropertyValuesExpanded = false;
     recentEventsExpanded = false;
   }
@@ -2365,7 +2435,9 @@ function renderCustomEvents(payload = {}) {
   renderEventDataHealth(selected, totals);
   updateEventIntervalControl(selected);
   renderCustomEventChart(selected?.series || [], selected?.bucketMs);
-  renderCustomEventProperties(selected?.properties || []);
+  currentEventPropertySummaries = Array.isArray(selected?.properties) ? selected.properties : [];
+  currentSelectedEventCount = selectedCount;
+  renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
   renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
 
   const recentTotal = Number(selected?.recentEventsTotal) || 0;
@@ -2381,14 +2453,18 @@ function renderEventDataHealth(selected, totals = {}) {
   if (!eventDataHealthStatus || !eventDataHealthDetail) return;
   const universe = knownUniverses.find((entry) => String(entry.id || "") === selectedUniverseId);
   const failedIngests = Number(universe?.integrationStatus?.failedIngests24h) || 0;
+  const truncatedPropertyEvents = Number(selected?.truncatedPropertyEvents) || 0;
   const acceptedEvents = Number(selected?.count ?? totals.events) || 0;
   const hasData = acceptedEvents > 0;
-  const needsReview = failedIngests > 0;
+  const needsReview = failedIngests > 0 || truncatedPropertyEvents > 0;
   eventHealthCard?.classList.toggle("hasWarning", needsReview);
   eventHealthCard?.classList.toggle("isHealthy", hasData && !needsReview);
   eventDataHealthStatus.textContent = needsReview ? "Review" : (hasData ? "Healthy" : "Waiting");
-  eventDataHealthDetail.textContent = needsReview
-    ? `${formatCompactNumber(failedIngests)} failed ingest${failedIngests === 1 ? "" : "s"} in 24h`
+  const healthIssues = [];
+  if (failedIngests > 0) healthIssues.push(`${formatCompactNumber(failedIngests)} failed ingest${failedIngests === 1 ? "" : "s"} in 24h`);
+  if (truncatedPropertyEvents > 0) healthIssues.push(`${formatCompactNumber(truncatedPropertyEvents)} event${truncatedPropertyEvents === 1 ? "" : "s"} had properties omitted`);
+  eventDataHealthDetail.textContent = healthIssues.length
+    ? healthIssues.join(" · ")
     : (hasData
       ? `${formatCompactNumber(acceptedEvents)} accepted · no failed ingests in 24h`
       : "No accepted events yet");
@@ -2519,58 +2595,105 @@ function formatEventInterval(value) {
   return `${Math.max(1, Math.round(milliseconds / minute))}m`;
 }
 
-function renderCustomEventProperties(properties) {
+function renderCustomEventProperties(properties, totalEventCount = 0) {
   if (!eventPropertyList) return;
-  const cleanProperties = Array.isArray(properties) ? properties : [];
-  const categorical = cleanProperties.find((property) => property.type !== "number" && property.topValues?.length);
-  const numeric = cleanProperties.filter((property) => property.type === "number");
-  if (!categorical && !numeric.length) {
-    eventPropertyList.innerHTML = '<p class="status">No properties were sent with this event.</p>';
+  const cleanProperties = (Array.isArray(properties) ? properties : [])
+    .filter((property) => property?.name)
+    .sort((left, right) => (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0)
+      || String(left.name).localeCompare(String(right.name)));
+
+  const requestedPropertyName = selectedEventPropertyName;
+  const selectedProperty = cleanProperties.find((property) => property.name === requestedPropertyName) || cleanProperties[0] || null;
+  if (requestedPropertyName && selectedProperty?.name !== requestedPropertyName) eventPropertyValuesExpanded = false;
+  selectedEventPropertyName = selectedProperty?.name || "";
+
+  if (eventPropertySelect) {
+    eventPropertySelect.disabled = !cleanProperties.length;
+    eventPropertySelect.innerHTML = cleanProperties.length
+      ? cleanProperties.map((property) => {
+        const typeLabel = property.type === "number" ? "number" : (property.type === "mixed" ? "mixed" : "values");
+        return `<option value="${escapeHtml(property.name)}" ${property.name === selectedEventPropertyName ? "selected" : ""}>${escapeHtml(formatEventPropertyName(property.name))} · ${typeLabel}</option>`;
+      }).join("")
+      : '<option value="">No properties</option>';
+    if (selectedEventPropertyName) eventPropertySelect.value = selectedEventPropertyName;
+  }
+
+  if (!selectedProperty) {
+    eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">No properties were sent with this event.</span></div>';
+    if (eventPropertySummary) eventPropertySummary.innerHTML = "";
     if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Values sent with the selected event.";
+    if (eventPropertyTableHeader) eventPropertyTableHeader.hidden = true;
+    eventPropertyTableHeader?.parentElement?.setAttribute("aria-label", "Property value breakdown");
     if (viewAllPropertyValuesButton) viewAllPropertyValuesButton.hidden = true;
     return;
   }
 
-  if (categorical) {
-    const values = categorical.topValues || [];
-    const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
-    const total = Number(categorical.count) || values.reduce((sum, entry) => sum + (Number(entry.count) || 0), 0);
-    if (eventPropertySubtitle) eventPropertySubtitle.textContent = `Most common ${formatEventPropertyName(categorical.name)} values.`;
-    eventPropertyList.innerHTML = values.map((entry, index) => {
-      const count = Number(entry.count) || 0;
-      const percent = total ? (count / total) * 100 : 0;
-      return `
-        <div class="eventPropertyItem">
-          <span class="eventPropertyRank">${index + 1}</span>
-          <div class="eventPropertyValue">
-            <strong>${escapeHtml(entry.value)}</strong>
-            <span><i style="width:${Math.max((count / maxCount) * 100, count ? 4 : 0).toFixed(2)}%"></i></span>
-          </div>
-          <b>${formatCompactNumber(count)}</b>
-          <em>${formatEventNumber(percent)}%</em>
-        </div>
-      `;
-    }).join("");
-    const totalValues = Number(categorical.totalValues) || values.length;
-    if (viewAllPropertyValuesButton) {
-      viewAllPropertyValuesButton.hidden = !eventPropertyValuesExpanded && totalValues <= values.length;
-      viewAllPropertyValuesButton.innerHTML = eventPropertyValuesExpanded
-        ? 'Show fewer values <span aria-hidden="true">↑</span>'
-        : 'View all values <span aria-hidden="true">→</span>';
-    }
-    return;
+  const eventCount = Number(selectedProperty.eventCount ?? selectedProperty.count) || 0;
+  const observationCount = Number(selectedProperty.observationCount) || eventCount;
+  const returnedValues = Array.isArray(selectedProperty.topValues) ? selectedProperty.topValues : [];
+  const totalValues = Number(selectedProperty.totalValues) || returnedValues.length;
+  const valuesTruncated = Boolean(selectedProperty.valuesTruncated);
+  if (eventPropertyValuesExpanded && !valuesTruncated && totalValues <= EVENT_PROPERTY_VALUE_LIMIT) eventPropertyValuesExpanded = false;
+  const values = returnedValues.slice(0, eventPropertyValuesExpanded ? EVENT_PROPERTY_VALUE_EXPANDED_LIMIT : EVENT_PROPERTY_VALUE_LIMIT);
+  const selectedTotal = Math.max(Number(totalEventCount) || eventCount, eventCount, 1);
+  const coverage = (eventCount / selectedTotal) * 100;
+  if (eventPropertySubtitle) {
+    const distinctDetail = valuesTruncated ? ` · at least ${formatCompactNumber(totalValues)} distinct values.` : "";
+    eventPropertySubtitle.textContent = `${formatCompactNumber(cleanProperties.length)} ${cleanProperties.length === 1 ? "property" : "properties"} detected · present in ${formatCompactNumber(eventCount)} of ${formatCompactNumber(selectedTotal)} events (${formatEventNumber(coverage)}%).${distinctDetail}`;
   }
 
-  if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Numeric summaries sent with this event.";
-  eventPropertyList.innerHTML = numeric.map((property, index) => `
-    <div class="eventPropertyItem eventNumericPropertyItem">
-      <span class="eventPropertyRank">${index + 1}</span>
-      <div class="eventPropertyValue"><strong>${escapeHtml(formatEventPropertyName(property.name))}</strong><small>Average ${formatEventNumber(property.average)} · ${formatEventNumber(property.min)}–${formatEventNumber(property.max)}</small></div>
-      <b>${formatCompactNumber(property.count)}</b>
-      <em>100%</em>
-    </div>
-  `).join("");
-  if (viewAllPropertyValuesButton) viewAllPropertyValuesButton.hidden = true;
+  const numericSummary = selectedProperty.type === "number"
+    ? `<dl class="eventNumericSummaryGrid">
+        <div><dt>Events</dt><dd><strong>${formatCompactNumber(eventCount)}</strong><small>${formatEventNumber(coverage)}% coverage</small></dd></div>
+        <div><dt>Values</dt><dd><strong>${formatCompactNumber(observationCount)}</strong><small>${formatCompactNumber(totalValues)}${valuesTruncated ? "+" : ""} distinct</small></dd></div>
+        <div><dt>Average</dt><dd><strong>${formatEventNumber(selectedProperty.average)}</strong><small>Across every value</small></dd></div>
+        <div><dt>Range</dt><dd><strong>${formatEventNumber(selectedProperty.min)}–${formatEventNumber(selectedProperty.max)}</strong><small>Minimum to maximum</small></dd></div>
+      </dl>`
+    : "";
+  const cappedValueNote = eventPropertyValuesExpanded && valuesTruncated
+    ? `<p class="eventPropertyLimitNote" role="note">Showing the top ${formatCompactNumber(values.length)} tracked values. At least ${formatCompactNumber(totalValues)} distinct values were observed.</p>`
+    : (eventPropertyValuesExpanded && totalValues > values.length
+      ? `<p class="eventPropertyLimitNote" role="note">Showing the top ${formatCompactNumber(values.length)} of ${formatCompactNumber(totalValues)} distinct values.</p>`
+      : "");
+  if (eventPropertySummary) eventPropertySummary.innerHTML = numericSummary + cappedValueNote;
+
+  if (eventPropertyTableHeader) {
+    eventPropertyTableHeader.hidden = !values.length;
+    eventPropertyTableHeader.innerHTML = '<span role="columnheader">#</span><span role="columnheader">Value</span><span role="columnheader">Events</span><span role="columnheader">% of events</span>';
+    eventPropertyTableHeader.parentElement?.setAttribute("aria-label", `${formatEventPropertyName(selectedProperty.name)} value breakdown`);
+  }
+  const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
+  eventPropertyList.innerHTML = values.length
+    ? values.map((entry, index) => {
+      const count = Number(entry.count) || 0;
+      const occurrences = Number(entry.occurrences) || count;
+      const percent = (count / selectedTotal) * 100;
+      const valueTypeLabel = selectedProperty.type === "mixed"
+        ? (entry.valueType === "number" ? "Number" : (entry.valueType === "boolean" ? "Boolean" : "Text"))
+        : "";
+      return `
+        <div class="eventPropertyItem" role="row">
+          <span class="eventPropertyRank" role="cell">${index + 1}</span>
+          <div class="eventPropertyValue" role="cell">
+            <strong>${escapeHtml(formatEventPropertyValue(entry.value))}</strong>
+            ${valueTypeLabel ? `<small class="eventPropertyTypeBadge">${escapeHtml(valueTypeLabel)}</small>` : ""}
+            ${occurrences > count ? `<small>${formatCompactNumber(occurrences)} total occurrences</small>` : ""}
+            <span><i style="width:${Math.max((count / maxCount) * 100, count ? 4 : 0).toFixed(2)}%"></i></span>
+          </div>
+          <b role="cell">${formatCompactNumber(count)}</b>
+          <em role="cell">${formatEventNumber(percent)}%</em>
+        </div>
+      `;
+    }).join("")
+    : '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">No usable values were sent for this property.</span></div>';
+  if (viewAllPropertyValuesButton) {
+    const canExpand = valuesTruncated || totalValues > values.length;
+    const canCollapse = eventPropertyValuesExpanded && values.length > EVENT_PROPERTY_VALUE_LIMIT;
+    viewAllPropertyValuesButton.hidden = !canExpand && !canCollapse;
+    viewAllPropertyValuesButton.innerHTML = eventPropertyValuesExpanded
+      ? 'Show fewer values <span aria-hidden="true">↑</span>'
+      : `${!valuesTruncated && totalValues <= EVENT_PROPERTY_VALUE_EXPANDED_LIMIT ? `View all ${formatCompactNumber(totalValues)} values` : `View top ${formatCompactNumber(EVENT_PROPERTY_VALUE_EXPANDED_LIMIT)}${valuesTruncated ? " tracked" : ""} values`} <span aria-hidden="true">→</span>`;
+  }
 }
 
 function renderRecentCustomEvents(events, properties = []) {
@@ -2625,8 +2748,12 @@ function renderRecentCustomEvents(events, properties = []) {
 
 function formatEventPropertyName(value) {
   return String(value || "Property")
-    .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .split(".")
+    .map((segment) => segment
+      .replace(/\[\]/g, " items")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase()))
+    .join(" › ");
 }
 
 function formatEventPropertyValue(value) {
@@ -3182,42 +3309,50 @@ async function loadChatLogs(options = {}) {
   if (!selectedUniverseId) {
     chatLogRequestState = null;
     chatLogsStatus.textContent = "Connect or select a Roblox game to view chat logs.";
-    chatLogList.innerHTML = "";
+    renderChatSummary();
+    setChatLiveState("waiting");
+    renderRecentChatEmpty("Select a universe to view recent chat.");
     if (includeInsights) loadChatInsights();
     return;
   }
 
-  if (chatLogRequestState?.universeId === universeId) {
+  const requestKey = buildChatLogsQuery(universeId);
+  if (chatLogRequestState?.requestKey === requestKey) {
     if (includeInsights) chatLogRequestState.includeInsights = true;
     return chatLogRequestState.promise;
   }
 
   const requestSequence = ++chatLogRequestSequence;
-  const requestState = { universeId, requestSequence, includeInsights, promise: null };
+  const requestState = { universeId, requestKey, requestSequence, includeInsights, promise: null };
+  if (includeInsights) setChatLiveState("loading");
   const promise = (async () => {
     try {
-      const query = `?universeId=${encodeURIComponent(universeId)}`;
-      const data = await request(`/api/chat-logs${query}`);
+      const data = await request(`/api/chat-logs${requestKey}`);
       if (requestSequence !== chatLogRequestSequence || universeId !== selectedUniverseId) return;
       if (requestState.includeInsights) loadChatInsights();
+      renderChatSummary(data);
+      setChatLiveState("live");
       if (!data.logs.length) {
         chatLogsStatus.textContent = selectedUniverseId
           ? "No chat logs yet. Start a live server with chat tracking enabled, then have a player send a message."
           : "Connect or select a Roblox game to view chat logs.";
-        chatLogList.innerHTML = "";
+        renderRecentChatEmpty("New Roblox chat will appear here automatically.");
         return;
       }
 
-      chatLogsStatus.textContent = selectedUniverseId
-        ? `Showing stored chat logs for universe ${selectedUniverseId}.`
-        : "Select a universe with data to view chat logs.";
+      chatLogsStatus.textContent = `Showing ${data.logs.length} recent message${data.logs.length === 1 ? "" : "s"} from ${data.logCount || data.logs.length} in the selected range.`;
       chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
       highlightSelectedChatLog({ scroll: false });
     } catch (error) {
       if (requestSequence !== chatLogRequestSequence || universeId !== selectedUniverseId) return;
       handleAuthError(error);
+      if (!authenticated) return;
       chatLogsStatus.textContent = formatRequestError(error);
+      setChatLiveState("unavailable");
       if (requestState.includeInsights) loadChatInsights();
+      if (!chatLogList.querySelector("[data-chat-log-id]")) {
+        renderRecentChatEmpty("Recent chat could not be loaded. Try again shortly.");
+      }
     } finally {
       if (chatLogRequestState === requestState) chatLogRequestState = null;
     }
@@ -3225,6 +3360,18 @@ async function loadChatLogs(options = {}) {
   requestState.promise = promise;
   chatLogRequestState = requestState;
   return promise;
+}
+
+function buildChatLogsQuery(universeId) {
+  const params = new URLSearchParams({
+    universeId: String(universeId || ""),
+    limit: String(RECENT_CHAT_LIMIT),
+  });
+  const from = getDateTimeMs(movementFromFilter?.value);
+  const to = getDateTimeMs(movementToFilter?.value);
+  if (from) params.set("from", String(from));
+  if (to) params.set("to", String(to));
+  return `?${params.toString()}`;
 }
 
 async function loadChatInsights() {
@@ -3235,24 +3382,22 @@ async function loadChatInsights() {
 
   if (!selectedUniverseId) {
     chatInsightsStatus.textContent = "Connect or select a Roblox game before running AI Insights.";
-    commonQuestionList.innerHTML = "";
+    renderCommonQuestionPlaceholders("Select a universe to view player questions.");
     renderAiReportHistory([]);
     return;
   }
 
   try {
-    const query = `?universeId=${encodeURIComponent(universeId)}`;
+    const query = buildAiInsightsQuery();
     const data = await request(`/api/chat-insights${query}`);
     if (requestSequence !== chatInsightsRequestSequence || universeId !== selectedUniverseId) return;
     renderChatInsights(data);
-    loadAiReportHistory();
   } catch (error) {
     if (requestSequence !== chatInsightsRequestSequence || universeId !== selectedUniverseId) return;
     handleAuthError(error);
     if (!authenticated) return;
     chatInsightsStatus.textContent = formatRequestError(error);
-    commonQuestionList.innerHTML = "";
-    renderAiReportHistory([]);
+    renderCommonQuestionPlaceholders("Player questions could not be loaded.");
   }
 }
 
@@ -3456,14 +3601,14 @@ function renderAiReport(report) {
     renderChatInsights(report.chatInsights);
   } else {
     chatInsightsMode.textContent = report.mode === "partial" ? "Partial AI" : "Not analyzed";
-    commonQuestionList.innerHTML = "";
+    renderCommonQuestionPlaceholders();
   }
 
   if (!hasChatQuestions && areaCount) {
     const generatedText = report.generatedAt ? ` Last run: ${formatDateTime(report.generatedAt)}.` : "";
     chatInsightsMode.textContent = report.mode === "partial" ? "Partial AI" : "AI analysis";
     chatInsightsStatus.textContent = `AI analyzed ${areaCount} map area${areaCount === 1 ? "" : "s"} from tracked movement, death, leave, and chat samples.${generatedText}`;
-    commonQuestionList.innerHTML = "";
+    renderCommonQuestionPlaceholders();
   }
 
   if (report.areaAnalysis) {
@@ -3897,36 +4042,84 @@ function formatDateFilterDisplay(value, fallback) {
 }
 
 function renderChatInsights(data) {
-  chatInsightsMode.textContent = data.mode === "ai" ? "AI analysis" : "Not analyzed";
+  const questions = Array.isArray(data?.questions) ? data.questions : [];
+  chatInsightsMode.textContent = data?.mode === "ai" ? "AI analysis" : "Not analyzed";
 
-  if (!data.questions.length) {
+  if (!questions.length) {
     updateAiReadinessStatus();
-    commonQuestionList.innerHTML = "";
+    renderCommonQuestionPlaceholders();
     return;
   }
 
   updateAiReadinessStatus();
-  commonQuestionList.innerHTML = data.questions.map(renderCommonQuestion).join("");
+  commonQuestionList.innerHTML = questions.map(renderCommonQuestion).join("");
+}
+
+function renderChatSummary(data = {}) {
+  const logs = Array.isArray(data.logs) ? data.logs : [];
+  const messages = Math.max(Number(data.logCount) || 0, 0);
+  const fallbackPlayers = new Set(logs.map((log) => String(log.userId || "")).filter(Boolean)).size;
+  const players = Math.max(Number(data.uniquePlayerCount) || fallbackPlayers, 0);
+  if (chatMessageCount) chatMessageCount.textContent = formatCompactNumber(messages);
+  if (chatPlayerCount) chatPlayerCount.textContent = formatCompactNumber(players);
+}
+
+function setChatLiveState(state = "waiting") {
+  if (!chatLiveBadge) return;
+  const labels = {
+    live: "Live",
+    loading: "Loading",
+    unavailable: "Unavailable",
+    waiting: "Waiting",
+  };
+  const cleanState = Object.hasOwn(labels, state) ? state : "waiting";
+  chatLiveBadge.dataset.state = cleanState;
+  const label = chatLiveBadge.querySelector("b");
+  if (label) label.textContent = labels[cleanState];
+}
+
+function renderCommonQuestionPlaceholders(message = "Player questions will appear here after an AI analysis.") {
+  if (!commonQuestionList) return;
+  const placeholders = [1, 2, 3, 4, 5].map((rank) => `
+    <div class="chatQuestionPlaceholder" aria-hidden="true">
+      <span>${rank}</span><i></i><i></i><i></i>
+    </div>
+  `).join("");
+  commonQuestionList.innerHTML = `
+    <div class="chatQuestionEmpty" role="status">
+      <strong>No analyzed questions yet</strong>
+      <span>${escapeHtml(message)}</span>
+    </div>
+    ${placeholders}
+  `;
+}
+
+function renderRecentChatEmpty(message) {
+  if (!chatLogList) return;
+  chatLogList.innerHTML = `
+    <div class="chatRecentEmpty" role="status">
+      <span class="chatRecentEmptyIcon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5.5 5.5h13a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3v-3h-1A2.5 2.5 0 0 1 3 15V8a2.5 2.5 0 0 1 2.5-2.5Z" /></svg>
+      </span>
+      <strong>No chat messages yet</strong>
+      <span>${escapeHtml(message || "New Roblox chat will appear here automatically.")}</span>
+    </div>
+  `;
 }
 
 function renderChatLog(log) {
-  const displayName = log.displayName && log.displayName !== log.username
-    ? ` <span>${escapeHtml(log.displayName)}</span>`
-    : "";
-  const locationText = formatChatLocation(log);
-  const locationMeta = locationText ? ` | ${locationText}` : "";
   const isSelected = selectedChatLogId && log.id === selectedChatLogId ? " selected" : "";
+  const username = String(log.username || log.displayName || "Player");
+  const initial = username.trim().charAt(0).toUpperCase() || "P";
 
   return `
-    <article class="chatLogItem${isSelected}" data-chat-log-id="${escapeHtml(log.id)}" tabindex="0">
-      <div class="chatLogHeader">
-        <div>
-          <strong>${escapeHtml(log.username)}</strong>${displayName}
-          <small>${escapeHtml(formatDateTime(log.sentAt))} | ${escapeHtml(shortJobId(log.jobId))}${escapeHtml(locationMeta)}</small>
-        </div>
-        <code>${escapeHtml(log.userId)}</code>
+    <article class="chatLogItem${isSelected}" data-chat-log-id="${escapeHtml(log.id)}" role="button" tabindex="0" aria-pressed="${isSelected ? "true" : "false"}" aria-label="Show ${escapeHtml(username)}'s chat message on the map">
+      <div class="chatLogPlayer">
+        <span class="chatPlayerAvatar" aria-hidden="true">${escapeHtml(initial)}</span>
+        <strong>${escapeHtml(username)}</strong>
       </div>
-      <p>${escapeHtml(log.message)}</p>
+      <p class="chatLogMessage">${escapeHtml(log.message)}</p>
+      <time datetime="${escapeHtml(new Date(Number(log.sentAt) || Date.now()).toISOString())}">${escapeHtml(formatDateTime(log.sentAt))}</time>
     </article>
   `;
 }
@@ -3946,6 +4139,7 @@ function highlightSelectedChatLog(options = {}) {
   for (const item of chatLogList.querySelectorAll("[data-chat-log-id]")) {
     const selected = selectedChatLogId && item.dataset.chatLogId === selectedChatLogId;
     item.classList.toggle("selected", Boolean(selected));
+    item.setAttribute("aria-pressed", selected ? "true" : "false");
 
     if (selected && options.scroll) {
       item.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -3954,26 +4148,21 @@ function highlightSelectedChatLog(options = {}) {
 }
 
 function renderCommonQuestion(question, index) {
-  const examples = Array.isArray(question.examples) && question.examples.length
-    ? question.examples.map((example) => `
-      <li>
-        <span>${escapeHtml(example.message)}</span>
-        <small>${escapeHtml(example.username || "Player")}</small>
-      </li>
-    `).join("")
-    : `<li><span>No examples stored.</span></li>`;
+  const sample = Array.isArray(question.examples) && question.examples.length
+    ? String(question.examples[0]?.message || "")
+    : "";
+  const mentions = Math.max(Number(question.mentions) || 0, 0);
+  const players = Math.max(Number(question.playerCount) || 0, 0);
 
   return `
-    <article class="commonQuestionItem">
-      <div class="questionRank">${escapeHtml(String(index + 1))}</div>
+    <article class="commonQuestionItem chatQuestionRow">
+      <span class="questionRank">${escapeHtml(String(index + 1))}</span>
       <div class="questionBody">
-        <div class="questionHeader">
-          <strong>${escapeHtml(question.title)}</strong>
-          <span>${escapeHtml(String(question.mentions || 0))} mention${question.mentions === 1 ? "" : "s"}</span>
-        </div>
-        <p>${escapeHtml(String(question.playerCount || 0))} player${question.playerCount === 1 ? "" : "s"} asked similar question-like messages.</p>
-        <ul class="questionExamples">${examples}</ul>
+        <strong>${escapeHtml(question.title || "Player question")}</strong>
+        ${sample ? `<small>Example: “${escapeHtml(sample)}”</small>` : ""}
       </div>
+      <strong class="chatQuestionCount" data-label="Messages"><span class="srOnly">Messages: </span>${escapeHtml(formatCompactNumber(mentions))}</strong>
+      <strong class="chatQuestionCount" data-label="Players"><span class="srOnly">Players: </span>${escapeHtml(formatCompactNumber(players))}</strong>
     </article>
   `;
 }
@@ -4071,24 +4260,6 @@ function formatShortDate(timestamp) {
     month: "short",
     day: "numeric",
   });
-}
-
-function formatChatLocation(log) {
-  const x = Number(log.x);
-  const y = Number(log.y);
-  const z = Number(log.z);
-
-  if (![x, y, z].every(Number.isFinite)) return "";
-  return `Loc ${formatCoordinate(x)}, ${formatCoordinate(y)}, ${formatCoordinate(z)}`;
-}
-
-function formatCoordinate(value) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function shortJobId(jobId) {
-  const value = String(jobId || "");
-  return value.length > 12 ? `Server ${value.slice(0, 8)}` : `Server ${value}`;
 }
 
 function showAuthError() {

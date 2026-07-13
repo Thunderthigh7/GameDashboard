@@ -53,6 +53,11 @@ const MAX_LEAVE_SAMPLES_RESPONSE = 5000;
 const MAX_CUSTOM_EVENTS_PER_PAYLOAD = 200;
 const MAX_CUSTOM_EVENTS_PER_UNIVERSE = 25_000;
 const MAX_CUSTOM_EVENT_PROPERTIES = 20;
+const MAX_CUSTOM_EVENT_PROPERTY_PATH_LENGTH = 96;
+const MAX_CUSTOM_EVENT_PROPERTY_DEPTH = 3;
+const MAX_CUSTOM_EVENT_ARRAY_ITEMS = 10;
+const MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS = 40;
+const MAX_CUSTOM_EVENT_PROPERTY_VALUES_TRACKED = 1000;
 const MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE = 200;
 const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
@@ -2375,6 +2380,7 @@ function normalizeCustomEvents(value, context) {
     const y = cleanFiniteNumber(entry?.y);
     const z = cleanFiniteNumber(entry?.z);
     const numericValue = typeof entry?.value === "number" ? cleanFiniteNumber(entry.value) : NaN;
+    const normalizedProperties = normalizeCustomEventProperties(entry?.properties);
 
     return {
       id: cleanString(entry?.id, 180),
@@ -2387,7 +2393,8 @@ function normalizeCustomEvents(value, context) {
       displayName: cleanString(entry?.displayName, 64),
       sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
       value: Number.isFinite(numericValue) ? numericValue : null,
-      properties: normalizeCustomEventProperties(entry?.properties),
+      properties: normalizedProperties.properties,
+      propertiesTruncated: Boolean(entry?.propertiesTruncated || normalizedProperties.truncated),
       x: Number.isFinite(x) ? x : null,
       y: Number.isFinite(y) ? y : null,
       z: Number.isFinite(z) ? z : null,
@@ -2403,22 +2410,94 @@ function normalizeCustomEventName(value) {
 }
 
 function normalizeCustomEventProperties(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { properties: {}, truncated: false };
 
-  const properties = {};
-  for (const [rawKey, rawValue] of Object.entries(value).slice(0, MAX_CUSTOM_EVENT_PROPERTIES)) {
-    const key = cleanString(rawKey, 48).trim();
-    if (!/^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(key)) continue;
+  const observationsByPath = new Map();
+  const visited = new Set();
+  let observationCount = 0;
+  let truncated = false;
 
-    if (typeof rawValue === "string") {
-      properties[key] = cleanString(rawValue, 240);
-    } else if (typeof rawValue === "boolean") {
-      properties[key] = rawValue;
-    } else if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
-      properties[key] = rawValue;
+  const addObservation = (path, rawValue) => {
+    const cleanPath = typeof path === "string" ? path.trim() : "";
+    if (!isValidCustomEventPropertyPath(cleanPath)) {
+      truncated = true;
+      return;
     }
-  }
-  return properties;
+    let normalizedValue;
+    if (typeof rawValue === "string") {
+      if (rawValue.length > 240) truncated = true;
+      normalizedValue = cleanString(rawValue, 240);
+    }
+    else if (typeof rawValue === "boolean") normalizedValue = rawValue;
+    else if (typeof rawValue === "number" && Number.isFinite(rawValue)) normalizedValue = rawValue;
+    else return;
+
+    if (observationCount >= MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS) {
+      truncated = true;
+      return;
+    }
+    let observations = observationsByPath.get(cleanPath);
+    if (!observations) {
+      if (observationsByPath.size >= MAX_CUSTOM_EVENT_PROPERTIES) {
+        truncated = true;
+        return;
+      }
+      observations = [];
+      observationsByPath.set(cleanPath, observations);
+    }
+    observations.push(normalizedValue);
+    observationCount += 1;
+  };
+
+  const visit = (entry, path, depth) => {
+    if (typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry))) {
+      addObservation(path, entry);
+      return;
+    }
+    if (!entry || typeof entry !== "object") return;
+    if (depth >= MAX_CUSTOM_EVENT_PROPERTY_DEPTH || visited.has(entry)) {
+      truncated = true;
+      return;
+    }
+    visited.add(entry);
+
+    if (Array.isArray(entry)) {
+      const arrayPath = path.includes("[]") ? path : `${path}[]`;
+      if (entry.length > MAX_CUSTOM_EVENT_ARRAY_ITEMS) truncated = true;
+      for (const item of entry.slice(0, MAX_CUSTOM_EVENT_ARRAY_ITEMS)) visit(item, arrayPath, depth + 1);
+      visited.delete(entry);
+      return;
+    }
+
+    const entries = Object.entries(entry).sort(([left], [right]) => left.localeCompare(right));
+    for (const [rawKey, child] of entries) {
+      const key = typeof rawKey === "string" ? rawKey.trim() : "";
+      if (!/^[A-Za-z][A-Za-z0-9_:-]{0,47}$/.test(key) && !isValidCustomEventPropertyPath(key)) {
+        truncated = true;
+        continue;
+      }
+      visit(child, path ? `${path}.${key}` : key, depth + 1);
+    }
+    visited.delete(entry);
+  };
+
+  visit(value, "", 0);
+  return {
+    properties: Object.fromEntries([...observationsByPath.entries()].map(([path, observations]) => [
+      path,
+      observations.length === 1 ? observations[0] : observations,
+    ])),
+    truncated,
+  };
+}
+
+function isValidCustomEventPropertyPath(value) {
+  const path = typeof value === "string" ? value : "";
+  const isCanonicalPath = /^[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?)*$/.test(path);
+  const isLegacyFlatKey = path.length <= 48 && /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(path);
+  return path.length > 0
+    && path.length <= MAX_CUSTOM_EVENT_PROPERTY_PATH_LENGTH
+    && (isCanonicalPath || isLegacyFlatKey);
 }
 
 function normalizeChatLogs(value, context) {
@@ -3720,9 +3799,24 @@ async function getChatLogsFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const rollup = await getObjectStorageRollup(filters.universeId);
-  if (rollup) return getChatLogsMergedWithLive(rollup, filters);
+  const payload = rollup
+    ? getChatLogsMergedWithLive(rollup, filters)
+    : getChatLogs(filters);
 
-  return getChatLogs(filters);
+  return limitChatLogsPayload(payload, searchParams.get("limit"));
+}
+
+function limitChatLogsPayload(payload, requestedLimit) {
+  const parsedLimit = cleanFiniteInteger(requestedLimit);
+  const limit = parsedLimit > 0
+    ? Math.min(parsedLimit, MAX_CHAT_LOGS_PER_UNIVERSE)
+    : MAX_CHAT_LOGS_PER_UNIVERSE;
+  const logs = Array.isArray(payload?.logs) ? payload.logs.slice(0, limit) : [];
+  return {
+    ...payload,
+    returnedCount: logs.length,
+    logs,
+  };
 }
 
 async function getAiAreaAnalysisFromQuery(searchParams) {
@@ -3875,6 +3969,8 @@ async function getCustomEventsFromQuery(searchParams) {
   const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedEventName = normalizeCustomEventName(searchParams.get("eventName"));
+  const requestedPropertyPath = String(searchParams.get("propertyName") || "").trim();
+  const selectedPropertyName = isValidCustomEventPropertyPath(requestedPropertyPath) ? requestedPropertyPath : "";
   const interval = normalizeCustomEventInterval(searchParams.get("interval"));
   const recentLimit = Math.min(cleanInteger(searchParams.get("recentLimit")) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
   const propertyValueLimit = Math.min(cleanInteger(searchParams.get("propertyValueLimit")) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
@@ -3931,6 +4027,7 @@ async function getCustomEventsFromQuery(searchParams) {
       interval,
       recentLimit,
       propertyValueLimit,
+      selectedPropertyName,
     }) : null,
   };
 }
@@ -4047,6 +4144,7 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
   const sessionIds = new Set();
   let numericValueCount = 0;
   let numericValueTotal = 0;
+  let truncatedPropertyEvents = 0;
   for (const event of events) {
     if (cleanInteger(event.userId) > 0) playerIds.add(cleanInteger(event.userId));
     if (event.sessionId) sessionIds.add(cleanString(event.sessionId, 180));
@@ -4054,6 +4152,7 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
       numericValueCount += 1;
       numericValueTotal += event.value;
     }
+    if (event.propertiesTruncated) truncatedPropertyEvents += 1;
   }
 
   const eventSeries = buildCustomEventSeries(events, filters);
@@ -4069,7 +4168,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     availableIntervals: eventSeries.availableIntervals,
     selectedInterval: eventSeries.selectedInterval,
     series: eventSeries.buckets,
-    properties: summarizeCustomEventProperties(events, propertyValueLimit),
+    properties: summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName),
+    truncatedPropertyEvents,
     recentEvents: events.slice(0, recentLimit),
     recentEventsTotal: events.length,
     recentEventsLimit: recentLimit,
@@ -4138,42 +4238,90 @@ function normalizeCustomEventInterval(value) {
   return CUSTOM_EVENT_INTERVALS_MS.has(interval) ? interval : "auto";
 }
 
-function summarizeCustomEventProperties(events, valueLimit = 4) {
+function summarizeCustomEventProperties(events, valueLimit = 4, selectedPropertyName = "") {
   const cleanValueLimit = Math.min(Math.max(cleanInteger(valueLimit), 1), MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   const summaries = new Map();
   for (const event of events) {
     for (const [key, value] of Object.entries(event.properties || {})) {
+      if (!isValidCustomEventPropertyPath(key)) continue;
+      const observations = (Array.isArray(value) ? value : [value])
+        .slice(0, MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS)
+        .filter((entry) => typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry)));
+      if (!observations.length) continue;
       let summary = summaries.get(key);
       if (!summary) {
-        summary = { name: key, count: 0, numericCount: 0, total: 0, min: Infinity, max: -Infinity, values: new Map() };
+        summary = {
+          name: key,
+          eventCount: 0,
+          observationCount: 0,
+          numericCount: 0,
+          total: 0,
+          min: Infinity,
+          max: -Infinity,
+          values: new Map(),
+          valueEventCounts: new Map(),
+          valuesTruncated: false,
+        };
         summaries.set(key, summary);
       }
-      summary.count += 1;
-      if (typeof value === "number" && Number.isFinite(value)) {
-        summary.numericCount += 1;
-        summary.total += value;
-        summary.min = Math.min(summary.min, value);
-        summary.max = Math.max(summary.max, value);
-      } else if (summary.values.size < 100 || summary.values.has(String(value))) {
-        const label = cleanString(String(value), 120);
-        summary.values.set(label, (summary.values.get(label) || 0) + 1);
+      summary.eventCount += 1;
+      summary.observationCount += observations.length;
+      const valueKeysInEvent = new Set();
+      for (const observation of observations) {
+        if (typeof observation === "number") {
+          summary.numericCount += 1;
+          summary.total += observation;
+          summary.min = Math.min(summary.min, observation);
+          summary.max = Math.max(summary.max, observation);
+        }
+        const valueType = typeof observation;
+        const displayValue = valueType === "string" ? cleanString(observation, 240) : observation;
+        const valueKey = `${valueType}:${String(displayValue)}`;
+        if (summary.values.has(valueKey) || summary.values.size < MAX_CUSTOM_EVENT_PROPERTY_VALUES_TRACKED) {
+          const trackedValue = summary.values.get(valueKey) || { value: displayValue, valueType, occurrences: 0 };
+          trackedValue.occurrences += 1;
+          summary.values.set(valueKey, trackedValue);
+          valueKeysInEvent.add(valueKey);
+        } else {
+          summary.valuesTruncated = true;
+        }
+      }
+      for (const valueKey of valueKeysInEvent) {
+        summary.valueEventCounts.set(valueKey, (summary.valueEventCounts.get(valueKey) || 0) + 1);
       }
     }
   }
 
-  return [...summaries.values()].map((summary) => ({
-    name: summary.name,
-    count: summary.count,
-    type: summary.numericCount === summary.count ? "number" : "category",
-    average: summary.numericCount ? summary.total / summary.numericCount : null,
-    min: summary.numericCount ? summary.min : null,
-    max: summary.numericCount ? summary.max : null,
-    totalValues: summary.values.size,
-    topValues: [...summary.values.entries()]
-      .map(([value, count]) => ({ value, count }))
-      .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value))
-      .slice(0, cleanValueLimit),
-  })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  return [...summaries.values()].map((summary) => {
+    const responseValueLimit = summary.name === selectedPropertyName ? cleanValueLimit : Math.min(cleanValueLimit, 4);
+    const type = summary.numericCount === summary.observationCount
+      ? "number"
+      : (summary.numericCount > 0 ? "mixed" : "category");
+    return {
+      name: summary.name,
+      count: summary.eventCount,
+      eventCount: summary.eventCount,
+      observationCount: summary.observationCount,
+      coverage: events.length ? summary.eventCount / events.length : 0,
+      type,
+      average: summary.numericCount ? summary.total / summary.numericCount : null,
+      min: summary.numericCount ? summary.min : null,
+      max: summary.numericCount ? summary.max : null,
+      totalValues: summary.values.size,
+      valuesTruncated: summary.valuesTruncated,
+      topValues: [...summary.values.entries()]
+        .map(([valueKey, trackedValue]) => ({
+          value: trackedValue.value,
+          valueType: trackedValue.valueType,
+          count: summary.valueEventCounts.get(valueKey) || 0,
+          occurrences: trackedValue.occurrences,
+        }))
+        .sort((left, right) => right.count - left.count
+          || right.occurrences - left.occurrences
+          || String(left.value).localeCompare(String(right.value)))
+        .slice(0, responseValueLimit),
+    };
+  }).sort((left, right) => right.eventCount - left.eventCount || left.name.localeCompare(right.name));
 }
 
 async function getFunnelsFromQuery(ownerUserId, searchParams) {
@@ -5131,6 +5279,7 @@ function getChatLogs(filters = {}) {
   return {
     universeId: universeIdFilter || null,
     logCount: filteredLogs.length,
+    uniquePlayerCount: countUniqueChatPlayers(filteredLogs),
     maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
     filters: getMovementFilterSummary(filters),
     logs: filteredLogs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
@@ -5145,6 +5294,7 @@ function getChatLogsFromRollup(rollup, filters = {}) {
   return {
     universeId: universeIdFilter || null,
     logCount: filteredLogs.length,
+    uniquePlayerCount: countUniqueChatPlayers(filteredLogs),
     maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
     source: "b2-rollup",
     filters: getMovementFilterSummary(filters),
@@ -5159,11 +5309,18 @@ function getChatLogsMergedWithLive(rollup, filters = {}) {
   return {
     universeId: universeId || null,
     logCount: logs.length,
+    uniquePlayerCount: countUniqueChatPlayers(logs),
     maxLogsPerUniverse: MAX_CHAT_LOGS_PER_UNIVERSE,
     source: "b2-rollup+live",
     filters: getMovementFilterSummary(filters),
     logs: logs.slice(0, MAX_CHAT_LOGS_PER_UNIVERSE),
   };
+}
+
+function countUniqueChatPlayers(logs = []) {
+  return new Set((Array.isArray(logs) ? logs : [])
+    .map((log) => cleanInteger(log?.userId))
+    .filter((userId) => userId > 0)).size;
 }
 
 function getRollupSamplesForFilters(samples, filters = {}, options = {}) {

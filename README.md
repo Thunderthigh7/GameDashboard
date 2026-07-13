@@ -115,12 +115,15 @@ Game server scripts can use that same API to send custom events:
 local Logger = require(game.ServerScriptService.Server.Services.Game.PresenceService.API)
 
 Logger.Log("weapon_equipped", {
-	weapon = "Iron Sword",
-	rarity = "Common",
+	weapon = {
+		name = "Iron Sword",
+		rarity = "Common",
+		stats = { damage = 51 },
+	},
 }, player)
 ```
 
-The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The logger adds player session, server time, universe, place, and character position. See `roblox-presence/README.md` for naming, property, and server-only requirements.
+The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. The logger adds player session, server time, universe, place, and character position. See `roblox-presence/README.md` for naming, property limits, and server-only requirements.
 
 ## Website Funnels
 

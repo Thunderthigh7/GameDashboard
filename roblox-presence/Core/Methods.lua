@@ -306,30 +306,139 @@ end
 
 local function normalizeEventProperties(value)
 	if typeof(value) ~= "table" then
-		return {}
+		return {}, false
 	end
 
-	local properties = {}
-	local count = 0
-	for rawKey, rawValue in value do
-		if count >= (Settings.MaxCustomEventProperties or 20) then
-			break
+	local maxProperties = Settings.MaxCustomEventProperties or 20
+	local maxPathLength = Settings.MaxCustomEventPropertyPathLength or 96
+	local maxDepth = Settings.MaxCustomEventPropertyDepth or 3
+	local maxArrayItems = Settings.MaxCustomEventArrayItems or 10
+	local maxObservations = Settings.MaxCustomEventPropertyObservations or 40
+	local maxStringLength = Settings.MaxCustomEventStringLength or 240
+	local observationsByPath = {}
+	local propertyCount = 0
+	local observationCount = 0
+	local visiting = {}
+	local truncated = false
+
+	local function isValidPath(path)
+		return #path >= 1
+			and #path <= maxPathLength
+			and string.match(path, "^[%a][%w_%.:%-%[%]]*$") ~= nil
+	end
+
+	local function addObservation(path, rawValue)
+		if not isValidPath(path) then
+			truncated = true
+			return
+		end
+		local valueType = typeof(rawValue)
+		local normalizedValue = rawValue
+		if valueType == "number" then
+			if rawValue ~= rawValue or rawValue == math.huge or rawValue == -math.huge then
+				truncated = true
+				return
+			end
+		elseif valueType == "string" then
+			if #rawValue > maxStringLength then
+				truncated = true
+			end
+			normalizedValue = string.sub(rawValue, 1, maxStringLength)
+		elseif valueType ~= "boolean" then
+			truncated = true
+			return
 		end
 
-		local key = tostring(rawKey)
-		local valueType = typeof(rawValue)
-		local isFiniteNumber = valueType ~= "number" or (rawValue == rawValue and rawValue > -math.huge and rawValue < math.huge)
-		if #key >= 1 and #key <= 48 and string.match(key, "^[%a][%w_%.:%-]*$")
-			and isFiniteNumber and (valueType == "string" or valueType == "number" or valueType == "boolean") then
-			if valueType == "string" and #rawValue > (Settings.MaxCustomEventStringLength or 240) then
-				properties[key] = string.sub(rawValue, 1, Settings.MaxCustomEventStringLength or 240)
-			else
-				properties[key] = rawValue
+		if observationCount >= maxObservations then
+			truncated = true
+			return
+		end
+		local observations = observationsByPath[path]
+		if not observations then
+			if propertyCount >= maxProperties then
+				truncated = true
+				return
+			end
+			observations = {}
+			observationsByPath[path] = observations
+			propertyCount += 1
+		end
+		table.insert(observations, normalizedValue)
+		observationCount += 1
+	end
+
+	local function getArrayLength(entry)
+		local count = 0
+		local maximum = 0
+		for key in entry do
+			if typeof(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+				return nil
 			end
 			count += 1
+			maximum = math.max(maximum, key)
+		end
+		if count == 0 then
+			return nil
+		end
+		return count == maximum and maximum or nil
+	end
+
+	local visit
+	visit = function(entry, path, depth)
+		local valueType = typeof(entry)
+		if valueType == "string" or valueType == "number" or valueType == "boolean" then
+			addObservation(path, entry)
+			return
+		end
+		if valueType ~= "table" then
+			truncated = true
+			return
+		end
+		if depth >= maxDepth or visiting[entry] then
+			truncated = true
+			return
+		end
+		visiting[entry] = true
+
+		local arrayLength = getArrayLength(entry)
+		if arrayLength then
+			local arrayPath = string.find(path, "%[%]") and path or (path .. "[]")
+			if arrayLength > maxArrayItems then
+				truncated = true
+			end
+			for index = 1, math.min(arrayLength, maxArrayItems) do
+				visit(entry[index], arrayPath, depth + 1)
+			end
+			visiting[entry] = nil
+			return
+		end
+
+		local keys = {}
+		for rawKey in entry do
+			if typeof(rawKey) == "string" then
+				table.insert(keys, rawKey)
+			else
+				truncated = true
+			end
+		end
+		table.sort(keys)
+		for _, key in keys do
+			local childPath = path == "" and key or (path .. "." .. key)
+			visit(entry[key], childPath, depth + 1)
+		end
+		visiting[entry] = nil
+	end
+
+	visit(value, "", 0)
+	local properties = {}
+	for path, observations in observationsByPath do
+		if #observations == 1 then
+			properties[path] = observations[1]
+		else
+			properties[path] = observations
 		end
 	end
-	return properties
+	return properties, truncated
 end
 
 function Methods.Log(eventName, info, player)
@@ -355,6 +464,7 @@ function Methods.Log(eventName, info, player)
 
 	customEventCounter += 1
 	local occurredAt = os.time()
+	local properties, propertiesTruncated = normalizeEventProperties(info)
 	local event = {
 		id = game.JobId .. ":event:" .. tostring(customEventCounter),
 		eventName = normalizedName,
@@ -363,7 +473,8 @@ function Methods.Log(eventName, info, player)
 		displayName = player and player.DisplayName or nil,
 		sessionId = player and (game.JobId .. ":" .. tostring(player.UserId) .. ":" .. tostring(playerJoinTimes[player.UserId] or occurredAt)) or game.JobId,
 		occurredAt = occurredAt,
-		properties = normalizeEventProperties(info),
+		properties = properties,
+		propertiesTruncated = propertiesTruncated or nil,
 	}
 	if typeof(info) == "table" and typeof(info.value) == "number" and info.value == info.value and info.value > -math.huge and info.value < math.huge then
 		event.value = info.value
@@ -377,6 +488,9 @@ function Methods.Log(eventName, info, player)
 	table.insert(pendingCustomEvents, event)
 	while #pendingCustomEvents > getMaxPendingCustomEvents() do
 		table.remove(pendingCustomEvents, 1)
+	end
+	if propertiesTruncated then
+		debugWarn("Custom event properties reached a safety limit:", normalizedName)
 	end
 	debugWarn("Queued custom event:", normalizedName, player and player.Name or "server")
 	return true

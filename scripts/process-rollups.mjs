@@ -352,6 +352,7 @@ function addCustomEvent(rollup, event) {
     sessionId: cleanString(event.sessionId, 180),
     value: typeof event.value === "number" ? cleanFiniteNumberOrNull(event.value) : null,
     properties: cleanCustomEventProperties(event.properties),
+    propertiesTruncated: Boolean(event.propertiesTruncated),
     x: cleanFiniteNumberOrNull(event.x),
     y: cleanFiniteNumberOrNull(event.y),
     z: cleanFiniteNumberOrNull(event.z),
@@ -363,10 +364,21 @@ function addCustomEvent(rollup, event) {
 
 function cleanCustomEventProperties(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(Object.entries(value).slice(0, 20).filter(([key, entry]) => (
-    /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(key)
-    && ((typeof entry === "string" && entry.length <= 240) || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry)))
-  )));
+  const properties = {};
+  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+  for (const [key, entry] of entries) {
+    if (Object.keys(properties).length >= 20) break;
+    const isCanonicalPath = /^[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?)*$/.test(key);
+    const isLegacyFlatKey = key.length <= 48 && /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(key);
+    if (key.length > 96 || (!isCanonicalPath && !isLegacyFlatKey)) continue;
+    const observations = (Array.isArray(entry) ? entry : [entry])
+      .slice(0, 40)
+      .filter((item) => typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item)))
+      .map((item) => typeof item === "string" ? item.slice(0, 240) : item);
+    if (!observations.length) continue;
+    properties[key] = observations.length === 1 ? observations[0] : observations;
+  }
+  return properties;
 }
 
 function compareCustomEvents(left, right) {
