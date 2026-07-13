@@ -73,20 +73,25 @@ const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const refreshEventsButton = document.querySelector("#refreshEventsButton");
 const eventsStatus = document.querySelector("#eventsStatus");
-const eventCatalog = document.querySelector("#eventCatalog");
+const eventSelect = document.querySelector("#eventSelect");
+const eventReceivingState = document.querySelector("#eventReceivingState");
 const eventTotalCount = document.querySelector("#eventTotalCount");
 const eventUniquePlayers = document.querySelector("#eventUniquePlayers");
 const eventUniqueSessions = document.querySelector("#eventUniqueSessions");
-const eventNameCount = document.querySelector("#eventNameCount");
+const eventEventsPerPlayer = document.querySelector("#eventEventsPerPlayer");
+const eventHealthCard = document.querySelector("#eventHealthCard");
+const eventDataHealthStatus = document.querySelector("#eventDataHealthStatus");
+const eventDataHealthDetail = document.querySelector("#eventDataHealthDetail");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
-const eventMoreButton = document.querySelector("#eventMoreButton");
-const eventMorePopover = document.querySelector("#eventMorePopover");
-const deleteSelectedEventButton = document.querySelector("#deleteSelectedEventButton");
+const eventPropertySubtitle = document.querySelector("#eventPropertySubtitle");
 const eventPropertyList = document.querySelector("#eventPropertyList");
+const viewAllPropertyValuesButton = document.querySelector("#viewAllPropertyValuesButton");
+const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
+const viewAllRecentEventsButton = document.querySelector("#viewAllRecentEventsButton");
 const newFunnelButton = document.querySelector("#newFunnelButton");
 const funnelTimelineButton = document.querySelector("#funnelTimelineButton");
 const refreshFunnelsButton = document.querySelector("#refreshFunnelsButton");
@@ -176,6 +181,8 @@ let reconciliationRequestSequence = 0;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
+let eventPropertyValuesExpanded = false;
+let recentEventsExpanded = false;
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
 let currentFunnels = [];
@@ -185,7 +192,11 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260712-9";
+const DASHBOARD_ASSET_VERSION = "20260712-11";
+const EVENT_PROPERTY_VALUE_LIMIT = 4;
+const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
+const RECENT_EVENT_LIMIT = 7;
+const RECENT_EVENT_EXPANDED_LIMIT = 100;
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
@@ -305,24 +316,24 @@ function bindEvents() {
   window.addEventListener("scroll", positionUniverseDropdown, true);
   refreshChatLogsButton.addEventListener("click", () => loadChatLogs({ includeInsights: true }));
   refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
-  eventCatalog?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-event-name]");
-    if (!button) return;
-    selectedCustomEventName = button.dataset.eventName || "";
+  eventSelect?.addEventListener("change", () => {
+    selectedCustomEventName = eventSelect.value || "";
+    eventPropertyValuesExpanded = false;
+    recentEventsExpanded = false;
     loadCustomEvents({ force: true });
   });
   eventIntervalSelect?.addEventListener("change", () => {
     selectedEventInterval = eventIntervalSelect.value || "auto";
     loadCustomEvents({ force: true });
   });
-  eventMoreButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleEventMoreMenu();
+  viewAllPropertyValuesButton?.addEventListener("click", () => {
+    eventPropertyValuesExpanded = !eventPropertyValuesExpanded;
+    loadCustomEvents({ force: true });
   });
-  eventMorePopover?.addEventListener("click", (event) => event.stopPropagation());
-  deleteSelectedEventButton?.addEventListener("click", deleteSelectedCustomEvent);
-  document.addEventListener("pointerdown", handleEventMoreOutsidePointer);
-  document.addEventListener("keydown", handleEventMoreEscape);
+  viewAllRecentEventsButton?.addEventListener("click", () => {
+    recentEventsExpanded = !recentEventsExpanded;
+    loadCustomEvents({ force: true });
+  });
   newFunnelButton?.addEventListener("click", startNewFunnel);
   funnelTimelineButton?.addEventListener("click", () => funnelResultsPanel?.scrollIntoView({ behavior: "smooth", block: "start" }));
   refreshFunnelsButton?.addEventListener("click", () => loadFunnels({ force: true }));
@@ -802,7 +813,6 @@ function getViewFromHash() {
 function setActiveView(view, options = {}) {
   const requestedView = view === "areas" || view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
-  if (activeView !== "events") closeEventMoreMenu();
   if (activeView !== "funnels") closeFunnelMoreMenu();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
@@ -2168,6 +2178,8 @@ function selectUniverse(value) {
   signalAreaRequestSequence += 1;
   selectedChatLogId = "";
   selectedCustomEventName = "";
+  eventPropertyValuesExpanded = false;
+  recentEventsExpanded = false;
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
@@ -2271,56 +2283,6 @@ function buildSignalAreaQuery() {
   return query ? `?${query}` : "";
 }
 
-function toggleEventMoreMenu(forceOpen) {
-  if (!eventMorePopover || !eventMoreButton || eventMoreButton.disabled) return;
-  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : eventMorePopover.hidden;
-  eventMorePopover.hidden = !shouldOpen;
-  eventMoreButton.setAttribute("aria-expanded", String(shouldOpen));
-  if (shouldOpen) deleteSelectedEventButton?.focus();
-}
-
-function closeEventMoreMenu(options = {}) {
-  if (!eventMorePopover || !eventMoreButton) return;
-  eventMorePopover.hidden = true;
-  eventMoreButton.setAttribute("aria-expanded", "false");
-  if (options.restoreFocus) eventMoreButton.focus();
-}
-
-function handleEventMoreOutsidePointer(event) {
-  if (eventMorePopover?.hidden) return;
-  if (eventMoreButton?.contains(event.target) || eventMorePopover?.contains(event.target)) return;
-  closeEventMoreMenu();
-}
-
-function handleEventMoreEscape(event) {
-  if (event.key !== "Escape" || eventMorePopover?.hidden) return;
-  closeEventMoreMenu({ restoreFocus: true });
-}
-
-async function deleteSelectedCustomEvent() {
-  const eventName = selectedCustomEventName;
-  const universeId = selectedUniverseId;
-  if (!eventName || !universeId) return;
-  if (!window.confirm(`Delete all stored records for ${eventName}? New records logged later will still appear.`)) return;
-
-  closeEventMoreMenu();
-  if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = true;
-  if (eventMoreButton) eventMoreButton.disabled = true;
-  eventsStatus.textContent = `Deleting ${eventName}...`;
-  const params = new URLSearchParams({ universeId, eventName });
-  try {
-    await request(`/api/events?${params.toString()}`, { method: "DELETE" });
-    selectedCustomEventName = "";
-    await loadCustomEvents({ force: true });
-  } catch (error) {
-    handleAuthError(error);
-    if (authenticated) eventsStatus.textContent = formatRequestError(error);
-  } finally {
-    if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = !selectedCustomEventName;
-    if (eventMoreButton) eventMoreButton.disabled = !selectedCustomEventName;
-  }
-}
-
 async function loadCustomEvents(options = {}) {
   if (!authenticated || !eventsStatus) return;
   const requestSequence = ++customEventsRequestSequence;
@@ -2342,6 +2304,8 @@ async function loadCustomEvents(options = {}) {
   if (to) params.set("to", String(to));
   if (selectedCustomEventName) params.set("eventName", selectedCustomEventName);
   params.set("interval", selectedEventInterval);
+  params.set("propertyValueLimit", String(eventPropertyValuesExpanded ? EVENT_PROPERTY_VALUE_EXPANDED_LIMIT : EVENT_PROPERTY_VALUE_LIMIT));
+  params.set("recentLimit", String(recentEventsExpanded ? RECENT_EVENT_EXPANDED_LIMIT : RECENT_EVENT_LIMIT));
   if (options.force) params.set("fresh", "1");
 
   try {
@@ -2362,23 +2326,34 @@ async function loadCustomEvents(options = {}) {
 
 function renderCustomEvents(payload = {}) {
   const totals = payload.totals || {};
-  if (eventTotalCount) eventTotalCount.textContent = formatCompactNumber(totals.events);
-  if (eventUniquePlayers) eventUniquePlayers.textContent = formatCompactNumber(totals.uniquePlayers);
-  if (eventUniqueSessions) eventUniqueSessions.textContent = formatCompactNumber(totals.uniqueSessions);
-  if (eventNameCount) eventNameCount.textContent = formatCompactNumber(totals.eventNames);
-
   const catalog = Array.isArray(payload.events) ? payload.events : [];
   const selected = payload.selectedEvent || null;
+  const previousEventName = selectedCustomEventName;
   selectedCustomEventName = selected?.name || "";
-  if (eventCatalog) {
-    eventCatalog.innerHTML = catalog.length
-      ? catalog.map((item) => `
-        <button class="eventCatalogItem ${item.name === selectedCustomEventName ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}">
-          <span><strong>${escapeHtml(item.name)}</strong><small>${formatRelativeTime(item.lastSeenAt)}</small></span>
-          <em>${formatCompactNumber(item.count)}</em>
-        </button>
-      `).join("")
-      : '<p class="status">Logged event names will appear here automatically.</p>';
+  if (previousEventName && previousEventName !== selectedCustomEventName) {
+    eventPropertyValuesExpanded = false;
+    recentEventsExpanded = false;
+  }
+
+  const selectedCount = Number(selected?.count) || 0;
+  const selectedPlayers = Number(selected?.uniquePlayers) || 0;
+  if (eventTotalCount) eventTotalCount.textContent = formatCompactNumber(selectedCount);
+  if (eventUniquePlayers) eventUniquePlayers.textContent = formatCompactNumber(selectedPlayers);
+  if (eventUniqueSessions) eventUniqueSessions.textContent = formatCompactNumber(selected?.uniqueSessions);
+  if (eventEventsPerPlayer) eventEventsPerPlayer.textContent = selectedPlayers ? formatEventNumber(selectedCount / selectedPlayers) : "0";
+
+  if (eventSelect) {
+    eventSelect.disabled = !catalog.length;
+    eventSelect.innerHTML = catalog.length
+      ? catalog.map((item) => `<option value="${escapeHtml(item.name)}" ${item.name === selectedCustomEventName ? "selected" : ""}>${escapeHtml(item.name)} · ${formatCompactNumber(item.count)}</option>`).join("")
+      : '<option value="">No tracked events yet</option>';
+    if (selectedCustomEventName) eventSelect.value = selectedCustomEventName;
+  }
+
+  if (eventReceivingState) {
+    eventReceivingState.classList.toggle("isLive", Boolean(selectedCount));
+    const label = eventReceivingState.querySelector("strong");
+    if (label) label.textContent = selectedCount ? "Receiving data" : "Waiting for data";
   }
 
   if (selectedEventTitle) selectedEventTitle.textContent = selected?.name || "Select an event";
@@ -2387,14 +2362,36 @@ function renderCustomEvents(payload = {}) {
       ? `${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
       : "The event timeline will appear here.";
   }
-  const hasSelectedEvent = Boolean(selected?.name);
-  if (eventMoreButton) eventMoreButton.disabled = !hasSelectedEvent;
-  if (deleteSelectedEventButton) deleteSelectedEventButton.disabled = !hasSelectedEvent;
-  if (!hasSelectedEvent) closeEventMoreMenu();
+  renderEventDataHealth(selected, totals);
   updateEventIntervalControl(selected);
   renderCustomEventChart(selected?.series || [], selected?.bucketMs);
   renderCustomEventProperties(selected?.properties || []);
-  renderRecentCustomEvents(selected?.recentEvents || []);
+  renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
+
+  const recentTotal = Number(selected?.recentEventsTotal) || 0;
+  if (viewAllRecentEventsButton) {
+    viewAllRecentEventsButton.hidden = !recentEventsExpanded && recentTotal <= (selected?.recentEvents?.length || 0);
+    viewAllRecentEventsButton.innerHTML = recentEventsExpanded
+      ? 'Show fewer events <span aria-hidden="true">↑</span>'
+      : `View all events <span aria-hidden="true">→</span>`;
+  }
+}
+
+function renderEventDataHealth(selected, totals = {}) {
+  if (!eventDataHealthStatus || !eventDataHealthDetail) return;
+  const universe = knownUniverses.find((entry) => String(entry.id || "") === selectedUniverseId);
+  const failedIngests = Number(universe?.integrationStatus?.failedIngests24h) || 0;
+  const acceptedEvents = Number(selected?.count ?? totals.events) || 0;
+  const hasData = acceptedEvents > 0;
+  const needsReview = failedIngests > 0;
+  eventHealthCard?.classList.toggle("hasWarning", needsReview);
+  eventHealthCard?.classList.toggle("isHealthy", hasData && !needsReview);
+  eventDataHealthStatus.textContent = needsReview ? "Review" : (hasData ? "Healthy" : "Waiting");
+  eventDataHealthDetail.textContent = needsReview
+    ? `${formatCompactNumber(failedIngests)} failed ingest${failedIngests === 1 ? "" : "s"} in 24h`
+    : (hasData
+      ? `${formatCompactNumber(acceptedEvents)} accepted · no failed ingests in 24h`
+      : "No accepted events yet");
 }
 
 function renderCustomEventChart(series, selectedBucketMs) {
@@ -2407,39 +2404,63 @@ function renderCustomEventChart(series, selectedBucketMs) {
   const maxCount = Math.max(...series.map((bucket) => Number(bucket.count) || 0), 1);
   const axisMax = getEventChartAxisMax(maxCount);
   const tickCount = 4;
-  const ticks = Array.from({ length: tickCount + 1 }, (_, index) => axisMax - ((axisMax / tickCount) * index));
   const bucketMs = Number(selectedBucketMs) || getSeriesBucketMs(series);
   const bucketCount = series.length;
-  const bucketWidth = bucketCount > 120 ? 6 : bucketCount > 72 ? 10 : bucketCount > 36 ? 18 : 44;
-  const bucketGap = bucketCount > 120 ? 2 : bucketCount > 72 ? 3 : bucketCount > 36 ? 4 : 7;
-  const chartWidth = Math.max(680, (bucketCount * (bucketWidth + bucketGap)) + 16);
-  const labelStep = Math.max(1, Math.ceil(bucketCount / 24));
-  const bars = series.map((bucket, index) => {
+  const pointSpacing = bucketCount > 120 ? 18 : bucketCount > 72 ? 28 : bucketCount > 36 ? 40 : 78;
+  const chartWidth = Math.max(Math.floor(eventChart.clientWidth || 760), ((bucketCount - 1) * pointSpacing) + 96);
+  const chartHeight = 286;
+  const left = 62;
+  const right = 18;
+  const top = 18;
+  const bottom = 48;
+  const plotWidth = chartWidth - left - right;
+  const plotBottom = chartHeight - bottom;
+  const plotHeight = plotBottom - top;
+  const labelStep = Math.max(1, Math.ceil(bucketCount / 12));
+  const points = series.map((bucket, index) => {
     const count = Number(bucket.count) || 0;
-    const height = count > 0 ? Math.max((count / axisMax) * 100, 2.5) : 0;
-    const label = formatEventChartLabel(bucket.start, bucketMs);
-    const showLabel = index % labelStep === 0 || index === bucketCount - 1;
+    const x = bucketCount === 1 ? left + (plotWidth / 2) : left + ((index / (bucketCount - 1)) * plotWidth);
+    const y = top + (plotHeight - ((count / axisMax) * plotHeight));
+    return { bucket, count, x, y, label: formatEventChartLabel(bucket.start, bucketMs) };
+  });
+  const linePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  const areaPath = `${linePath} L${points.at(-1).x.toFixed(2)} ${plotBottom} L${points[0].x.toFixed(2)} ${plotBottom} Z`;
+  const grid = Array.from({ length: tickCount + 1 }, (_, index) => {
+    const value = axisMax - ((axisMax / tickCount) * index);
+    const y = top + ((plotHeight / tickCount) * index);
     return `
-      <div class="eventChartBucket" title="${escapeHtml(label)}: ${formatCompactNumber(count)} events, ${formatCompactNumber(bucket.uniquePlayers)} players">
-        <div class="eventChartBarArea" style="--event-bar-height: ${height.toFixed(2)}%">
-          <strong>${count > 0 ? formatCompactNumber(count) : ""}</strong>
-          <span class="eventChartBar" style="height: ${height.toFixed(2)}%"></span>
-        </div>
-        <small>${showLabel ? escapeHtml(label) : ""}</small>
-      </div>
+      <line x1="${left}" y1="${y}" x2="${chartWidth - right}" y2="${y}" />
+      <text x="${left - 11}" y="${y + 4}" text-anchor="end">${formatCompactNumber(value)}</text>
     `;
   }).join("");
+  const xLabels = points.map((point, index) => (
+    index % labelStep === 0 || index === points.length - 1
+      ? `<text class="eventChartXLabel" x="${point.x}" y="${chartHeight - 17}" text-anchor="middle">${escapeHtml(point.label)}</text>`
+      : ""
+  )).join("");
+  const dots = points.map((point) => `
+    <g class="eventChartPoint">
+      <circle cx="${point.x}" cy="${point.y}" r="4.5"><title>${escapeHtml(point.label)}: ${formatCompactNumber(point.count)} events, ${formatCompactNumber(point.bucket.uniquePlayers)} players</title></circle>
+      <text x="${point.x}" y="${Math.max(point.y - 11, 12)}" text-anchor="middle">${point.count ? formatCompactNumber(point.count) : ""}</text>
+    </g>
+  `).join("");
 
   eventChart.innerHTML = `
-    <div class="eventChartFrame" style="--event-chart-width: ${chartWidth}px; --event-bucket-width: ${bucketWidth}px; --event-bucket-gap: ${bucketGap}px">
-      <div class="eventYAxis">
-        <span class="eventYAxisTitle">Events</span>
-        <div class="eventYAxisTicks">${ticks.map((tick) => `<span>${formatCompactNumber(tick)}</span>`).join("")}</div>
-      </div>
-      <div class="eventChartPlot">
-        <div class="eventChartGrid" aria-hidden="true">${ticks.map(() => "<span></span>").join("")}</div>
-        <div class="eventChartBars">${bars}</div>
-      </div>
+    <div class="eventChartScroller">
+      <svg class="eventChartSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Events over time">
+        <defs>
+          <linearGradient id="eventChartAreaGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.48" />
+            <stop offset="100%" stop-color="#5b21b6" stop-opacity="0.04" />
+          </linearGradient>
+        </defs>
+        <g class="eventChartSvgGrid">${grid}</g>
+        <text class="eventChartSvgYAxisTitle" x="16" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 16 ${top + (plotHeight / 2)})">Events</text>
+        <path class="eventChartArea" d="${areaPath}" />
+        <path class="eventChartLine" d="${linePath}" />
+        ${dots}
+        ${xLabels}
+      </svg>
     </div>
     <div class="eventChartLegend"><i aria-hidden="true"></i><span>Events</span></div>
   `;
@@ -2500,54 +2521,120 @@ function formatEventInterval(value) {
 
 function renderCustomEventProperties(properties) {
   if (!eventPropertyList) return;
-  eventPropertyList.innerHTML = properties.length
-    ? properties.map((property) => {
-      const topEntry = property.topValues?.[0];
-      const topValue = property.type === "number"
-        ? '<span class="eventPropertyTextValue">Average</span>'
-        : (topEntry
-          ? `<span class="eventPropertyPill">${escapeHtml(topEntry.value)} (${formatCompactNumber(topEntry.count)})</span>`
-          : '<span class="eventPropertyTextValue">No values</span>');
-      const average = property.type === "number" ? formatEventNumber(property.average) : "--";
+  const cleanProperties = Array.isArray(properties) ? properties : [];
+  const categorical = cleanProperties.find((property) => property.type !== "number" && property.topValues?.length);
+  const numeric = cleanProperties.filter((property) => property.type === "number");
+  if (!categorical && !numeric.length) {
+    eventPropertyList.innerHTML = '<p class="status">No properties were sent with this event.</p>';
+    if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Values sent with the selected event.";
+    if (viewAllPropertyValuesButton) viewAllPropertyValuesButton.hidden = true;
+    return;
+  }
+
+  if (categorical) {
+    const values = categorical.topValues || [];
+    const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
+    const total = Number(categorical.count) || values.reduce((sum, entry) => sum + (Number(entry.count) || 0), 0);
+    if (eventPropertySubtitle) eventPropertySubtitle.textContent = `Most common ${formatEventPropertyName(categorical.name)} values.`;
+    eventPropertyList.innerHTML = values.map((entry, index) => {
+      const count = Number(entry.count) || 0;
+      const percent = total ? (count / total) * 100 : 0;
       return `
         <div class="eventPropertyItem">
-          <strong>${escapeHtml(property.name)}</strong>
-          <span>${topValue}</span>
-          <b>${escapeHtml(average)}</b>
+          <span class="eventPropertyRank">${index + 1}</span>
+          <div class="eventPropertyValue">
+            <strong>${escapeHtml(entry.value)}</strong>
+            <span><i style="width:${Math.max((count / maxCount) * 100, count ? 4 : 0).toFixed(2)}%"></i></span>
+          </div>
+          <b>${formatCompactNumber(count)}</b>
+          <em>${formatEventNumber(percent)}%</em>
         </div>
       `;
-    }).join("")
-    : '<p class="status">No properties were sent with this event.</p>';
+    }).join("");
+    const totalValues = Number(categorical.totalValues) || values.length;
+    if (viewAllPropertyValuesButton) {
+      viewAllPropertyValuesButton.hidden = !eventPropertyValuesExpanded && totalValues <= values.length;
+      viewAllPropertyValuesButton.innerHTML = eventPropertyValuesExpanded
+        ? 'Show fewer values <span aria-hidden="true">↑</span>'
+        : 'View all values <span aria-hidden="true">→</span>';
+    }
+    return;
+  }
+
+  if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Numeric summaries sent with this event.";
+  eventPropertyList.innerHTML = numeric.map((property, index) => `
+    <div class="eventPropertyItem eventNumericPropertyItem">
+      <span class="eventPropertyRank">${index + 1}</span>
+      <div class="eventPropertyValue"><strong>${escapeHtml(formatEventPropertyName(property.name))}</strong><small>Average ${formatEventNumber(property.average)} · ${formatEventNumber(property.min)}–${formatEventNumber(property.max)}</small></div>
+      <b>${formatCompactNumber(property.count)}</b>
+      <em>100%</em>
+    </div>
+  `).join("");
+  if (viewAllPropertyValuesButton) viewAllPropertyValuesButton.hidden = true;
 }
 
-function renderRecentCustomEvents(events) {
-  if (!recentEventList) return;
+function renderRecentCustomEvents(events, properties = []) {
+  if (!recentEventList || !recentEventTableHeader) return;
+  const hiddenPropertyNames = new Set(["platform", "server_version", "serverversion", "roblox_device_type", "robloxdevicetype"]);
+  const isVisibleProperty = (name) => !hiddenPropertyNames.has(String(name || "").toLowerCase().replace(/[^a-z0-9_]/g, ""));
+  const cleanProperties = (Array.isArray(properties) ? properties : []).filter((property) => isVisibleProperty(property.name));
+  const primaryCategory = cleanProperties.find((property) => property.type !== "number");
+  const primaryNumber = cleanProperties.find((property) => property.type === "number");
+  const recentPropertyNames = [...new Set([
+    primaryCategory?.name,
+    primaryNumber?.name,
+    ...cleanProperties.map((property) => property.name),
+  ].filter(Boolean))].slice(0, 2);
+  const recentGridTemplate = [
+    "minmax(140px,.85fr)",
+    "minmax(128px,.7fr)",
+    ...recentPropertyNames.map(() => "minmax(90px,.65fr)"),
+    "minmax(190px,1.25fr)",
+  ].join(" ");
+  const columnStyle = `grid-template-columns:${recentGridTemplate}`;
+  recentEventTableHeader.setAttribute("style", columnStyle);
+  recentEventTableHeader.innerHTML = [
+    "<span>Player</span>",
+    "<span>Time</span>",
+    ...recentPropertyNames.map((name) => `<span>${escapeHtml(formatEventPropertyName(name))}</span>`),
+    "<span>Payload</span>",
+  ].join("");
   recentEventList.innerHTML = events.length
     ? events.map((event) => {
       const player = event.username || (event.userId ? `Player ${event.userId}` : "Server event");
-      const properties = event.properties || {};
-      const propertyEntries = Object.entries(properties);
-      const featuredProperty = propertyEntries.find(([, value]) => typeof value === "string") || propertyEntries[0];
-      const eventLabel = featuredProperty
-        ? `${featuredProperty[0]}: ${featuredProperty[1]}`
-        : (selectedCustomEventName || event.eventName || "Event");
-      const payload = JSON.stringify(properties);
+      const eventProperties = event.properties || {};
+      const visibleProperties = Object.fromEntries(Object.entries(eventProperties).filter(([name]) => isVisibleProperty(name)));
+      const payload = JSON.stringify(visibleProperties);
       const payloadPreview = payload.length > 180 ? `${payload.slice(0, 177)}...` : payload;
       const occurredAt = Number(event.occurredAt || event.receivedAt || 0);
       const dateTime = Number.isFinite(occurredAt) && occurredAt > 0 ? new Date(occurredAt).toISOString() : "";
       return `
-        <div class="recentEventItem">
+        <div class="recentEventItem" style="${columnStyle}">
           <span class="recentEventPlayer">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3" /><path d="M5.5 20c.4-4.5 2.6-7 6.5-7s6.1 2.5 6.5 7" /></svg>
             <strong>${escapeHtml(player)}</strong>
           </span>
           <time datetime="${escapeHtml(dateTime)}">${escapeHtml(formatRecentEventTime(occurredAt))}</time>
-          <span class="recentEventName">${escapeHtml(eventLabel)}</span>
+          ${recentPropertyNames.map((name) => `<span class="recentEventProperty">${escapeHtml(formatEventPropertyValue(eventProperties[name]))}</span>`).join("")}
           <code>${escapeHtml(payloadPreview === "{}" ? "No properties" : payloadPreview)}</code>
         </div>
       `;
     }).join("")
     : '<p class="status">No recent records for this event.</p>';
+}
+
+function formatEventPropertyName(value) {
+  return String(value || "Property")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatEventPropertyValue(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  if (typeof value === "number") return formatEventNumber(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 function formatRecentEventTime(value) {

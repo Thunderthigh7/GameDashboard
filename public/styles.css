@@ -3283,6 +3283,511 @@ body.isResizingLayout {
   padding: 18px 0;
 }
 
+body[data-active-view="events"] .topbar > div:first-child {
+  flex: 1 1 310px;
+}
+
+body[data-active-view="events"] .topbarActions {
+  flex: 1 1 760px;
+}
+
+body[data-active-view="events"] .topbarFilters {
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+body[data-active-view="events"] .topbarUniverseSelector {
+  flex: 1 1 250px;
+  order: -3;
+  width: clamp(235px, 19vw, 310px);
+  min-width: 225px;
+  max-width: 320px;
+}
+
+body[data-active-view="events"] .topbarFilters .dateDisplayField {
+  flex: 1 1 205px;
+  width: clamp(195px, 15vw, 245px);
+  max-width: 250px;
+}
+
+.eventsPage,
+.eventDetailColumn {
+  display: grid;
+  min-width: 0;
+}
+
+.eventsPage {
+  gap: 14px;
+}
+
+.eventDetailColumn {
+  gap: 12px;
+}
+
+.eventCommandBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(13, 22, 44, 0.96), rgba(8, 16, 33, 0.94));
+  padding: 10px;
+}
+
+.eventCommandIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(158, 96, 255, 0.5);
+  border-radius: 9px;
+  background: linear-gradient(145deg, #7e42df, #4d269e);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(83, 39, 170, 0.22);
+}
+
+.eventCommandIcon svg,
+.eventRefreshButton svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventSelectControl {
+  position: relative;
+  flex: 0 1 370px;
+  min-width: 240px;
+}
+
+.eventSelectControl::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--nav-text);
+  border-bottom: 2px solid var(--nav-text);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.eventSelectControl select {
+  width: 100%;
+  min-height: 42px;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 16, 33, 0.88);
+  color: var(--text);
+  padding: 0 42px 0 13px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventSelectControl select:focus {
+  border-color: rgba(124, 60, 255, 0.78);
+  outline: 3px solid rgba(124, 60, 255, 0.13);
+}
+
+.eventReceivingState {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 16, 33, 0.7);
+  color: var(--muted);
+  padding: 0 12px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.eventReceivingState > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b789e;
+}
+
+.eventReceivingState.isLive {
+  color: #6fe1a0;
+}
+
+.eventReceivingState.isLive > span {
+  background: #35d47a;
+  box-shadow: 0 0 10px rgba(53, 212, 122, 0.58);
+}
+
+.eventStatus {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventRefreshButton {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--nav-text);
+  margin-left: auto;
+  cursor: pointer;
+}
+
+.eventRefreshButton:hover:not(:disabled),
+.eventRefreshButton:focus-visible {
+  border-color: rgba(124, 60, 255, 0.72);
+  color: #fff;
+  outline: none;
+}
+
+.eventRefreshButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.eventOverview {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.eventMetricCard {
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 104px;
+  border-radius: 11px;
+  padding: 14px;
+}
+
+.eventMetricIcon {
+  width: 48px;
+  height: 48px;
+}
+
+.eventMetricIcon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.eventMetricCard > div > span {
+  font-size: 10px;
+}
+
+.eventMetricCard > div > strong {
+  font-size: clamp(23px, 1.8vw, 31px);
+}
+
+.eventMetricCard small {
+  font-size: 10px;
+}
+
+.eventHealthCard.isHealthy .eventMetricIcon {
+  border-color: rgba(53, 212, 122, 0.4);
+  background: radial-gradient(circle at 35% 30%, rgba(53, 212, 122, 0.28), rgba(21, 106, 67, 0.3));
+  color: #56dd91;
+}
+
+.eventHealthCard.hasWarning .eventMetricIcon {
+  border-color: rgba(245, 158, 11, 0.46);
+  background: radial-gradient(circle at 35% 30%, rgba(245, 158, 11, 0.25), rgba(120, 65, 9, 0.28));
+  color: #f6b84e;
+}
+
+.eventHealthCard.hasWarning > div > strong {
+  color: #f7c264;
+}
+
+.eventChartPanel {
+  min-height: 390px;
+  overflow: hidden;
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+
+.eventChartHeader {
+  margin-bottom: 3px;
+}
+
+.eventChartHeader p {
+  margin-top: 6px;
+}
+
+.eventIntervalSelect {
+  min-width: 148px;
+  min-height: 38px;
+}
+
+.eventChart {
+  min-height: 310px;
+  overflow: hidden;
+  padding-top: 2px;
+}
+
+.eventChartScroller {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 60, 255, 0.45) transparent;
+}
+
+.eventChartSvg {
+  display: block;
+  min-width: 100%;
+  overflow: visible;
+}
+
+.eventChartSvgGrid line {
+  stroke: rgba(84, 101, 149, 0.28);
+  stroke-dasharray: 3 4;
+}
+
+.eventChartSvgGrid text,
+.eventChartXLabel,
+.eventChartSvgYAxisTitle {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.eventChartSvgYAxisTitle {
+  fill: var(--nav-text);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.eventChartArea {
+  fill: url(#eventChartAreaGradient);
+}
+
+.eventChartLine {
+  fill: none;
+  stroke: #925cff;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 4px 8px rgba(124, 60, 255, 0.36));
+}
+
+.eventChartPoint circle {
+  fill: #a878ff;
+  stroke: #dfd2ff;
+  stroke-width: 1.5;
+}
+
+.eventChartPoint text {
+  fill: #e6e9fb;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.eventChartLegend {
+  margin-top: 0;
+}
+
+.eventChartLegend i {
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+  background: #925cff;
+}
+
+.eventBreakdownGrid {
+  grid-template-columns: minmax(350px, 0.9fr) minmax(520px, 1.45fr);
+  gap: 12px;
+}
+
+.eventBreakdownCard,
+.eventRecentCard {
+  display: flex;
+  flex-direction: column;
+  min-height: 390px;
+  padding: 16px;
+}
+
+.eventDataCardHeader {
+  margin-bottom: 12px;
+}
+
+.eventDataCardHeader h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+}
+
+.eventDataCardHeader p {
+  font-size: 11px;
+}
+
+.eventLiveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgba(30, 176, 98, 0.1);
+  color: #67dfa0;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.eventLiveBadge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #35d47a;
+  box-shadow: 0 0 8px rgba(53, 212, 122, 0.5);
+}
+
+.eventPropertyTable,
+.recentEventTable {
+  flex: 1 1 auto;
+}
+
+.eventPropertyTableHeader,
+.eventPropertyItem {
+  grid-template-columns: 26px minmax(180px, 1fr) minmax(62px, 0.32fr) minmax(68px, 0.34fr);
+  gap: 10px;
+  min-width: 430px;
+}
+
+.eventPropertyTableHeader {
+  padding: 0 4px;
+}
+
+.eventPropertyTableHeader span:nth-child(n + 3) {
+  text-align: right;
+}
+
+.eventPropertyItem {
+  min-height: 58px;
+  padding: 5px 4px;
+}
+
+.eventPropertyRank {
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  text-align: center;
+}
+
+.eventPropertyValue {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.eventPropertyValue > strong,
+.eventPropertyValue > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventPropertyValue > strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.eventPropertyValue > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.eventPropertyValue > span {
+  display: block;
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(124, 60, 255, 0.1);
+}
+
+.eventPropertyValue > span i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7940dd, #aa78ff);
+  box-shadow: 0 0 12px rgba(146, 92, 255, 0.25);
+}
+
+.eventPropertyItem > b,
+.eventPropertyItem > em {
+  color: var(--nav-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-align: right;
+}
+
+.eventNumericPropertyItem .eventPropertyValue {
+  gap: 3px;
+}
+
+.recentEventTableHeader,
+.recentEventItem {
+  gap: 10px;
+  min-width: 700px;
+}
+
+.recentEventTableHeader {
+  padding: 0 5px;
+}
+
+.recentEventItem {
+  min-height: 38px;
+  padding: 5px;
+}
+
+.recentEventProperty {
+  display: block !important;
+  overflow: hidden;
+  color: var(--nav-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventViewAllButton {
+  align-self: flex-start;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: #b995ff;
+  margin-top: 12px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventViewAllButton:hover,
+.eventViewAllButton:focus-visible {
+  color: #fff;
+  outline: none;
+}
+
+.eventViewAllButton span {
+  display: inline;
+  margin-left: 5px;
+}
+
 .funnelTopbarExtras {
   display: none;
   align-items: flex-end;
@@ -4107,6 +4612,12 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   display: none;
 }
 
+@media (max-width: 1450px) {
+  .eventOverview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1180px) {
   .dashboardGrid,
   .chatAnalysisPage,
@@ -4254,7 +4765,9 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 
   body[data-active-view="funnels"] .topbarUniverseSelector,
-  body[data-active-view="funnels"] .topbarFilters .dateDisplayField {
+  body[data-active-view="funnels"] .topbarFilters .dateDisplayField,
+  body[data-active-view="events"] .topbarUniverseSelector,
+  body[data-active-view="events"] .topbarFilters .dateDisplayField {
     width: 100%;
     min-width: 0;
     max-width: none;
@@ -4310,6 +4823,24 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .eventChartActions {
     justify-content: flex-end;
+  }
+
+  .eventCommandBar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .eventSelectControl {
+    flex: 1 1 calc(100% - 160px);
+  }
+
+  .eventStatus {
+    order: 5;
+    width: 100%;
+  }
+
+  .eventRefreshButton {
+    margin-left: 0;
   }
 
   .funnelBuilderFields {
@@ -4435,6 +4966,26 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .eventIntervalSelect {
     flex: 1;
     min-width: 0;
+  }
+
+  .eventCommandBar {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+  }
+
+  .eventSelectControl {
+    min-width: 0;
+  }
+
+  .eventReceivingState,
+  .eventStatus {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .eventRefreshButton {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .funnelOverview {

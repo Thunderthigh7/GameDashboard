@@ -54,7 +54,8 @@ const MAX_CUSTOM_EVENTS_PER_PAYLOAD = 200;
 const MAX_CUSTOM_EVENTS_PER_UNIVERSE = 25_000;
 const MAX_CUSTOM_EVENT_PROPERTIES = 20;
 const MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE = 200;
-const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 30;
+const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
+const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
 const CUSTOM_EVENT_INTERVALS_MS = new Map([
   ["1m", 60 * 1000],
@@ -3875,6 +3876,8 @@ async function getCustomEventsFromQuery(searchParams) {
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedEventName = normalizeCustomEventName(searchParams.get("eventName"));
   const interval = normalizeCustomEventInterval(searchParams.get("interval"));
+  const recentLimit = Math.min(cleanInteger(searchParams.get("recentLimit")) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
+  const propertyValueLimit = Math.min(cleanInteger(searchParams.get("propertyValueLimit")) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   const { events, hasRollup } = await getCustomEventRecords({ universeId, fromMs, toMs });
 
   const catalogByName = new Map();
@@ -3922,7 +3925,13 @@ async function getCustomEventsFromQuery(searchParams) {
       uniqueSessions: new Set(events.map((event) => cleanString(event.sessionId, 180)).filter(Boolean)).size,
     },
     events: catalog,
-    selectedEvent: selectedEventName ? buildCustomEventDetail(selectedEventName, selectedEvents, { fromMs, toMs, interval }) : null,
+    selectedEvent: selectedEventName ? buildCustomEventDetail(selectedEventName, selectedEvents, {
+      fromMs,
+      toMs,
+      interval,
+      recentLimit,
+      propertyValueLimit,
+    }) : null,
   };
 }
 
@@ -4048,6 +4057,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
   }
 
   const eventSeries = buildCustomEventSeries(events, filters);
+  const recentLimit = Math.min(cleanInteger(filters.recentLimit) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
+  const propertyValueLimit = Math.min(cleanInteger(filters.propertyValueLimit) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   return {
     name: eventName,
     count: events.length,
@@ -4058,8 +4069,10 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     availableIntervals: eventSeries.availableIntervals,
     selectedInterval: eventSeries.selectedInterval,
     series: eventSeries.buckets,
-    properties: summarizeCustomEventProperties(events),
-    recentEvents: events.slice(0, MAX_CUSTOM_EVENT_RECENT_RESPONSE),
+    properties: summarizeCustomEventProperties(events, propertyValueLimit),
+    recentEvents: events.slice(0, recentLimit),
+    recentEventsTotal: events.length,
+    recentEventsLimit: recentLimit,
   };
 }
 
@@ -4125,7 +4138,8 @@ function normalizeCustomEventInterval(value) {
   return CUSTOM_EVENT_INTERVALS_MS.has(interval) ? interval : "auto";
 }
 
-function summarizeCustomEventProperties(events) {
+function summarizeCustomEventProperties(events, valueLimit = 4) {
+  const cleanValueLimit = Math.min(Math.max(cleanInteger(valueLimit), 1), MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   const summaries = new Map();
   for (const event of events) {
     for (const [key, value] of Object.entries(event.properties || {})) {
@@ -4154,10 +4168,11 @@ function summarizeCustomEventProperties(events) {
     average: summary.numericCount ? summary.total / summary.numericCount : null,
     min: summary.numericCount ? summary.min : null,
     max: summary.numericCount ? summary.max : null,
+    totalValues: summary.values.size,
     topValues: [...summary.values.entries()]
       .map(([value, count]) => ({ value, count }))
       .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value))
-      .slice(0, 5),
+      .slice(0, cleanValueLimit),
   })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
 }
 
