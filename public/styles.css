@@ -3283,100 +3283,660 @@ body.isResizingLayout {
   padding: 18px 0;
 }
 
-.funnelsLayout {
-  display: grid;
-  grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+.funnelTopbarExtras {
+  display: none;
+  align-items: flex-end;
+  gap: 10px;
+  order: 4;
 }
 
-.funnelCatalogPanel {
-  position: sticky;
-  top: 116px;
-  display: grid;
-  gap: 12px;
-  max-height: calc(100vh - 140px);
-  overflow: hidden;
+body[data-active-view="funnels"] .topbar > div:first-child {
+  flex: 1 1 310px;
 }
 
-.funnelCatalog,
-.funnelWorkspace,
+body[data-active-view="funnels"] .topbarActions {
+  flex: 1 1 900px;
+}
+
+body[data-active-view="funnels"] .topbarFilters {
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+body[data-active-view="funnels"] .topbarUniverseSelector {
+  flex: 1 1 240px;
+  order: -3;
+  width: clamp(230px, 18vw, 290px);
+  min-width: 220px;
+  max-width: 300px;
+}
+
+body[data-active-view="funnels"] .topbarFilters .dateDisplayField {
+  flex: 1 1 190px;
+  width: clamp(185px, 14vw, 230px);
+  max-width: 240px;
+}
+
+body[data-active-view="funnels"] .funnelTopbarExtras {
+  display: flex;
+}
+
+.funnelTimelineButton,
+.funnelNewButton,
+.funnelEditButton,
+.funnelIconButton,
+.funnelBackButton,
+.funnelAddStepButton {
+  font: inherit;
+}
+
+.funnelTimelineButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--nav-text);
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.funnelTimelineButton:hover,
+.funnelTimelineButton:focus-visible {
+  border-color: rgba(124, 60, 255, 0.72);
+  color: var(--text);
+  outline: none;
+}
+
+.funnelTimelineButton svg,
+.funnelNewButton svg,
+.funnelEditButton svg,
+.funnelIconButton svg,
+.funnelBackButton svg,
+.funnelAddStepButton svg,
+.funnelBuilderNote svg,
+.funnelMorePopover svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.funnelNewButton {
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid rgba(159, 104, 255, 0.55);
+  border-radius: 9px;
+  background: linear-gradient(135deg, #8046e8, #4d23a9);
+  box-shadow: 0 10px 28px rgba(88, 37, 190, 0.26);
+  white-space: nowrap;
+}
+
+.funnelNewButton:disabled,
+.funnelTimelineButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.funnelsPage {
+  min-width: 0;
+}
+
+.funnelAnalyticsView,
 .funnelBuilder,
 .funnelStepEditor,
 .funnelResultSteps {
   display: grid;
-  gap: 12px;
+  min-width: 0;
 }
 
-.funnelCatalog {
-  max-height: calc(100vh - 300px);
-  overflow-y: auto;
-  padding-right: 3px;
+.funnelAnalyticsView {
+  gap: 14px;
 }
 
-.funnelCatalogItem {
+.funnelCommandBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 14px;
+}
+
+.funnelSelectControl {
+  position: relative;
+  flex: 0 1 360px;
+  min-width: 240px;
+}
+
+.funnelSelectControl::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--nav-text);
+  border-bottom: 2px solid var(--nav-text);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.funnelSelectControl select {
   width: 100%;
+  min-height: 44px;
+  appearance: none;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(15, 25, 49, 0.98), rgba(10, 18, 36, 0.98));
   color: var(--text);
-  padding: 12px;
-  text-align: left;
+  padding: 0 42px 0 14px;
+  font-size: 14px;
+  font-weight: 800;
   cursor: pointer;
 }
 
-.funnelCatalogItem:hover,
-.funnelCatalogItem.active {
-  border-color: rgba(124, 60, 255, 0.72);
-  background: var(--purple-soft);
+.funnelSelectControl select:focus {
+  border-color: rgba(124, 60, 255, 0.78);
+  outline: 3px solid rgba(124, 60, 255, 0.14);
 }
 
-.funnelCatalogItem span {
+.funnelLiveState {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  border-left: 1px solid var(--line);
+  padding-left: 16px;
+  color: #c7d2f4;
+  font-size: 12px;
+}
+
+.funnelLiveState > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #39d578;
+  box-shadow: 0 0 12px rgba(57, 213, 120, 0.55);
+}
+
+.funnelStatus {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelCommandActions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-left: auto;
+}
+
+.funnelIconButton,
+.funnelBackButton {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--nav-text);
+  cursor: pointer;
+}
+
+.funnelIconButton:hover:not(:disabled),
+.funnelIconButton:focus-visible,
+.funnelBackButton:hover,
+.funnelBackButton:focus-visible {
+  border-color: rgba(124, 60, 255, 0.72);
+  color: var(--text);
+  outline: none;
+}
+
+.funnelIconButton:disabled,
+.funnelEditButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.funnelIconButton[aria-label="Refresh funnel data"]:active svg {
+  transform: rotate(90deg);
+}
+
+.funnelEditButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--nav-text);
+  padding: 0 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.funnelEditButton:hover:not(:disabled),
+.funnelEditButton:focus-visible {
+  border-color: rgba(124, 60, 255, 0.72);
+  color: var(--text);
+  outline: none;
+}
+
+.funnelMoreMenu {
+  position: relative;
+}
+
+.funnelMorePopover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 184px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #091226;
+  padding: 6px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+
+.funnelMorePopover button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #ff7784;
+  padding: 0 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.funnelMorePopover button:hover,
+.funnelMorePopover button:focus-visible {
+  background: rgba(255, 86, 104, 0.1);
+  outline: none;
+}
+
+.funnelOverview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.funnelMetricCard {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: start;
+  gap: 13px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(13, 23, 46, 0.96), rgba(9, 17, 34, 0.94));
+  padding: 16px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.funnelMetricIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(140, 82, 255, 0.28);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(116, 55, 227, 0.38), rgba(47, 32, 126, 0.58));
+  color: #b494ff;
+}
+
+.funnelMetricIcon svg {
+  width: 27px;
+  height: 27px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.funnelMetricCard > div {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.funnelCatalogItem strong,
-.funnelCatalogItem small {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.funnelMetricCard span:not(.funnelMetricIcon) {
+  color: #aeb9dc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
 }
 
-.funnelCatalogItem small {
+.funnelMetricCard strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: clamp(24px, 2vw, 31px);
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelMetricCard small {
+  overflow: hidden;
   color: var(--muted);
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.funnelCatalogItem em {
-  flex: 0 0 auto;
-  color: #c4b5fd;
-  font-size: 11px;
-  font-style: normal;
+.funnelResultsPanel {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.funnelResultsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding: 18px 20px;
+}
+
+.funnelResultsHeader > div {
+  display: grid;
+  gap: 4px;
+}
+
+.funnelResultsHeader h2 {
+  font-size: 18px;
+}
+
+.funnelResultsHeader p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.funnelResultSteps {
+  gap: 0;
+  padding: 6px 20px 0;
+}
+
+.funnelResultsColumnHeader,
+.funnelResultStep {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.72fr) minmax(260px, 1.65fr) minmax(118px, 0.55fr) minmax(105px, 0.48fr) minmax(110px, 0.5fr);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.funnelResultsColumnHeader {
+  min-height: 42px;
+  color: var(--muted);
+  font-size: 10px;
   font-weight: 800;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.funnelResultsColumnHeader span:nth-child(n + 3) {
+  text-align: center;
+}
+
+.funnelResultStep {
+  min-height: 76px;
+  border-top: 1px solid rgba(47, 61, 96, 0.56);
+}
+
+.funnelStepIdentity {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.funnelStepIdentity > span {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid rgba(165, 111, 255, 0.52);
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8046e8, #4e279e);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 0 5px 14px rgba(99, 49, 201, 0.24);
+}
+
+.funnelStepIdentity div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.funnelStepIdentity strong,
+.funnelStepIdentity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelStepIdentity strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.funnelStepIdentity small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.funnelStepBarCell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 48px;
+}
+
+.funnelStepBar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(168, 111, 255, 0.34);
+  border-radius: 7px;
+  background: linear-gradient(90deg, #7340df, #6130c4);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.15), 0 7px 16px rgba(75, 33, 160, 0.15);
+}
+
+.funnelStepBar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, rgba(255, 255, 255, 0.08), transparent 55%);
+  pointer-events: none;
+}
+
+.funnelStepBar span {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  color: #fff;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelConversionCell,
+.funnelTimeCell,
+.funnelDropCell {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+  text-align: center;
+}
+
+.funnelConversionCell strong,
+.funnelTimeCell strong,
+.funnelDropCell strong {
+  color: #e9edff;
+  font-size: 13px;
+}
+
+.funnelConversionCell small,
+.funnelTimeCell small,
+.funnelDropCell small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.funnelDropCell.hasDrop strong {
+  color: #ff7f8b;
+}
+
+.funnelResultsFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 68px;
+  border-top: 1px solid var(--line);
+  margin-top: 5px;
+  padding: 12px 20px;
+  color: #aeb9dc;
+  font-size: 11px;
+}
+
+.funnelResultsFooter span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.funnelResultsFooter small {
+  color: var(--muted);
+}
+
+.funnelResultsFooter strong {
+  min-width: 78px;
+  border: 1px solid rgba(151, 92, 255, 0.35);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(111, 57, 216, 0.72), rgba(67, 34, 145, 0.84));
+  color: #fff;
+  padding: 8px 11px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.funnelBuilder {
+  gap: 20px;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 24px;
+  background: linear-gradient(145deg, rgba(13, 23, 46, 0.98), rgba(8, 16, 33, 0.97));
+}
+
+.funnelBuilderHeader {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 19px;
+}
+
+.funnelBuilderHeader > div {
+  display: grid;
+  gap: 5px;
+}
+
+.funnelBuilderHeader h2 {
+  font-size: 24px;
+}
+
+.funnelBuilderHeader p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.funnelBuilderEyebrow {
+  color: #a887ff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .funnelBuilderFields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.38fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.38fr);
+  gap: 14px;
 }
 
 .funnelBuilderFields .fieldGroup {
   display: grid;
-  gap: 7px;
+  gap: 8px;
 }
 
 .funnelBuilderFields .fieldGroup > span,
 .funnelStepsHeader strong {
-  color: var(--muted);
+  color: #bac4e4;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 850;
+  letter-spacing: 0.035em;
   text-transform: uppercase;
+}
+
+.funnelBuilderFields input,
+.funnelBuilderFields select {
+  min-height: 46px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.funnelBuilderNote {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(119, 78, 212, 0.28);
+  border-radius: 9px;
+  background: rgba(82, 44, 160, 0.12);
+  color: #aeb9dc;
+  padding: 11px 13px;
+  font-size: 12px;
+}
+
+.funnelBuilderNote svg {
+  flex: 0 0 auto;
+  color: #9e79f8;
 }
 
 .funnelStepsHeader {
@@ -3384,13 +3944,11 @@ body.isResizingLayout {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
 }
 
 .funnelStepsHeader > div {
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
 .funnelStepsHeader span {
@@ -3398,29 +3956,58 @@ body.isResizingLayout {
   font-size: 12px;
 }
 
-.funnelStepRow {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
+.funnelStepEditor {
   gap: 10px;
+}
+
+.funnelStepRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 9px;
+  border-radius: 10px;
+  background: rgba(8, 16, 33, 0.72);
+  padding: 12px;
+}
+
+.funnelStepRow:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 32px;
+  top: calc(100% + 1px);
+  width: 1px;
+  height: 10px;
+  background: rgba(142, 91, 244, 0.55);
 }
 
 .funnelStepRow label,
 .funnelStepRow select {
   width: 100%;
+  min-width: 0;
+}
+
+.funnelStepRow select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--text);
+  padding: 0 10px;
+  font-weight: 750;
 }
 
 .funnelStepNumber {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(161, 105, 255, 0.54);
   border-radius: 50%;
-  background: linear-gradient(135deg, #8b5cf6, #5b21b6);
+  background: linear-gradient(135deg, #8046e8, #4e269f);
   color: white;
   font-size: 12px;
   font-weight: 900;
@@ -3428,126 +4015,92 @@ body.isResizingLayout {
 
 .funnelStepActions {
   display: flex;
-  gap: 5px;
+  gap: 6px;
 }
 
 .funnelStepActions button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--control-bg);
   color: var(--muted);
   cursor: pointer;
 }
 
-.funnelStepActions button:hover:not(:disabled) {
+.funnelStepActions button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.funnelStepActions button[data-funnel-step-action="remove"]:hover:not(:disabled) {
+  border-color: rgba(255, 93, 110, 0.5);
+  color: #ff7784;
+}
+
+.funnelStepActions button:hover:not(:disabled),
+.funnelStepActions button:focus-visible {
   border-color: rgba(124, 60, 255, 0.72);
   color: var(--text);
+  outline: none;
 }
 
 .funnelStepActions button:disabled {
   cursor: default;
-  opacity: 0.35;
+  opacity: 0.3;
+}
+
+.funnelAddStepButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px dashed rgba(139, 91, 240, 0.56);
+  border-radius: 9px;
+  background: rgba(101, 55, 194, 0.08);
+  color: #bda5f8;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.funnelAddStepButton:hover:not(:disabled),
+.funnelAddStepButton:focus-visible {
+  border-color: #925cff;
+  background: rgba(101, 55, 194, 0.15);
+  color: #fff;
+  outline: none;
+}
+
+.funnelAddStepButton:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.funnelFormStatus {
+  min-height: 18px;
+  margin: -5px 0 0;
 }
 
 .funnelFormActions {
   display: flex;
-  gap: 10px;
-}
-
-.funnelOverview {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.funnelOverview > div {
-  display: grid;
-  gap: 5px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 13px;
-}
-
-.funnelOverview span {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.funnelOverview strong {
-  font-size: 22px;
-}
-
-.funnelResultStep {
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--card-bg);
-  padding: 13px;
-}
-
-.funnelResultStepHeader {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
 }
 
-.funnelResultStepHeader > span {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--purple-soft);
-  color: #c4b5fd;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.funnelResultStepHeader > div {
-  display: grid;
-  gap: 3px;
-}
-
-.funnelResultStepHeader small,
-.funnelResultMeta {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.funnelResultStepHeader em {
-  color: #c4b5fd;
-  font-size: 16px;
-  font-style: normal;
-  font-weight: 900;
-}
-
-.funnelResultBar {
-  height: 9px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(124, 60, 255, 0.12);
-}
-
-.funnelResultBar span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #7c3cff, #a78bfa);
-}
-
-.funnelResultMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
+.funnelFormActions .button {
+  min-width: 132px;
 }
 
 [hidden] {
@@ -3609,16 +4162,7 @@ body.isResizingLayout {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .funnelsLayout {
-    grid-template-columns: 1fr;
-  }
-
   .eventCatalogPanel {
-    position: static;
-    max-height: none;
-  }
-
-  .funnelCatalogPanel {
     position: static;
     max-height: none;
   }
@@ -3628,9 +4172,17 @@ body.isResizingLayout {
     max-height: 300px;
   }
 
-  .funnelCatalog {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    max-height: 300px;
+  .funnelOverview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .funnelResultSteps {
+    overflow-x: auto;
+  }
+
+  .funnelResultsColumnHeader,
+  .funnelResultStep {
+    min-width: 860px;
   }
 }
 
@@ -3701,6 +4253,24 @@ body.isResizingLayout {
     max-width: none;
   }
 
+  body[data-active-view="funnels"] .topbarUniverseSelector,
+  body[data-active-view="funnels"] .topbarFilters .dateDisplayField {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  body[data-active-view="funnels"] .funnelTopbarExtras {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .funnelTimelineButton,
+  .funnelNewButton {
+    width: 100%;
+  }
+
   .topbarButtonGroup {
     align-items: stretch;
     flex-direction: column;
@@ -3744,6 +4314,33 @@ body.isResizingLayout {
 
   .funnelBuilderFields {
     grid-template-columns: 1fr;
+  }
+
+  .funnelCommandBar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .funnelSelectControl {
+    flex: 1 1 calc(100% - 100px);
+  }
+
+  .funnelLiveState {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .funnelStatus {
+    order: 4;
+    width: 100%;
+  }
+
+  .funnelCommandActions {
+    margin-left: 0;
+  }
+
+  .funnelBuilder {
+    padding: 18px;
   }
 
   .heatmapToolbar {
@@ -3837,6 +4434,60 @@ body.isResizingLayout {
 
   .eventIntervalSelect {
     flex: 1;
+    min-width: 0;
+  }
+
+  .funnelOverview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .funnelCommandBar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .funnelSelectControl,
+  .funnelStatus,
+  .funnelCommandActions {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .funnelCommandActions {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+  }
+
+  .funnelEditButton {
+    justify-content: center;
+  }
+
+  .funnelResultsHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .funnelResultsFooter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    justify-content: stretch;
+  }
+
+  .funnelStepRow {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .funnelStepActions {
+    grid-column: 2;
+    justify-content: flex-end;
+  }
+
+  .funnelFormActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .funnelFormActions .button {
     min-width: 0;
   }
 }
