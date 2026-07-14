@@ -605,27 +605,19 @@ function positionEventDropdown() {
   const rect = eventButton.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth;
   const viewportHeight = document.documentElement.clientHeight;
-  const gap = 8;
+  const gap = 6;
   const edge = 10;
-  const spaceAbove = Math.max(rect.top - gap - edge, 0);
   const spaceBelow = Math.max(viewportHeight - rect.bottom - gap - edge, 0);
   const preferredHeight = Math.min(eventMenu.scrollHeight, 360);
-  const opensUp = spaceAbove > spaceBelow && spaceAbove >= Math.min(preferredHeight, 160);
-  const availableHeight = opensUp ? spaceAbove : spaceBelow;
   const menuWidth = Math.min(Math.max(rect.width, 280), Math.max(viewportWidth - edge * 2, 0));
-  const left = Math.min(Math.max(rect.right - menuWidth, edge), Math.max(viewportWidth - menuWidth - edge, edge));
+  const left = Math.min(Math.max(rect.left, edge), Math.max(viewportWidth - menuWidth - edge, edge));
 
-  eventMenu.dataset.placement = opensUp ? "top" : "bottom";
+  eventMenu.dataset.placement = "bottom";
   eventMenu.style.left = `${Math.round(left)}px`;
   eventMenu.style.width = `${Math.round(menuWidth)}px`;
-  eventMenu.style.maxHeight = `${Math.max(Math.min(preferredHeight, availableHeight), Math.min(availableHeight, 72))}px`;
-  if (opensUp) {
-    eventMenu.style.top = "auto";
-    eventMenu.style.bottom = `${Math.round(viewportHeight - rect.top + gap)}px`;
-  } else {
-    eventMenu.style.top = `${Math.round(rect.bottom + gap)}px`;
-    eventMenu.style.bottom = "auto";
-  }
+  eventMenu.style.maxHeight = `${Math.max(Math.min(preferredHeight, spaceBelow), Math.min(spaceBelow, 72))}px`;
+  eventMenu.style.top = `${Math.round(rect.bottom + gap)}px`;
+  eventMenu.style.bottom = "auto";
 }
 
 function handleEventMenuClick(event) {
