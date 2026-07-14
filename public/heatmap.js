@@ -28,8 +28,11 @@ const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]")
 const modeButtons = document.querySelectorAll("[data-heatmap-mode]");
 const renderButtons = document.querySelectorAll("[data-heatmap-render]");
 const mapViewButtons = document.querySelectorAll("[data-map-view]");
-const eventSelect = document.querySelector("#heatmapEventSelect");
 const eventControl = document.querySelector("#heatmapEventControl");
+const eventButton = document.querySelector("#heatmapEventButton");
+const eventButtonLabel = document.querySelector("#heatmapEventButtonLabel");
+const eventButtonMeta = document.querySelector("#heatmapEventButtonMeta");
+const eventMenu = document.querySelector("#heatmapEventMenu");
 
 const DEFAULT_3D_YAW = -0.8;
 const DEFAULT_3D_PITCH = 0.72;
@@ -136,14 +139,13 @@ if (canvas) {
       setCameraView(button.dataset.mapView || "3d");
     });
   }
-  eventSelect?.addEventListener("change", () => {
-    const eventName = String(eventSelect.value || "");
-    if (!eventName) return;
-    window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
-      detail: { eventName, source: "map" },
-    }));
-  });
-  eventSelect?.addEventListener("focus", () => loadEventCatalog());
+  eventButton?.addEventListener("click", toggleEventDropdown);
+  eventButton?.addEventListener("keydown", handleEventTriggerKeydown);
+  eventButton?.addEventListener("focus", () => loadEventCatalog());
+  eventMenu?.addEventListener("click", handleEventMenuClick);
+  eventMenu?.addEventListener("keydown", handleEventMenuKeydown);
+  document.addEventListener("pointerdown", handleEventDropdownOutsidePointer);
+  document.addEventListener("focusin", handleEventDropdownOutsideFocus);
   eventControl?.addEventListener("pointerenter", () => loadEventCatalog());
   window.addEventListener("dashboard:analyticsReady", () => {
     resizeScene();
@@ -162,6 +164,7 @@ if (canvas) {
       deferredAreaAnalysisRenderedAt = 0;
       abortEventCatalogRequest();
       clearEventCatalogPreload();
+      closeEventDropdown();
       const previousScope = activeCacheScope;
       activeCacheScope = "";
       if (previousScope) clearPersistentCacheScope(previousScope);
@@ -179,6 +182,7 @@ if (canvas) {
     }
     selectedTrackedEventName = "";
     currentEventCatalog = [];
+    closeEventDropdown();
     syncEventSelect();
     abortEventCatalogRequest();
     resizeScene();
@@ -211,6 +215,7 @@ if (canvas) {
     abortHeatmapRequest();
     abortEventCatalogRequest();
     clearEventCatalogPreload();
+    closeEventDropdown();
   });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
@@ -256,7 +261,10 @@ if (canvas) {
     if (event.detail?.source === "heatmap") return;
     applyEventCatalog(event.detail?.eventCatalog, event.detail?.selectedEventName, { notifyApp: false });
   });
-  window.addEventListener("resize", resizeScene);
+  window.addEventListener("resize", () => {
+    resizeScene();
+    positionEventDropdown();
+  });
   window.addEventListener("dashboard:visibilityChanged", handleVisibilityChange);
 }
 
@@ -384,6 +392,7 @@ function handleVisibilityChange() {
     abortHeatmapRequest();
     abortEventCatalogRequest();
     clearEventCatalogPreload();
+    closeEventDropdown();
     return;
   }
 
@@ -433,9 +442,11 @@ async function loadEventCatalog(options = {}) {
 
   if (eventCatalogRequestState?.key === cacheKey && !options.force) return eventCatalogRequestState.promise;
   abortEventCatalogRequest();
-  if (!currentEventCatalog.length && eventSelect) {
-    eventSelect.disabled = true;
-    eventSelect.innerHTML = `<option value="">Loading events...</option>`;
+  if (!currentEventCatalog.length && eventButton) {
+    closeEventDropdown();
+    eventButton.disabled = true;
+    if (eventButtonLabel) eventButtonLabel.textContent = "Loading events...";
+    if (eventButtonMeta) eventButtonMeta.textContent = "";
   }
 
   const controller = new AbortController();
@@ -453,9 +464,11 @@ async function loadEventCatalog(options = {}) {
     applyEventCatalog(payload.eventCatalog, payload.selectedEventName, { notifyApp: true });
     return payload;
   }).catch((error) => {
-    if (error.name !== "AbortError" && !currentEventCatalog.length && eventSelect) {
-      eventSelect.disabled = true;
-      eventSelect.innerHTML = `<option value="">Events unavailable</option>`;
+    if (error.name !== "AbortError" && !currentEventCatalog.length && eventButton) {
+      closeEventDropdown();
+      eventButton.disabled = true;
+      if (eventButtonLabel) eventButtonLabel.textContent = "Events unavailable";
+      if (eventButtonMeta) eventButtonMeta.textContent = "";
     }
     return null;
   }).finally(() => {
@@ -496,21 +509,180 @@ function applyEventCatalog(catalog, selectedEventName = "", options = {}) {
 }
 
 function syncEventSelect() {
-  if (!eventSelect || !eventControl) return;
+  if (!eventButton || !eventMenu || !eventControl) return;
+  const focusedEventName = eventMenu.contains(document.activeElement)
+    ? String(document.activeElement?.dataset?.eventMapOption || "")
+    : "";
   eventControl.classList.toggle("active", activeHeatmapMode === "events");
   if (!currentEventCatalog.length) {
-    eventSelect.disabled = true;
-    eventSelect.innerHTML = `<option value="">No tracked events</option>`;
+    closeEventDropdown();
+    eventButton.disabled = true;
+    if (eventButtonLabel) eventButtonLabel.textContent = "No tracked events";
+    if (eventButtonMeta) eventButtonMeta.textContent = "";
+    eventMenu.innerHTML = "";
     return;
   }
 
-  eventSelect.innerHTML = currentEventCatalog.map((event) => {
-    const locationCount = Math.max(Number(event.locationCount) || 0, 0);
-    const suffix = locationCount > 0 ? `${locationCount.toLocaleString()} mapped` : "no positions";
-    return `<option value="${escapeHtml(event.name)}">${escapeHtml(formatTrackedEventName(event.name))} - ${escapeHtml(suffix)}</option>`;
-  }).join("");
-  eventSelect.disabled = false;
-  eventSelect.value = selectedTrackedEventName;
+  const selectedEvent = currentEventCatalog.find((event) => event.name === selectedTrackedEventName)
+    || currentEventCatalog[0];
+  const locationCount = Math.max(Number(selectedEvent?.locationCount) || 0, 0);
+  const trackedCount = Math.max(Number(selectedEvent?.count) || 0, 0);
+  eventButton.disabled = false;
+  eventButton.setAttribute("aria-label", `Choose tracked event. Current: ${formatTrackedEventName(selectedEvent?.name)}`);
+  if (eventButtonLabel) eventButtonLabel.textContent = formatTrackedEventName(selectedEvent?.name);
+  if (eventButtonMeta) {
+    eventButtonMeta.textContent = locationCount > 0
+      ? `${locationCount.toLocaleString()} mapped`
+      : `${trackedCount.toLocaleString()} tracked`;
+    eventButtonMeta.classList.toggle("hasNoPositions", locationCount <= 0);
+  }
+  eventMenu.innerHTML = currentEventCatalog.map(renderEventDropdownOption).join("");
+  if (!eventMenu.hidden) {
+    positionEventDropdown();
+    if (focusedEventName) {
+      const focusedOption = getEventDropdownOptions().find((option) => option.dataset.eventMapOption === focusedEventName);
+      focusedOption?.focus();
+    }
+  }
+}
+
+function renderEventDropdownOption(event) {
+  const name = String(event?.name || "");
+  const locationCount = Math.max(Number(event?.locationCount) || 0, 0);
+  const trackedCount = Math.max(Number(event?.count) || 0, 0);
+  const selected = name === selectedTrackedEventName;
+  const detail = locationCount > 0
+    ? `${locationCount.toLocaleString()} mapped location${locationCount === 1 ? "" : "s"}`
+    : `${trackedCount.toLocaleString()} tracked - no positions`;
+  return `
+    <button class="heatmapEventOption" type="button" role="option" tabindex="-1" data-event-map-option="${escapeHtml(name)}" aria-selected="${selected ? "true" : "false"}">
+      <span>
+        <strong>${escapeHtml(formatTrackedEventName(name))}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </span>
+      <i aria-hidden="true">&#10003;</i>
+    </button>
+  `;
+}
+
+function toggleEventDropdown() {
+  if (!eventMenu || !eventButton || eventButton.disabled) return;
+  if (eventMenu.hidden) openEventDropdown();
+  else closeEventDropdown();
+}
+
+function openEventDropdown(options = {}) {
+  if (!eventMenu || !eventButton || eventButton.disabled || !currentEventCatalog.length) return;
+  eventMenu.hidden = false;
+  eventButton.setAttribute("aria-expanded", "true");
+  positionEventDropdown();
+
+  const selectedOption = eventMenu.querySelector('[aria-selected="true"]');
+  selectedOption?.scrollIntoView({ block: "nearest" });
+  if (options.focus === "last") {
+    getEventDropdownOptions().at(-1)?.focus();
+  } else if (options.focus) {
+    (selectedOption || getEventDropdownOptions()[0])?.focus();
+  }
+}
+
+function closeEventDropdown(options = {}) {
+  if (!eventMenu || !eventButton) return;
+  eventMenu.hidden = true;
+  eventMenu.removeAttribute("data-placement");
+  eventMenu.style.removeProperty("top");
+  eventMenu.style.removeProperty("right");
+  eventMenu.style.removeProperty("bottom");
+  eventMenu.style.removeProperty("left");
+  eventMenu.style.removeProperty("width");
+  eventMenu.style.removeProperty("max-height");
+  eventButton.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus) eventButton.focus();
+}
+
+function positionEventDropdown() {
+  if (!eventMenu || !eventButton || eventMenu.hidden) return;
+  const rect = eventButton.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  const gap = 8;
+  const edge = 10;
+  const spaceAbove = Math.max(rect.top - gap - edge, 0);
+  const spaceBelow = Math.max(viewportHeight - rect.bottom - gap - edge, 0);
+  const preferredHeight = Math.min(eventMenu.scrollHeight, 360);
+  const opensUp = spaceAbove > spaceBelow && spaceAbove >= Math.min(preferredHeight, 160);
+  const availableHeight = opensUp ? spaceAbove : spaceBelow;
+  const menuWidth = Math.min(Math.max(rect.width, 280), Math.max(viewportWidth - edge * 2, 0));
+  const left = Math.min(Math.max(rect.right - menuWidth, edge), Math.max(viewportWidth - menuWidth - edge, edge));
+
+  eventMenu.dataset.placement = opensUp ? "top" : "bottom";
+  eventMenu.style.left = `${Math.round(left)}px`;
+  eventMenu.style.width = `${Math.round(menuWidth)}px`;
+  eventMenu.style.maxHeight = `${Math.max(Math.min(preferredHeight, availableHeight), Math.min(availableHeight, 72))}px`;
+  if (opensUp) {
+    eventMenu.style.top = "auto";
+    eventMenu.style.bottom = `${Math.round(viewportHeight - rect.top + gap)}px`;
+  } else {
+    eventMenu.style.top = `${Math.round(rect.bottom + gap)}px`;
+    eventMenu.style.bottom = "auto";
+  }
+}
+
+function handleEventMenuClick(event) {
+  const option = event.target.closest("[data-event-map-option]");
+  if (!option) return;
+  const eventName = String(option.dataset.eventMapOption || "");
+  if (!eventName) return;
+  closeEventDropdown();
+  window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
+    detail: { eventName, source: "map" },
+  }));
+  eventButton?.focus();
+}
+
+function handleEventTriggerKeydown(event) {
+  if (event.key === "Escape") {
+    closeEventDropdown();
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  openEventDropdown({ focus: event.key === "ArrowUp" ? "last" : "selected" });
+}
+
+function handleEventMenuKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeEventDropdown({ restoreFocus: true });
+    return;
+  }
+
+  const options = getEventDropdownOptions();
+  if (!options.length) return;
+  const currentIndex = Math.max(options.indexOf(document.activeElement), 0);
+  let nextIndex = null;
+  if (event.key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, options.length - 1);
+  if (event.key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = options.length - 1;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  options[nextIndex].focus();
+  options[nextIndex].scrollIntoView({ block: "nearest" });
+}
+
+function handleEventDropdownOutsidePointer(event) {
+  if (!eventMenu || eventMenu.hidden || eventControl?.contains(event.target)) return;
+  closeEventDropdown();
+}
+
+function handleEventDropdownOutsideFocus(event) {
+  if (!eventMenu || eventMenu.hidden || eventControl?.contains(event.target)) return;
+  closeEventDropdown();
+}
+
+function getEventDropdownOptions() {
+  return eventMenu ? [...eventMenu.querySelectorAll("[data-event-map-option]")] : [];
 }
 
 function formatTrackedEventName(value) {
