@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260713-2">
+    <link rel="stylesheet" href="/styles.css?v=20260713-3">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -746,33 +746,53 @@
 
         <section class="viewPage" data-view-panel="connect" hidden>
           <section class="panel connectUniversePanel">
-            <div class="sectionHeader">
+            <div class="connectUniverseHeader">
               <div>
                 <h2>Connect Universe</h2>
-                <p>Verify a Roblox universe with the Roblox account that owns it.</p>
+                <p>Connect and manage the Roblox games sending data to RoAnalytics.</p>
               </div>
+              <button class="button compact connectNewGameButton" id="connectNewGameButton" type="button">
+                <span aria-hidden="true">+</span>
+                Connect new game
+              </button>
             </div>
             <article class="integrationStatusCard" id="integrationStatusCard">
               <div class="integrationStatusHeader">
-                <div>
-                  <span>Integration Status</span>
-                  <strong id="integrationStatusTitle">No game connected</strong>
+                <div class="integrationGameSummary">
+                  <span class="integrationGameArtwork" aria-hidden="true">
+                    <span id="integrationStatusArtworkLabel">?</span>
+                  </span>
+                  <div class="integrationGameDetails">
+                    <strong id="integrationStatusTitle">No game connected</strong>
+                    <span class="integrationConnectionState waiting" id="integrationStatusState">Waiting for game</span>
+                    <div class="integrationSignalList" id="integrationSignalList" aria-label="Active Roblox analytics signals"></div>
+                  </div>
                 </div>
-                <button class="button secondary compact" id="refreshIntegrationStatusButton" type="button">Refresh</button>
+                <div class="integrationStatusGrid" id="integrationStatusGrid">
+                  <div><span>Last data</span><strong>--</strong></div>
+                  <div><span>Map</span><strong>--</strong></div>
+                  <div><span>Failed ingests</span><strong>--</strong></div>
+                </div>
+                <button class="button secondary compact integrationRefreshButton" id="refreshIntegrationStatusButton" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.1 9A7 7 0 0 0 6.4 6.4L4 9M5.9 15A7 7 0 0 0 17.6 17.6L20 15"/></svg>
+                  Refresh
+                </button>
               </div>
-              <div class="integrationStatusGrid" id="integrationStatusGrid">
-                <div><span>Connection</span><strong>Waiting</strong></div>
-                <div><span>Last data</span><strong>--</strong></div>
-                <div><span>Map</span><strong>--</strong></div>
-                <div><span>Failed ingests</span><strong>--</strong></div>
-              </div>
-              <div class="integrationSignalList" id="integrationSignalList" aria-label="Active Roblox analytics signals"></div>
               <p class="status" id="integrationStatusMessage">Connect a Roblox game to start receiving analytics data.</p>
             </article>
             <article class="setupChecklistCard" id="setupChecklistCard">
-              <div>
-                <h3>First-run setup</h3>
-                <p>Complete these once per Roblox game before judging the dashboard.</p>
+              <div class="setupChecklistHeader">
+                <div class="setupChecklistIntro">
+                  <h3>First-run setup</h3>
+                  <p>Complete these steps to finish connecting your game.</p>
+                </div>
+                <div class="setupChecklistProgress">
+                  <span id="setupProgressText">0 / 6 complete</span>
+                  <div class="setupProgressTrack" id="setupProgressTrack" role="progressbar" aria-label="First-run setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <span id="setupProgressBar"></span>
+                  </div>
+                  <strong id="setupProgressPercent">0%</strong>
+                </div>
               </div>
               <ol class="setupChecklist" id="setupChecklist">
                 <li><span></span><div><strong>Sign in with Roblox</strong><p>Use the Roblox account that owns the game.</p></div></li>
@@ -783,19 +803,28 @@
                 <li><span></span><div><strong>Upload map</strong><p>Upload a map snapshot so heatmaps are readable.</p></div></li>
               </ol>
             </article>
-            <form class="projectForm connectUniverseForm" id="projectForm">
-              <div class="fieldGroup">
-                <label for="ownedGameSelect">Owned game</label>
-                <select id="ownedGameSelect" disabled>
-                  <option value="">Loading owned games...</option>
-                </select>
+            <article class="connectGameRow" id="connectGameRow">
+              <div class="connectGameCopy">
+                <h3>Connect another game</h3>
+                <p>Select a game from your account to start sending analytics.</p>
               </div>
-              <button class="button compact" id="createProjectButton" type="submit">Connect game</button>
-            </form>
-            <div class="connectUniverseActions">
-              <button class="button secondary compact" id="refreshOwnedGamesButton" type="button">Refresh games</button>
-              <p class="status" id="ownedGamesStatus">Loading Roblox games...</p>
-            </div>
+              <form class="projectForm connectUniverseForm" id="projectForm">
+                <div class="fieldGroup">
+                  <label class="srOnly" for="ownedGameSelect">Owned game</label>
+                  <select id="ownedGameSelect" disabled>
+                    <option value="">Loading owned games...</option>
+                  </select>
+                </div>
+                <button class="button compact" id="createProjectButton" type="submit">Connect game</button>
+              </form>
+              <div class="connectUniverseActions">
+                <button class="button secondary compact refreshGamesButton" id="refreshOwnedGamesButton" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.1 9A7 7 0 0 0 6.4 6.4L4 9M5.9 15A7 7 0 0 0 17.6 17.6L20 15"/></svg>
+                  Refresh games
+                </button>
+                <p class="status" id="ownedGamesStatus">Loading Roblox games...</p>
+              </div>
+            </article>
             <div class="projectSecretBox" id="projectSecretBox" hidden>
               <strong>Roblox secret</strong>
               <span id="projectSecretTarget"></span>
@@ -803,13 +832,14 @@
               <code id="projectSecretValue"></code>
               <button class="button secondary compact" id="copyProjectSecretButton" type="button">Copy secret</button>
             </div>
-            <div class="connectedGamesManager">
-              <div>
+            <section class="connectedGamesManager">
+              <div class="connectedGamesHeader">
                 <h3>Connected games</h3>
-                <p>Regenerate a game secret if you need to replace the Roblox config key.</p>
+                <p>These games are connected and sending data to RoAnalytics.</p>
               </div>
               <div class="connectedGameList" id="connectedGameList"></div>
-            </div>
+            </section>
+            <p class="connectUniverseHelp">Need help? Complete the first-run steps above, or regenerate a game secret below.</p>
           </section>
         </section>
 
@@ -899,6 +929,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260713-2"></script>
+    <script defer src="/app.js?v=20260713-3"></script>
   </body>
 </html>

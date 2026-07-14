@@ -55,12 +55,19 @@ const ownedGameSelect = document.querySelector("#ownedGameSelect");
 const refreshOwnedGamesButton = document.querySelector("#refreshOwnedGamesButton");
 const ownedGamesStatus = document.querySelector("#ownedGamesStatus");
 const createProjectButton = document.querySelector("#createProjectButton");
+const connectNewGameButton = document.querySelector("#connectNewGameButton");
 const refreshIntegrationStatusButton = document.querySelector("#refreshIntegrationStatusButton");
 const integrationStatusTitle = document.querySelector("#integrationStatusTitle");
+const integrationStatusState = document.querySelector("#integrationStatusState");
+const integrationStatusArtworkLabel = document.querySelector("#integrationStatusArtworkLabel");
 const integrationStatusGrid = document.querySelector("#integrationStatusGrid");
 const integrationSignalList = document.querySelector("#integrationSignalList");
 const integrationStatusMessage = document.querySelector("#integrationStatusMessage");
 const setupChecklist = document.querySelector("#setupChecklist");
+const setupProgressText = document.querySelector("#setupProgressText");
+const setupProgressTrack = document.querySelector("#setupProgressTrack");
+const setupProgressBar = document.querySelector("#setupProgressBar");
+const setupProgressPercent = document.querySelector("#setupProgressPercent");
 const projectSecretBox = document.querySelector("#projectSecretBox");
 const projectSecretValue = document.querySelector("#projectSecretValue");
 const projectSecretTarget = document.querySelector("#projectSecretTarget");
@@ -298,6 +305,10 @@ function bindEvents() {
     if (button) selectPlan(button.dataset.selectPlan || "");
   });
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
+  connectNewGameButton?.addEventListener("click", () => {
+    document.querySelector("#connectGameRow")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => ownedGameSelect?.focus({ preventScroll: true }), 260);
+  });
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     createProject();
@@ -2038,31 +2049,34 @@ function renderConnectedGame(universe) {
   const status = universe.integrationStatus || {};
   const failedIngests = Number(status.failedIngests24h || 0);
   const lastReceivedAt = Number(status.lastReceivedAt || universe.lastSeenAt || 0);
-  const statusClass = failedIngests > 0 ? "warning" : lastReceivedAt ? "ok" : "waiting";
-  const statusText = failedIngests > 0
-    ? `${formatCompactNumber(failedIngests)} failed ingests`
-    : lastReceivedAt
-      ? `Last data ${formatRelativeTime(lastReceivedAt)}`
-      : "Waiting for data";
+  const statusClass = lastReceivedAt ? "ok" : "waiting";
+  const statusText = lastReceivedAt ? `Last data ${formatRelativeTime(lastReceivedAt)}` : "Waiting for data";
+  const artworkTone = (Math.abs(Number(id.slice(-2)) || 0) % 4) + 1;
+  const artworkLabel = name.trim().charAt(0).toUpperCase() || "?";
 
   return `
     <article class="connectedGameItem">
-      <div class="connectedGameInfo">
-        <div>
-          <strong>${escapeHtml(name)}</strong>
-          <span>Universe ${escapeHtml(id)}</span>
+      <div class="connectedGamePrimary">
+        <span class="connectedGameArtwork tone${escapeHtml(artworkTone)}" aria-hidden="true"><span>${escapeHtml(artworkLabel)}</span></span>
+        <div class="connectedGameInfo">
+          <div class="connectedGameTitle">
+            <strong>${escapeHtml(name)}</strong>
+            <span>Universe ${escapeHtml(id)}</span>
+          </div>
+          <span class="connectedGameConnection">Connected</span>
+          <div class="connectedGameStatus ${escapeHtml(statusClass)}">
+            <b>${escapeHtml(statusText)}</b>
+            <span>${escapeHtml(status.mapUploaded || universe.hasMapSnapshot ? "Map uploaded" : "Map missing")}</span>
+            ${failedIngests > 0 ? `<span class="connectedGameWarning">${escapeHtml(formatCompactNumber(failedIngests))} failed ingest${failedIngests === 1 ? "" : "s"}</span>` : ""}
+          </div>
         </div>
-        <div class="connectedGameStatus ${escapeHtml(statusClass)}">
-          <b>${escapeHtml(statusText)}</b>
-          <span>${escapeHtml(status.mapUploaded || universe.hasMapSnapshot ? "Map uploaded" : "Map missing")}</span>
-        </div>
-        <div class="connectedGameSignals">
-          ${renderIntegrationSignal("Movement", Boolean(status.signals?.movement), status.counts?.movement)}
-          ${renderIntegrationSignal("Deaths", Boolean(status.signals?.deaths), status.counts?.deaths)}
-          ${renderIntegrationSignal("Leaves", Boolean(status.signals?.leaves), status.counts?.leaves)}
-          ${renderIntegrationSignal("Chat", Boolean(status.signals?.chat), status.counts?.chat)}
-          ${renderIntegrationSignal("Events", Boolean(status.signals?.events), status.counts?.events)}
-        </div>
+      </div>
+      <div class="connectedGameSignals">
+        ${renderIntegrationSignal("Movement", Boolean(status.signals?.movement), status.counts?.movement)}
+        ${renderIntegrationSignal("Deaths", Boolean(status.signals?.deaths), status.counts?.deaths)}
+        ${renderIntegrationSignal("Leaves", Boolean(status.signals?.leaves), status.counts?.leaves)}
+        ${renderIntegrationSignal("Chat", Boolean(status.signals?.chat), status.counts?.chat)}
+        ${renderIntegrationSignal("Events", Boolean(status.signals?.events), status.counts?.events)}
       </div>
       <div class="connectedGameActions">
         <button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
@@ -2073,12 +2087,13 @@ function renderConnectedGame(universe) {
 }
 
 function renderIntegrationStatusCard(options = {}) {
-  if (!integrationStatusTitle || !integrationStatusGrid || !integrationSignalList || !integrationStatusMessage) return;
+  if (!integrationStatusTitle || !integrationStatusState || !integrationStatusGrid || !integrationSignalList || !integrationStatusMessage) return;
 
   if (options.error) {
     integrationStatusTitle.textContent = "Unable to check status";
-    integrationStatusGrid.innerHTML = renderIntegrationMetric("Connection", "Error")
-      + renderIntegrationMetric("Last data", "--")
+    setIntegrationStatusState("Status unavailable", "warning");
+    if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = "!";
+    integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", "--")
       + renderIntegrationMetric("Map", "--")
       + renderIntegrationMetric("Failed ingests", "--");
     integrationSignalList.innerHTML = "";
@@ -2093,8 +2108,9 @@ function renderIntegrationStatusCard(options = {}) {
 
   if (!selectedUniverse) {
     integrationStatusTitle.textContent = "No game connected";
-    integrationStatusGrid.innerHTML = renderIntegrationMetric("Connection", "Waiting")
-      + renderIntegrationMetric("Last data", "--")
+    setIntegrationStatusState("Waiting for game", "waiting");
+    if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = "?";
+    integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", "--")
       + renderIntegrationMetric("Map", "--")
       + renderIntegrationMetric("Failed ingests", "--");
     integrationSignalList.innerHTML = renderIntegrationSignal("Movement", false)
@@ -2118,8 +2134,9 @@ function renderIntegrationStatusCard(options = {}) {
   const hasAnyData = lastReceivedAt > 0 || Number(selectedUniverse.totalSamples || 0) > 0;
 
   integrationStatusTitle.textContent = name;
-  integrationStatusGrid.innerHTML = renderIntegrationMetric("Connection", status.connected === false ? "Not connected" : "Connected")
-    + renderIntegrationMetric("Last data", lastReceivedAt ? formatRelativeTime(lastReceivedAt) : "Waiting")
+  setIntegrationStatusState(status.connected === false ? "Not connected" : "Connected", status.connected === false ? "warning" : "ok");
+  if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = name.trim().charAt(0).toUpperCase() || "?";
+  integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", lastReceivedAt ? formatRelativeTime(lastReceivedAt) : "Waiting")
     + renderIntegrationMetric("Map", status.mapUploaded || selectedUniverse.hasMapSnapshot ? "Uploaded" : "Missing")
     + renderIntegrationMetric("Failed ingests", `${formatCompactNumber(failedIngests)} / 24h`, failedIngests > 0 ? "danger" : "ok");
   integrationSignalList.innerHTML = renderIntegrationSignal("Movement", Boolean(signals.movement), counts.movement)
@@ -2139,6 +2156,13 @@ function renderIntegrationStatusCard(options = {}) {
   }
 
   renderSetupChecklist(selectedUniverse);
+}
+
+function setIntegrationStatusState(label, tone = "ok") {
+  if (!integrationStatusState) return;
+  integrationStatusState.textContent = label;
+  integrationStatusState.classList.remove("waiting", "warning");
+  if (tone === "waiting" || tone === "warning") integrationStatusState.classList.add(tone);
 }
 
 function renderSetupChecklist(selectedUniverse = null) {
@@ -2187,6 +2211,13 @@ function renderSetupChecklist(selectedUniverse = null) {
       complete: hasMap,
     },
   ];
+
+  const completedSteps = steps.filter((step) => step.complete).length;
+  const progressPercent = Math.round((completedSteps / steps.length) * 100);
+  if (setupProgressText) setupProgressText.textContent = `${completedSteps} / ${steps.length} complete`;
+  if (setupProgressPercent) setupProgressPercent.textContent = `${progressPercent}%`;
+  if (setupProgressBar) setupProgressBar.style.width = `${progressPercent}%`;
+  if (setupProgressTrack) setupProgressTrack.setAttribute("aria-valuenow", String(progressPercent));
 
   setupChecklist.innerHTML = steps.map((step) => `
     <li class="${step.complete ? "complete" : step.current ? "current" : ""}">

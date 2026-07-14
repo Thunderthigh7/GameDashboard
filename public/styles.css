@@ -763,81 +763,190 @@ body.isResizingLayout {
   width: 100%;
 }
 
+body[data-active-view="connect"] .topbar {
+  justify-content: flex-end;
+}
+
+body[data-active-view="connect"] .topbar > div:first-child {
+  display: none;
+}
+
 .connectUniversePanel {
   display: grid;
-  gap: 18px;
-  max-width: 920px;
+  gap: 16px;
+  max-width: none;
+  padding: 22px;
+  background:
+    linear-gradient(145deg, rgba(12, 22, 46, 0.92), rgba(5, 12, 28, 0.9)),
+    var(--surface);
 }
 
-.connectUniverseForm {
-  grid-template-columns: minmax(280px, 1fr) auto;
-  align-items: end;
-  gap: 14px;
+.connectUniverseHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
 }
 
-.projectForm .button {
-  width: 100%;
+.connectUniverseHeader h2 {
+  font-size: 25px;
+  line-height: 1.15;
 }
 
-.connectUniverseForm .button {
-  min-height: 43px;
+.connectUniverseHeader p {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.connectNewGameButton {
+  gap: 10px;
+  min-height: 42px;
+  padding-inline: 17px;
+  background: linear-gradient(135deg, #6d36ee, #8a43ff);
+  box-shadow: 0 10px 24px rgba(96, 50, 255, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.22);
   white-space: nowrap;
+}
+
+.connectNewGameButton span {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
 }
 
 .integrationStatusCard {
   display: grid;
-  gap: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 14px;
+  gap: 9px;
+  border: 1px solid rgba(80, 99, 150, 0.4);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(13, 26, 54, 0.82), rgba(8, 17, 37, 0.88));
+  padding: 16px;
 }
 
 .integrationStatusHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: minmax(330px, 1.25fr) minmax(430px, 1fr) auto;
+  align-items: center;
+  gap: 20px;
 }
 
-.integrationStatusHeader > div {
-  display: grid;
-  gap: 4px;
+.integrationGameSummary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
   min-width: 0;
 }
 
-.integrationStatusHeader span,
-.integrationStatusGrid span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  text-transform: uppercase;
+.integrationGameArtwork,
+.connectedGameArtwork {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.3), transparent 27%),
+    linear-gradient(145deg, #299dd2, #32d18a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 12px 28px rgba(0, 0, 0, 0.22);
 }
 
-.integrationStatusHeader strong {
-  overflow-wrap: anywhere;
-  font-size: 18px;
+.integrationGameArtwork::after,
+.connectedGameArtwork::after {
+  content: "";
+  position: absolute;
+  width: 52%;
+  height: 52%;
+  border: 3px solid rgba(255, 255, 255, 0.76);
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-28deg);
+}
+
+.integrationGameArtwork > span,
+.connectedGameArtwork > span {
+  position: relative;
+  z-index: 1;
+  color: white;
+  font-size: 17px;
+  font-weight: 900;
+  opacity: 0;
+}
+
+.integrationGameArtwork {
+  width: 92px;
+  height: 92px;
+  border-radius: 12px;
+}
+
+.integrationGameDetails {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.integrationGameDetails > strong {
+  overflow: hidden;
+  font-size: 17px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.integrationConnectionState {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.integrationConnectionState::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.integrationConnectionState.waiting {
+  color: var(--muted);
+}
+
+.integrationConnectionState.warning {
+  color: var(--danger-text);
 }
 
 .integrationStatusGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(105px, 1fr));
+  min-width: 0;
 }
 
 .integrationStatusGrid div {
   display: grid;
-  gap: 5px;
+  align-content: center;
+  gap: 6px;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-soft);
-  padding: 10px;
+  min-height: 64px;
+  border-left: 1px solid var(--line);
+  padding: 4px 18px;
+}
+
+.integrationStatusGrid span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .integrationStatusGrid strong {
   overflow-wrap: anywhere;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .integrationStatusGrid .ok strong {
@@ -851,51 +960,129 @@ body.isResizingLayout {
 .integrationSignalList {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
+  margin-top: 7px;
 }
 
 .integrationSignalList span {
-  min-height: 30px;
+  min-height: 26px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--placeholder-badge-bg);
   color: var(--muted);
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 5px 9px;
+  font-size: 10px;
   font-weight: 800;
 }
 
 .integrationSignalList span.active {
-  border-color: rgba(53, 208, 131, 0.36);
-  background: var(--live-badge-bg);
+  border-color: rgba(53, 208, 131, 0.48);
+  background: rgba(53, 208, 131, 0.09);
   color: var(--green);
+  box-shadow: inset 0 0 12px rgba(53, 208, 131, 0.04);
+}
+
+.integrationRefreshButton,
+.refreshGamesButton {
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.integrationRefreshButton svg,
+.refreshGamesButton svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .integrationStatusCard .status {
-  margin-top: 0;
+  min-height: 15px;
+  margin: 0 0 0 110px;
+  font-size: 11px;
 }
 
 .setupChecklistCard {
   display: grid;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 14px;
+  gap: 14px;
+  border: 1px solid rgba(80, 99, 150, 0.4);
+  border-radius: 10px;
+  background: rgba(8, 18, 39, 0.72);
+  padding: 16px 18px 18px;
+}
+
+.setupChecklistHeader,
+.setupChecklistIntro,
+.setupChecklistProgress {
+  display: flex;
+  align-items: center;
+}
+
+.setupChecklistHeader {
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.setupChecklistIntro {
+  gap: 14px;
+  min-width: 0;
 }
 
 .setupChecklistCard h3 {
+  flex: 0 0 auto;
   margin: 0;
   font-size: 15px;
 }
 
 .setupChecklistCard p {
-  margin-top: 4px;
+  margin: 0;
+}
+
+.setupChecklistIntro p {
+  font-size: 12px;
+}
+
+.setupChecklistProgress {
+  flex: 0 1 480px;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 300px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.setupChecklistProgress strong {
+  min-width: 34px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.setupProgressTrack {
+  width: min(300px, 24vw);
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(81, 96, 139, 0.34);
+}
+
+.setupProgressTrack span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22bd77, #3ed58d);
+  box-shadow: 0 0 16px rgba(53, 208, 131, 0.28);
+  transition: width 260ms ease;
 }
 
 .setupChecklist {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(145px, 1fr));
   gap: 10px;
   margin: 0;
   padding: 0;
@@ -905,12 +1092,14 @@ body.isResizingLayout {
 .setupChecklist li {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
+  align-content: start;
   gap: 9px;
   min-width: 0;
+  min-height: 82px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-soft);
-  padding: 10px;
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgba(13, 25, 52, 0.78), rgba(7, 15, 33, 0.76));
+  padding: 12px;
 }
 
 .setupChecklist li > span {
@@ -924,6 +1113,7 @@ body.isResizingLayout {
 .setupChecklist li.complete > span {
   border-color: rgba(53, 208, 131, 0.45);
   background: var(--green);
+  box-shadow: 0 0 15px rgba(53, 208, 131, 0.18);
 }
 
 .setupChecklist li.complete > span::before {
@@ -939,27 +1129,78 @@ body.isResizingLayout {
 
 .setupChecklist li.current {
   border-color: rgba(109, 66, 232, 0.7);
-  background: var(--purple-soft);
+  background: linear-gradient(145deg, rgba(86, 45, 176, 0.22), rgba(10, 18, 39, 0.82));
 }
 
 .setupChecklist strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .setupChecklist p {
   margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.connectGameRow {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(400px, 1.35fr) minmax(230px, auto);
+  align-items: center;
+  gap: 18px;
+  border: 1px solid rgba(80, 99, 150, 0.4);
+  border-radius: 10px;
+  background: rgba(8, 18, 39, 0.72);
+  padding: 10px 18px;
+}
+
+.connectGameCopy {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.connectGameCopy h3 {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 15px;
+}
+
+.connectGameCopy p {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectUniverseForm {
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.projectForm .button {
+  width: 100%;
+}
+
+.connectUniverseForm .button,
+.connectUniverseForm select {
+  min-height: 40px;
+}
+
+.connectUniverseForm .button {
+  white-space: nowrap;
 }
 
 .projectSecretBox {
   width: 100%;
   border: 1px solid rgba(34, 211, 238, 0.28);
-  border-radius: 8px;
-  background: rgba(34, 211, 238, 0.08);
-  padding: 10px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.09), rgba(8, 18, 39, 0.82));
+  padding: 14px;
 }
 
 .projectSecretBox strong {
@@ -999,9 +1240,11 @@ body.isResizingLayout {
 
 .connectedGamesManager {
   display: grid;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
+  gap: 10px;
+  border: 1px solid rgba(80, 99, 150, 0.28);
+  border-radius: 10px;
+  background: rgba(5, 13, 29, 0.5);
+  padding: 14px;
 }
 
 .connectedGamesManager h3 {
@@ -1012,45 +1255,112 @@ body.isResizingLayout {
 .connectedGamesManager p {
   margin-top: 4px;
   color: var(--muted);
+  font-size: 11px;
 }
 
 .connectedGameList {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.connectedGameItem {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  padding: 12px;
+.connectedGameList > .status {
+  grid-column: 1 / -1;
+  margin: 8px 2px;
 }
 
-.connectedGameItem div {
+.connectedGameItem {
   display: grid;
-  gap: 4px;
+  gap: 13px;
   min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(14, 28, 57, 0.86), rgba(7, 16, 34, 0.88));
+  padding: 16px;
+}
+
+.connectedGamePrimary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.connectedGameArtwork {
+  width: 78px;
+  height: 78px;
+  border-radius: 11px;
+}
+
+.connectedGameArtwork.tone2 {
+  background:
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.24), transparent 26%),
+    linear-gradient(145deg, #6679a5, #263650);
+}
+
+.connectedGameArtwork.tone3 {
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, 0.25), transparent 27%),
+    linear-gradient(145deg, #6268d6, #9b45d2);
+}
+
+.connectedGameArtwork.tone4 {
+  background:
+    radial-gradient(circle at 70% 26%, rgba(255, 255, 255, 0.24), transparent 27%),
+    linear-gradient(145deg, #d47d3e, #c43f71);
 }
 
 .connectedGameInfo {
   display: grid;
-  gap: 10px !important;
+  gap: 6px;
   min-width: 0;
 }
 
+.connectedGameTitle {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.connectedGameTitle strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectedGameTitle span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.connectedGameConnection {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.connectedGameConnection::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .connectedGameStatus {
-  display: flex !important;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px !important;
+  gap: 8px 18px;
 }
 
 .connectedGameStatus b {
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .connectedGameStatus.ok b {
@@ -1065,45 +1375,55 @@ body.isResizingLayout {
   color: var(--muted);
 }
 
+.connectedGameStatus span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.connectedGameStatus .connectedGameWarning {
+  color: var(--danger-text);
+  font-weight: 750;
+}
+
 .connectedGameSignals {
-  display: flex !important;
+  display: flex;
   flex-wrap: wrap;
-  gap: 7px !important;
+  gap: 7px;
 }
 
 .connectedGameSignals span {
-  min-height: 28px;
+  min-height: 26px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--placeholder-badge-bg);
   color: var(--muted);
-  padding: 5px 9px;
-  font-size: 11px;
+  padding: 5px 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
 .connectedGameSignals span.active {
-  border-color: rgba(53, 208, 131, 0.36);
-  background: var(--live-badge-bg);
+  border-color: rgba(53, 208, 131, 0.48);
+  background: rgba(53, 208, 131, 0.09);
   color: var(--green);
 }
 
 .connectedGameActions {
-  display: flex !important;
-  grid-template-columns: none;
-  flex: 0 0 auto;
+  display: flex;
   gap: 8px;
-  min-width: auto !important;
+  border-top: 1px solid rgba(80, 99, 150, 0.25);
+  padding-top: 12px;
 }
 
-.connectedGameItem strong,
-.connectedGameItem span {
-  overflow-wrap: anywhere;
+.connectedGameActions .button {
+  min-height: 36px;
+  font-size: 11px;
 }
 
-.connectedGameItem span {
+.connectUniverseHelp {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  text-align: center;
 }
 
 .sectionHeader {
@@ -1279,14 +1599,19 @@ body.isResizingLayout {
 }
 
 .connectUniverseActions {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
 }
 
 .connectUniverseActions .status {
   margin-top: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboardGrid {
@@ -5139,6 +5464,27 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .funnelResultStep {
     min-width: 860px;
   }
+
+  .integrationStatusHeader {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .integrationStatusGrid {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .setupChecklist {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .connectGameRow {
+    grid-template-columns: minmax(380px, 1fr) auto;
+  }
+
+  .connectGameCopy {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 860px) {
@@ -5360,12 +5706,53 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 
   .integrationStatusHeader {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-direction: column;
   }
 
   .integrationStatusHeader .button {
     width: 100%;
+  }
+
+  .integrationStatusGrid {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .connectUniverseHeader,
+  .setupChecklistHeader,
+  .setupChecklistIntro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .connectNewGameButton {
+    width: 100%;
+  }
+
+  .integrationStatusCard .status {
+    margin-left: 0;
+  }
+
+  .setupChecklistProgress {
+    flex: none;
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .setupProgressTrack {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .connectGameRow,
+  .connectedGameList {
+    grid-template-columns: 1fr;
+  }
+
+  .connectGameCopy {
+    grid-column: auto;
   }
 
   .adminStats,
@@ -5399,6 +5786,66 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 560px) {
+  .connectUniversePanel {
+    padding: 15px;
+  }
+
+  .integrationGameArtwork {
+    width: 72px;
+    height: 72px;
+  }
+
+  .integrationGameSummary {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .integrationStatusGrid div {
+    min-height: 52px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    padding-inline: 0;
+  }
+
+  .setupChecklistProgress {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .setupProgressTrack {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .connectGameRow {
+    padding: 15px;
+  }
+
+  .connectGameCopy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .connectGameCopy p,
+  .connectUniverseActions .status {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .connectUniverseActions {
+    grid-template-columns: 1fr;
+  }
+
+  .connectedGameActions {
+    flex-direction: column;
+  }
+
+  .connectedGameActions .button {
+    width: 100%;
+  }
+
   .eventOverview {
     grid-template-columns: minmax(0, 1fr);
   }
