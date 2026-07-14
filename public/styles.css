@@ -1739,7 +1739,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .mapPanel {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   min-width: 0;
   height: 100%;
@@ -1757,14 +1758,13 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .heatmapToolbar {
-  position: absolute;
-  top: 22px;
-  left: 22px;
-  right: 22px;
+  position: relative;
   z-index: 5;
   display: flex;
   justify-content: center;
+  min-width: 0;
   margin: 0;
+  padding: 18px 20px 12px;
   pointer-events: none;
 }
 
@@ -1772,8 +1772,21 @@ body[data-active-view="connect"] .topbar > div:first-child {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   pointer-events: auto;
+}
+
+.heatmapPresets > .miniButton {
+  flex: 0 0 auto;
+}
+
+.heatmapSelectModes {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
 }
 
 .heatmapEventControl,
@@ -2261,9 +2274,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .aiAnalysisModeButton {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: static;
 }
 
 .heatmapFilters {
@@ -2274,11 +2285,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .heatmapShell {
-  position: absolute;
-  inset: 0;
+  position: relative;
   z-index: 0;
   min-height: 0;
-  height: 100%;
+  height: auto;
   margin: 0;
   overflow: hidden;
   border: 0;
@@ -6285,16 +6295,21 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 
   .heatmapToolbar {
-    top: 18px;
-    left: 18px;
-    right: 18px;
     width: auto;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    padding: 16px 18px 12px;
   }
 
   .heatmapPresets {
-    width: calc(100% - 130px);
+    width: 100%;
     justify-content: flex-start;
+  }
+
+  .heatmapSelectModes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .heatmapEventControl,
@@ -6317,7 +6332,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .heatmapOverlay {
     right: 18px;
-    top: 18px;
+    top: 16px;
   }
 
   .mapPartCountBox {
@@ -6433,6 +6448,53 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 560px) {
+  .heatmapToolbar {
+    padding: 12px;
+  }
+
+  .heatmapPresets {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .heatmapPresets > .miniButton {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .heatmapPresets > .miniButton:nth-child(5),
+  .heatmapSelectModes {
+    grid-column: 1 / -1;
+  }
+
+  .heatmapSelectModes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heatmapEventControl > span,
+  .heatmapFunnelControl > span {
+    min-width: 58px;
+    padding-inline: 9px;
+  }
+
+  .heatmapEventButton,
+  .heatmapFunnelButton {
+    gap: 6px;
+    padding-inline: 9px;
+  }
+
+  .heatmapOverlay {
+    right: 12px;
+    top: 12px;
+    padding: 10px 12px;
+  }
+
+  .heatmapOverlay strong {
+    font-size: 13px;
+  }
+
   .connectUniversePanel {
     padding: 15px;
   }

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-5">
+    <link rel="stylesheet" href="/styles.css?v=20260714-6">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -230,23 +230,25 @@
                       <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
                       <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
                       <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
-                      <div class="heatmapEventControl" id="heatmapEventControl">
-                        <span>Events</span>
-                        <button class="heatmapEventButton" id="heatmapEventButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="heatmapEventMenu" disabled>
-                          <strong id="heatmapEventButtonLabel">Loading events...</strong>
-                          <small id="heatmapEventButtonMeta"></small>
-                          <i aria-hidden="true"></i>
-                        </button>
-                        <div class="heatmapEventMenu" id="heatmapEventMenu" role="listbox" aria-label="Tracked events" hidden></div>
-                      </div>
-                      <div class="heatmapFunnelControl" id="heatmapFunnelControl">
-                        <span>Funnels</span>
-                        <button class="heatmapFunnelButton" id="heatmapFunnelButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="heatmapFunnelMenu" disabled>
-                          <strong id="heatmapFunnelButtonLabel">Choose funnel...</strong>
-                          <small id="heatmapFunnelButtonMeta"></small>
-                          <i aria-hidden="true"></i>
-                        </button>
-                        <div class="heatmapFunnelMenu" id="heatmapFunnelMenu" role="dialog" aria-label="Funnel map options" hidden></div>
+                      <div class="heatmapSelectModes">
+                        <div class="heatmapEventControl" id="heatmapEventControl">
+                          <span>Events</span>
+                          <button class="heatmapEventButton" id="heatmapEventButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="heatmapEventMenu" disabled>
+                            <strong id="heatmapEventButtonLabel">Loading events...</strong>
+                            <small id="heatmapEventButtonMeta"></small>
+                            <i aria-hidden="true"></i>
+                          </button>
+                          <div class="heatmapEventMenu" id="heatmapEventMenu" role="listbox" aria-label="Tracked events" hidden></div>
+                        </div>
+                        <div class="heatmapFunnelControl" id="heatmapFunnelControl">
+                          <span>Funnels</span>
+                          <button class="heatmapFunnelButton" id="heatmapFunnelButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="heatmapFunnelMenu" disabled>
+                            <strong id="heatmapFunnelButtonLabel">Choose funnel...</strong>
+                            <small id="heatmapFunnelButtonMeta"></small>
+                            <i aria-hidden="true"></i>
+                          </button>
+                          <div class="heatmapFunnelMenu" id="heatmapFunnelMenu" role="dialog" aria-label="Funnel map options" hidden></div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -972,6 +974,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260714-5"></script>
+    <script defer src="/app.js?v=20260714-6"></script>
   </body>
 </html>
