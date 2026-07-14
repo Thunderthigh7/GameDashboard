@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-4">
+    <link rel="stylesheet" href="/styles.css?v=20260714-5">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -238,6 +238,15 @@
                           <i aria-hidden="true"></i>
                         </button>
                         <div class="heatmapEventMenu" id="heatmapEventMenu" role="listbox" aria-label="Tracked events" hidden></div>
+                      </div>
+                      <div class="heatmapFunnelControl" id="heatmapFunnelControl">
+                        <span>Funnels</span>
+                        <button class="heatmapFunnelButton" id="heatmapFunnelButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="heatmapFunnelMenu" disabled>
+                          <strong id="heatmapFunnelButtonLabel">Choose funnel...</strong>
+                          <small id="heatmapFunnelButtonMeta"></small>
+                          <i aria-hidden="true"></i>
+                        </button>
+                        <div class="heatmapFunnelMenu" id="heatmapFunnelMenu" role="dialog" aria-label="Funnel map options" hidden></div>
                       </div>
                     </div>
                   </div>
@@ -582,39 +591,6 @@
                 <span>Median time to convert</span>
                 <strong id="funnelFooterMedian">--</strong>
               </footer>
-              <section class="funnelMapPanel" id="funnelMapPanel" aria-labelledby="funnelMapTitle" hidden>
-                <header class="funnelMapHeader">
-                  <div>
-                    <span class="funnelMapEyebrow">Spatial drop-off</span>
-                    <h3 id="funnelMapTitle">Step locations</h3>
-                    <p id="funnelMapSubtitle">Choose a funnel step to see where players reached it or dropped afterward.</p>
-                  </div>
-                  <div class="funnelMapActions">
-                    <div class="funnelMapModeToggle" role="group" aria-label="Funnel map mode">
-                      <button type="button" data-funnel-map-mode="reached" aria-pressed="false">Reached this step</button>
-                      <button type="button" data-funnel-map-mode="dropped" aria-pressed="true">Dropped after</button>
-                    </div>
-                    <button class="funnelMapCenterButton" id="centerFunnelMapButton" type="button" aria-label="Center funnel map" title="Center map">
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /><circle cx="12" cy="12" r="5" /></svg>
-                    </button>
-                  </div>
-                </header>
-                <div class="funnelMapShell" id="funnelMapShell">
-                  <canvas id="funnelMapCanvas" aria-label="Map of funnel step locations"></canvas>
-                  <div class="funnelMapLoading" id="funnelMapLoading" role="status">
-                    <span aria-hidden="true"></span>
-                    <strong>Loading funnel map...</strong>
-                  </div>
-                  <div class="funnelMapEmpty" id="funnelMapEmpty" role="status" hidden>
-                    <strong>No mapped sessions</strong>
-                    <p>These sessions did not include a custom event location.</p>
-                  </div>
-                  <div class="funnelMapSummary" id="funnelMapSummary">Waiting for a step...</div>
-                  <div class="funnelMapLegend" aria-hidden="true"><span></span><b id="funnelMapLegendLabel">Dropped sessions</b></div>
-                  <div class="funnelMapTooltip" id="funnelMapTooltip" role="status" hidden></div>
-                </div>
-                <p class="funnelMapNote" id="funnelMapNote">Drop-off mode uses the last mapped custom event after the selected step. Drag to pan and scroll to zoom.</p>
-              </section>
             </article>
           </section>
 
@@ -996,6 +972,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260714-4"></script>
+    <script defer src="/app.js?v=20260714-5"></script>
   </body>
 </html>

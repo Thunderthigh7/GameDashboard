@@ -33,6 +33,11 @@ const eventButton = document.querySelector("#heatmapEventButton");
 const eventButtonLabel = document.querySelector("#heatmapEventButtonLabel");
 const eventButtonMeta = document.querySelector("#heatmapEventButtonMeta");
 const eventMenu = document.querySelector("#heatmapEventMenu");
+const funnelControl = document.querySelector("#heatmapFunnelControl");
+const funnelButton = document.querySelector("#heatmapFunnelButton");
+const funnelButtonLabel = document.querySelector("#heatmapFunnelButtonLabel");
+const funnelButtonMeta = document.querySelector("#heatmapFunnelButtonMeta");
+const funnelMenu = document.querySelector("#heatmapFunnelMenu");
 
 const DEFAULT_3D_YAW = -0.8;
 const DEFAULT_3D_PITCH = 0.72;
@@ -72,6 +77,11 @@ let saved3dView = { yaw: DEFAULT_3D_YAW, pitch: DEFAULT_3D_PITCH };
 let selectedChatLogId = "";
 let selectedTrackedEventName = "";
 let currentEventCatalog = [];
+let currentFunnelCatalog = [];
+let selectedMapFunnelId = "";
+let selectedMapFunnelStep = 0;
+let selectedMapFunnelMode = "dropped";
+let funnelMenuView = "funnels";
 let hoveredAiAreaMarker = null;
 let selectedAiAreaMarker = null;
 let selectedAiArea = null;
@@ -88,10 +98,12 @@ let pendingAreaAnalysisRender = null;
 let deferredAreaAnalysisRenderedAt = 0;
 let eventCatalogRequestState = null;
 let eventCatalogPreloadTimer = null;
+let funnelCatalogRequestState = null;
 const mapSnapshotCache = new Map();
 const mapSnapshotRequests = new Map();
 const heatmapPayloadCache = new Map();
 const eventCatalogCache = new Map();
+const funnelCatalogCache = new Map();
 const blockedCacheScopes = new Set();
 const persistentCachePrunes = new Map();
 const MAX_RENDERED_MAP_PARTS = 3500;
@@ -100,6 +112,8 @@ const HEATMAP_PAYLOAD_FRESH_MS = 12 * 1000;
 const HEATMAP_PAYLOAD_MAX_AGE_MS = 10 * 60 * 1000;
 const EVENT_CATALOG_FRESH_MS = 30 * 1000;
 const EVENT_CATALOG_MAX_AGE_MS = 10 * 60 * 1000;
+const FUNNEL_CATALOG_FRESH_MS = 30 * 1000;
+const FUNNEL_CATALOG_MAX_AGE_MS = 10 * 60 * 1000;
 const MAP_SNAPSHOT_FRESH_MS = 5 * 60 * 1000;
 const MAP_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_PERSISTED_CACHE_CHARS = 10_000_000;
@@ -111,14 +125,22 @@ const pointer = new THREE.Vector2();
 
 if (canvas) {
   if (eventMenu && eventMenu.parentElement !== document.body) document.body.append(eventMenu);
+  if (funnelMenu && funnelMenu.parentElement !== document.body) document.body.append(funnelMenu);
   initScene();
+  syncFunnelSelect();
   refreshButton?.addEventListener("click", () => loadHeatmap({ force: true }));
   centerButton?.addEventListener("click", centerView);
   playerFilter?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") loadHeatmap({ force: true });
   });
-  fromFilter?.addEventListener("change", () => loadHeatmap({ force: true }));
-  toFilter?.addEventListener("change", () => loadHeatmap({ force: true }));
+  fromFilter?.addEventListener("change", () => {
+    if (activeHeatmapMode === "funnels") loadFunnelCatalog({ force: true });
+    loadHeatmap({ force: true });
+  });
+  toFilter?.addEventListener("change", () => {
+    if (activeHeatmapMode === "funnels") loadFunnelCatalog({ force: true });
+    loadHeatmap({ force: true });
+  });
   for (const button of presetButtons) {
     button.addEventListener("click", () => {
       applyPreset(Number(button.dataset.heatmapPresetMinutes) || 0);
@@ -145,11 +167,20 @@ if (canvas) {
   eventButton?.addEventListener("focus", () => loadEventCatalog());
   eventMenu?.addEventListener("click", handleEventMenuClick);
   eventMenu?.addEventListener("keydown", handleEventMenuKeydown);
+  funnelButton?.addEventListener("click", toggleFunnelDropdown);
+  funnelButton?.addEventListener("keydown", handleFunnelTriggerKeydown);
+  funnelButton?.addEventListener("focus", () => loadFunnelCatalog());
+  funnelMenu?.addEventListener("click", handleFunnelMenuClick);
+  funnelMenu?.addEventListener("keydown", handleFunnelMenuKeydown);
   document.addEventListener("pointerdown", handleEventDropdownOutsidePointer);
   document.addEventListener("focusin", handleEventDropdownOutsideFocus);
+  document.addEventListener("pointerdown", handleFunnelDropdownOutsidePointer);
+  document.addEventListener("focusin", handleFunnelDropdownOutsideFocus);
   eventControl?.addEventListener("pointerenter", () => loadEventCatalog());
+  funnelControl?.addEventListener("pointerenter", () => loadFunnelCatalog());
   window.addEventListener("dashboard:analyticsReady", () => {
     resizeScene();
+    syncFunnelSelect();
     if (activeDashboardView !== "overview" || document.hidden) return;
     startHeatmapRefresh();
     startAnimation();
@@ -164,8 +195,10 @@ if (canvas) {
       pendingAreaAnalysisRender = null;
       deferredAreaAnalysisRenderedAt = 0;
       abortEventCatalogRequest();
+      abortFunnelCatalogRequest();
       clearEventCatalogPreload();
       closeEventDropdown();
+      closeFunnelDropdown();
       const previousScope = activeCacheScope;
       activeCacheScope = "";
       if (previousScope) clearPersistentCacheScope(previousScope);
@@ -186,6 +219,8 @@ if (canvas) {
     closeEventDropdown();
     syncEventSelect();
     abortEventCatalogRequest();
+    resetFunnelSelection();
+    abortFunnelCatalogRequest();
     resizeScene();
     if (activeDashboardView !== "overview" || document.hidden) return;
     scheduleEventCatalogPreload();
@@ -194,6 +229,7 @@ if (canvas) {
   window.addEventListener("dashboard:overviewShown", () => {
     activeDashboardView = "overview";
     resizeScene();
+    syncFunnelSelect();
     startHeatmapRefresh();
     scheduleEventCatalogPreload();
     if (document.hidden) return;
@@ -205,6 +241,7 @@ if (canvas) {
     activeDashboardView = event.detail?.view || "overview";
     if (activeDashboardView === "overview") {
       resizeScene();
+      syncFunnelSelect();
       startHeatmapRefresh();
       startAnimation();
       scheduleEventCatalogPreload();
@@ -215,8 +252,10 @@ if (canvas) {
     stopAnimation();
     abortHeatmapRequest();
     abortEventCatalogRequest();
+    abortFunnelCatalogRequest();
     clearEventCatalogPreload();
     closeEventDropdown();
+    closeFunnelDropdown();
   });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
@@ -262,9 +301,18 @@ if (canvas) {
     if (event.detail?.source === "heatmap") return;
     applyEventCatalog(event.detail?.eventCatalog, event.detail?.selectedEventName, { notifyApp: false });
   });
+  window.addEventListener("dashboard:funnelDefinitionsChanged", (event) => {
+    const changedUniverseId = String(event.detail?.universeId || "");
+    const selectedUniverseId = String(window.getSelectedUniverseId?.() || "");
+    if (changedUniverseId && changedUniverseId !== selectedUniverseId) return;
+    funnelCatalogCache.clear();
+    resetFunnelSelection();
+    if (activeDashboardView === "overview" && !document.hidden) loadFunnelCatalog({ force: true });
+  });
   window.addEventListener("resize", () => {
     resizeScene();
     positionEventDropdown();
+    positionFunnelDropdown();
   });
   window.addEventListener("dashboard:visibilityChanged", handleVisibilityChange);
 }
@@ -392,13 +440,16 @@ function handleVisibilityChange() {
     stopAnimation();
     abortHeatmapRequest();
     abortEventCatalogRequest();
+    abortFunnelCatalogRequest();
     clearEventCatalogPreload();
     closeEventDropdown();
+    closeFunnelDropdown();
     return;
   }
 
   if (activeDashboardView === "overview" && window.isDashboardAuthenticated?.() !== false) {
     resizeScene();
+    syncFunnelSelect();
     startAnimation();
     startHeatmapRefresh();
     scheduleEventCatalogPreload();
@@ -482,6 +533,232 @@ async function loadEventCatalog(options = {}) {
 function abortEventCatalogRequest() {
   eventCatalogRequestState?.controller.abort();
   eventCatalogRequestState = null;
+}
+
+async function loadFunnelCatalog(options = {}) {
+  if (window.isDashboardAuthenticated?.() === false || document.hidden || activeDashboardView !== "overview") return null;
+  const universeId = String(window.getSelectedUniverseId?.() || "");
+  if (!universeId) {
+    applyFunnelCatalog([]);
+    return null;
+  }
+
+  const params = new URLSearchParams({ universeId });
+  const from = getDateTimeMs(fromFilter?.value);
+  const to = getDateTimeMs(toFilter?.value);
+  if (from) params.set("from", String(from));
+  if (to) params.set("to", String(to));
+  const requestUrl = `/api/funnels?${params.toString()}`;
+  const cacheKey = `${getCacheScope()}:${requestUrl}`;
+  const cached = funnelCatalogCache.get(cacheKey);
+
+  if (options.open) {
+    funnelMenuView = selectedMapFunnelId ? "steps" : "funnels";
+    renderFunnelMenu({ loading: !cached && !currentFunnelCatalog.length });
+    openFunnelDropdown();
+  }
+
+  if (cached && Date.now() - cached.storedAt <= FUNNEL_CATALOG_MAX_AGE_MS) {
+    applyFunnelCatalog(cached.payload?.funnels);
+    if (!options.force && Date.now() - cached.storedAt <= FUNNEL_CATALOG_FRESH_MS) return cached.payload;
+  } else if (cached) {
+    funnelCatalogCache.delete(cacheKey);
+  }
+
+  if (funnelCatalogRequestState?.key === cacheKey && !options.force) return funnelCatalogRequestState.promise;
+  abortFunnelCatalogRequest();
+  funnelButton?.setAttribute("aria-busy", "true");
+  if (!currentFunnelCatalog.length && funnelButtonLabel) funnelButtonLabel.textContent = "Loading funnels...";
+
+  const controller = new AbortController();
+  const requestScope = getCacheScope();
+  let completed = false;
+  const promise = fetchJson(requestUrl, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
+    signal: controller.signal,
+  }).then((payload) => {
+    if (controller.signal.aborted
+      || universeId !== String(window.getSelectedUniverseId?.() || "")
+      || requestScope !== getCacheScope()) return null;
+    setBoundedMemoryCache(funnelCatalogCache, cacheKey, { storedAt: Date.now(), payload });
+    applyFunnelCatalog(payload.funnels);
+    completed = true;
+    return payload;
+  }).catch((error) => {
+    if (error.name !== "AbortError" && !currentFunnelCatalog.length) {
+      if (funnelButtonLabel) funnelButtonLabel.textContent = "Funnels unavailable";
+      if (!funnelMenu?.hidden) renderFunnelMenu({ error: error.message });
+    }
+    return null;
+  }).finally(() => {
+    if (funnelCatalogRequestState?.controller !== controller) return;
+    funnelCatalogRequestState = null;
+    funnelButton?.removeAttribute("aria-busy");
+    if (completed) syncFunnelSelect();
+  });
+  funnelCatalogRequestState = { key: cacheKey, controller, promise };
+  return promise;
+}
+
+function abortFunnelCatalogRequest() {
+  funnelCatalogRequestState?.controller.abort();
+  funnelCatalogRequestState = null;
+  funnelButton?.removeAttribute("aria-busy");
+}
+
+function applyFunnelCatalog(catalog) {
+  currentFunnelCatalog = Array.isArray(catalog)
+    ? catalog.filter((funnel) => funnel && typeof funnel.id === "string" && funnel.id && Array.isArray(funnel.steps))
+    : [];
+  const selectedFunnel = getSelectedMapFunnel();
+  if (!selectedFunnel) {
+    selectedMapFunnelId = "";
+    selectedMapFunnelStep = 0;
+    selectedMapFunnelMode = "dropped";
+    funnelMenuView = "funnels";
+  } else if (selectedMapFunnelStep > selectedFunnel.steps.length) {
+    selectedMapFunnelStep = 0;
+    selectedMapFunnelMode = "dropped";
+  }
+  syncFunnelSelect();
+  if (!funnelMenu?.hidden) {
+    renderFunnelMenu();
+    positionFunnelDropdown();
+  }
+}
+
+function resetFunnelSelection() {
+  currentFunnelCatalog = [];
+  selectedMapFunnelId = "";
+  selectedMapFunnelStep = 0;
+  selectedMapFunnelMode = "dropped";
+  funnelMenuView = "funnels";
+  closeFunnelDropdown();
+  if (activeHeatmapMode === "funnels") {
+    activeHeatmapMode = "ai-analysis";
+    for (const button of modeButtons) {
+      button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
+    }
+  }
+  syncFunnelSelect();
+}
+
+function getSelectedMapFunnel() {
+  return currentFunnelCatalog.find((funnel) => funnel.id === selectedMapFunnelId) || null;
+}
+
+function getSelectedMapFunnelStep() {
+  const funnel = getSelectedMapFunnel();
+  return funnel?.analytics?.steps?.[selectedMapFunnelStep - 1] || null;
+}
+
+function syncFunnelSelect() {
+  if (!funnelButton || !funnelMenu || !funnelControl) return;
+  const universeId = String(window.getSelectedUniverseId?.() || "");
+  const funnel = getSelectedMapFunnel();
+  const step = getSelectedMapFunnelStep();
+  funnelControl.classList.toggle("active", activeHeatmapMode === "funnels");
+  funnelButton.disabled = !universeId;
+
+  if (!universeId) {
+    if (funnelButtonLabel) funnelButtonLabel.textContent = "Choose universe first";
+    if (funnelButtonMeta) funnelButtonMeta.textContent = "";
+    return;
+  }
+
+  if (!funnel) {
+    if (funnelButtonLabel && funnelButton.getAttribute("aria-busy") !== "true") {
+      funnelButtonLabel.textContent = "Choose funnel...";
+    }
+    if (funnelButtonMeta) funnelButtonMeta.textContent = currentFunnelCatalog.length ? `${currentFunnelCatalog.length} saved` : "";
+    funnelButton.setAttribute("aria-label", "Choose a funnel to show on the map");
+    return;
+  }
+
+  if (funnelButtonLabel) funnelButtonLabel.textContent = funnel.name || "Funnel";
+  if (funnelButtonMeta) {
+    funnelButtonMeta.textContent = step
+      ? `Step ${selectedMapFunnelStep} · ${selectedMapFunnelMode === "dropped" ? "Dropped" : "Reached"}`
+      : `${funnel.steps.length} steps · Choose step`;
+  }
+  funnelButton.setAttribute("aria-label", step
+    ? `Funnel map: ${funnel.name}, ${formatTrackedEventName(step.eventName)}, ${selectedMapFunnelMode}`
+    : `Choose a step from ${funnel.name}`);
+}
+
+function renderFunnelMenu(options = {}) {
+  if (!funnelMenu) return;
+  if (options.error) {
+    funnelMenu.innerHTML = `<div class="heatmapFunnelEmpty"><strong>Could not load funnels</strong><small>${escapeHtml(options.error)}</small></div>`;
+    return;
+  }
+  if (options.loading && !currentFunnelCatalog.length) {
+    funnelMenu.innerHTML = '<div class="heatmapFunnelEmpty loading"><strong>Loading funnels...</strong><small>Reading the selected universe and date range.</small></div>';
+    return;
+  }
+
+  const funnel = getSelectedMapFunnel();
+  if (funnelMenuView === "steps" && funnel) {
+    const steps = Array.isArray(funnel.analytics?.steps) ? funnel.analytics.steps : [];
+    const isFinalStep = selectedMapFunnelStep > 0 && selectedMapFunnelStep >= steps.length;
+    funnelMenu.innerHTML = `
+      <div class="heatmapFunnelMenuHeader">
+        <button type="button" data-funnel-menu-back aria-label="Choose another funnel"><i aria-hidden="true"></i></button>
+        <span><strong>${escapeHtml(funnel.name)}</strong><small>${steps.length} steps · ${formatMapPercentage(funnel.analytics?.overallConversion)} converted</small></span>
+      </div>
+      <div class="heatmapFunnelModeToggle" role="group" aria-label="Funnel map mode">
+        <button type="button" data-funnel-map-mode="reached" class="${selectedMapFunnelMode === "reached" ? "active" : ""}" aria-pressed="${selectedMapFunnelMode === "reached"}">Reached this step</button>
+        <button type="button" data-funnel-map-mode="dropped" class="${selectedMapFunnelMode === "dropped" ? "active" : ""}" aria-pressed="${selectedMapFunnelMode === "dropped"}" ${isFinalStep ? "disabled" : ""}>Dropped after</button>
+      </div>
+      <div class="heatmapFunnelStepList" role="listbox" aria-label="${escapeHtml(funnel.name)} steps">
+        ${steps.map((step) => renderFunnelStepOption(step, steps.length)).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  funnelMenuView = "funnels";
+  funnelMenu.innerHTML = `
+    <div class="heatmapFunnelMenuIntro"><strong>Choose a funnel</strong><small>Select a saved funnel, then choose the step to investigate.</small></div>
+    <div class="heatmapFunnelList" role="listbox" aria-label="Saved funnels">
+      ${currentFunnelCatalog.length
+        ? currentFunnelCatalog.map(renderFunnelCatalogOption).join("")
+        : '<div class="heatmapFunnelEmpty"><strong>No saved funnels</strong><small>Create one from the Funnels page first.</small></div>'}
+    </div>
+  `;
+}
+
+function renderFunnelCatalogOption(funnel) {
+  const steps = Array.isArray(funnel.analytics?.steps) ? funnel.analytics.steps : [];
+  return `
+    <button class="heatmapFunnelOption" type="button" role="option" data-funnel-map-id="${escapeHtml(funnel.id)}">
+      <span><strong>${escapeHtml(funnel.name || "Untitled funnel")}</strong><small>${steps.length} steps · ${formatMapPercentage(funnel.analytics?.overallConversion)} converted</small></span>
+      <i aria-hidden="true"></i>
+    </button>
+  `;
+}
+
+function renderFunnelStepOption(step, stepCount) {
+  const selected = Number(step.index) === selectedMapFunnelStep;
+  const dropOff = Math.max(Number(step.dropOffSessions) || 0, 0);
+  return `
+    <button class="heatmapFunnelStepOption" type="button" role="option" data-funnel-map-step="${Number(step.index) || 0}" aria-selected="${selected}">
+      <b>${Number(step.index) || 0}</b>
+      <span><strong>${escapeHtml(formatTrackedEventName(step.eventName))}</strong><small>${formatMapNumber(step.sessions)} sessions · ${formatMapPercentage(step.conversionFromStart)} from start${step.index < stepCount ? ` · ${formatMapNumber(dropOff)} dropped` : ""}</small></span>
+      <i aria-hidden="true">&#10003;</i>
+    </button>
+  `;
+}
+
+function formatMapPercentage(value) {
+  const number = Number(value);
+  return `${Number.isFinite(number) ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(number) : "0"}%`;
+}
+
+function formatMapNumber(value) {
+  return new Intl.NumberFormat().format(Math.max(Number(value) || 0, 0));
 }
 
 function applyEventCatalog(catalog, selectedEventName = "", options = {}) {
@@ -574,6 +851,7 @@ function toggleEventDropdown() {
 
 function openEventDropdown(options = {}) {
   if (!eventMenu || !eventButton || eventButton.disabled || !currentEventCatalog.length) return;
+  closeFunnelDropdown();
   eventMenu.hidden = false;
   eventButton.setAttribute("aria-expanded", "true");
   eventControl?.classList.add("menuOpen");
@@ -680,6 +958,154 @@ function getEventDropdownOptions() {
   return eventMenu ? [...eventMenu.querySelectorAll("[data-event-map-option]")] : [];
 }
 
+function toggleFunnelDropdown() {
+  if (!funnelMenu || !funnelButton || funnelButton.disabled) return;
+  if (!funnelMenu.hidden) {
+    closeFunnelDropdown();
+    return;
+  }
+  loadFunnelCatalog({ open: true });
+}
+
+function openFunnelDropdown(options = {}) {
+  if (!funnelMenu || !funnelButton || funnelButton.disabled) return;
+  closeEventDropdown();
+  funnelMenu.hidden = false;
+  funnelButton.setAttribute("aria-expanded", "true");
+  funnelControl?.classList.add("menuOpen");
+  positionFunnelDropdown();
+  if (options.focus) getFunnelMenuButtons()[0]?.focus();
+}
+
+function closeFunnelDropdown(options = {}) {
+  if (!funnelMenu || !funnelButton) return;
+  funnelMenu.hidden = true;
+  funnelMenu.style.removeProperty("top");
+  funnelMenu.style.removeProperty("right");
+  funnelMenu.style.removeProperty("bottom");
+  funnelMenu.style.removeProperty("left");
+  funnelMenu.style.removeProperty("width");
+  funnelMenu.style.removeProperty("max-height");
+  funnelButton.setAttribute("aria-expanded", "false");
+  funnelControl?.classList.remove("menuOpen");
+  if (options.restoreFocus) funnelButton.focus();
+}
+
+function positionFunnelDropdown() {
+  if (!funnelMenu || !funnelButton || funnelMenu.hidden) return;
+  const rect = funnelButton.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  const gap = 6;
+  const edge = 10;
+  const spaceBelow = Math.max(viewportHeight - rect.bottom - gap - edge, 0);
+  const preferredHeight = Math.min(funnelMenu.scrollHeight, 440);
+  const menuWidth = Math.min(Math.max(rect.width, 360), Math.max(viewportWidth - edge * 2, 0));
+  const left = Math.min(Math.max(rect.left, edge), Math.max(viewportWidth - menuWidth - edge, edge));
+
+  funnelMenu.style.left = `${Math.round(left)}px`;
+  funnelMenu.style.width = `${Math.round(menuWidth)}px`;
+  funnelMenu.style.maxHeight = `${Math.max(Math.min(preferredHeight, spaceBelow), Math.min(spaceBelow, 90))}px`;
+  funnelMenu.style.top = `${Math.round(rect.bottom + gap)}px`;
+  funnelMenu.style.bottom = "auto";
+}
+
+function handleFunnelMenuClick(event) {
+  if (event.target.closest("[data-funnel-menu-back]")) {
+    funnelMenuView = "funnels";
+    renderFunnelMenu();
+    positionFunnelDropdown();
+    getFunnelMenuButtons()[0]?.focus();
+    return;
+  }
+
+  const funnelOption = event.target.closest("[data-funnel-map-id]");
+  if (funnelOption) {
+    const funnelId = String(funnelOption.dataset.funnelMapId || "");
+    if (!currentFunnelCatalog.some((funnel) => funnel.id === funnelId)) return;
+    selectedMapFunnelId = funnelId;
+    selectedMapFunnelStep = 0;
+    selectedMapFunnelMode = "dropped";
+    funnelMenuView = "steps";
+    syncFunnelSelect();
+    renderFunnelMenu();
+    positionFunnelDropdown();
+    funnelMenu.querySelector("[data-funnel-map-step]")?.focus();
+    return;
+  }
+
+  const modeButton = event.target.closest("[data-funnel-map-mode]");
+  if (modeButton) {
+    const funnel = getSelectedMapFunnel();
+    if (!funnel) return;
+    const isFinalStep = selectedMapFunnelStep > 0 && selectedMapFunnelStep >= funnel.steps.length;
+    selectedMapFunnelMode = modeButton.dataset.funnelMapMode === "dropped" && !isFinalStep ? "dropped" : "reached";
+    syncFunnelSelect();
+    renderFunnelMenu();
+    positionFunnelDropdown();
+    funnelMenu.querySelector(`[data-funnel-map-mode="${selectedMapFunnelMode}"]`)?.focus();
+    if (selectedMapFunnelStep) setHeatmapMode("funnels");
+    return;
+  }
+
+  const stepOption = event.target.closest("[data-funnel-map-step]");
+  if (!stepOption) return;
+  const funnel = getSelectedMapFunnel();
+  const stepNumber = Number(stepOption.dataset.funnelMapStep) || 0;
+  if (!funnel || stepNumber < 1 || stepNumber > funnel.steps.length) return;
+  selectedMapFunnelStep = stepNumber;
+  if (stepNumber >= funnel.steps.length) selectedMapFunnelMode = "reached";
+  closeFunnelDropdown();
+  syncFunnelSelect();
+  setHeatmapMode("funnels");
+  funnelButton?.focus();
+}
+
+function handleFunnelTriggerKeydown(event) {
+  if (event.key === "Escape") {
+    closeFunnelDropdown();
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  if (funnelMenu.hidden) loadFunnelCatalog({ open: true }).then(() => getFunnelMenuButtons()[0]?.focus());
+  else getFunnelMenuButtons()[event.key === "ArrowUp" ? getFunnelMenuButtons().length - 1 : 0]?.focus();
+}
+
+function handleFunnelMenuKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFunnelDropdown({ restoreFocus: true });
+    return;
+  }
+  const buttons = getFunnelMenuButtons();
+  if (!buttons.length) return;
+  const currentIndex = Math.max(buttons.indexOf(document.activeElement), 0);
+  let nextIndex = null;
+  if (event.key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, buttons.length - 1);
+  if (event.key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = buttons.length - 1;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  buttons[nextIndex].focus();
+  buttons[nextIndex].scrollIntoView({ block: "nearest" });
+}
+
+function handleFunnelDropdownOutsidePointer(event) {
+  if (!funnelMenu || funnelMenu.hidden || funnelControl?.contains(event.target) || funnelMenu.contains(event.target)) return;
+  closeFunnelDropdown();
+}
+
+function handleFunnelDropdownOutsideFocus(event) {
+  if (!funnelMenu || funnelMenu.hidden || funnelControl?.contains(event.target) || funnelMenu.contains(event.target)) return;
+  closeFunnelDropdown();
+}
+
+function getFunnelMenuButtons() {
+  return funnelMenu ? [...funnelMenu.querySelectorAll("button:not(:disabled)")] : [];
+}
+
 function formatTrackedEventName(value) {
   return String(value || "Event")
     .replace(/[_.:-]+/g, " ")
@@ -741,6 +1167,9 @@ function loadHeatmap(options = {}) {
     universeId: String(universeId),
     mode: activeHeatmapMode,
     eventName: activeHeatmapMode === "events" ? selectedTrackedEventName : "",
+    funnelId: activeHeatmapMode === "funnels" ? selectedMapFunnelId : "",
+    funnelStep: activeHeatmapMode === "funnels" ? selectedMapFunnelStep : 0,
+    funnelMode: activeHeatmapMode === "funnels" ? selectedMapFunnelMode : "",
     force: Boolean(options.force),
     resetView: Boolean(options.resetView),
     focusArea: options.focusArea || null,
@@ -894,7 +1323,12 @@ function applyHeatmapPayload(payload, mapPayload, context) {
 
   const mapText = getMapStatusText(mapSnapshot);
   const mapErrorText = mapPayload?.mapError ? ` Map failed: ${mapPayload.mapError}` : "";
-  sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
+  if (activeHeatmapMode === "funnels") {
+    const sessionLabel = payload.mode === "dropped" ? "drop-off" : "reached";
+    sampleCount.textContent = `${samplePayload.returnedCount || 0} mapped ${sessionLabel} session${samplePayload.returnedCount === 1 ? "" : "s"}`;
+  } else {
+    sampleCount.textContent = `${samplePayload.returnedCount || 0} ${modeText} sample${samplePayload.returnedCount === 1 ? "" : "s"}`;
+  }
   updateMapPartCount(mapSnapshot);
   if (activeHeatmapMode === "ai-analysis" && payload.mode !== "ai") {
     statusLine.textContent = `${payload.message || "Run AI Insights to generate AI area analysis."}${mapErrorText}`;
@@ -925,7 +1359,12 @@ function isCurrentHeatmapLoad(context) {
   return context.requestSequence === heatmapLoadSequence
     && context.universeId === String(window.getSelectedUniverseId?.() || "")
     && context.mode === activeHeatmapMode
-    && (context.mode !== "events" || context.eventName === selectedTrackedEventName);
+    && (context.mode !== "events" || context.eventName === selectedTrackedEventName)
+    && (context.mode !== "funnels" || (
+      context.funnelId === selectedMapFunnelId
+      && context.funnelStep === selectedMapFunnelStep
+      && context.funnelMode === selectedMapFunnelMode
+    ));
 }
 
 function abortHeatmapRequest() {
@@ -948,6 +1387,7 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
   eventControl?.classList.remove("active");
+  funnelControl?.classList.remove("active");
 
   const universeId = window.getSelectedUniverseId?.() || payload.universeId || "";
   setHeatmapEmptyState(false);
@@ -1018,6 +1458,13 @@ function getEmptyHeatmapStatus(modeText, suffix = "") {
   if (activeHeatmapMode === "events") {
     const eventLabel = formatTrackedEventName(selectedTrackedEventName);
     return `No mapped ${eventLabel} samples in this range. Log the custom event with x, y, and z to place it on the map.${suffix}`;
+  }
+  if (activeHeatmapMode === "funnels") {
+    const step = getSelectedMapFunnelStep();
+    const stepLabel = formatTrackedEventName(step?.eventName || "funnel step");
+    return selectedMapFunnelMode === "dropped"
+      ? `No sessions dropped after ${stepLabel} in this range, or those sessions did not include mapped custom events.${suffix}`
+      : `No mapped sessions reached ${stepLabel} in this range.${suffix}`;
   }
   return `No ${modeText} samples received yet.${suffix}`;
 }
@@ -1202,6 +1649,9 @@ async function clearPersistentCacheScope(scope = getCacheScope()) {
   for (const key of [...eventCatalogCache.keys()]) {
     if (key.startsWith(memoryPrefix)) eventCatalogCache.delete(key);
   }
+  for (const key of [...funnelCatalogCache.keys()]) {
+    if (key.startsWith(memoryPrefix)) funnelCatalogCache.delete(key);
+  }
 
   if (!("caches" in window)) return;
   try {
@@ -1238,6 +1688,15 @@ function normalizeHeatmapPayload(payload) {
     };
   }
 
+  if (activeHeatmapMode === "funnels") {
+    return {
+      ...payload,
+      returnedCount: payload.mappedSessions || 0,
+      sampleCount: payload.qualifyingSessions || 0,
+      samples: payload.clusters || [],
+    };
+  }
+
   if (activeHeatmapMode !== "chat") {
     return {
       ...payload,
@@ -1261,7 +1720,11 @@ function normalizeHeatmapPayload(payload) {
 }
 
 function setHeatmapMode(mode, options = {}) {
-  activeHeatmapMode = ["ai-analysis", "movement", "deaths", "leaves", "chat", "events"].includes(mode) ? mode : "ai-analysis";
+  const requestedMode = ["ai-analysis", "movement", "deaths", "leaves", "chat", "events", "funnels"].includes(mode) ? mode : "ai-analysis";
+  if (requestedMode === "funnels" && (!selectedMapFunnelId || !selectedMapFunnelStep)) return Promise.resolve(null);
+  activeHeatmapMode = requestedMode;
+  if (activeHeatmapMode !== "events") closeEventDropdown();
+  if (activeHeatmapMode !== "funnels") closeFunnelDropdown();
   if (options.selectedChatLogId) {
     selectedChatLogId = options.selectedChatLogId;
   }
@@ -1273,6 +1736,7 @@ function setHeatmapMode(mode, options = {}) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
   eventControl?.classList.toggle("active", activeHeatmapMode === "events");
+  funnelControl?.classList.toggle("active", activeHeatmapMode === "funnels");
 
   if (options.forcePoints || activeHeatmapMode === "ai-analysis") {
     activeRenderMode = "points";
@@ -1298,6 +1762,7 @@ function setRenderMode(mode) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
   eventControl?.classList.toggle("active", activeHeatmapMode === "events");
+  funnelControl?.classList.toggle("active", activeHeatmapMode === "funnels");
 
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
@@ -1317,6 +1782,7 @@ function getHeatmapEndpoint() {
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
   if (activeHeatmapMode === "chat") return "/api/chat-logs";
   if (activeHeatmapMode === "events") return "/api/event-heatmap";
+  if (activeHeatmapMode === "funnels") return "/api/funnel-map";
   return "/api/movement-heatmap";
 }
 
@@ -1328,6 +1794,10 @@ function getModeLabel() {
   if (activeHeatmapMode === "events") return selectedTrackedEventName
     ? formatTrackedEventName(selectedTrackedEventName)
     : "Event";
+  if (activeHeatmapMode === "funnels") {
+    const step = getSelectedMapFunnelStep();
+    return step?.eventName ? formatTrackedEventName(step.eventName) : "Funnel";
+  }
   return "Movement";
 }
 
@@ -1370,6 +1840,13 @@ function buildHeatmapQuery(universeId) {
     params.set("eventName", selectedTrackedEventName);
   }
 
+  if (activeHeatmapMode === "funnels" && selectedMapFunnelId && selectedMapFunnelStep) {
+    params.delete("target");
+    params.set("funnelId", selectedMapFunnelId);
+    params.set("step", String(selectedMapFunnelStep));
+    params.set("mode", selectedMapFunnelMode);
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -1399,7 +1876,14 @@ function getStatusText(payload) {
     ? "Drag to rotate. Scroll to zoom. Click chat dots to open messages."
     : activeHeatmapMode === "events"
       ? `Showing ${formatTrackedEventName(selectedTrackedEventName)} locations. Drag to rotate. Scroll to zoom.`
+      : activeHeatmapMode === "funnels"
+        ? `Showing ${selectedMapFunnelMode === "dropped" ? "drop-off" : "reached"} locations for ${formatTrackedEventName(getSelectedMapFunnelStep()?.eventName)}. Drag to rotate. Scroll to zoom.`
       : "Drag to rotate. Scroll to zoom."];
+  if (activeHeatmapMode === "funnels") {
+    const qualifying = Math.max(Number(payload.qualifyingSessions) || 0, 0);
+    const mapped = Math.max(Number(payload.mappedSessions) || 0, 0);
+    parts.push(`${formatMapNumber(mapped)} of ${formatMapNumber(qualifying)} qualifying sessions include mapped custom events.`);
+  }
   if (filters.userIds?.length) {
     parts.push(`Player filter: ${filters.userIds.join(", ")}`);
   }
@@ -1548,7 +2032,7 @@ function getSampleEntries(samples, mapSnapshot = null, options = {}) {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
 
-  if ((activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves" || activeHeatmapMode === "events") && activeRenderMode === "points") {
+  if ((activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves" || activeHeatmapMode === "events" || activeHeatmapMode === "funnels") && activeRenderMode === "points") {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
 
@@ -1763,6 +2247,7 @@ function renderSamples(entries, center) {
     activeHeatmapMode === "deaths"
     || activeHeatmapMode === "leaves"
     || activeHeatmapMode === "events"
+    || activeHeatmapMode === "funnels"
     || (activeHeatmapMode === "chat" && activeRenderMode === "points" && entries[0]?.signalMode === "chat")
     || (activeHeatmapMode === "movement" && activeRenderMode === "points")
   ) {
@@ -1821,7 +2306,7 @@ function createSignalAreaMarker(entry, mode) {
   const group = new THREE.Group();
   const color = getSignalAreaColor(entry.score || 1, mode);
   const glowColor = new THREE.Color(color.r / 255, color.g / 255, color.b / 255);
-  const isDeath = mode === "deaths";
+  const isDeath = mode === "deaths" || (mode === "funnels" && selectedMapFunnelMode === "dropped");
   const isMovement = mode === "movement";
 
   const glowGeometry = new THREE.SphereGeometry(isDeath ? 16 : isMovement ? 17 : 15, 24, 14);
@@ -1878,6 +2363,7 @@ function getSignalAreaGroupName(mode) {
   if (mode === "deaths") return "DeathAreaMarkers";
   if (mode === "chat") return "ChatAreaMarkers";
   if (mode === "events") return "CustomEventAreaMarkers";
+  if (mode === "funnels") return "FunnelAreaMarkers";
   return "DropOffAreaMarkers";
 }
 
@@ -1886,6 +2372,10 @@ function getSignalAreaLabelPrefix(mode) {
   if (mode === "deaths") return "Death Area";
   if (mode === "chat") return "Chat Area";
   if (mode === "events") return `${formatTrackedEventName(selectedTrackedEventName)} Area`;
+  if (mode === "funnels") {
+    const stepName = formatTrackedEventName(getSelectedMapFunnelStep()?.eventName || "Funnel step");
+    return `${stepName} ${selectedMapFunnelMode === "dropped" ? "Drop-off" : "Reached"} Area`;
+  }
   return "Drop-off Area";
 }
 
@@ -2506,6 +2996,20 @@ function getSignalAreaColor(value, mode) {
     };
   }
 
+  if (mode === "funnels") {
+    return selectedMapFunnelMode === "dropped"
+      ? {
+        r: Math.round(lerp(251, 244, intensity)),
+        g: Math.round(lerp(113, 63, intensity)),
+        b: Math.round(lerp(133, 94, intensity)),
+      }
+      : {
+        r: Math.round(lerp(94, 45, intensity)),
+        g: Math.round(lerp(234, 212, intensity)),
+        b: Math.round(lerp(212, 191, intensity)),
+      };
+  }
+
   return {
     r: Math.round(lerp(251, 245, intensity)),
     g: Math.round(lerp(191, 128, intensity)),
@@ -2590,6 +3094,7 @@ function getFocusedSignalColor(mode) {
   if (mode === "movement") return 0x22d3ee;
   if (mode === "deaths") return 0xef4444;
   if (mode === "events") return 0x2dd4bf;
+  if (mode === "funnels") return selectedMapFunnelMode === "dropped" ? 0xfb7185 : 0x2dd4bf;
   return 0xf59e0b;
 }
 

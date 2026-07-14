@@ -137,11 +137,6 @@ const funnelResultSteps = document.querySelector("#funnelResultSteps");
 const funnelResultsPanel = document.querySelector("#funnelResultsPanel");
 const funnelFooterConversion = document.querySelector("#funnelFooterConversion");
 const funnelFooterMedian = document.querySelector("#funnelFooterMedian");
-const funnelMapPanel = document.querySelector("#funnelMapPanel");
-const funnelMapTitle = document.querySelector("#funnelMapTitle");
-const funnelMapSubtitle = document.querySelector("#funnelMapSubtitle");
-const funnelMapModeButtons = document.querySelectorAll("[data-funnel-map-mode]");
-const centerFunnelMapButton = document.querySelector("#centerFunnelMapButton");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const aiChatMessages = document.querySelector("#aiChatMessages");
@@ -187,7 +182,6 @@ let activeView = getViewFromHash();
 let aiChatBusy = false;
 let aiChatHistory = [];
 let heatmapModulePromise = null;
-let funnelMapModulePromise = null;
 let universeRequestSequence = 0;
 let signalAreaRequestSequence = 0;
 let signalAreaRequestState = null;
@@ -215,14 +209,11 @@ let selectedFunnelId = "";
 let currentFunnels = [];
 let currentFunnelEventNames = [];
 let isCreatingFunnel = false;
-let selectedFunnelMapFunnelId = "";
-let selectedFunnelMapStep = 0;
-let selectedFunnelMapMode = "dropped";
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260714-4";
+const DASHBOARD_ASSET_VERSION = "20260714-5";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -295,17 +286,6 @@ function loadHeatmapModule() {
       console.error("Could not load the heatmap module.", error);
     });
   return heatmapModulePromise;
-}
-
-function loadFunnelMapModule() {
-  if (funnelMapModulePromise) return funnelMapModulePromise;
-  funnelMapModulePromise = import(`/funnel-map.js?v=${DASHBOARD_ASSET_VERSION}`)
-    .catch((error) => {
-      funnelMapModulePromise = null;
-      console.error("Could not load the funnel map module.", error);
-      throw error;
-    });
-  return funnelMapModulePromise;
 }
 
 function bindEvents() {
@@ -427,13 +407,6 @@ function bindEvents() {
   cancelFunnelEditButton?.addEventListener("click", cancelFunnelEdit);
   cancelFunnelButton?.addEventListener("click", cancelFunnelEdit);
   funnelStepEditor?.addEventListener("click", handleFunnelStepAction);
-  funnelResultSteps?.addEventListener("click", handleFunnelMapStepClick);
-  for (const button of funnelMapModeButtons) {
-    button.addEventListener("click", () => selectFunnelMapMode(button.dataset.funnelMapMode || "reached"));
-  }
-  centerFunnelMapButton?.addEventListener("click", () => {
-    window.dispatchEvent(new CustomEvent("dashboard:funnelMapCenter"));
-  });
   aiChatSendButton?.addEventListener("click", sendAiChatPrompt);
   aiChatInput?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -2403,7 +2376,6 @@ function selectUniverse(value) {
   currentFunnels = [];
   currentFunnelEventNames = [];
   isCreatingFunnel = false;
-  resetFunnelMapSelection();
   setFunnelBuilderVisible(false);
   renderChatSummary();
   setChatLiveState(selectedUniverseId ? "loading" : "waiting");
@@ -3230,6 +3202,9 @@ async function saveFunnel() {
     selectedFunnelId = payload.funnel?.id || "";
     isCreatingFunnel = false;
     funnelFormStatus.textContent = "Funnel saved.";
+    window.dispatchEvent(new CustomEvent("dashboard:funnelDefinitionsChanged", {
+      detail: { universeId: selectedUniverseId },
+    }));
     await loadFunnels({ force: true });
     const saved = getSelectedFunnel();
     if (saved) {
@@ -3280,6 +3255,9 @@ async function deleteSelectedFunnel() {
   if (funnelsStatus) funnelsStatus.textContent = "Deleting funnel...";
   try {
     await request(`/api/funnels/${encodeURIComponent(funnel.id)}?universeId=${encodeURIComponent(selectedUniverseId)}`, { method: "DELETE" });
+    window.dispatchEvent(new CustomEvent("dashboard:funnelDefinitionsChanged", {
+      detail: { universeId: selectedUniverseId },
+    }));
     selectedFunnelId = "";
     isCreatingFunnel = false;
     await loadFunnels({ force: true });
@@ -3313,158 +3291,48 @@ function renderFunnelResults(funnel) {
   if (!funnelResultSteps) return;
 
   const steps = analytics?.steps || [];
-  if (!funnel || (selectedFunnelMapFunnelId && selectedFunnelMapFunnelId !== funnel.id)) {
-    resetFunnelMapSelection();
-  }
-  const hasSelectedMapStep = Boolean(
-    funnel
-    && selectedFunnelMapFunnelId === funnel.id
-    && selectedFunnelMapStep > 0
-    && selectedFunnelMapStep <= steps.length
-  );
+  const maxSessions = Math.max(...steps.map((step) => Number(step.sessions) || 0), 1);
   funnelResultSteps.innerHTML = steps.length
     ? `
-      <div class="funnelJourney" role="list" aria-label="${escapeHtml(funnel.name)} conversion path">
+      <div class="funnelResultsColumnHeader" aria-hidden="true">
+        <span>Funnel step</span>
+        <span>Players</span>
+        <span>Conversion from previous</span>
+        <span>Median time</span>
+        <span>Drop-off</span>
+      </div>
       ${steps.map((step) => {
         const sessions = Number(step.sessions) || 0;
         const dropOff = Number(step.dropOffSessions) || 0;
-        const conversionFromStart = Math.max(0, Math.min(Number(step.conversionFromStart) || 0, 100));
-        const visualWidth = Math.max(58, 58 + conversionFromStart * 0.42).toFixed(2);
-        const isSelected = hasSelectedMapStep && selectedFunnelMapStep === step.index;
-        const nextStep = steps[step.index];
-        const nextStepTimeMs = Number(nextStep?.medianTimeFromPreviousMs || nextStep?.averageTimeFromPreviousMs) || 0;
-        const connector = nextStep
-          ? `
-            <div class="funnelJourneyConnector">
-              <span aria-hidden="true"><i></i></span>
-              <div>
-                <strong>${formatEventNumber(nextStep.conversionFromPrevious)}% continued</strong>
-                <small><b>${formatCompactNumber(dropOff)} dropped</b>${nextStepTimeMs ? ` · ${formatFunnelDuration(nextStepTimeMs)} median` : ""}</small>
-              </div>
-            </div>
-          `
-          : "";
+        const barWidth = Math.max((sessions / maxSessions) * 100, sessions ? 8 : 0).toFixed(2);
+        const dropOffRate = sessions ? (dropOff / sessions) * 100 : 0;
+        const stepTimeMs = Number(step.medianTimeFromPreviousMs || step.averageTimeFromPreviousMs) || 0;
         return `
-          <div class="funnelJourneyItem" role="listitem">
-            <button
-              class="funnelJourneyStep${isSelected ? " selected" : ""}"
-              type="button"
-              data-funnel-map-step="${step.index}"
-              style="--funnel-step-width: ${visualWidth}%"
-              aria-pressed="${isSelected ? "true" : "false"}"
-              aria-label="Map ${escapeHtml(formatEventName(step.eventName))}, step ${step.index} of ${steps.length}"
-            >
-              <span class="funnelJourneyNumber">${step.index}</span>
-              <span class="funnelJourneyIdentity">
-                <strong>${escapeHtml(formatEventName(step.eventName))}</strong>
-                <small>${step.index === 1 ? "Entry step" : `${formatEventNumber(step.conversionFromPrevious)}% from previous`}</small>
-              </span>
-              <span class="funnelJourneyVolume">
-                <strong>${formatCompactNumber(sessions)}</strong>
-                <small>sessions</small>
-              </span>
-              <span class="funnelJourneyConversion">
-                <strong>${formatEventNumber(conversionFromStart)}%</strong>
-                <small>from start</small>
-              </span>
-              <span class="funnelJourneyMapHint">View on map</span>
-              <span class="funnelJourneyProgress" aria-hidden="true"><i style="width: ${conversionFromStart}%"></i></span>
-            </button>
-            ${connector}
-          </div>
+          <article class="funnelResultStep">
+            <div class="funnelStepIdentity">
+              <span>${step.index}</span>
+              <div><strong>${escapeHtml(step.eventName)}</strong><small>Step ${step.index} of ${steps.length}</small></div>
+            </div>
+            <div class="funnelStepBarCell">
+              <div class="funnelStepBar" style="width: ${barWidth}%"><span>${formatCompactNumber(sessions)} (${formatEventNumber(step.conversionFromStart)}%)</span></div>
+            </div>
+            <div class="funnelConversionCell">
+              <strong>${step.index > 1 ? `${formatEventNumber(step.conversionFromPrevious)}%` : "--"}</strong>
+              <small>${step.index > 1 ? "from previous" : "entry step"}</small>
+            </div>
+            <div class="funnelTimeCell">
+              <strong>${step.index > 1 && stepTimeMs ? formatFunnelDuration(stepTimeMs) : "--"}</strong>
+              <small>${step.index > 1 ? "from previous" : "start"}</small>
+            </div>
+            <div class="funnelDropCell ${dropOff ? "hasDrop" : ""}">
+              <strong>${step.index < steps.length ? formatCompactNumber(dropOff) : "--"}</strong>
+              <small>${step.index < steps.length ? `${formatEventNumber(dropOffRate)}%` : "final step"}</small>
+            </div>
+          </article>
         `;
       }).join("")}
-      </div>
     `
     : '<p class="status">No funnel selected.</p>';
-
-  if (hasSelectedMapStep) syncFunnelMapPanel(funnel, { request: true });
-  else if (funnelMapPanel) funnelMapPanel.hidden = true;
-}
-
-function handleFunnelMapStepClick(event) {
-  const button = event.target.closest("[data-funnel-map-step]");
-  const funnel = getSelectedFunnel();
-  if (!button || !funnel) return;
-  const stepNumber = Number(button.dataset.funnelMapStep) || 0;
-  if (stepNumber < 1 || stepNumber > (funnel.analytics?.steps?.length || 0)) return;
-
-  selectedFunnelMapFunnelId = funnel.id;
-  selectedFunnelMapStep = stepNumber;
-  selectedFunnelMapMode = stepNumber < (funnel.analytics?.steps?.length || 0) ? "dropped" : "reached";
-  renderFunnelResults(funnel);
-  funnelMapPanel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-function selectFunnelMapMode(mode) {
-  const funnel = getSelectedFunnel();
-  if (!funnel || !selectedFunnelMapStep) return;
-  const isFinalStep = selectedFunnelMapStep >= (funnel.analytics?.steps?.length || 0);
-  selectedFunnelMapMode = mode === "dropped" && !isFinalStep ? "dropped" : "reached";
-  syncFunnelMapPanel(funnel, { request: true });
-}
-
-function syncFunnelMapPanel(funnel, options = {}) {
-  const steps = funnel?.analytics?.steps || [];
-  const step = steps[selectedFunnelMapStep - 1];
-  if (!funnelMapPanel || !funnel || !step) {
-    if (funnelMapPanel) funnelMapPanel.hidden = true;
-    return;
-  }
-
-  const isFinalStep = selectedFunnelMapStep >= steps.length;
-  if (isFinalStep && selectedFunnelMapMode === "dropped") selectedFunnelMapMode = "reached";
-  funnelMapPanel.hidden = false;
-  if (funnelMapTitle) funnelMapTitle.textContent = formatEventName(step.eventName);
-  if (funnelMapSubtitle) {
-    funnelMapSubtitle.textContent = selectedFunnelMapMode === "dropped"
-      ? `Sessions that reached step ${step.index} but did not reach ${formatEventName(steps[step.index]?.eventName || "the next step")}.`
-      : `Mapped locations where sessions reached step ${step.index} of ${steps.length}.`;
-  }
-  for (const button of funnelMapModeButtons) {
-    const buttonMode = button.dataset.funnelMapMode;
-    const isActive = buttonMode === selectedFunnelMapMode;
-    button.disabled = buttonMode === "dropped" && isFinalStep;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
-  }
-
-  for (const button of funnelResultSteps?.querySelectorAll("[data-funnel-map-step]") || []) {
-    const isSelected = Number(button.dataset.funnelMapStep) === selectedFunnelMapStep;
-    button.classList.toggle("selected", isSelected);
-    button.setAttribute("aria-pressed", String(isSelected));
-  }
-  if (options.request) requestFunnelMap(funnel, { force: options.force });
-}
-
-function requestFunnelMap(funnel, options = {}) {
-  if (!authenticated || activeView !== "funnels" || !selectedUniverseId || !selectedFunnelMapStep) return;
-  const detail = {
-    universeId: selectedUniverseId,
-    funnelId: funnel.id,
-    step: selectedFunnelMapStep,
-    mode: selectedFunnelMapMode,
-    from: getDateTimeMs(movementFromFilter?.value) || null,
-    to: getDateTimeMs(movementToFilter?.value) || null,
-    force: Boolean(options.force),
-  };
-  loadFunnelMapModule()
-    .then(() => {
-      if (activeView !== "funnels" || selectedUniverseId !== detail.universeId) return;
-      window.dispatchEvent(new CustomEvent("dashboard:funnelMapSelection", { detail }));
-    })
-    .catch(() => {
-      const loading = document.querySelector("#funnelMapLoading");
-      if (loading) loading.innerHTML = "<strong>Could not load the map renderer.</strong>";
-    });
-}
-
-function resetFunnelMapSelection() {
-  selectedFunnelMapFunnelId = "";
-  selectedFunnelMapStep = 0;
-  selectedFunnelMapMode = "dropped";
-  if (funnelMapPanel) funnelMapPanel.hidden = true;
-  window.dispatchEvent(new CustomEvent("dashboard:funnelMapClear"));
 }
 
 function formatFunnelDuration(milliseconds) {
