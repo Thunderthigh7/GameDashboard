@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260713-4">
+    <link rel="stylesheet" href="/styles.css?v=20260714-1">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -230,6 +230,12 @@
                       <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
                       <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
                       <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
+                      <label class="heatmapEventControl" id="heatmapEventControl" for="heatmapEventSelect">
+                        <span>Events</span>
+                        <select id="heatmapEventSelect" aria-label="Show a tracked event on the map" disabled>
+                          <option value="">Loading...</option>
+                        </select>
+                      </label>
                     </div>
                   </div>
                   <div class="heatmapShell">
@@ -380,6 +386,24 @@
               <p>Highest message share from chat locations.</p>
               <div class="signalAreaList" id="chatAreaList">
                 <p class="status">Waiting for chat locations...</p>
+              </div>
+            </article>
+
+            <article class="panel dataCard eventAreaCard">
+              <div class="eventAreaCardHeader">
+                <div>
+                  <h2>Top event areas</h2>
+                  <p>Choose any tracked event to see where it happens.</p>
+                </div>
+                <label class="signalEventSelectControl" for="signalEventSelect">
+                  <span>Event</span>
+                  <select id="signalEventSelect" aria-label="Select a tracked event for top areas" disabled>
+                    <option value="">Loading events...</option>
+                  </select>
+                </label>
+              </div>
+              <div class="signalAreaList" id="eventAreaList">
+                <p class="status">Waiting for event locations...</p>
               </div>
             </article>
           </aside>
@@ -936,6 +960,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260713-4"></script>
+    <script defer src="/app.js?v=20260714-1"></script>
   </body>
 </html>

@@ -162,6 +162,8 @@ const movementAreaList = document.querySelector("#movementAreaList");
 const dropOffAreaList = document.querySelector("#dropOffAreaList");
 const deathAreaList = document.querySelector("#deathAreaList");
 const chatAreaList = document.querySelector("#chatAreaList");
+const eventAreaList = document.querySelector("#eventAreaList");
+const signalEventSelect = document.querySelector("#signalEventSelect");
 const protectedDashboardPanels = document.querySelectorAll(
   ".sidebar, .topbar, #authControls, .viewPage"
 );
@@ -200,6 +202,8 @@ let eventPropertyValuesExpanded = false;
 let currentEventPropertySummaries = [];
 let currentSelectedEventCount = 0;
 let recentEventsExpanded = false;
+let selectedSignalEventName = "";
+let currentSignalEventCatalog = [];
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
 let currentFunnels = [];
@@ -209,7 +213,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260713-2";
+const DASHBOARD_ASSET_VERSION = "20260714-1";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -413,6 +417,13 @@ function bindEvents() {
   runChatInsightsButton.addEventListener("click", runChatInsightsAnalysis);
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
+  signalEventSelect?.addEventListener("change", () => {
+    const eventName = String(signalEventSelect.value || "");
+    if (!eventName) return;
+    window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
+      detail: { eventName, source: "areas" },
+    }));
+  });
   refreshAdminUsersButton?.addEventListener("click", () => loadAdminUsers({ force: true }));
   refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
@@ -449,7 +460,8 @@ function bindEvents() {
   });
   movementFromFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
-    loadSignalAreaCards({ force: true });
+    loadedViews.delete("areas");
+    if (activeView === "areas") loadSignalAreaCards({ force: true });
     if (activeView === "events") {
       selectedEventPropertyName = "";
       eventPropertyValuesExpanded = false;
@@ -463,7 +475,8 @@ function bindEvents() {
   });
   movementToFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
-    loadSignalAreaCards({ force: true });
+    loadedViews.delete("areas");
+    if (activeView === "areas") loadSignalAreaCards({ force: true });
     if (activeView === "events") {
       selectedEventPropertyName = "";
       eventPropertyValuesExpanded = false;
@@ -502,7 +515,7 @@ function bindEvents() {
     selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
   });
 
-  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList, chatAreaList]) {
+  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList, chatAreaList, eventAreaList]) {
     areaList?.addEventListener("click", (event) => {
       const item = event.target.closest("[data-signal-area-index]");
       if (!item) return;
@@ -510,7 +523,7 @@ function bindEvents() {
     });
   }
 
-  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList, chatAreaList]) {
+  for (const areaList of [movementAreaList, dropOffAreaList, deathAreaList, chatAreaList, eventAreaList]) {
     areaList?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       const item = event.target.closest("[data-signal-area-index]");
@@ -526,6 +539,23 @@ function bindEvents() {
 
   window.addEventListener("dashboard:areaClustersLoaded", (event) => {
     renderSignalAreasFromComputedPayload(event.detail?.analysis);
+  });
+
+  window.addEventListener("dashboard:eventMapSelectionChanged", (event) => {
+    const eventName = String(event.detail?.eventName || "");
+    if (!eventName) return;
+    const didChange = selectedSignalEventName !== eventName;
+    selectedSignalEventName = eventName;
+    syncSignalEventSelect();
+    if (didChange) loadedViews.delete("areas");
+    if (activeView === "areas" && (didChange || event.detail?.source === "areas")) {
+      loadSignalAreaCards();
+    }
+  });
+
+  window.addEventListener("dashboard:eventCatalogAvailable", (event) => {
+    if (event.detail?.source === "app") return;
+    updateSignalEventCatalog(event.detail?.eventCatalog, event.detail?.selectedEventName, { notifyMap: false });
   });
 
   window.addEventListener("hashchange", () => {
@@ -843,6 +873,10 @@ function setAuthenticated(value, user = null) {
     renderSignalAreas(movementAreaList, [], "movement");
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
+    renderSignalAreas(chatAreaList, [], "chat");
+    selectedSignalEventName = "";
+    updateSignalEventCatalog([], "", { notifyMap: false });
+    renderSignalAreas(eventAreaList, [], "events");
     return;
   }
 
@@ -933,7 +967,7 @@ function renderActiveView(options = {}) {
     },
     areas: {
       title: "Areas",
-      subtitle: "Computed movement, drop-off, death, and chat hotspots.",
+      subtitle: "Computed movement, drop-off, death, chat, and custom-event hotspots.",
     },
     events: {
       title: "Events",
@@ -1683,6 +1717,8 @@ function applyUniverseCollection(universes, options = {}) {
   const didChangeUniverse = previousUniverseId !== selectedUniverseId;
   if (didChangeUniverse) {
     selectedChatLogId = "";
+    selectedSignalEventName = "";
+    updateSignalEventCatalog([], "", { notifyMap: false });
     loadedViews.clear();
     window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
       detail: { universeId: selectedUniverseId },
@@ -2328,6 +2364,8 @@ function selectUniverse(value) {
   signalAreaRequestState = null;
   signalAreaRequestSequence += 1;
   selectedChatLogId = "";
+  selectedSignalEventName = "";
+  updateSignalEventCatalog([], "", { notifyMap: false });
   selectedCustomEventName = "";
   selectedEventPropertyName = "";
   eventPropertyValuesExpanded = false;
@@ -2365,6 +2403,8 @@ async function loadSignalAreaCards(options = {}) {
     renderSignalAreas(dropOffAreaList, [], "leaves");
     renderSignalAreas(deathAreaList, [], "deaths");
     renderSignalAreas(chatAreaList, [], "chat");
+    updateSignalEventCatalog([], "", { notifyMap: false });
+    renderSignalAreas(eventAreaList, [], "events");
     return;
   }
 
@@ -2388,6 +2428,7 @@ async function loadSignalAreaCards(options = {}) {
     renderSignalLoading(dropOffAreaList, "drop-off");
     renderSignalLoading(deathAreaList, "death");
     renderSignalLoading(chatAreaList, "chat");
+    renderSignalLoading(eventAreaList, "event");
   }
 
   const controller = new AbortController();
@@ -2408,6 +2449,7 @@ async function loadSignalAreaCards(options = {}) {
         renderSignalError(dropOffAreaList, error.message);
         renderSignalError(deathAreaList, error.message);
         renderSignalError(chatAreaList, error.message);
+        renderSignalError(eventAreaList, error.message);
       }
       return null;
     } finally {
@@ -2425,6 +2467,8 @@ function renderSignalAreasFromComputedPayload(payload) {
   renderSignalAreas(dropOffAreaList, payload.signalAreas.leaves || [], "leaves");
   renderSignalAreas(deathAreaList, payload.signalAreas.deaths || [], "deaths");
   renderSignalAreas(chatAreaList, payload.signalAreas.chat || [], "chat");
+  updateSignalEventCatalog(payload.eventCatalog, payload.selectedEventName, { notifyMap: true });
+  renderSignalAreas(eventAreaList, payload.signalAreas.events || [], "events");
 }
 
 function buildSignalAreaQuery() {
@@ -2437,8 +2481,54 @@ function buildSignalAreaQuery() {
   const to = getDateTimeMs(movementToFilter?.value);
   if (to) params.set("to", String(to));
 
+  if (selectedSignalEventName) params.set("eventName", selectedSignalEventName);
+
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+function updateSignalEventCatalog(catalog, selectedEventName = "", options = {}) {
+  currentSignalEventCatalog = Array.isArray(catalog)
+    ? catalog.filter((event) => event && typeof event.name === "string" && event.name)
+    : [];
+  const availableNames = new Set(currentSignalEventCatalog.map((event) => event.name));
+  if (selectedEventName && availableNames.has(selectedEventName)) {
+    selectedSignalEventName = selectedEventName;
+  } else if (!availableNames.has(selectedSignalEventName)) {
+    selectedSignalEventName = currentSignalEventCatalog[0]?.name || "";
+  }
+  syncSignalEventSelect();
+
+  if (options.notifyMap) {
+    window.dispatchEvent(new CustomEvent("dashboard:eventCatalogAvailable", {
+      detail: {
+        source: "app",
+        eventCatalog: currentSignalEventCatalog,
+        selectedEventName: selectedSignalEventName,
+      },
+    }));
+  }
+}
+
+function syncSignalEventSelect() {
+  if (!signalEventSelect) return;
+  if (!currentSignalEventCatalog.length) {
+    signalEventSelect.innerHTML = `<option value="">No tracked events</option>`;
+    signalEventSelect.disabled = true;
+    return;
+  }
+
+  signalEventSelect.innerHTML = currentSignalEventCatalog.map((event) => {
+    const name = String(event.name || "");
+    const locationCount = Math.max(Number(event.locationCount) || 0, 0);
+    const count = Math.max(Number(event.count) || 0, 0);
+    const detail = locationCount > 0
+      ? `${formatCompactNumber(locationCount)} mapped`
+      : `${formatCompactNumber(count)} tracked - no positions`;
+    return `<option value="${escapeHtml(name)}">${escapeHtml(formatEventName(name))} (${escapeHtml(detail)})</option>`;
+  }).join("");
+  signalEventSelect.disabled = false;
+  signalEventSelect.value = selectedSignalEventName;
 }
 
 async function loadCustomEvents(options = {}) {
@@ -2841,6 +2931,14 @@ function renderRecentCustomEvents(events, properties = []) {
       `;
     }).join("")
     : '<p class="status">No recent records for this event.</p>';
+}
+
+function formatEventName(value) {
+  return String(value || "Event")
+    .replace(/[_.:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatEventPropertyName(value) {
@@ -3291,6 +3389,11 @@ function getSignalEmptyMessage(mode) {
   if (mode === "movement") return "No movement areas yet. Start a live Roblox server with the analytics script installed.";
   if (mode === "deaths") return "No death areas yet. Death locations appear after players die in a tracked server.";
   if (mode === "chat") return "No chat areas yet. Chat locations appear after players send messages in a tracked server.";
+  if (mode === "events") {
+    return selectedSignalEventName
+      ? `No mapped ${formatEventName(selectedSignalEventName)} events in this range. Log the event with an x, y, and z position to place it on the map.`
+      : "No custom events are available yet.";
+  }
   return "No drop-off areas yet. Leave locations appear after players exit a tracked server.";
 }
 
@@ -3303,7 +3406,8 @@ function renderSignalAreaRow({ area, label, mode, percent, isPlaceholder }) {
       data-signal-mode="${escapeHtml(mode)}"
       data-signal-x="${escapeHtml(String(area.x))}"
       data-signal-y="${escapeHtml(String(area.y))}"
-      data-signal-z="${escapeHtml(String(area.z))}"`;
+      data-signal-z="${escapeHtml(String(area.z))}"
+      ${mode === "events" ? `data-signal-event-name="${escapeHtml(selectedSignalEventName)}"` : ""}`;
   const areaName = area.name || `${label} area ${area.rank}`;
 
   return `
@@ -3349,7 +3453,7 @@ function getSignalPlaceholderAreas(mode, filledCount, maxCount) {
 }
 
 function focusSignalAreaFromElement(item) {
-  const mode = ["movement", "deaths", "leaves", "chat"].includes(item.dataset.signalMode)
+  const mode = ["movement", "deaths", "leaves", "chat", "events"].includes(item.dataset.signalMode)
     ? item.dataset.signalMode
     : "leaves";
   const x = Number(item.dataset.signalX);
@@ -3360,6 +3464,7 @@ function focusSignalAreaFromElement(item) {
   window.dispatchEvent(new CustomEvent("dashboard:focusHeatmapArea", {
     detail: {
       mode,
+      eventName: mode === "events" ? item.dataset.signalEventName || selectedSignalEventName : "",
       area: { x, y, z },
     },
   }));
@@ -3369,6 +3474,7 @@ function getSignalAreaTypeText(mode) {
   if (mode === "movement") return "movement";
   if (mode === "deaths") return "death";
   if (mode === "chat") return "chat";
+  if (mode === "events") return "event";
   return "drop-off";
 }
 
@@ -3376,6 +3482,7 @@ function getSignalAreaTitleText(mode) {
   if (mode === "movement") return "Movement";
   if (mode === "deaths") return "Death";
   if (mode === "chat") return "Chat";
+  if (mode === "events") return selectedSignalEventName ? formatEventName(selectedSignalEventName) : "Event";
   return "Drop-off";
 }
 
@@ -3383,6 +3490,7 @@ function getSignalAreaClass(mode) {
   if (mode === "movement") return "movementSignal";
   if (mode === "deaths") return "deathSignal";
   if (mode === "chat") return "chatSignal";
+  if (mode === "events") return "eventSignal";
   return "leaveSignal";
 }
 

@@ -70,6 +70,7 @@ const MAX_CUSTOM_EVENT_PROPERTY_VALUES_TRACKED = 1000;
 const MAX_CUSTOM_EVENT_NAMES_PER_UNIVERSE = 200;
 const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
+const MAX_CUSTOM_EVENT_HEATMAP_RESPONSE = 5000;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
 const CUSTOM_EVENT_INTERVALS_MS = new Map([
   ["1m", 60 * 1000],
@@ -739,6 +740,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/leave-heatmap" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "leave-heatmap", url.searchParams, () => getLeaveHeatmapFromQuery(url.searchParams)));
+    }
+
+    if (url.pathname === "/api/event-heatmap" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "event-heatmap", url.searchParams, () => getEventHeatmapFromQuery(url.searchParams)));
     }
 
     if (url.pathname === "/api/area-clusters" && req.method === "GET") {
@@ -4035,6 +4041,33 @@ async function getLeaveHeatmapFromQuery(searchParams) {
   return getLeaveHeatmap(filters);
 }
 
+async function getEventHeatmapFromQuery(searchParams) {
+  const filters = await normalizeMovementFilters({
+    universeId: searchParams.get("universeId"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    target: searchParams.get("target") || searchParams.get("player"),
+  });
+  const eventMap = await getCustomEventMapData(
+    filters,
+    searchParams.get("eventName"),
+    { includeSamples: searchParams.get("catalogOnly") !== "1" },
+  );
+
+  return {
+    universeId: filters.universeId || null,
+    source: eventMap.source,
+    selectedEventName: eventMap.selectedEventName,
+    eventCatalog: eventMap.eventCatalog,
+    sampleCount: eventMap.sampleCount,
+    returnedCount: eventMap.samples.length,
+    maxResponse: MAX_CUSTOM_EVENT_HEATMAP_RESPONSE,
+    truncated: eventMap.sampleCount > eventMap.samples.length,
+    filters: getMovementFilterSummary(filters),
+    samples: eventMap.samples,
+  };
+}
+
 async function getChatLogsFromQuery(searchParams) {
   const filters = await normalizeMovementFilters({
     universeId: searchParams.get("universeId"),
@@ -4101,16 +4134,29 @@ async function getComputedAreaClustersFromQuery(searchParams) {
     target: searchParams.get("target") || searchParams.get("player"),
   });
   const rollup = await getObjectStorageRollup(filters.universeId);
-  if (rollup) return getComputedAreaClustersFromRollup(rollup, filters);
+  const [basePayload, eventMap] = await Promise.all([
+    Promise.resolve(rollup
+      ? getComputedAreaClustersFromRollup(rollup, filters)
+      : {
+        ...getAiAreaAnalysisWithoutStoredInsights(filters),
+        mode: "computed",
+        signalAreas: getComputedSignalAreas(filters),
+        cost: {
+          openAiRequests: 0,
+          estimatedOpenAiCostUsd: 0,
+          note: "Computed on the dashboard server from stored movement, death, leave, chat, and custom event signals. No OpenAI request was made.",
+        },
+      }),
+    getCustomEventMapData(filters, searchParams.get("eventName"), { includeSamples: false }),
+  ]);
 
   return {
-    ...getAiAreaAnalysisWithoutStoredInsights(filters),
-    mode: "computed",
-    signalAreas: getComputedSignalAreas(filters),
-    cost: {
-      openAiRequests: 0,
-      estimatedOpenAiCostUsd: 0,
-      note: "Computed on the dashboard server from stored movement, death, leave, and chat signals. No OpenAI request was made.",
+    ...basePayload,
+    selectedEventName: eventMap.selectedEventName,
+    eventCatalog: eventMap.eventCatalog,
+    signalAreas: {
+      ...basePayload.signalAreas,
+      events: eventMap.areas,
     },
   };
 }
@@ -4197,6 +4243,93 @@ function clusterSignalAreaSamples(samples = [], mode = "movement") {
     sampleCount: cleanFiniteInteger(cluster.sampleCount),
     percent: totalCount > 0 ? Math.round((cluster.count / totalCount) * 100) : 0,
   }));
+}
+
+async function getCustomEventMapData(filters = {}, requestedEventName = "", options = {}) {
+  const universeId = cleanInteger(filters.universeId);
+  const normalizedRequestedEventName = normalizeCustomEventName(requestedEventName);
+  const { events, hasRollup } = await getCustomEventRecords({ universeId });
+  const catalogByName = new Map();
+
+  for (const event of events) {
+    const eventName = normalizeCustomEventName(event?.eventName);
+    if (!eventName) continue;
+    let summary = catalogByName.get(eventName);
+    if (!summary) {
+      summary = { name: eventName, count: 0, locationCount: 0, lastSeenAt: 0 };
+      catalogByName.set(eventName, summary);
+    }
+    summary.count += 1;
+    if (hasCustomEventPosition(event)) summary.locationCount += 1;
+    summary.lastSeenAt = Math.max(summary.lastSeenAt, getCustomEventTimestamp(event));
+  }
+
+  const eventCatalog = [...catalogByName.values()]
+    .sort((left, right) => (
+      right.lastSeenAt - left.lastSeenAt
+      || right.count - left.count
+      || left.name.localeCompare(right.name)
+    ));
+  const selectedEventName = normalizedRequestedEventName && catalogByName.has(normalizedRequestedEventName)
+    ? normalizedRequestedEventName
+    : (eventCatalog.find((event) => event.locationCount > 0)?.name || eventCatalog[0]?.name || "");
+  const selectedSamples = selectedEventName
+    ? events.filter((event) => (
+      normalizeCustomEventName(event?.eventName) === selectedEventName
+      && customEventMatchesMapFilters(event, filters)
+      && hasCustomEventPosition(event)
+    ))
+    : [];
+  selectedSamples.sort((left, right) => getCustomEventTimestamp(right) - getCustomEventTimestamp(left));
+
+  const includeSamples = options.includeSamples !== false;
+  return {
+    source: hasRollup ? "b2-rollup+live" : "live",
+    selectedEventName,
+    eventCatalog,
+    sampleCount: selectedSamples.length,
+    areas: clusterSignalAreaSamples(selectedSamples, "events"),
+    samples: includeSamples
+      ? selectedSamples.slice(0, MAX_CUSTOM_EVENT_HEATMAP_RESPONSE).map(serializeCustomEventHeatmapSample)
+      : [],
+  };
+}
+
+function customEventMatchesMapFilters(event, filters = {}) {
+  const timestamp = getCustomEventTimestamp(event);
+  if (filters.fromMs > 0 && timestamp < filters.fromMs) return false;
+  if (filters.toMs > 0 && timestamp > filters.toMs) return false;
+  if (filters.userIds?.size && !filters.userIds.has(cleanInteger(event?.userId))) return false;
+  return true;
+}
+
+function getCustomEventTimestamp(event) {
+  return cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
+}
+
+function hasCustomEventPosition(event) {
+  return [event?.x, event?.y, event?.z].every((value) => (
+    value !== null
+    && value !== undefined
+    && value !== ""
+    && Number.isFinite(Number(value))
+  ));
+}
+
+function serializeCustomEventHeatmapSample(event) {
+  return {
+    id: cleanString(event?.id, 180),
+    eventName: normalizeCustomEventName(event?.eventName),
+    userId: cleanInteger(event?.userId) || null,
+    username: cleanString(event?.username, 64),
+    displayName: cleanString(event?.displayName, 64),
+    sessionId: cleanString(event?.sessionId, 180),
+    x: cleanFiniteNumber(event?.x),
+    y: cleanFiniteNumber(event?.y),
+    z: cleanFiniteNumber(event?.z),
+    occurredAt: getCustomEventTimestamp(event),
+    value: typeof event?.value === "number" && Number.isFinite(event.value) ? event.value : null,
+  };
 }
 
 async function getRobloxHeatmapFromQuery(searchParams) {

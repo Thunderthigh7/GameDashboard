@@ -28,6 +28,8 @@ const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]")
 const modeButtons = document.querySelectorAll("[data-heatmap-mode]");
 const renderButtons = document.querySelectorAll("[data-heatmap-render]");
 const mapViewButtons = document.querySelectorAll("[data-map-view]");
+const eventSelect = document.querySelector("#heatmapEventSelect");
+const eventControl = document.querySelector("#heatmapEventControl");
 
 const DEFAULT_3D_YAW = -0.8;
 const DEFAULT_3D_PITCH = 0.72;
@@ -65,6 +67,8 @@ let activeRenderMode = "points";
 let activeCameraView = "3d";
 let saved3dView = { yaw: DEFAULT_3D_YAW, pitch: DEFAULT_3D_PITCH };
 let selectedChatLogId = "";
+let selectedTrackedEventName = "";
+let currentEventCatalog = [];
 let hoveredAiAreaMarker = null;
 let selectedAiAreaMarker = null;
 let selectedAiArea = null;
@@ -79,15 +83,20 @@ let heatmapRequestState = null;
 let renderedMapSignature = "";
 let pendingAreaAnalysisRender = null;
 let deferredAreaAnalysisRenderedAt = 0;
+let eventCatalogRequestState = null;
+let eventCatalogPreloadTimer = null;
 const mapSnapshotCache = new Map();
 const mapSnapshotRequests = new Map();
 const heatmapPayloadCache = new Map();
+const eventCatalogCache = new Map();
 const blockedCacheScopes = new Set();
 const persistentCachePrunes = new Map();
 const MAX_RENDERED_MAP_PARTS = 3500;
 const HEATMAP_CACHE_NAME_PREFIX = "roanalytics-heatmap-v2";
 const HEATMAP_PAYLOAD_FRESH_MS = 12 * 1000;
 const HEATMAP_PAYLOAD_MAX_AGE_MS = 10 * 60 * 1000;
+const EVENT_CATALOG_FRESH_MS = 30 * 1000;
+const EVENT_CATALOG_MAX_AGE_MS = 10 * 60 * 1000;
 const MAP_SNAPSHOT_FRESH_MS = 5 * 60 * 1000;
 const MAP_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_PERSISTED_CACHE_CHARS = 10_000_000;
@@ -127,11 +136,21 @@ if (canvas) {
       setCameraView(button.dataset.mapView || "3d");
     });
   }
+  eventSelect?.addEventListener("change", () => {
+    const eventName = String(eventSelect.value || "");
+    if (!eventName) return;
+    window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
+      detail: { eventName, source: "map" },
+    }));
+  });
+  eventSelect?.addEventListener("focus", () => loadEventCatalog());
+  eventControl?.addEventListener("pointerenter", () => loadEventCatalog());
   window.addEventListener("dashboard:analyticsReady", () => {
     resizeScene();
     if (activeDashboardView !== "overview" || document.hidden) return;
     startHeatmapRefresh();
     startAnimation();
+    scheduleEventCatalogPreload();
     if (!renderPendingAreaAnalysis()) loadHeatmap();
   });
   window.addEventListener("dashboard:authChanged", (event) => {
@@ -141,6 +160,8 @@ if (canvas) {
       abortHeatmapRequest();
       pendingAreaAnalysisRender = null;
       deferredAreaAnalysisRenderedAt = 0;
+      abortEventCatalogRequest();
+      clearEventCatalogPreload();
       const previousScope = activeCacheScope;
       activeCacheScope = "";
       if (previousScope) clearPersistentCacheScope(previousScope);
@@ -156,14 +177,20 @@ if (canvas) {
     if (pendingAreaAnalysisRender?.universeId && pendingAreaAnalysisRender.universeId !== universeId) {
       pendingAreaAnalysisRender = null;
     }
+    selectedTrackedEventName = "";
+    currentEventCatalog = [];
+    syncEventSelect();
+    abortEventCatalogRequest();
     resizeScene();
     if (activeDashboardView !== "overview" || document.hidden) return;
+    scheduleEventCatalogPreload();
     loadHeatmap({ resetView: true });
   });
   window.addEventListener("dashboard:overviewShown", () => {
     activeDashboardView = "overview";
     resizeScene();
     startHeatmapRefresh();
+    scheduleEventCatalogPreload();
     if (document.hidden) return;
     if (renderPendingAreaAnalysis()) return;
     if (Date.now() - deferredAreaAnalysisRenderedAt < 1000) return;
@@ -175,12 +202,15 @@ if (canvas) {
       resizeScene();
       startHeatmapRefresh();
       startAnimation();
+      scheduleEventCatalogPreload();
       return;
     }
 
     stopHeatmapRefresh();
     stopAnimation();
     abortHeatmapRequest();
+    abortEventCatalogRequest();
+    clearEventCatalogPreload();
   });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
@@ -209,7 +239,22 @@ if (canvas) {
   window.addEventListener("dashboard:focusHeatmapArea", (event) => {
     const mode = event.detail?.mode || "";
     const area = event.detail?.area || null;
+    if (mode === "events" && event.detail?.eventName) {
+      selectedTrackedEventName = String(event.detail.eventName);
+      syncEventSelect();
+    }
     setHeatmapMode(mode, { focusArea: area, forcePoints: true });
+  });
+  window.addEventListener("dashboard:eventMapSelectionChanged", (event) => {
+    const eventName = String(event.detail?.eventName || "");
+    if (!eventName) return;
+    selectedTrackedEventName = eventName;
+    syncEventSelect();
+    setHeatmapMode("events", { forcePoints: false });
+  });
+  window.addEventListener("dashboard:eventCatalogAvailable", (event) => {
+    if (event.detail?.source === "heatmap") return;
+    applyEventCatalog(event.detail?.eventCatalog, event.detail?.selectedEventName, { notifyApp: false });
   });
   window.addEventListener("resize", resizeScene);
   window.addEventListener("dashboard:visibilityChanged", handleVisibilityChange);
@@ -337,6 +382,8 @@ function handleVisibilityChange() {
     stopHeatmapRefresh();
     stopAnimation();
     abortHeatmapRequest();
+    abortEventCatalogRequest();
+    clearEventCatalogPreload();
     return;
   }
 
@@ -344,8 +391,143 @@ function handleVisibilityChange() {
     resizeScene();
     startAnimation();
     startHeatmapRefresh();
+    scheduleEventCatalogPreload();
     if (!renderPendingAreaAnalysis()) loadHeatmap();
   }
+}
+
+function scheduleEventCatalogPreload() {
+  if (eventCatalogPreloadTimer || document.hidden || activeDashboardView !== "overview") return;
+  eventCatalogPreloadTimer = window.setTimeout(() => {
+    eventCatalogPreloadTimer = null;
+    loadEventCatalog();
+  }, 450);
+}
+
+function clearEventCatalogPreload() {
+  if (!eventCatalogPreloadTimer) return;
+  window.clearTimeout(eventCatalogPreloadTimer);
+  eventCatalogPreloadTimer = null;
+}
+
+async function loadEventCatalog(options = {}) {
+  if (window.isDashboardAuthenticated?.() === false || document.hidden || activeDashboardView !== "overview") return null;
+  const universeId = String(window.getSelectedUniverseId?.() || "");
+  if (!universeId) {
+    applyEventCatalog([], "", { notifyApp: true });
+    return null;
+  }
+
+  const params = new URLSearchParams(buildHeatmapQuery(universeId).replace(/^\?/, ""));
+  params.delete("eventName");
+  params.set("catalogOnly", "1");
+  const requestUrl = `/api/event-heatmap?${params.toString()}`;
+  const cacheKey = `${getCacheScope()}:${requestUrl}`;
+  const cached = eventCatalogCache.get(cacheKey);
+  if (cached && Date.now() - cached.storedAt <= EVENT_CATALOG_MAX_AGE_MS) {
+    applyEventCatalog(cached.payload?.eventCatalog, cached.payload?.selectedEventName, { notifyApp: true });
+    if (!options.force && Date.now() - cached.storedAt <= EVENT_CATALOG_FRESH_MS) return cached.payload;
+  } else if (cached) {
+    eventCatalogCache.delete(cacheKey);
+  }
+
+  if (eventCatalogRequestState?.key === cacheKey && !options.force) return eventCatalogRequestState.promise;
+  abortEventCatalogRequest();
+  if (!currentEventCatalog.length && eventSelect) {
+    eventSelect.disabled = true;
+    eventSelect.innerHTML = `<option value="">Loading events...</option>`;
+  }
+
+  const controller = new AbortController();
+  const requestScope = getCacheScope();
+  const promise = fetchJson(requestUrl, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
+    signal: controller.signal,
+  }).then((payload) => {
+    if (controller.signal.aborted
+      || universeId !== String(window.getSelectedUniverseId?.() || "")
+      || requestScope !== getCacheScope()) return null;
+    setBoundedMemoryCache(eventCatalogCache, cacheKey, { storedAt: Date.now(), payload });
+    applyEventCatalog(payload.eventCatalog, payload.selectedEventName, { notifyApp: true });
+    return payload;
+  }).catch((error) => {
+    if (error.name !== "AbortError" && !currentEventCatalog.length && eventSelect) {
+      eventSelect.disabled = true;
+      eventSelect.innerHTML = `<option value="">Events unavailable</option>`;
+    }
+    return null;
+  }).finally(() => {
+    if (eventCatalogRequestState?.key === cacheKey) eventCatalogRequestState = null;
+  });
+  eventCatalogRequestState = { key: cacheKey, controller, promise };
+  return promise;
+}
+
+function abortEventCatalogRequest() {
+  eventCatalogRequestState?.controller.abort();
+  eventCatalogRequestState = null;
+}
+
+function applyEventCatalog(catalog, selectedEventName = "", options = {}) {
+  currentEventCatalog = Array.isArray(catalog)
+    ? catalog.filter((event) => event && typeof event.name === "string" && event.name)
+    : [];
+  const availableNames = new Set(currentEventCatalog.map((event) => event.name));
+  if (selectedEventName && availableNames.has(selectedEventName) && !availableNames.has(selectedTrackedEventName)) {
+    selectedTrackedEventName = selectedEventName;
+  } else if (!availableNames.has(selectedTrackedEventName)) {
+    selectedTrackedEventName = currentEventCatalog.find((event) => Number(event.locationCount) > 0)?.name
+      || currentEventCatalog[0]?.name
+      || "";
+  }
+  syncEventSelect();
+
+  if (options.notifyApp) {
+    window.dispatchEvent(new CustomEvent("dashboard:eventCatalogAvailable", {
+      detail: {
+        source: "heatmap",
+        eventCatalog: currentEventCatalog,
+        selectedEventName: selectedTrackedEventName,
+      },
+    }));
+  }
+}
+
+function syncEventSelect() {
+  if (!eventSelect || !eventControl) return;
+  eventControl.classList.toggle("active", activeHeatmapMode === "events");
+  if (!currentEventCatalog.length) {
+    eventSelect.disabled = true;
+    eventSelect.innerHTML = `<option value="">No tracked events</option>`;
+    return;
+  }
+
+  eventSelect.innerHTML = currentEventCatalog.map((event) => {
+    const locationCount = Math.max(Number(event.locationCount) || 0, 0);
+    const suffix = locationCount > 0 ? `${locationCount.toLocaleString()} mapped` : "no positions";
+    return `<option value="${escapeHtml(event.name)}">${escapeHtml(formatTrackedEventName(event.name))} - ${escapeHtml(suffix)}</option>`;
+  }).join("");
+  eventSelect.disabled = false;
+  eventSelect.value = selectedTrackedEventName;
+}
+
+function formatTrackedEventName(value) {
+  return String(value || "Event")
+    .replace(/[_.:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function loadHeatmap(options = {}) {
@@ -353,6 +535,7 @@ function loadHeatmap(options = {}) {
     statusLine.textContent = "Sign in to view heatmap samples.";
     return Promise.resolve(null);
   }
+  if (activeDashboardView !== "overview" || document.hidden) return Promise.resolve(null);
 
   const universeId = window.getSelectedUniverseId?.() || "";
   if (!universeId) {
@@ -390,6 +573,7 @@ function loadHeatmap(options = {}) {
     requestUrl,
     universeId: String(universeId),
     mode: activeHeatmapMode,
+    eventName: activeHeatmapMode === "events" ? selectedTrackedEventName : "",
     force: Boolean(options.force),
     resetView: Boolean(options.resetView),
     focusArea: options.focusArea || null,
@@ -512,6 +696,10 @@ function getMapSnapshotVersion(snapshot) {
 
 function applyHeatmapPayload(payload, mapPayload, context) {
   if (!isCurrentHeatmapLoad(context)) return;
+  if (activeHeatmapMode === "events") {
+    applyEventCatalog(payload.eventCatalog, payload.selectedEventName, { notifyApp: true });
+    if (!context.eventName) context.eventName = selectedTrackedEventName;
+  }
   const modeText = getModeText(getModeLabel());
   const mapSnapshot = mapPayload?.snapshot || null;
   const samplePayload = normalizeHeatmapPayload(payload);
@@ -569,7 +757,8 @@ function getCurrentMapPayload(universeId) {
 function isCurrentHeatmapLoad(context) {
   return context.requestSequence === heatmapLoadSequence
     && context.universeId === String(window.getSelectedUniverseId?.() || "")
-    && context.mode === activeHeatmapMode;
+    && context.mode === activeHeatmapMode
+    && (context.mode !== "events" || context.eventName === selectedTrackedEventName);
 }
 
 function abortHeatmapRequest() {
@@ -591,6 +780,7 @@ async function renderAreaAnalysisPayload(payload, options = {}) {
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
+  eventControl?.classList.remove("active");
 
   const universeId = window.getSelectedUniverseId?.() || payload.universeId || "";
   setHeatmapEmptyState(false);
@@ -658,6 +848,10 @@ function getEmptyHeatmapStatus(modeText, suffix = "") {
   if (activeHeatmapMode === "deaths") return `No death samples yet. Death heatmaps appear after players die in a tracked server.${suffix}`;
   if (activeHeatmapMode === "leaves") return `No leave samples yet. Drop-off heatmaps appear after players exit a tracked server.${suffix}`;
   if (activeHeatmapMode === "chat") return `No chat samples yet. Chat heatmaps appear after players send messages in a tracked server.${suffix}`;
+  if (activeHeatmapMode === "events") {
+    const eventLabel = formatTrackedEventName(selectedTrackedEventName);
+    return `No mapped ${eventLabel} samples in this range. Log the custom event with x, y, and z to place it on the map.${suffix}`;
+  }
   return `No ${modeText} samples received yet.${suffix}`;
 }
 
@@ -838,6 +1032,9 @@ async function clearPersistentCacheScope(scope = getCacheScope()) {
   for (const key of [...heatmapPayloadCache.keys()]) {
     if (key.startsWith(memoryPrefix)) heatmapPayloadCache.delete(key);
   }
+  for (const key of [...eventCatalogCache.keys()]) {
+    if (key.startsWith(memoryPrefix)) eventCatalogCache.delete(key);
+  }
 
   if (!("caches" in window)) return;
   try {
@@ -897,7 +1094,7 @@ function normalizeHeatmapPayload(payload) {
 }
 
 function setHeatmapMode(mode, options = {}) {
-  activeHeatmapMode = ["ai-analysis", "movement", "deaths", "leaves", "chat"].includes(mode) ? mode : "ai-analysis";
+  activeHeatmapMode = ["ai-analysis", "movement", "deaths", "leaves", "chat", "events"].includes(mode) ? mode : "ai-analysis";
   if (options.selectedChatLogId) {
     selectedChatLogId = options.selectedChatLogId;
   }
@@ -908,6 +1105,7 @@ function setHeatmapMode(mode, options = {}) {
   for (const button of modeButtons) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
+  eventControl?.classList.toggle("active", activeHeatmapMode === "events");
 
   if (options.forcePoints || activeHeatmapMode === "ai-analysis") {
     activeRenderMode = "points";
@@ -916,6 +1114,8 @@ function setHeatmapMode(mode, options = {}) {
     }
   }
   syncMapOverlayVisibility(canvas?.classList.contains("isEmpty"));
+
+  if (activeDashboardView !== "overview" || document.hidden) return Promise.resolve(null);
 
   return loadHeatmap({ focusArea: options.focusArea || null });
 }
@@ -930,6 +1130,7 @@ function setRenderMode(mode) {
   for (const button of modeButtons) {
     button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
   }
+  eventControl?.classList.toggle("active", activeHeatmapMode === "events");
 
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
@@ -948,6 +1149,7 @@ function getHeatmapEndpoint() {
   if (activeHeatmapMode === "deaths") return "/api/death-heatmap";
   if (activeHeatmapMode === "leaves") return "/api/leave-heatmap";
   if (activeHeatmapMode === "chat") return "/api/chat-logs";
+  if (activeHeatmapMode === "events") return "/api/event-heatmap";
   return "/api/movement-heatmap";
 }
 
@@ -956,6 +1158,9 @@ function getModeLabel() {
   if (activeHeatmapMode === "deaths") return "Death";
   if (activeHeatmapMode === "leaves") return "Leave";
   if (activeHeatmapMode === "chat") return "Chat";
+  if (activeHeatmapMode === "events") return selectedTrackedEventName
+    ? formatTrackedEventName(selectedTrackedEventName)
+    : "Event";
   return "Movement";
 }
 
@@ -994,6 +1199,10 @@ function buildHeatmapQuery(universeId) {
   const to = getDateTimeMs(toFilter?.value);
   if (to) params.set("to", String(to));
 
+  if (activeHeatmapMode === "events" && selectedTrackedEventName) {
+    params.set("eventName", selectedTrackedEventName);
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -1021,7 +1230,9 @@ function getStatusText(payload) {
   const filters = payload.filters || {};
   const parts = [activeHeatmapMode === "chat"
     ? "Drag to rotate. Scroll to zoom. Click chat dots to open messages."
-    : "Drag to rotate. Scroll to zoom."];
+    : activeHeatmapMode === "events"
+      ? `Showing ${formatTrackedEventName(selectedTrackedEventName)} locations. Drag to rotate. Scroll to zoom.`
+      : "Drag to rotate. Scroll to zoom."];
   if (filters.userIds?.length) {
     parts.push(`Player filter: ${filters.userIds.join(", ")}`);
   }
@@ -1170,7 +1381,7 @@ function getSampleEntries(samples, mapSnapshot = null, options = {}) {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
 
-  if ((activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves") && activeRenderMode === "points") {
+  if ((activeHeatmapMode === "deaths" || activeHeatmapMode === "leaves" || activeHeatmapMode === "events") && activeRenderMode === "points") {
     return getSignalAreaEntries(samples, activeHeatmapMode);
   }
 
@@ -1384,6 +1595,7 @@ function renderSamples(entries, center) {
   if (
     activeHeatmapMode === "deaths"
     || activeHeatmapMode === "leaves"
+    || activeHeatmapMode === "events"
     || (activeHeatmapMode === "chat" && activeRenderMode === "points" && entries[0]?.signalMode === "chat")
     || (activeHeatmapMode === "movement" && activeRenderMode === "points")
   ) {
@@ -1498,6 +1710,7 @@ function getSignalAreaGroupName(mode) {
   if (mode === "movement") return "MovementAreaMarkers";
   if (mode === "deaths") return "DeathAreaMarkers";
   if (mode === "chat") return "ChatAreaMarkers";
+  if (mode === "events") return "CustomEventAreaMarkers";
   return "DropOffAreaMarkers";
 }
 
@@ -1505,6 +1718,7 @@ function getSignalAreaLabelPrefix(mode) {
   if (mode === "movement") return "Movement Area";
   if (mode === "deaths") return "Death Area";
   if (mode === "chat") return "Chat Area";
+  if (mode === "events") return `${formatTrackedEventName(selectedTrackedEventName)} Area`;
   return "Drop-off Area";
 }
 
@@ -2117,6 +2331,14 @@ function getSignalAreaColor(value, mode) {
     };
   }
 
+  if (mode === "events") {
+    return {
+      r: Math.round(lerp(94, 45, intensity)),
+      g: Math.round(lerp(234, 212, intensity)),
+      b: Math.round(lerp(212, 191, intensity)),
+    };
+  }
+
   return {
     r: Math.round(lerp(251, 245, intensity)),
     g: Math.round(lerp(191, 128, intensity)),
@@ -2139,6 +2361,10 @@ function getSampleColor(intensity, entry = {}) {
 
   if (activeHeatmapMode === "leaves") {
     return new THREE.Color().setHSL(0.78 - intensity * 0.08, 0.9, 0.58);
+  }
+
+  if (activeHeatmapMode === "events") {
+    return new THREE.Color().setHSL(0.48 - intensity * 0.04, 0.88, 0.52);
   }
 
   return new THREE.Color().setHSL(0.62 - intensity * 0.62, 0.95, 0.52);
@@ -2196,6 +2422,7 @@ function renderFocusedSignalArea(center) {
 function getFocusedSignalColor(mode) {
   if (mode === "movement") return 0x22d3ee;
   if (mode === "deaths") return 0xef4444;
+  if (mode === "events") return 0x2dd4bf;
   return 0xf59e0b;
 }
 

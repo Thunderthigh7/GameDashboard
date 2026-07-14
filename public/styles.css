@@ -1776,6 +1776,53 @@ body[data-active-view="connect"] .topbar > div:first-child {
   pointer-events: auto;
 }
 
+.heatmapEventControl {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--nav-text);
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.heatmapEventControl > span {
+  padding: 0 8px 0 11px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.heatmapEventControl select {
+  min-width: 150px;
+  max-width: 240px;
+  height: 32px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  outline: 0;
+  background: rgba(6, 13, 31, 0.52);
+  color: var(--text);
+  padding: 0 28px 0 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.heatmapEventControl select:disabled {
+  color: var(--muted);
+  cursor: wait;
+}
+
+.heatmapEventControl:focus-within,
+.heatmapEventControl.active {
+  border-color: rgba(45, 212, 191, 0.74);
+  background: rgba(15, 118, 110, 0.22);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
+}
+
 .aiAnalysisModeButton {
   position: absolute;
   top: 0;
@@ -2123,7 +2170,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .areasPage .insightRail {
-  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  grid-template-columns: repeat(3, minmax(270px, 1fr));
 }
 
 .insightMode {
@@ -3213,6 +3260,48 @@ body[data-active-view="connect"] .topbar > div:first-child {
   min-width: 0;
 }
 
+.eventAreaCardHeader {
+  display: grid;
+  gap: 13px;
+}
+
+.signalEventSelectControl {
+  display: grid;
+  gap: 6px;
+}
+
+.signalEventSelectControl > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.signalEventSelectControl select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--field-bg);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.signalEventSelectControl select:focus {
+  border-color: rgba(45, 212, 191, 0.72);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.09);
+}
+
+.signalEventSelectControl select:disabled {
+  color: var(--muted);
+  cursor: wait;
+}
+
 .barList {
   display: grid;
   gap: 12px;
@@ -3368,6 +3457,12 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .signalAreaItem.chatSignal b {
   color: #a78bfa;
   background: #a78bfa;
+}
+
+.signalAreaItem.eventSignal .signalBar i,
+.signalAreaItem.eventSignal b {
+  color: #2dd4bf;
+  background: #2dd4bf;
 }
 
 .signalAreaItem b {
@@ -5497,6 +5592,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     grid-template-columns: repeat(2, minmax(260px, 1fr));
   }
 
+  .areasPage .insightRail {
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+  }
+
   .chatBotPanel {
     min-height: 520px;
   }
@@ -5677,6 +5776,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     grid-template-columns: 1fr;
   }
 
+  .areasPage .insightRail {
+    grid-template-columns: 1fr;
+  }
+
   .eventOverview,
   .funnelOverview {
     grid-template-columns: 1fr 1fr;
@@ -5755,6 +5858,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .heatmapPresets {
     width: calc(100% - 130px);
     justify-content: flex-start;
+  }
+
+  .heatmapEventControl {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .heatmapEventControl select {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 auto;
   }
 
   .heatmapLegend {
