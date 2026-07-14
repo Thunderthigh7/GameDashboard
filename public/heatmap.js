@@ -110,6 +110,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
 if (canvas) {
+  if (eventMenu && eventMenu.parentElement !== document.body) document.body.append(eventMenu);
   initScene();
   refreshButton?.addEventListener("click", () => loadHeatmap({ force: true }));
   centerButton?.addEventListener("click", centerView);
@@ -575,6 +576,7 @@ function openEventDropdown(options = {}) {
   if (!eventMenu || !eventButton || eventButton.disabled || !currentEventCatalog.length) return;
   eventMenu.hidden = false;
   eventButton.setAttribute("aria-expanded", "true");
+  eventControl?.classList.add("menuOpen");
   positionEventDropdown();
 
   const selectedOption = eventMenu.querySelector('[aria-selected="true"]');
@@ -597,6 +599,7 @@ function closeEventDropdown(options = {}) {
   eventMenu.style.removeProperty("width");
   eventMenu.style.removeProperty("max-height");
   eventButton.setAttribute("aria-expanded", "false");
+  eventControl?.classList.remove("menuOpen");
   if (options.restoreFocus) eventButton.focus();
 }
 
@@ -664,12 +667,12 @@ function handleEventMenuKeydown(event) {
 }
 
 function handleEventDropdownOutsidePointer(event) {
-  if (!eventMenu || eventMenu.hidden || eventControl?.contains(event.target)) return;
+  if (!eventMenu || eventMenu.hidden || eventControl?.contains(event.target) || eventMenu.contains(event.target)) return;
   closeEventDropdown();
 }
 
 function handleEventDropdownOutsideFocus(event) {
-  if (!eventMenu || eventMenu.hidden || eventControl?.contains(event.target)) return;
+  if (!eventMenu || eventMenu.hidden || eventControl?.contains(event.target) || eventMenu.contains(event.target)) return;
   closeEventDropdown();
 }
 
