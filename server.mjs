@@ -5,6 +5,15 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzip, gzipSync, gunzipSync } from "node:zlib";
+import {
+  createDemoAiReport,
+  createDemoUniverseFixture,
+  DEMO_PLACE_ID,
+  DEMO_SEED_VERSION,
+  DEMO_UNIVERSE_ID,
+  DEMO_UNIVERSE_NAME,
+  getDemoAiReportSummary,
+} from "./lib/demo-universe.mjs";
 import { calculateFunnelAnalytics, groupCustomEventsBySession } from "./lib/funnels.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -272,6 +281,7 @@ const ANALYTICS_COLLECTION_RETENTION_MS = {
   leave_samples: 14 * 24 * 60 * 60 * 1000,
   custom_events: 14 * 24 * 60 * 60 * 1000,
 };
+const DEMO_RUNTIME_REFRESH_MS = 30 * 60 * 1000;
 
 const chatLogsByUniverseId = new Map();
 const chatLogIdsByUniverseId = new Map();
@@ -291,6 +301,9 @@ const mapUploadSessions = new Map();
 const chatInsightsByScope = new Map();
 const areaInsightsByScope = new Map();
 const aiAutomationSettingsCache = new Map();
+const demoRuntimeSeededAtByUniverseId = new Map();
+const demoRuntimeCountsByUniverseId = new Map();
+const demoRuntimeSeedRequests = new Map();
 let mongoClientPromise = null;
 let b2S3ClientPromise = null;
 const mongoStatus = {
@@ -431,7 +444,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/projects" && req.method === "GET") {
-      return sendJson(res, 200, { projects: await getUserProjects(auth.userId) });
+      const [user, projects] = await Promise.all([
+        findUserById(auth.userId),
+        getUserProjects(auth.userId),
+      ]);
+      return sendJson(res, 200, {
+        projects: isAdminUser(user) ? projects : projects.filter((project) => !isDemoProject(project)),
+      });
     }
 
     if (url.pathname === "/api/projects" && req.method === "POST") {
@@ -486,6 +505,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       return handleAdminUserPlanUpdate(req, res, user);
+    }
+
+    if (url.pathname === "/api/admin/demo-universe" && req.method === "POST") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      return handleAdminDemoUniverseCreate(req, res, auth, user);
     }
 
     if (url.pathname === "/api/admin/reconciliations" && req.method === "GET") {
@@ -632,6 +660,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/ai-insights/analyze" && req.method === "POST") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
+        const demoReport = await getDemoAiReportForUniverse(url.searchParams.get("universeId"));
+        if (demoReport) return sendJson(res, 200, demoReport);
         const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
         await assertUsageAvailable(usageContext, "aiRequests", 2);
         await assertUsageAvailable(usageContext, "openAiTokens", 1);
@@ -650,6 +680,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/chat-insights/analyze" && req.method === "POST") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
+        const demoReport = await getDemoAiReportForUniverse(url.searchParams.get("universeId"));
+        if (demoReport) return sendJson(res, 200, demoReport.chatInsights);
         const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
         await assertUsageAvailable(usageContext, "aiRequests", 1);
         await assertUsageAvailable(usageContext, "openAiTokens", 1);
@@ -722,6 +754,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/ai-area-analysis/analyze" && req.method === "POST") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       try {
+        const demoReport = await getDemoAiReportForUniverse(url.searchParams.get("universeId"));
+        if (demoReport) return sendJson(res, 200, demoReport.areaAnalysis);
         const usageContext = await getUsageContextForUniverse(auth.userId, url.searchParams.get("universeId"));
         await assertUsageAvailable(usageContext, "aiRequests", 1);
         await assertUsageAvailable(usageContext, "openAiTokens", 1);
@@ -984,7 +1018,7 @@ async function getConnectedGameLimitStatus(userId) {
   ]);
   const plan = getUserPlan(user);
   const limit = cleanFiniteInteger(plan.limits.connectedGames);
-  const used = projects.length;
+  const used = projects.filter((project) => !isDemoProject(project)).length;
   return {
     allowed: limit <= 0 || used + 1 <= limit,
     used,
@@ -1747,6 +1781,194 @@ async function handleAdminUserPlanUpdate(req, res, adminUser) {
   });
 }
 
+async function handleAdminDemoUniverseCreate(req, res, auth, adminUser) {
+  let project = await getProjectByUniverseId(DEMO_UNIVERSE_ID);
+  let created = false;
+
+  if (project && (!isDemoProject(project) || project.ownerUserId !== auth.userId)) {
+    return sendJson(res, 409, {
+      error: "The reserved demo universe is already assigned to another account.",
+    });
+  }
+
+  if (!project) {
+    const now = Date.now();
+    project = {
+      id: crypto.randomUUID(),
+      ownerUserId: auth.userId,
+      universeId: DEMO_UNIVERSE_ID,
+      name: DEMO_UNIVERSE_NAME,
+      secretHash: hashProjectSecret(`demo-disabled-${crypto.randomBytes(32).toString("base64url")}`),
+      createdAt: now,
+      ownershipVerifiedAt: now,
+      ownershipMethod: "admin-demo",
+      creatorType: "Demo",
+      creatorId: null,
+      creatorName: cleanString(adminUser?.username || adminUser?.robloxUsername, 80) || "Admin",
+      isDemo: true,
+      ingestDisabled: true,
+      demoSeedVersion: DEMO_SEED_VERSION,
+      demoSeededAt: now,
+      demoReportGeneratedAt: now - 12 * 60 * 1000,
+    };
+
+    try {
+      await createProject(project);
+      created = true;
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      project = await getProjectByUniverseId(DEMO_UNIVERSE_ID);
+      if (!project || !isDemoProject(project) || project.ownerUserId !== auth.userId) {
+        return sendJson(res, 409, { error: "The demo universe was created by another account." });
+      }
+    }
+  }
+
+  const seeded = await ensureDemoUniverseRuntime(project, {
+    force: created,
+    persistMap: created,
+  });
+  invalidateAccountUsageResponseCache(auth.userId);
+  invalidateAdminResponseCache("users");
+
+  return sendJson(res, created ? 201 : 200, {
+    ok: true,
+    created,
+    project: serializeProject(project),
+    seeded,
+    message: created
+      ? "Demo Universe created with a complete synthetic analytics dataset."
+      : "Demo Universe already exists and is ready to use.",
+  });
+}
+
+async function ensureDemoUniverseRuntime(project, options = {}) {
+  if (!isDemoProject(project)) return null;
+  const universeId = cleanInteger(project.universeId);
+  const universeKey = String(universeId);
+  const lastSeededAt = cleanInteger(demoRuntimeSeededAtByUniverseId.get(universeKey));
+  const runtimeReady = movementRollupsByUniverseId.has(universeKey)
+    && customEventsByUniverseId.has(universeKey)
+    && mapSnapshotsByUniverseId.has(universeKey);
+  if (!options.force && runtimeReady && Date.now() - lastSeededAt < DEMO_RUNTIME_REFRESH_MS) {
+    return demoRuntimeCountsByUniverseId.get(universeKey) || null;
+  }
+  if (demoRuntimeSeedRequests.has(universeKey)) return demoRuntimeSeedRequests.get(universeKey);
+
+  const request = (async () => {
+    clearUniverseRuntimeData(universeKey);
+    const fixture = createDemoUniverseFixture({ referenceTime: Date.now() });
+    const batches = {
+      chatLogs: chunkArray(fixture.chatLogs, MAX_CHAT_LOGS_PER_PAYLOAD),
+      movementSamples: chunkArray(fixture.movementSamples, MAX_MOVEMENT_SAMPLES_PER_PAYLOAD),
+      movementRollups: chunkArray(fixture.movementRollups, MAX_MOVEMENT_ROLLUPS_PER_PAYLOAD),
+      deathSamples: chunkArray(fixture.deathSamples, MAX_DEATH_SAMPLES_PER_PAYLOAD),
+      leaveSamples: chunkArray(fixture.leaveSamples, MAX_LEAVE_SAMPLES_PER_PAYLOAD),
+      customEvents: chunkArray(fixture.customEvents, MAX_CUSTOM_EVENTS_PER_PAYLOAD),
+    };
+    const batchCount = Math.max(...Object.values(batches).map((entries) => entries.length), 1);
+    const savedCounts = {
+      chatLogs: 0,
+      movementSamples: 0,
+      movementRollups: 0,
+      deathSamples: 0,
+      leaveSamples: 0,
+      customEvents: 0,
+    };
+
+    for (let index = 0; index < batchCount; index += 1) {
+      const normalized = normalizePresence({
+        universeId,
+        placeId: DEMO_PLACE_ID,
+        jobId: `demo-server-${index + 1}`,
+        serverStartedAt: fixture.referenceTime - 2 * 60 * 60 * 1000,
+        playerCount: fixture.players.length,
+        players: fixture.players,
+        chatLogs: batches.chatLogs[index] || [],
+        movementSamples: batches.movementSamples[index] || [],
+        movementRollups: batches.movementRollups[index] || [],
+        deathSamples: batches.deathSamples[index] || [],
+        leaveSamples: batches.leaveSamples[index] || [],
+        customEvents: batches.customEvents[index] || [],
+      });
+      if (!normalized.ok) throw new Error(`Demo analytics could not be normalized: ${normalized.error}`);
+      normalized.value.ownerUserId = project.ownerUserId;
+      normalized.value.projectId = project.id;
+      savedCounts.chatLogs += saveChatLogs(normalized.value);
+      savedCounts.movementSamples += saveMovementSamples(normalized.value);
+      savedCounts.movementRollups += saveMovementRollups(normalized.value);
+      savedCounts.deathSamples += saveDeathSamples(normalized.value);
+      savedCounts.leaveSamples += saveLeaveSamples(normalized.value);
+      savedCounts.customEvents += saveCustomEvents(normalized.value);
+    }
+
+    const normalizedMap = normalizeMapSnapshotChunk({
+      ...fixture.map,
+      chunkIndex: 1,
+      chunkCount: 1,
+    });
+    if (!normalizedMap.ok) throw new Error(`Demo map could not be normalized: ${normalizedMap.error}`);
+    const snapshot = buildMapSnapshot(normalizedMap.value, normalizedMap.value.parts);
+    mapSnapshotsByUniverseId.set(universeKey, snapshot);
+    if (options.persistMap) await persistMapSnapshot(snapshot, {});
+
+    const existingFunnelIds = new Set((await readFunnelDefinitions(project.ownerUserId, universeId))
+      .map((definition) => cleanString(definition?.id, 120))
+      .filter(Boolean));
+    for (const definition of fixture.funnels) {
+      if (!existingFunnelIds.has(definition.id)) {
+        await saveFunnelDefinition({
+          ...definition,
+          ownerUserId: project.ownerUserId,
+          universeId,
+        });
+      }
+    }
+
+    chatInsightsByScope.set(getChatInsightsScopeKey(universeId), fixture.aiReport.chatInsights);
+    areaInsightsByScope.set(getAreaInsightsScopeKey(universeId), fixture.aiReport.areaAnalysis);
+    aiAutomationSettingsCache.set(universeKey, {
+      universeId,
+      mode: "manual",
+      intervalHours: 1,
+      updatedAt: cleanInteger(project.demoSeededAt) || Date.now(),
+      updatedBy: "demo",
+    });
+    const counts = {
+      ...savedCounts,
+      weightedMovementSamples: fixture.counts.weightedMovementSamples,
+      mapParts: snapshot.partCount,
+      funnels: fixture.funnels.length,
+      aiAreas: fixture.aiReport.areaAnalysis.areas.length,
+      aiQuestions: fixture.aiReport.chatInsights.questions.length,
+    };
+    demoRuntimeSeededAtByUniverseId.set(universeKey, Date.now());
+    demoRuntimeCountsByUniverseId.set(universeKey, counts);
+    invalidatePersistedMapUniverseIdsCache();
+    invalidateAnalyticsResponses(universeId);
+    return counts;
+  })().finally(() => {
+    demoRuntimeSeedRequests.delete(universeKey);
+  });
+
+  demoRuntimeSeedRequests.set(universeKey, request);
+  return request;
+}
+
+function isDemoProject(project) {
+  return Boolean(project?.isDemo && cleanInteger(project?.universeId) === DEMO_UNIVERSE_ID);
+}
+
+async function getDemoAiReportForUniverse(universeId) {
+  const project = await getProjectByUniverseId(universeId);
+  if (!isDemoProject(project)) return null;
+  await ensureDemoUniverseRuntime(project);
+  return createDemoAiReport({
+    referenceTime: Date.now(),
+    generatedAt: cleanInteger(project.demoReportGeneratedAt) || cleanInteger(project.demoSeededAt) || Date.now(),
+  });
+}
+
 async function handleProjectCreate(req, res, auth) {
   let body;
   try {
@@ -1825,6 +2047,9 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
 
   const project = await getProjectByIdForOwner(cleanProjectId, auth.userId);
   if (!project) return sendJson(res, 404, { error: "Connected game not found." });
+  if (isDemoProject(project)) {
+    return sendJson(res, 400, { error: "Demo Universe does not use a Roblox ingestion secret." });
+  }
 
   const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
   const updatedAt = Date.now();
@@ -1846,6 +2071,9 @@ async function handleProjectUnlink(req, res, auth, projectId) {
 
   const project = await getProjectByIdForOwner(cleanProjectId, auth.userId);
   if (!project) return sendJson(res, 404, { error: "Connected game not found." });
+  if (isDemoProject(project)) {
+    return sendJson(res, 400, { error: "Demo Universe is protected because it is the admin preview dataset." });
+  }
   const deletedData = await deleteUniverseAnalyticsData(project.universeId);
   await deleteProject(cleanProjectId, auth.userId);
 
@@ -3230,8 +3458,18 @@ function getObjectStorageMapSnapshotVersionKey(snapshot) {
 }
 
 async function getUniverseSummaries(ownerUserId = null) {
-  const projects = ownerUserId ? await getUserProjects(ownerUserId) : (await readProjects()).map(serializeProject);
+  let projects = ownerUserId ? await getUserProjects(ownerUserId) : await readProjects();
+  if (ownerUserId) {
+    const owner = await findUserById(ownerUserId);
+    if (!isAdminUser(owner)) projects = projects.filter((project) => !isDemoProject(project));
+  }
   const projectsByUniverseId = new Map(projects.map((project) => [String(project.universeId), project]));
+  await Promise.all(projects
+    .filter(isDemoProject)
+    .map((project) => ensureDemoUniverseRuntime({
+      ...project,
+      ownerUserId: project.ownerUserId || ownerUserId,
+    })));
   const universeIds = [...projectsByUniverseId.keys()]
     .map(cleanInteger)
     .filter((universeId) => universeId > 0);
@@ -3241,10 +3479,14 @@ async function getUniverseSummaries(ownerUserId = null) {
     getPersistedMapUniverseIds(universeIds),
     getRecentIntegrationFailuresByUniverse(ownerUserId, universeIds),
     mapWithConcurrency(universeIds, UNIVERSE_ROLLUP_READ_CONCURRENCY, async (universeId) => (
-      [String(universeId), await getObjectStorageRollup(universeId)]
+      [
+        String(universeId),
+        isDemoProject(projectsByUniverseId.get(String(universeId))) ? null : await getObjectStorageRollup(universeId),
+      ]
     )),
   ]);
   const persistedMapUniverseIds = new Set(persistedMapIds.map(String));
+  for (const universeId of mapSnapshotsByUniverseId.keys()) persistedMapUniverseIds.add(String(universeId));
   const rollupsByUniverseId = new Map(rollupEntries);
   const universes = [];
   for (const id of universeIds) {
@@ -3261,6 +3503,7 @@ async function getUniverseSummaries(ownerUserId = null) {
         ...mergedSummary,
         projectId: project.id,
         name: project.name,
+        isDemo: isDemoProject(project),
         integrationStatus: buildUniverseIntegrationStatus(mergedSummary, recentFailuresByUniverseId.get(String(universeId))),
       });
     } else {
@@ -3268,6 +3511,7 @@ async function getUniverseSummaries(ownerUserId = null) {
         ...summary,
         projectId: project.id,
         name: project.name,
+        isDemo: isDemoProject(project),
         integrationStatus: buildUniverseIntegrationStatus(summary, recentFailuresByUniverseId.get(String(universeId))),
       });
     }
@@ -3826,6 +4070,8 @@ async function getAiAreaAnalysisFromQuery(searchParams) {
     to: searchParams.get("to"),
     target: searchParams.get("target") || searchParams.get("player"),
   });
+  const demoReport = await getDemoAiReportForUniverse(filters.universeId);
+  if (demoReport) return demoReport.areaAnalysis;
   const storedReport = await readObjectStorageAiReport(filters.universeId);
   if (storedReport?.areaAnalysis?.mode === "ai") {
     return storedReport.areaAnalysis;
@@ -5337,6 +5583,14 @@ function getRollupSamplesForFilters(samples, filters = {}, options = {}) {
 
 async function getStoredChatInsights(filters = {}) {
   const chatPayload = getChatLogs(filters);
+  const demoReport = await getDemoAiReportForUniverse(chatPayload.universeId);
+  if (demoReport) {
+    return {
+      ...demoReport.chatInsights,
+      sourceLogCount: chatPayload.logCount,
+      analyzedCount: Math.min(chatPayload.logs.length, MAX_CHAT_MESSAGES_FOR_INSIGHTS),
+    };
+  }
   const candidateLogs = chatPayload.logs
     .slice(0, MAX_CHAT_MESSAGES_FOR_INSIGHTS)
     .filter((log) => isQuestionLikeMessage(log.message));
@@ -5858,6 +6112,15 @@ async function runScheduledAiInsights() {
   for (const universe of summaries.universes || []) {
     const universeId = cleanInteger(universe.id);
     if (universeId <= 0 || cleanInteger(universe.totalSamples) <= 0) continue;
+    if (universe.isDemo) {
+      results.push({
+        universeId,
+        ok: true,
+        skipped: true,
+        reason: "Demo Universe uses its built-in synthetic AI report.",
+      });
+      continue;
+    }
 
     try {
       const settings = await getAiAutomationSettings(universeId);
@@ -5905,6 +6168,14 @@ async function getAiInsightReportsFromQuery(searchParams) {
     return { universeId: null, reports: [] };
   }
 
+  const demoReport = await getDemoAiReportForUniverse(universeId);
+  if (demoReport) {
+    return {
+      universeId,
+      reports: [getDemoAiReportSummary(demoReport)],
+    };
+  }
+
   return {
     universeId,
     reports: await readAiReportManifest(universeId),
@@ -5916,6 +6187,15 @@ async function getAiInsightReportFromQuery(searchParams) {
   const generatedAt = cleanInteger(searchParams.get("generatedAt"));
   if (universeId <= 0) {
     return { universeId: null, report: null };
+  }
+
+  const demoReport = await getDemoAiReportForUniverse(universeId);
+  if (demoReport) {
+    return {
+      universeId,
+      generatedAt: demoReport.generatedAt,
+      report: demoReport,
+    };
   }
 
   const report = generatedAt > 0
@@ -6109,6 +6389,16 @@ function normalizeAiReportSummary(value) {
 async function getAiAutomationSettings(universeId) {
   const cleanUniverseId = cleanInteger(universeId);
   if (cleanUniverseId <= 0) return { ...DEFAULT_AI_AUTOMATION_SETTINGS };
+  const demoProject = await getProjectByUniverseId(cleanUniverseId);
+  if (isDemoProject(demoProject)) {
+    return {
+      universeId: cleanUniverseId,
+      mode: "manual",
+      intervalHours: 1,
+      updatedAt: cleanInteger(demoProject.demoSeededAt) || null,
+      updatedBy: "demo",
+    };
+  }
   const cacheKey = String(cleanUniverseId);
   if (aiAutomationSettingsCache.has(cacheKey)) return aiAutomationSettingsCache.get(cacheKey);
 
@@ -6134,6 +6424,10 @@ async function getAiAutomationSettings(universeId) {
 async function saveAiAutomationSettings(settings) {
   const cleanUniverseId = cleanInteger(settings?.universeId);
   if (cleanUniverseId <= 0) throw new Error("Enter a valid universe ID");
+  const demoProject = await getProjectByUniverseId(cleanUniverseId);
+  if (isDemoProject(demoProject)) {
+    return getAiAutomationSettings(cleanUniverseId);
+  }
 
   const normalized = normalizeAiAutomationSettings({ ...settings, universeId: cleanUniverseId });
   const cacheKey = String(cleanUniverseId);
@@ -8142,6 +8436,7 @@ async function getAccountUsageSummary(userId, options = {}) {
   const now = Date.now();
   const period = getUsagePeriod(now);
   const plan = getUserPlan(user);
+  const billableProjects = projects.filter((project) => !isDemoProject(project));
 
   return {
     plan: plan.name,
@@ -8150,13 +8445,13 @@ async function getAccountUsageSummary(userId, options = {}) {
     plans: getPlanOptionsForUser(user),
     period,
     usage,
-    connectedGameCount: projects.length,
-    connectedGames: projects.map((project) => ({
+    connectedGameCount: billableProjects.length,
+    connectedGames: billableProjects.map((project) => ({
       id: project.universeId,
       name: project.name,
       createdAt: project.createdAt,
     })),
-    metrics: getUsageMetrics(usage, projects.length),
+    metrics: getUsageMetrics(usage, billableProjects.length),
     upgrade: {
       available: true,
       label: "Choose your plan",
@@ -8551,7 +8846,18 @@ async function readAdminProjects() {
   if (!db) return readProjects();
   return db.collection("projects")
     .find({})
-    .project({ _id: 0, id: 1, ownerUserId: 1, universeId: 1, name: 1, createdAt: 1 })
+    .project({
+      _id: 0,
+      id: 1,
+      ownerUserId: 1,
+      universeId: 1,
+      name: 1,
+      createdAt: 1,
+      isDemo: 1,
+      demoSeedVersion: 1,
+      demoSeededAt: 1,
+      demoReportGeneratedAt: 1,
+    })
     .toArray();
 }
 
@@ -8782,6 +9088,7 @@ async function getAdminUserSummaries() {
   const sanitizedUsers = users
     .map((user) => {
       const userProjects = projectsByOwner.get(user.id) || [];
+      const billableProjects = userProjects.filter((project) => !isDemoProject(project));
       const usage = usageByUser.get(user.id) || createEmptyUsageSummary(getUsageMonthKey(Date.now()));
       const lifetimeUsage = lifetimeUsageByUser.get(user.id) || createEmptyUsageSummary("lifetime");
       const plan = getUserPlan(user);
@@ -8797,13 +9104,14 @@ async function getAdminUserSummaries() {
         isAdmin: isAdminUser(user),
         createdAt: cleanInteger(user.createdAt),
         lastLoginAt: cleanInteger(user.lastLoginAt) || null,
-        projectCount: userProjects.length,
+        projectCount: billableProjects.length,
         usage,
         lifetimeUsage,
         universes: userProjects.map((project) => ({
           id: project.universeId,
           name: project.name,
           createdAt: project.createdAt,
+          isDemo: isDemoProject(project),
         })),
       };
     })
@@ -8819,7 +9127,7 @@ async function getAdminUserSummaries() {
     plans: getPlanOptionsForUser(null),
     totalUsers: sanitizedUsers.length,
     totalRobloxUsers: sanitizedUsers.filter((user) => cleanInteger(user.robloxUserId) > 0 || user.authProvider === "roblox").length,
-    totalProjects: projects.length,
+    totalProjects: projects.filter((project) => !isDemoProject(project)).length,
     usageTotals: aggregateUsageSummaries([...usageByUser.values()]),
     lifetimeUsageTotals: aggregateUsageSummaries([...lifetimeUsageByUser.values()]),
     passwordVisibility: "Roblox OAuth users are linked by Roblox user ID. Legacy passwords are hashed and cannot be viewed.",
@@ -9261,7 +9569,19 @@ async function getUserProjects(ownerUserId) {
     const projects = await db.collection("projects")
       .find(
         { ownerUserId },
-        { projection: { _id: 0, id: 1, universeId: 1, name: 1, createdAt: 1 } },
+        {
+          projection: {
+            _id: 0,
+            id: 1,
+            universeId: 1,
+            name: 1,
+            createdAt: 1,
+            isDemo: 1,
+            demoSeedVersion: 1,
+            demoSeededAt: 1,
+            demoReportGeneratedAt: 1,
+          },
+        },
       )
       .sort({ createdAt: -1 })
       .toArray();
@@ -9281,33 +9601,49 @@ function serializeProject(project) {
     universeId: cleanInteger(project.universeId),
     name: project.name || `Universe ${cleanInteger(project.universeId)}`,
     createdAt: cleanInteger(project.createdAt),
+    isDemo: isDemoProject(project),
+    demoSeedVersion: isDemoProject(project) ? cleanInteger(project.demoSeedVersion) : null,
+    demoSeededAt: isDemoProject(project) ? cleanInteger(project.demoSeededAt) : null,
+    demoReportGeneratedAt: isDemoProject(project) ? cleanInteger(project.demoReportGeneratedAt) : null,
   };
 }
 
 async function canAccessUniverseFromQuery(ownerUserId, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   if (universeId <= 0) return false;
-  return userOwnsUniverse(ownerUserId, universeId);
+  const project = await getProjectByUniverseIdForOwner(ownerUserId, universeId);
+  if (!project) return false;
+  if (isDemoProject(project)) {
+    if (!isAdminUser(await findUserById(ownerUserId))) return false;
+    await ensureDemoUniverseRuntime(project);
+  }
+  return true;
 }
 
-async function userOwnsUniverse(ownerUserId, universeId) {
+async function getProjectByUniverseIdForOwner(ownerUserId, universeId) {
   const cleanUniverseId = cleanInteger(universeId);
-  if (!ownerUserId || cleanUniverseId <= 0) return false;
+  if (!ownerUserId || cleanUniverseId <= 0) return null;
 
   const db = await getMongoDb();
   if (db) {
-    const project = await db.collection("projects").findOne(
+    return db.collection("projects").findOne(
       { ownerUserId, universeId: cleanUniverseId },
-      { projection: { _id: 1 } },
+      { projection: { _id: 0 } },
     );
-    return Boolean(project);
   }
 
   const projects = await readProjects();
-  return projects.some((project) => (
+  return projects.find((project) => (
     project.ownerUserId === ownerUserId
     && cleanInteger(project.universeId) === cleanUniverseId
-  ));
+  )) || null;
+}
+
+async function userOwnsUniverse(ownerUserId, universeId) {
+  const project = await getProjectByUniverseIdForOwner(ownerUserId, universeId);
+  if (!project) return false;
+  if (!isDemoProject(project)) return true;
+  return isAdminUser(await findUserById(ownerUserId));
 }
 
 async function getProjectFromRequestSecret(req, universeId) {
@@ -9323,12 +9659,13 @@ async function getProjectFromRequestSecret(req, universeId) {
       { universeId: cleanUniverseId },
       { projection: { _id: 0 } },
     );
-    return project && verifyProjectSecret(secret, project.secretHash) ? project : null;
+    return project && !project.ingestDisabled && verifyProjectSecret(secret, project.secretHash) ? project : null;
   }
 
   const projects = await readProjects();
   return projects.find((project) => (
     cleanInteger(project.universeId) === cleanUniverseId
+    && !project.ingestDisabled
     && verifyProjectSecret(secret, project.secretHash)
   )) || null;
 }

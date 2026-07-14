@@ -798,6 +798,14 @@ body[data-active-view="connect"] .topbar > div:first-child {
   font-size: 13px;
 }
 
+.connectUniverseHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+  max-width: 560px;
+}
+
 .connectNewGameButton {
   gap: 10px;
   min-height: 42px;
@@ -811,6 +819,42 @@ body[data-active-view="connect"] .topbar > div:first-child {
   font-size: 22px;
   font-weight: 400;
   line-height: 1;
+}
+
+.createDemoUniverseButton {
+  gap: 8px;
+  min-height: 42px;
+  border-color: rgba(45, 212, 191, 0.42);
+  background: linear-gradient(135deg, rgba(18, 91, 105, 0.72), rgba(86, 45, 176, 0.68));
+  color: #d9fffa;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
+.createDemoUniverseButton:hover:not(:disabled) {
+  border-color: rgba(94, 234, 212, 0.72);
+  background: linear-gradient(135deg, rgba(20, 119, 126, 0.8), rgba(103, 51, 198, 0.76));
+}
+
+.demoUniverseStatus {
+  flex-basis: 100%;
+  margin: 0;
+  color: #9ee8db;
+  font-size: 11px;
+  text-align: right;
+}
+
+.buttonSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.32);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: demoButtonSpin 0.75s linear infinite;
+}
+
+@keyframes demoButtonSpin {
+  to { transform: rotate(360deg); }
 }
 
 .integrationStatusCard {
@@ -1329,6 +1373,27 @@ body[data-active-view="connect"] .topbar > div:first-child {
   white-space: nowrap;
 }
 
+.demoUniverseBadge {
+  display: inline-flex !important;
+  align-items: center;
+  width: fit-content;
+  max-width: none;
+  overflow: visible !important;
+  margin-left: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.36);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.1);
+  color: #7cead8 !important;
+  padding: 2px 6px;
+  font-size: 9px !important;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
 .connectedGameTitle span {
   color: var(--muted);
   font-size: 11px;
@@ -1417,6 +1482,21 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .connectedGameActions .button {
   min-height: 36px;
+  font-size: 11px;
+}
+
+.demoUniverseActionNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 9px;
+  margin: 0 !important;
+  color: var(--muted);
+  font-size: 10px !important;
+}
+
+.demoUniverseActionNote strong {
+  color: #7cead8;
   font-size: 11px;
 }
 
@@ -5728,6 +5808,20 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .connectNewGameButton {
     width: 100%;
+  }
+
+  .connectUniverseHeaderActions {
+    justify-content: stretch;
+    width: 100%;
+    max-width: none;
+  }
+
+  .connectUniverseHeaderActions .button {
+    width: 100%;
+  }
+
+  .demoUniverseStatus {
+    text-align: left;
   }
 
   .integrationStatusCard .status {

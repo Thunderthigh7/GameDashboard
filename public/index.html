@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260713-3">
+    <link rel="stylesheet" href="/styles.css?v=20260713-4">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -751,10 +751,17 @@
                 <h2>Connect Universe</h2>
                 <p>Connect and manage the Roblox games sending data to RoAnalytics.</p>
               </div>
-              <button class="button compact connectNewGameButton" id="connectNewGameButton" type="button">
-                <span aria-hidden="true">+</span>
-                Connect new game
-              </button>
+              <div class="connectUniverseHeaderActions">
+                <button class="button secondary compact createDemoUniverseButton" id="createDemoUniverseButton" type="button" hidden>
+                  <span aria-hidden="true">&#10022;</span>
+                  Create demo universe
+                </button>
+                <button class="button compact connectNewGameButton" id="connectNewGameButton" type="button">
+                  <span aria-hidden="true">+</span>
+                  Connect new game
+                </button>
+                <p class="status demoUniverseStatus" id="demoUniverseStatus" aria-live="polite" hidden></p>
+              </div>
             </div>
             <article class="integrationStatusCard" id="integrationStatusCard">
               <div class="integrationStatusHeader">
@@ -929,6 +936,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260713-3"></script>
+    <script defer src="/app.js?v=20260713-4"></script>
   </body>
 </html>

@@ -56,6 +56,8 @@ const refreshOwnedGamesButton = document.querySelector("#refreshOwnedGamesButton
 const ownedGamesStatus = document.querySelector("#ownedGamesStatus");
 const createProjectButton = document.querySelector("#createProjectButton");
 const connectNewGameButton = document.querySelector("#connectNewGameButton");
+const createDemoUniverseButton = document.querySelector("#createDemoUniverseButton");
+const demoUniverseStatus = document.querySelector("#demoUniverseStatus");
 const refreshIntegrationStatusButton = document.querySelector("#refreshIntegrationStatusButton");
 const integrationStatusTitle = document.querySelector("#integrationStatusTitle");
 const integrationStatusState = document.querySelector("#integrationStatusState");
@@ -309,6 +311,7 @@ function bindEvents() {
     document.querySelector("#connectGameRow")?.scrollIntoView({ behavior: "smooth", block: "center" });
     window.setTimeout(() => ownedGameSelect?.focus({ preventScroll: true }), 260);
   });
+  createDemoUniverseButton?.addEventListener("click", createDemoUniverse);
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     createProject();
@@ -773,6 +776,7 @@ function setAuthenticated(value, user = null) {
   document.body.classList.toggle("isLocked", !authenticated);
   accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
   if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
+  updateDemoUniverseControl();
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
   runChatInsightsButton.hidden = !authenticated;
@@ -808,6 +812,10 @@ function setAuthenticated(value, user = null) {
     if (projectSecretValue) projectSecretValue.textContent = "";
     if (projectSecretTarget) projectSecretTarget.textContent = "";
     if (connectedGameList) connectedGameList.innerHTML = "";
+    if (demoUniverseStatus) {
+      demoUniverseStatus.hidden = true;
+      demoUniverseStatus.textContent = "";
+    }
     renderIntegrationStatusCard();
     renderSetupChecklist();
     if (ownedGameSelect) {
@@ -1666,6 +1674,7 @@ function applyUniverseCollection(universes, options = {}) {
   }
 
   renderConnectedGames();
+  updateDemoUniverseControl();
   renderIntegrationStatusCard();
   renderSetupChecklist();
   updateSelectedUniverse();
@@ -1698,7 +1707,9 @@ async function loadUniverses(options = {}) {
     const data = await request("/api/universes");
     if (requestSequence !== universeRequestSequence || !authenticated) return false;
 
-    const didNotifyUniverseChange = applyUniverseCollection(data.universes || []);
+    const didNotifyUniverseChange = applyUniverseCollection(data.universes || [], {
+      preferredUniverseId: options.preferredUniverseId,
+    });
     cacheCurrentUniverses();
     if (!knownUniverses.length) loadSignalAreaCards();
     return didNotifyUniverseChange;
@@ -1716,6 +1727,46 @@ async function loadUniverses(options = {}) {
     if (requestSequence === universeRequestSequence && refreshIntegrationStatusButton) {
       refreshIntegrationStatusButton.disabled = false;
     }
+  }
+}
+
+function updateDemoUniverseControl() {
+  if (!createDemoUniverseButton) return;
+  const hasDemoUniverse = knownUniverses.some((universe) => Boolean(universe?.isDemo));
+  createDemoUniverseButton.hidden = !authenticatedUser?.isAdmin || hasDemoUniverse;
+  if (!createDemoUniverseButton.hidden && !createDemoUniverseButton.disabled) {
+    createDemoUniverseButton.innerHTML = `<span aria-hidden="true">&#10022;</span>Create demo universe`;
+  }
+}
+
+async function createDemoUniverse() {
+  if (!authenticatedUser?.isAdmin || !createDemoUniverseButton) return;
+
+  createDemoUniverseButton.disabled = true;
+  createDemoUniverseButton.innerHTML = `<span class="buttonSpinner" aria-hidden="true"></span>Building demo data...`;
+  if (demoUniverseStatus) {
+    demoUniverseStatus.hidden = false;
+    demoUniverseStatus.textContent = "Generating the map and complete synthetic analytics history...";
+  }
+
+  try {
+    const data = await request("/api/admin/demo-universe", { method: "POST" });
+    const demoUniverseId = String(data.project?.universeId || "");
+    await loadUniverses({ preferredUniverseId: demoUniverseId });
+    if (demoUniverseId) selectUniverse(demoUniverseId);
+    loadedViews.clear();
+    loadActiveViewData(activeView, { force: true });
+    if (demoUniverseStatus) {
+      demoUniverseStatus.hidden = false;
+      demoUniverseStatus.textContent = data.message || "Demo Universe is ready.";
+    }
+  } catch (error) {
+    if (demoUniverseStatus) {
+      demoUniverseStatus.hidden = false;
+      demoUniverseStatus.textContent = error.message;
+    }
+    createDemoUniverseButton.disabled = false;
+    createDemoUniverseButton.innerHTML = `<span aria-hidden="true">&#10022;</span>Create demo universe`;
   }
 }
 
@@ -1899,8 +1950,9 @@ function renderOwnedGameOption(game) {
 function renderUniverseOption(universe) {
   const id = String(universe.id || "");
   const label = String(universe.name || `Universe ${id}`);
+  const suffix = universe.isDemo ? " (Admin demo)" : "";
   const selected = id === selectedUniverseId ? " selected" : "";
-  return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label)}</option>`;
+  return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label + suffix)}</option>`;
 }
 
 function syncUniverseSelectorControl() {
@@ -1920,8 +1972,8 @@ function renderUniverseDropdownOption(universe) {
   const selected = id === selectedUniverseId;
   return `
     <button class="universeDropdownOption" type="button" role="option" tabindex="-1" data-universe-option="${escapeHtml(id)}" aria-selected="${selected ? "true" : "false"}">
-      <strong>${escapeHtml(label)}</strong>
-      <small>Universe ${escapeHtml(id)}</small>
+      <strong>${escapeHtml(label)}${universe.isDemo ? `<span class="demoUniverseBadge">Admin demo</span>` : ""}</strong>
+      <small>${universe.isDemo ? "Complete synthetic analytics dataset" : `Universe ${escapeHtml(id)}`}</small>
     </button>
   `;
 }
@@ -2053,6 +2105,7 @@ function renderConnectedGame(universe) {
   const statusText = lastReceivedAt ? `Last data ${formatRelativeTime(lastReceivedAt)}` : "Waiting for data";
   const artworkTone = (Math.abs(Number(id.slice(-2)) || 0) % 4) + 1;
   const artworkLabel = name.trim().charAt(0).toUpperCase() || "?";
+  const isDemo = Boolean(universe.isDemo);
 
   return `
     <article class="connectedGameItem">
@@ -2060,10 +2113,10 @@ function renderConnectedGame(universe) {
         <span class="connectedGameArtwork tone${escapeHtml(artworkTone)}" aria-hidden="true"><span>${escapeHtml(artworkLabel)}</span></span>
         <div class="connectedGameInfo">
           <div class="connectedGameTitle">
-            <strong>${escapeHtml(name)}</strong>
-            <span>Universe ${escapeHtml(id)}</span>
+            <strong>${escapeHtml(name)}${isDemo ? `<span class="demoUniverseBadge">Admin demo</span>` : ""}</strong>
+            <span>${isDemo ? "Synthetic universe &middot; Private to your admin account" : `Universe ${escapeHtml(id)}`}</span>
           </div>
-          <span class="connectedGameConnection">Connected</span>
+          <span class="connectedGameConnection">${isDemo ? "Demo data ready" : "Connected"}</span>
           <div class="connectedGameStatus ${escapeHtml(statusClass)}">
             <b>${escapeHtml(statusText)}</b>
             <span>${escapeHtml(status.mapUploaded || universe.hasMapSnapshot ? "Map uploaded" : "Map missing")}</span>
@@ -2079,8 +2132,10 @@ function renderConnectedGame(universe) {
         ${renderIntegrationSignal("Events", Boolean(status.signals?.events), status.counts?.events)}
       </div>
       <div class="connectedGameActions">
-        <button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
-        <button class="button danger compact" type="button" data-unlink-project="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Unlink</button>
+        ${isDemo
+          ? `<p class="demoUniverseActionNote"><strong>Synthetic preview</strong><span>No Roblox secret or live game is required.</span></p>`
+          : `<button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
+             <button class="button danger compact" type="button" data-unlink-project="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Unlink</button>`}
       </div>
     </article>
   `;
@@ -2132,9 +2187,10 @@ function renderIntegrationStatusCard(options = {}) {
   const lastReceivedAt = Number(status.lastReceivedAt || selectedUniverse.lastSeenAt || 0);
   const failedIngests = Number(status.failedIngests24h || 0);
   const hasAnyData = lastReceivedAt > 0 || Number(selectedUniverse.totalSamples || 0) > 0;
+  const isDemo = Boolean(selectedUniverse.isDemo);
 
   integrationStatusTitle.textContent = name;
-  setIntegrationStatusState(status.connected === false ? "Not connected" : "Connected", status.connected === false ? "warning" : "ok");
+  setIntegrationStatusState(isDemo ? "Admin demo" : status.connected === false ? "Not connected" : "Connected", status.connected === false && !isDemo ? "warning" : "ok");
   if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = name.trim().charAt(0).toUpperCase() || "?";
   integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", lastReceivedAt ? formatRelativeTime(lastReceivedAt) : "Waiting")
     + renderIntegrationMetric("Map", status.mapUploaded || selectedUniverse.hasMapSnapshot ? "Uploaded" : "Missing")
@@ -2145,7 +2201,9 @@ function renderIntegrationStatusCard(options = {}) {
     + renderIntegrationSignal("Chat", Boolean(signals.chat), counts.chat)
     + renderIntegrationSignal("Events", Boolean(signals.events), counts.events);
 
-  if (failedIngests > 0) {
+  if (isDemo) {
+    integrationStatusMessage.textContent = "Complete synthetic analytics are ready: map, movement, deaths, leaves, chat, events, funnels, cohorts, and AI reports.";
+  } else if (failedIngests > 0) {
     integrationStatusMessage.textContent = "Data is coming in, but recent ingests failed. Check the game secret and server logs before a client test.";
   } else if (!hasAnyData) {
     integrationStatusMessage.textContent = "Connected, waiting for Roblox data. Paste the secret into Settings.Secret and start a live server.";
@@ -2177,8 +2235,16 @@ function renderSetupChecklist(selectedUniverse = null) {
   const hasData = Boolean(Number(status.lastReceivedAt || universe?.lastSeenAt || 0));
   const hasMap = Boolean(status.mapUploaded || universe?.hasMapSnapshot);
   const secretVisible = Boolean(projectSecretBox && !projectSecretBox.hidden && projectSecretValue?.textContent);
+  const isDemo = Boolean(universe?.isDemo);
 
-  const steps = [
+  const steps = isDemo ? [
+    { title: "Admin access", detail: "Private to your admin account.", complete: true },
+    { title: "Demo universe", detail: "Synthetic universe attached without Roblox ownership.", complete: true },
+    { title: "Analytics history", detail: "Realistic samples and historical rollups generated.", complete: true },
+    { title: "Live-server simulation", detail: "Active players, sessions, and signals are populated.", complete: true },
+    { title: "Events and funnels", detail: "Custom events, purchases, cohorts, and funnels are ready.", complete: true },
+    { title: "Map and AI", detail: "Demo world, heatmaps, insights, and reports are ready.", complete: true },
+  ] : [
     {
       title: "Sign in with Roblox",
       detail: authenticated ? "Signed in." : "Use the Roblox account that owns the game.",
