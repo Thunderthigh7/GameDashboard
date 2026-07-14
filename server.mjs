@@ -14,7 +14,7 @@ import {
   DEMO_UNIVERSE_NAME,
   getDemoAiReportSummary,
 } from "./lib/demo-universe.mjs";
-import { calculateFunnelAnalytics, groupCustomEventsBySession } from "./lib/funnels.mjs";
+import { calculateFunnelAnalytics, calculateFunnelMapSamples, groupCustomEventsBySession } from "./lib/funnels.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -84,6 +84,7 @@ const CUSTOM_EVENT_INTERVALS_MS = new Map([
 ]);
 const MAX_FUNNELS_PER_UNIVERSE = 50;
 const MAX_FUNNEL_STEPS = 10;
+const MAX_FUNNEL_MAP_CLUSTERS = 180;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_AI_ANALYSIS_AREAS = 5;
 const AI_ANALYSIS_CLUSTER_RADIUS = 44;
@@ -610,6 +611,18 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/funnels" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getFunnelsFromQuery(auth.userId, url.searchParams));
+    }
+
+    if (url.pathname === "/api/funnel-map" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      const funnel = await getFunnelDefinitionFromQuery(auth.userId, url.searchParams);
+      if (!funnel) return sendJson(res, 404, { error: "Funnel not found" });
+      return sendJson(res, 200, await getCachedAnalyticsResponse(
+        auth.userId,
+        "funnel-map",
+        url.searchParams,
+        () => getFunnelMapFromQuery(funnel, url.searchParams),
+      ));
     }
 
     if (url.pathname === "/api/funnels" && req.method === "POST") {
@@ -4726,6 +4739,112 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
       analytics: calculateFunnelAnalytics(definition, sessions),
     })),
   };
+}
+
+async function getFunnelDefinitionFromQuery(ownerUserId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const funnelId = cleanString(searchParams.get("funnelId"), 120);
+  if (universeId <= 0 || !funnelId) return null;
+  const definitions = await readFunnelDefinitions(ownerUserId, universeId);
+  return definitions.find((definition) => definition.id === funnelId) || null;
+}
+
+async function getFunnelMapFromQuery(definition, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
+  const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
+  const requestedStep = cleanInteger(searchParams.get("step")) || 1;
+  const requestedMode = searchParams.get("mode") === "dropped" ? "dropped" : "reached";
+  const eventRecords = await getCustomEventRecords({ universeId, fromMs, toMs });
+  const sessions = groupCustomEventsBySession(eventRecords.events);
+  const mapAnalytics = calculateFunnelMapSamples(definition, sessions, requestedStep, requestedMode);
+  const clustered = clusterFunnelMapSamples(mapAnalytics.samples);
+
+  return {
+    universeId,
+    funnelId: cleanString(definition?.id, 120),
+    funnelName: cleanString(definition?.name, 80),
+    filters: { from: fromMs || null, to: toMs || null },
+    source: eventRecords.hasRollup ? "b2-rollup+live" : "live",
+    stepIndex: mapAnalytics.stepIndex,
+    stepNumber: mapAnalytics.stepNumber,
+    stepEventName: mapAnalytics.stepEventName,
+    nextStepEventName: mapAnalytics.nextStepEventName,
+    mode: mapAnalytics.mode,
+    qualifyingSessions: mapAnalytics.qualifyingSessions,
+    mappedSessions: mapAnalytics.mappedSessions,
+    unmappedSessions: mapAnalytics.unmappedSessions,
+    clusterCount: clustered.clusters.length,
+    clusterSizeStuds: clustered.binSize,
+    locationMethod: mapAnalytics.mode === "dropped"
+      ? "last mapped custom event after the selected step"
+      : "mapped location of the selected step",
+    clusters: clustered.clusters,
+  };
+}
+
+function clusterFunnelMapSamples(samples) {
+  const validSamples = (Array.isArray(samples) ? samples : []).filter((sample) => (
+    Number.isFinite(Number(sample?.x))
+    && Number.isFinite(Number(sample?.y))
+    && Number.isFinite(Number(sample?.z))
+  ));
+  if (!validSamples.length) return { binSize: 0, clusters: [] };
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const sample of validSamples) {
+    minX = Math.min(minX, Number(sample.x));
+    maxX = Math.max(maxX, Number(sample.x));
+    minZ = Math.min(minZ, Number(sample.z));
+    maxZ = Math.max(maxZ, Number(sample.z));
+  }
+
+  const span = Math.max(maxX - minX, maxZ - minZ, 1);
+  let binSize = Math.max(6, Math.min(24, span / 42));
+  let bins = buildFunnelMapBins(validSamples, binSize);
+  for (let attempt = 0; attempt < 8 && bins.size > MAX_FUNNEL_MAP_CLUSTERS; attempt += 1) {
+    binSize *= 1.45;
+    bins = buildFunnelMapBins(validSamples, binSize);
+  }
+
+  const clusters = [...bins.values()]
+    .map((bin) => ({
+      x: bin.xTotal / bin.count,
+      y: bin.yTotal / bin.count,
+      z: bin.zTotal / bin.count,
+      count: bin.count,
+    }))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, MAX_FUNNEL_MAP_CLUSTERS)
+    .map((cluster, index) => ({
+      rank: index + 1,
+      x: cleanFiniteNumber(cluster.x),
+      y: cleanFiniteNumber(cluster.y),
+      z: cleanFiniteNumber(cluster.z),
+      count: cleanFiniteInteger(cluster.count),
+    }));
+
+  return { binSize: cleanFiniteNumber(binSize), clusters };
+}
+
+function buildFunnelMapBins(samples, binSize) {
+  const bins = new Map();
+  for (const sample of samples) {
+    const x = Number(sample.x);
+    const y = Number(sample.y);
+    const z = Number(sample.z);
+    const key = `${Math.floor(x / binSize)}:${Math.floor(z / binSize)}`;
+    const bin = bins.get(key) || { xTotal: 0, yTotal: 0, zTotal: 0, count: 0 };
+    bin.xTotal += x;
+    bin.yTotal += y;
+    bin.zTotal += z;
+    bin.count += 1;
+    bins.set(key, bin);
+  }
+  return bins;
 }
 
 async function handleFunnelSave(req, res, auth) {

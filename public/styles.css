@@ -5278,149 +5278,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 .funnelResultSteps {
   gap: 0;
-  padding: 6px 20px 0;
-}
-
-.funnelResultsColumnHeader,
-.funnelResultStep {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.72fr) minmax(260px, 1.65fr) minmax(118px, 0.55fr) minmax(105px, 0.48fr) minmax(110px, 0.5fr);
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-
-.funnelResultsColumnHeader {
-  min-height: 42px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
-}
-
-.funnelResultsColumnHeader span:nth-child(n + 3) {
-  text-align: center;
-}
-
-.funnelResultStep {
-  min-height: 76px;
-  border-top: 1px solid rgba(47, 61, 96, 0.56);
-}
-
-.funnelStepIdentity {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.funnelStepIdentity > span {
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  border: 1px solid rgba(165, 111, 255, 0.52);
-  border-radius: 50%;
-  background: linear-gradient(135deg, #8046e8, #4e279e);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 900;
-  box-shadow: 0 5px 14px rgba(99, 49, 201, 0.24);
-}
-
-.funnelStepIdentity div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.funnelStepIdentity strong,
-.funnelStepIdentity small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.funnelStepIdentity strong {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.funnelStepIdentity small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.funnelStepBarCell {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 48px;
-}
-
-.funnelStepBar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 48px;
-  height: 100%;
-  overflow: hidden;
-  border: 1px solid rgba(168, 111, 255, 0.34);
-  border-radius: 7px;
-  background: linear-gradient(90deg, #7340df, #6130c4);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.15), 0 7px 16px rgba(75, 33, 160, 0.15);
-}
-
-.funnelStepBar::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, rgba(255, 255, 255, 0.08), transparent 55%);
-  pointer-events: none;
-}
-
-.funnelStepBar span {
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-  color: #fff;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.funnelConversionCell,
-.funnelTimeCell,
-.funnelDropCell {
-  display: grid;
-  justify-items: center;
-  gap: 3px;
-  min-width: 0;
-  text-align: center;
-}
-
-.funnelConversionCell strong,
-.funnelTimeCell strong,
-.funnelDropCell strong {
-  color: #e9edff;
-  font-size: 13px;
-}
-
-.funnelConversionCell small,
-.funnelTimeCell small,
-.funnelDropCell small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.funnelDropCell.hasDrop strong {
-  color: #ff7f8b;
+  overflow: visible;
+  padding: 14px 20px 4px;
 }
 
 .funnelResultsFooter {
@@ -5455,6 +5314,463 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   padding: 8px 11px;
   font-size: 14px;
   text-align: center;
+}
+
+.funnelJourney {
+  display: grid;
+  justify-items: center;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 6px 0 14px;
+}
+
+.funnelJourneyItem {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+}
+
+.funnelJourneyStep {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(150px, 1fr) minmax(72px, auto) minmax(72px, auto) auto;
+  align-items: center;
+  gap: 14px;
+  width: min(var(--funnel-step-width, 100%), 100%);
+  min-height: 82px;
+  overflow: hidden;
+  border: 1px solid rgba(118, 92, 194, 0.4);
+  border-radius: 13px;
+  background:
+    linear-gradient(110deg, rgba(115, 64, 223, 0.16), transparent 48%),
+    linear-gradient(145deg, rgba(17, 29, 57, 0.98), rgba(9, 18, 39, 0.98));
+  color: var(--text);
+  padding: 14px 17px 17px;
+  text-align: left;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 10px 28px rgba(2, 8, 23, 0.16);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.funnelJourneyStep:hover,
+.funnelJourneyStep:focus-visible {
+  border-color: rgba(167, 116, 255, 0.74);
+  background:
+    linear-gradient(110deg, rgba(132, 73, 246, 0.23), transparent 52%),
+    linear-gradient(145deg, rgba(20, 34, 66, 0.99), rgba(10, 21, 45, 0.99));
+  box-shadow: 0 0 0 3px rgba(127, 71, 228, 0.1), 0 14px 34px rgba(2, 8, 23, 0.24);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.funnelJourneyStep.selected {
+  border-color: rgba(45, 212, 191, 0.78);
+  background:
+    linear-gradient(110deg, rgba(16, 185, 129, 0.2), transparent 52%),
+    linear-gradient(145deg, rgba(15, 43, 62, 0.99), rgba(8, 24, 43, 0.99));
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.09), 0 14px 34px rgba(2, 8, 23, 0.26);
+}
+
+.funnelJourneyNumber {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(174, 122, 255, 0.58);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #8350e8, #4c258f);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 6px 16px rgba(91, 43, 172, 0.28);
+}
+
+.funnelJourneyStep.selected .funnelJourneyNumber {
+  border-color: rgba(95, 244, 216, 0.8);
+  background: linear-gradient(135deg, #18a98f, #0f726b);
+  box-shadow: 0 6px 16px rgba(20, 184, 166, 0.24);
+}
+
+.funnelJourneyIdentity,
+.funnelJourneyVolume,
+.funnelJourneyConversion {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.funnelJourneyIdentity strong {
+  overflow: hidden;
+  color: #f2f4ff;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelJourneyIdentity small,
+.funnelJourneyVolume small,
+.funnelJourneyConversion small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.funnelJourneyVolume,
+.funnelJourneyConversion {
+  text-align: right;
+}
+
+.funnelJourneyVolume strong,
+.funnelJourneyConversion strong {
+  color: #e6ebff;
+  font-size: 14px;
+}
+
+.funnelJourneyConversion strong {
+  color: #9df4df;
+}
+
+.funnelJourneyMapHint {
+  border: 1px solid rgba(107, 128, 181, 0.34);
+  border-radius: 999px;
+  background: rgba(7, 17, 37, 0.66);
+  color: #aab8dd;
+  padding: 6px 9px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.funnelJourneyStep:hover .funnelJourneyMapHint,
+.funnelJourneyStep.selected .funnelJourneyMapHint {
+  border-color: rgba(45, 212, 191, 0.48);
+  color: #8deedb;
+}
+
+.funnelJourneyProgress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgba(45, 55, 88, 0.46);
+}
+
+.funnelJourneyProgress i {
+  display: block;
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(90deg, #7442df, #9d6bff);
+  box-shadow: 0 0 13px rgba(142, 92, 245, 0.48);
+}
+
+.funnelJourneyStep.selected .funnelJourneyProgress i {
+  background: linear-gradient(90deg, #109b86, #2dd4bf);
+  box-shadow: 0 0 13px rgba(45, 212, 191, 0.45);
+}
+
+.funnelJourneyConnector {
+  display: grid;
+  grid-template-columns: 18px auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 66px;
+  color: #bac5e5;
+}
+
+.funnelJourneyConnector > span {
+  position: relative;
+  width: 18px;
+  height: 56px;
+}
+
+.funnelJourneyConnector > span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 9px;
+  left: 8px;
+  width: 1px;
+  background: linear-gradient(rgba(140, 91, 235, 0.68), rgba(45, 212, 191, 0.5));
+}
+
+.funnelJourneyConnector > span::after {
+  content: "";
+  position: absolute;
+  bottom: 6px;
+  left: 5px;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid rgba(45, 212, 191, 0.7);
+  border-bottom: 1px solid rgba(45, 212, 191, 0.7);
+  transform: rotate(45deg);
+}
+
+.funnelJourneyConnector div {
+  display: grid;
+  gap: 3px;
+  min-width: 135px;
+  border: 1px solid rgba(62, 78, 119, 0.34);
+  border-radius: 8px;
+  background: rgba(7, 15, 32, 0.64);
+  padding: 7px 10px;
+}
+
+.funnelJourneyConnector strong {
+  color: #d9e0f7;
+  font-size: 10px;
+}
+
+.funnelJourneyConnector small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.funnelJourneyConnector small b {
+  color: #ff8795;
+  font-weight: 800;
+}
+
+.funnelMapPanel {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(8, 17, 36, 0.24), rgba(5, 12, 27, 0.58));
+}
+
+.funnelMapHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.funnelMapHeader > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.funnelMapEyebrow {
+  color: #64dbc6;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.funnelMapHeader h3 {
+  overflow: hidden;
+  color: #f0f4ff;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelMapHeader p {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.funnelMapActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.funnelMapModeToggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid rgba(54, 73, 115, 0.6);
+  border-radius: 9px;
+  background: rgba(5, 13, 29, 0.8);
+  padding: 3px;
+}
+
+.funnelMapModeToggle button,
+.funnelMapCenterButton {
+  border: 0;
+  color: #8f9fc7;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.funnelMapModeToggle button {
+  min-height: 31px;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0 11px;
+}
+
+.funnelMapModeToggle button:hover:not(:disabled),
+.funnelMapModeToggle button:focus-visible {
+  color: #e3eaff;
+  outline: none;
+}
+
+.funnelMapModeToggle button.active {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.28), rgba(13, 108, 102, 0.34));
+  color: #9df4df;
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.28);
+}
+
+.funnelMapModeToggle button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.funnelMapCenterButton {
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  border: 1px solid rgba(54, 73, 115, 0.6);
+  border-radius: 9px;
+  background: rgba(5, 13, 29, 0.8);
+}
+
+.funnelMapCenterButton:hover,
+.funnelMapCenterButton:focus-visible {
+  border-color: rgba(45, 212, 191, 0.58);
+  color: #9df4df;
+  outline: none;
+}
+
+.funnelMapCenterButton svg {
+  width: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.funnelMapShell {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid rgba(48, 68, 108, 0.72);
+  border-radius: 12px;
+  background: #050d1d;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025), 0 18px 38px rgba(2, 7, 18, 0.2);
+}
+
+#funnelMapCanvas {
+  display: block;
+  width: 100%;
+  height: clamp(390px, 43vw, 540px);
+  cursor: grab;
+  touch-action: none;
+}
+
+#funnelMapCanvas.dragging {
+  cursor: grabbing;
+}
+
+.funnelMapLoading,
+.funnelMapEmpty {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 310px;
+  border: 1px solid rgba(63, 82, 124, 0.58);
+  border-radius: 11px;
+  background: rgba(5, 14, 31, 0.9);
+  color: #e6ebff;
+  padding: 16px 20px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(12px);
+}
+
+.funnelMapLoading > span {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(45, 212, 191, 0.22);
+  border-top-color: #2dd4bf;
+  border-radius: 50%;
+  animation: demoButtonSpin 0.85s linear infinite;
+}
+
+.funnelMapLoading strong,
+.funnelMapEmpty strong {
+  font-size: 12px;
+}
+
+.funnelMapEmpty p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.funnelMapSummary,
+.funnelMapLegend {
+  position: absolute;
+  z-index: 3;
+  top: 13px;
+  border: 1px solid rgba(56, 76, 119, 0.52);
+  border-radius: 8px;
+  background: rgba(5, 13, 29, 0.78);
+  color: #b7c4e7;
+  padding: 8px 10px;
+  font-size: 10px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+}
+
+.funnelMapSummary {
+  left: 13px;
+}
+
+.funnelMapLegend {
+  right: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.funnelMapLegend span {
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  background: #2dd4bf;
+  box-shadow: 0 0 10px rgba(45, 212, 191, 0.6);
+}
+
+.funnelMapShell[data-map-mode="dropped"] .funnelMapLegend span {
+  background: #fb7185;
+  box-shadow: 0 0 10px rgba(251, 113, 133, 0.62);
+}
+
+.funnelMapTooltip {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid rgba(117, 138, 187, 0.56);
+  border-radius: 7px;
+  background: rgba(4, 11, 25, 0.94);
+  color: #f0f4ff;
+  padding: 7px 9px;
+  font-size: 10px;
+  font-weight: 800;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 18px));
+  white-space: nowrap;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+}
+
+.funnelMapNote {
+  color: #7f8eb5;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .funnelBuilder {
@@ -5787,15 +6103,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .funnelResultSteps {
-    overflow-x: auto;
-  }
-
-  .funnelResultsColumnHeader,
-  .funnelResultStep {
-    min-width: 860px;
-  }
-
   .integrationStatusHeader {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -5819,6 +6126,27 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 860px) {
+  .funnelJourneyStep {
+    width: max(var(--funnel-step-width, 100%), min(560px, 100%));
+  }
+
+  .funnelMapHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .funnelMapActions {
+    width: 100%;
+  }
+
+  .funnelMapModeToggle {
+    flex: 1 1 auto;
+  }
+
+  .funnelMapModeToggle button {
+    flex: 1 1 50%;
+  }
+
   .appShell {
     grid-template-columns: 1fr;
   }
@@ -6146,6 +6474,72 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 560px) {
+  .funnelResultSteps {
+    padding-inline: 12px;
+  }
+
+  .funnelJourneyStep {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 10px;
+    width: 100%;
+    padding-inline: 13px;
+  }
+
+  .funnelJourneyNumber {
+    grid-row: 1 / span 2;
+  }
+
+  .funnelJourneyVolume {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: left;
+  }
+
+  .funnelJourneyConversion {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .funnelJourneyMapHint {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .funnelMapPanel {
+    padding: 15px 12px;
+  }
+
+  .funnelMapActions {
+    align-items: stretch;
+  }
+
+  .funnelMapModeToggle button {
+    min-height: 36px;
+    padding-inline: 7px;
+  }
+
+  #funnelMapCanvas,
+  .funnelMapShell {
+    height: 360px;
+    min-height: 360px;
+  }
+
+  .funnelMapSummary,
+  .funnelMapLegend {
+    top: 10px;
+    font-size: 9px;
+  }
+
+  .funnelMapSummary {
+    left: 10px;
+  }
+
+  .funnelMapLegend {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+  }
+
   .connectUniversePanel {
     padding: 15px;
   }
