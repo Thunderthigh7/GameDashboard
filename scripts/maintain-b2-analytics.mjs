@@ -25,6 +25,7 @@ const MAX_DELETE_OBJECTS = cleanPositiveInteger(process.env.B2_MAINTENANCE_MAX_D
 const MAX_CHAT_LOGS = cleanPositiveInteger(process.env.ROLLUP_MAX_CHAT_LOGS, 2500);
 const MAX_EVENT_SAMPLES = cleanPositiveInteger(process.env.ROLLUP_MAX_EVENT_SAMPLES, 5000);
 const MAX_MOVEMENT_CELLS = cleanPositiveInteger(process.env.ROLLUP_MAX_MOVEMENT_CELLS, 5000);
+const MAX_VERSION_ROLLUPS = cleanPositiveInteger(process.env.ROLLUP_MAX_VERSIONS, 50);
 const MOVEMENT_GRID_SIZE = cleanPositiveInteger(process.env.ROLLUP_MOVEMENT_GRID_SIZE, 12);
 const READ_CONCURRENCY = cleanBoundedInteger(process.env.B2_MAINTENANCE_READ_CONCURRENCY, 8, 1, 32);
 const B2_STORAGE_USD_PER_TB_MONTH = cleanFiniteNumber(process.env.B2_STORAGE_USD_PER_TB_MONTH, 6.95);
@@ -126,6 +127,8 @@ await forEachWithConcurrency(rollups, Math.min(READ_CONCURRENCY, 8), async (roll
     stats.movementSampleCount = rollup.movement.samples.length;
     stats.deathSampleCount = rollup.deaths.samples.length;
     stats.leaveSampleCount = rollup.leaves.samples.length;
+    stats.customEventCount = rollup.customEvents.samples.length;
+    stats.versionCount = rollup.versions.length;
   } catch (error) {
     errors.push({
       universeId: rollup.universeId,
@@ -246,24 +249,47 @@ function ingestJsonLines(text, objectKey) {
     if (UNIVERSE_IDS.length && !UNIVERSE_IDS.includes(universeId)) continue;
 
     const rollup = getUniverseRollup(universeId);
-    rollup.rawObjectKeys.add(objectKey);
-    rollup.lastSeenAt = Math.max(rollup.lastSeenAt, cleanTimestamp(event.receivedAt) || cleanTimestamp(event.sampledAt) || 0);
+    ingestRollupEvent(rollup, event, objectKey);
+    const versionRollup = getVersionRollup(rollup, event);
+    if (versionRollup) ingestRollupEvent(versionRollup, event, objectKey);
+  }
+}
 
-    if (event.type === "batch") {
-      rollup.batchCount += 1;
-      rollup.playerPeak = Math.max(rollup.playerPeak, cleanPositiveInteger(event.playerCount, 0));
-      rollup.lastSeenAt = Math.max(rollup.lastSeenAt, cleanTimestamp(event.receivedAt));
-    } else if (event.type === "chat") {
-      addChatEvent(rollup, event);
-    } else if (event.type === "movement") {
-      addMovementEvent(rollup, event);
-    } else if (event.type === "movement_rollup") {
-      addMovementRollupEvent(rollup, event);
-    } else if (event.type === "death") {
-      addEventSample(rollup.deaths, event, "diedAt");
-    } else if (event.type === "leave") {
-      addEventSample(rollup.leaves, event, "leftAt");
+function ingestRollupEvent(rollup, event, objectKey) {
+  rollup.rawObjectKeys.add(objectKey);
+  const observedAt = cleanTimestamp(event.occurredAt)
+    || cleanTimestamp(event.sentAt)
+    || cleanTimestamp(event.diedAt)
+    || cleanTimestamp(event.leftAt)
+    || cleanTimestamp(event.sampledAt)
+    || cleanTimestamp(event.receivedAt)
+    || 0;
+  rollup.firstSeenAt = observedAt > 0 && rollup.firstSeenAt > 0 ? Math.min(rollup.firstSeenAt, observedAt) : Math.max(rollup.firstSeenAt, observedAt);
+  rollup.lastSeenAt = Math.max(rollup.lastSeenAt, observedAt);
+  const sessionId = cleanString(event.sessionId, 180);
+  if (sessionId) rollup.sessionIds.add(sessionId);
+
+  if (event.type === "batch") {
+    rollup.batchCount += 1;
+    rollup.playerPeak = Math.max(rollup.playerPeak, cleanPositiveInteger(event.playerCount, 0));
+    rollup.lastSeenAt = Math.max(rollup.lastSeenAt, cleanTimestamp(event.receivedAt));
+    for (const player of Array.isArray(event.players) ? event.players : []) {
+      const userId = cleanPositiveInteger(player?.userId, 0);
+      if (userId <= 0) continue;
+      rollup.sessionIds.add(`${cleanString(event.jobId, 128) || "job"}:${userId}:${cleanTimestamp(player?.joinedAt) || 0}`);
     }
+  } else if (event.type === "chat") {
+    addChatEvent(rollup, event);
+  } else if (event.type === "movement") {
+    addMovementEvent(rollup, event);
+  } else if (event.type === "movement_rollup") {
+    addMovementRollupEvent(rollup, event);
+  } else if (event.type === "death") {
+    addEventSample(rollup.deaths, event, "diedAt");
+  } else if (event.type === "leave") {
+    addEventSample(rollup.leaves, event, "leftAt");
+  } else if (event.type === "custom_event") {
+    addCustomEvent(rollup, event);
   }
 }
 
@@ -272,7 +298,7 @@ function getUniverseRollup(universeId) {
   let rollup = rollupsByUniverseId.get(key);
   if (!rollup) {
     rollup = {
-      schemaVersion: 1,
+      schemaVersion: 3,
       universeId,
       generatedAt: startedAt,
       window: {
@@ -280,26 +306,9 @@ function getUniverseRollup(universeId) {
         to: startedAt,
         lookbackHours: LOOKBACK_HOURS,
       },
-      rawObjectKeys: new Set(),
-      rawObjectCount: 0,
-      batchCount: 0,
-      playerPeak: 0,
-      lastSeenAt: 0,
-      chatLogs: [],
-      movement: {
-        source: "rollups",
-        sampleCount: 0,
-        cells: new Map(),
-        samples: [],
-      },
-      deaths: {
-        sampleCount: 0,
-        samples: [],
-      },
-      leaves: {
-        sampleCount: 0,
-        samples: [],
-      },
+      ...createRollupAccumulator(),
+      versionRollups: new Map(),
+      droppedVersionKeys: new Set(),
     };
     rollupsByUniverseId.set(key, rollup);
   }
@@ -307,11 +316,53 @@ function getUniverseRollup(universeId) {
   return rollup;
 }
 
+function createRollupAccumulator() {
+  return {
+    rawObjectKeys: new Set(),
+    rawObjectCount: 0,
+    batchCount: 0,
+    playerPeak: 0,
+    sessionIds: new Set(),
+    sessionCount: 0,
+    firstSeenAt: 0,
+    lastSeenAt: 0,
+    chatLogs: [],
+    movement: { source: "rollups", sampleCount: 0, cells: new Map(), samples: [] },
+    deaths: { sampleCount: 0, samples: [] },
+    leaves: { sampleCount: 0, samples: [] },
+    customEvents: { sampleCount: 0, samples: [] },
+  };
+}
+
+function getVersionRollup(rollup, event) {
+  const placeId = cleanPositiveInteger(event.placeId, 0);
+  const placeVersion = cleanNonNegativeInteger(event.placeVersion, 0);
+  const environment = cleanAnalyticsEnvironment(event.environment, placeVersion);
+  const key = `${placeId}:${placeVersion}:${environment}`;
+  let versionRollup = rollup.versionRollups.get(key);
+  if (!versionRollup && rollup.versionRollups.size < MAX_VERSION_ROLLUPS) {
+    versionRollup = {
+      schemaVersion: 1,
+      universeId: rollup.universeId,
+      placeId,
+      placeVersion,
+      environment,
+      ...createRollupAccumulator(),
+    };
+    rollup.versionRollups.set(key, versionRollup);
+  } else if (!versionRollup) {
+    rollup.droppedVersionKeys.add(key);
+  }
+  return versionRollup || null;
+}
+
 function addChatEvent(rollup, event) {
   rollup.chatLogs.push({
     id: cleanString(event.id, 180) || `${event.jobId || "job"}:${event.userId || 0}:${event.sentAt || event.receivedAt || Date.now()}`,
     universeId: rollup.universeId,
     placeId: cleanPositiveInteger(event.placeId, 0),
+    placeVersion: cleanNonNegativeInteger(event.placeVersion, 0),
+    environment: cleanAnalyticsEnvironment(event.environment, event.placeVersion),
     jobId: cleanString(event.jobId, 128),
     userId: cleanPositiveInteger(event.userId, 0),
     username: cleanString(event.username, 64),
@@ -365,9 +416,11 @@ function addMovementCell(rollup, event) {
   const gridZ = Math.round(event.z / MOVEMENT_GRID_SIZE);
   const key = `${gridX}:${gridZ}`;
   const existing = rollup.movement.cells.get(key) || {
-    id: `rollup:${rollup.universeId}:${MOVEMENT_GRID_SIZE}:${gridX}:${gridZ}`,
+    id: `rollup:${rollup.universeId}:${cleanPositiveInteger(rollup.placeId, 0)}:${cleanNonNegativeInteger(rollup.placeVersion, 0)}:${MOVEMENT_GRID_SIZE}:${gridX}:${gridZ}`,
     universeId: rollup.universeId,
-    placeId: 0,
+    placeId: cleanPositiveInteger(rollup.placeId, 0),
+    placeVersion: cleanNonNegativeInteger(rollup.placeVersion, 0),
+    environment: rollup.environment || "mixed",
     jobId: "b2-rollup",
     userId: 0,
     username: "Movement rollup",
@@ -409,6 +462,8 @@ function addEventSample(target, event, timestampField) {
     id: cleanString(event.id, 180) || `${event.jobId || "job"}:${event.userId || 0}:${event[timestampField] || event.sampledAt || Date.now()}`,
     universeId: cleanPositiveInteger(event.universeId, 0),
     placeId: cleanPositiveInteger(event.placeId, 0),
+    placeVersion: cleanNonNegativeInteger(event.placeVersion, 0),
+    environment: cleanAnalyticsEnvironment(event.environment, event.placeVersion),
     jobId: cleanString(event.jobId, 128),
     userId: cleanPositiveInteger(event.userId, 0),
     username: cleanString(event.username, 64),
@@ -424,9 +479,75 @@ function addEventSample(target, event, timestampField) {
   trimNewestSamples(target.samples, MAX_EVENT_SAMPLES, compareEventSamples);
 }
 
+function addCustomEvent(rollup, event) {
+  const eventName = cleanString(event.eventName, 64).toLowerCase();
+  if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName)) return;
+
+  rollup.customEvents.sampleCount += 1;
+  rollup.customEvents.samples.push({
+    id: cleanString(event.id, 180) || `${event.jobId || "job"}:${eventName}:${event.userId || 0}:${event.occurredAt || event.receivedAt || Date.now()}`,
+    universeId: rollup.universeId,
+    placeId: cleanPositiveInteger(event.placeId, 0),
+    placeVersion: cleanNonNegativeInteger(event.placeVersion, 0),
+    environment: cleanAnalyticsEnvironment(event.environment, event.placeVersion),
+    jobId: cleanString(event.jobId, 128),
+    eventName,
+    userId: cleanPositiveInteger(event.userId, 0) || null,
+    username: cleanString(event.username, 64),
+    displayName: cleanString(event.displayName, 64),
+    sessionId: cleanString(event.sessionId, 180),
+    value: typeof event.value === "number" ? cleanFiniteNumberOrNull(event.value) : null,
+    properties: cleanCustomEventProperties(event.properties),
+    propertiesTruncated: Boolean(event.propertiesTruncated),
+    x: cleanFiniteNumberOrNull(event.x),
+    y: cleanFiniteNumberOrNull(event.y),
+    z: cleanFiniteNumberOrNull(event.z),
+    occurredAt: cleanTimestamp(event.occurredAt) || cleanTimestamp(event.receivedAt),
+    receivedAt: cleanTimestamp(event.receivedAt),
+  });
+  trimNewestSamples(rollup.customEvents.samples, MAX_EVENT_SAMPLES, compareCustomEvents);
+}
+
+function cleanCustomEventProperties(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const properties = {};
+  for (const [key, entry] of Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) {
+    if (Object.keys(properties).length >= 20) break;
+    const isCanonicalPath = /^[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?)*$/.test(key);
+    const isLegacyFlatKey = key.length <= 48 && /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(key);
+    if (key.length > 96 || (!isCanonicalPath && !isLegacyFlatKey)) continue;
+    const observations = (Array.isArray(entry) ? entry : [entry])
+      .slice(0, 40)
+      .filter((item) => typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item)))
+      .map((item) => typeof item === "string" ? item.slice(0, 240) : item);
+    if (observations.length) properties[key] = observations.length === 1 ? observations[0] : observations;
+  }
+  return properties;
+}
+
+function compareCustomEvents(left, right) {
+  return (cleanTimestamp(right.occurredAt) || cleanTimestamp(right.receivedAt))
+    - (cleanTimestamp(left.occurredAt) || cleanTimestamp(left.receivedAt));
+}
+
 function finalizeRollup(rollup) {
+  const versions = [...rollup.versionRollups.values()];
+  for (const versionRollup of versions) finalizeRollupData(versionRollup);
+  rollup.versions = versions
+    .sort((left, right) => right.lastSeenAt - left.lastSeenAt || right.placeVersion - left.placeVersion);
+  rollup.versionRollupLimit = MAX_VERSION_ROLLUPS;
+  rollup.versionRollupsTruncated = rollup.droppedVersionKeys.size > 0;
+  rollup.droppedVersionCount = rollup.droppedVersionKeys.size;
+  delete rollup.versionRollups;
+  delete rollup.droppedVersionKeys;
+  finalizeRollupData(rollup);
+}
+
+function finalizeRollupData(rollup) {
   rollup.rawObjectCount = rollup.rawObjectKeys.size;
   rollup.rawObjectKeys = [...rollup.rawObjectKeys].sort();
+  rollup.sessionCount = rollup.sessionIds.size;
+  delete rollup.sessionIds;
   rollup.chatLogs.sort(compareChatSamples);
   rollup.chatLogs = rollup.chatLogs.slice(0, MAX_CHAT_LOGS);
   rollup.movement.samples = [...rollup.movement.cells.values()]
@@ -435,8 +556,10 @@ function finalizeRollup(rollup) {
   delete rollup.movement.cells;
   rollup.deaths.samples.sort(compareEventSamples);
   rollup.leaves.samples.sort(compareEventSamples);
+  rollup.customEvents.samples.sort(compareCustomEvents);
   rollup.deaths.samples = rollup.deaths.samples.slice(0, MAX_EVENT_SAMPLES);
   rollup.leaves.samples = rollup.leaves.samples.slice(0, MAX_EVENT_SAMPLES);
+  rollup.customEvents.samples = rollup.customEvents.samples.slice(0, MAX_EVENT_SAMPLES);
 }
 
 async function writeRollup(rollup) {
@@ -598,6 +721,8 @@ function getUniverseStats(universeId) {
       movementSampleCount: 0,
       deathSampleCount: 0,
       leaveSampleCount: 0,
+      customEventCount: 0,
+      versionCount: 0,
       latestRawObjectAt: 0,
       projectedMonthlyB2StorageCostUsd: 0,
     };
@@ -639,6 +764,17 @@ function cleanString(value, maxLength) {
 function cleanPositiveInteger(value, fallback = 1) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+}
+
+function cleanNonNegativeInteger(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : fallback;
+}
+
+function cleanAnalyticsEnvironment(value, placeVersion = 0) {
+  const environment = cleanString(value, 32).toLowerCase();
+  if (environment === "production" || environment === "studio") return environment;
+  return cleanNonNegativeInteger(placeVersion, 0) > 0 ? "production" : "unversioned";
 }
 
 function cleanFiniteNumber(value, fallback = 0) {

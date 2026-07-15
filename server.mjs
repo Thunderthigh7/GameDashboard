@@ -600,6 +600,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await getUniverseSummaries(auth.userId));
     }
 
+    if (url.pathname === "/api/version-health" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      return sendJson(res, 200, await getCachedAnalyticsResponse(
+        auth.userId,
+        "version-health",
+        url.searchParams,
+        () => getVersionHealthFromQuery(url.searchParams),
+      ));
+    }
+
     if (url.pathname === "/api/chat-logs" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
       return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "chat-logs", url.searchParams, () => getChatLogsFromQuery(url.searchParams)));
@@ -1163,6 +1173,7 @@ async function ensureAnalyticsIndexes(db, collectionName, timeField) {
   await Promise.all([
     collection.createIndex({ id: 1 }, { unique: true }),
     collection.createIndex({ universeId: 1, [timeField]: -1 }),
+    collection.createIndex({ universeId: 1, placeId: 1, placeVersion: 1, environment: 1, [timeField]: -1 }),
     collection.createIndex({ receivedAt: -1 }),
     collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
@@ -1319,6 +1330,8 @@ async function persistPresenceToObjectStorage(presence, usageContext = {}) {
       Metadata: {
         universeid: String(presence.universeId),
         placeid: String(presence.placeId),
+        placeversion: String(presence.placeVersion),
+        environment: presence.environment,
         jobid: presence.jobId,
         receivedat: String(presence.receivedAt),
       },
@@ -1622,6 +1635,8 @@ function createPresenceJsonLines(presence) {
       type: "batch",
       universeId: presence.universeId,
       placeId: presence.placeId,
+      placeVersion: presence.placeVersion,
+      environment: presence.environment,
       jobId: presence.jobId,
       serverStartedAt: presence.serverStartedAt,
       updatedAt: presence.updatedAt,
@@ -1906,6 +1921,8 @@ async function ensureDemoUniverseRuntime(project, options = {}) {
       const normalized = normalizePresence({
         universeId,
         placeId: DEMO_PLACE_ID,
+        placeVersion: fixture.map.placeVersion,
+        environment: fixture.map.environment,
         jobId: `demo-server-${index + 1}`,
         serverStartedAt: fixture.referenceTime - 2 * 60 * 60 * 1000,
         playerCount: fixture.players.length,
@@ -2395,6 +2412,11 @@ async function handlePresenceHeartbeat(req, res) {
   return sendJson(res, 200, {
     ok: true,
     receivedAt: presence.value.receivedAt,
+    releaseContext: {
+      placeId: presence.value.placeId,
+      placeVersion: presence.value.placeVersion,
+      environment: presence.value.environment,
+    },
     objectStorage: {
       configured: objectStorageStatus.configured,
       connected: objectStorageStatus.connected,
@@ -2566,48 +2588,28 @@ function normalizePresence(body) {
   const receivedAt = Date.now();
   const updatedAt = cleanInteger(body.updatedAt) || Math.floor(receivedAt / 1000);
   const serverStartedAt = cleanTimestampMs(body.serverStartedAt);
-  const chatLogs = normalizeChatLogs(body.chatLogs, {
+  const context = {
     universeId: cleanInteger(body.universeId),
     placeId: cleanInteger(body.placeId),
+    placeVersion: normalizePlaceVersion(body.placeVersion),
+    environment: normalizeAnalyticsEnvironment(body.environment, body.placeVersion),
     jobId,
     receivedAt,
-  });
-  const movementSamples = normalizeMovementSamples(body.movementSamples, {
-    universeId: cleanInteger(body.universeId),
-    placeId: cleanInteger(body.placeId),
-    jobId,
-    receivedAt,
-  });
-  const movementRollups = normalizeMovementRollups(body.movementRollups, {
-    universeId: cleanInteger(body.universeId),
-    placeId: cleanInteger(body.placeId),
-    jobId,
-    receivedAt,
-  });
-  const deathSamples = normalizeDeathSamples(body.deathSamples, {
-    universeId: cleanInteger(body.universeId),
-    placeId: cleanInteger(body.placeId),
-    jobId,
-    receivedAt,
-  });
-  const leaveSamples = normalizeLeaveSamples(body.leaveSamples, {
-    universeId: cleanInteger(body.universeId),
-    placeId: cleanInteger(body.placeId),
-    jobId,
-    receivedAt,
-  });
-  const customEvents = normalizeCustomEvents(body.customEvents, {
-    universeId: cleanInteger(body.universeId),
-    placeId: cleanInteger(body.placeId),
-    jobId,
-    receivedAt,
-  });
+  };
+  const chatLogs = normalizeChatLogs(body.chatLogs, context);
+  const movementSamples = normalizeMovementSamples(body.movementSamples, context);
+  const movementRollups = normalizeMovementRollups(body.movementRollups, context);
+  const deathSamples = normalizeDeathSamples(body.deathSamples, context);
+  const leaveSamples = normalizeLeaveSamples(body.leaveSamples, context);
+  const customEvents = normalizeCustomEvents(body.customEvents, context);
 
   return {
     ok: true,
     value: {
       universeId: cleanInteger(body.universeId),
       placeId: cleanInteger(body.placeId),
+      placeVersion: context.placeVersion,
+      environment: context.environment,
       jobId,
       serverStartedAt: serverStartedAt || receivedAt,
       updatedAt,
@@ -2624,10 +2626,28 @@ function normalizePresence(body) {
   };
 }
 
+function normalizePlaceVersion(value) {
+  return Math.max(cleanInteger(value), 0);
+}
+
+function normalizeAnalyticsEnvironment(value, placeVersion = 0) {
+  const environment = cleanString(value, 32).toLowerCase();
+  if (environment === "production" || environment === "studio") return environment;
+  return normalizePlaceVersion(placeVersion) > 0 ? "production" : "unversioned";
+}
+
+function getAnalyticsRecordVersion(entry, context) {
+  const hasEntryVersion = entry?.placeVersion !== undefined && entry?.placeVersion !== null;
+  const placeVersion = normalizePlaceVersion(hasEntryVersion ? entry.placeVersion : context.placeVersion);
+  const environment = normalizeAnalyticsEnvironment(entry?.environment || context.environment, placeVersion);
+  return { placeVersion, environment };
+}
+
 function normalizeCustomEvents(value, context) {
   if (!Array.isArray(value)) return [];
 
   return value.slice(0, MAX_CUSTOM_EVENTS_PER_PAYLOAD).map((entry) => {
+    const version = getAnalyticsRecordVersion(entry, context);
     const eventName = normalizeCustomEventName(entry?.eventName || entry?.name);
     const userId = cleanInteger(entry?.userId);
     const x = cleanFiniteNumber(entry?.x);
@@ -2640,6 +2660,7 @@ function normalizeCustomEvents(value, context) {
       id: cleanString(entry?.id, 180),
       universeId: context.universeId,
       placeId: context.placeId,
+      ...version,
       jobId: context.jobId,
       eventName,
       userId: userId > 0 ? userId : null,
@@ -2758,6 +2779,7 @@ function normalizeChatLogs(value, context) {
   if (!Array.isArray(value)) return [];
 
   return value.slice(0, MAX_CHAT_LOGS_PER_PAYLOAD).map((entry) => {
+    const version = getAnalyticsRecordVersion(entry, context);
     const x = cleanFiniteNumber(entry?.x);
     const y = cleanFiniteNumber(entry?.y);
     const z = cleanFiniteNumber(entry?.z);
@@ -2767,6 +2789,7 @@ function normalizeChatLogs(value, context) {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
       placeId: context.placeId,
+      ...version,
       jobId: context.jobId,
       userId,
       username: cleanString(entry?.username || entry?.name, 64),
@@ -2815,20 +2838,24 @@ function saveChatLogs(presence) {
 function normalizeMovementSamples(value, context) {
   if (!Array.isArray(value)) return [];
 
-  return value.slice(0, MAX_MOVEMENT_SAMPLES_PER_PAYLOAD).map((entry) => ({
-    id: cleanString(entry?.id, 160),
-    universeId: context.universeId,
-    placeId: context.placeId,
-    jobId: context.jobId,
-    userId: cleanInteger(entry?.userId),
-    username: cleanString(entry?.username || entry?.name, 64),
-    displayName: cleanString(entry?.displayName, 64),
-    x: cleanFiniteNumber(entry?.x),
-    y: cleanFiniteNumber(entry?.y),
-    z: cleanFiniteNumber(entry?.z),
-    sampledAt: cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
-    receivedAt: context.receivedAt,
-  })).filter((entry) => (
+  return value.slice(0, MAX_MOVEMENT_SAMPLES_PER_PAYLOAD).map((entry) => {
+    const version = getAnalyticsRecordVersion(entry, context);
+    return {
+      id: cleanString(entry?.id, 160),
+      universeId: context.universeId,
+      placeId: context.placeId,
+      ...version,
+      jobId: context.jobId,
+      userId: cleanInteger(entry?.userId),
+      username: cleanString(entry?.username || entry?.name, 64),
+      displayName: cleanString(entry?.displayName, 64),
+      x: cleanFiniteNumber(entry?.x),
+      y: cleanFiniteNumber(entry?.y),
+      z: cleanFiniteNumber(entry?.z),
+      sampledAt: cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter((entry) => (
     entry.userId > 0
     && entry.username
     && Number.isFinite(entry.x)
@@ -2841,6 +2868,7 @@ function normalizeMovementRollups(value, context) {
   if (!Array.isArray(value)) return [];
 
   return value.slice(0, MAX_MOVEMENT_ROLLUPS_PER_PAYLOAD).map((entry) => {
+    const version = getAnalyticsRecordVersion(entry, context);
     const rawBucketSizeSeconds = cleanInteger(entry?.bucketSizeSeconds);
     const rawGridSize = cleanInteger(entry?.gridSize);
     const bucketSizeSeconds = rawBucketSizeSeconds > 0 ? clampNumber(rawBucketSizeSeconds, 1, 24 * 60 * 60, 60) : 60;
@@ -2853,6 +2881,7 @@ function normalizeMovementRollups(value, context) {
       id: cleanString(entry?.id, 180),
       universeId: context.universeId,
       placeId: context.placeId,
+      ...version,
       jobId: context.jobId,
       bucketStart,
       bucketEnd: bucketStart ? bucketStart + bucketSizeSeconds * 1000 : sampledAt,
@@ -2882,11 +2911,13 @@ function normalizeDeathSamples(value, context) {
   if (!Array.isArray(value)) return [];
 
   return value.slice(0, MAX_DEATH_SAMPLES_PER_PAYLOAD).map((entry) => {
+    const version = getAnalyticsRecordVersion(entry, context);
     const userId = cleanInteger(entry?.userId);
     return {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
       placeId: context.placeId,
+      ...version,
       jobId: context.jobId,
       userId,
       username: cleanString(entry?.username || entry?.name, 64),
@@ -2912,11 +2943,13 @@ function normalizeLeaveSamples(value, context) {
   if (!Array.isArray(value)) return [];
 
   return value.slice(0, MAX_LEAVE_SAMPLES_PER_PAYLOAD).map((entry) => {
+    const version = getAnalyticsRecordVersion(entry, context);
     const userId = cleanInteger(entry?.userId);
     return {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
       placeId: context.placeId,
+      ...version,
       jobId: context.jobId,
       userId,
       username: cleanString(entry?.username || entry?.name, 64),
@@ -3112,6 +3145,8 @@ function normalizeMapSnapshotChunk(body) {
       uploadId,
       universeId,
       placeId: cleanInteger(body.placeId),
+      placeVersion: normalizePlaceVersion(body.placeVersion),
+      environment: normalizeAnalyticsEnvironment(body.environment, body.placeVersion),
       rootName: cleanString(body.rootName, 128) || "Workspace",
       exportedAt: cleanFlexibleTimestampMs(body.exportedAt) || Date.now(),
       totalParts: cleanInteger(body.totalParts) || parts.length,
@@ -3179,6 +3214,8 @@ async function saveMapSnapshotChunk(chunk, usageContext = {}) {
       uploadId: chunk.uploadId,
       universeId: chunk.universeId,
       placeId: chunk.placeId,
+      placeVersion: chunk.placeVersion,
+      environment: chunk.environment,
       rootName: chunk.rootName,
       exportedAt: chunk.exportedAt,
       totalParts: chunk.totalParts,
@@ -3233,6 +3270,8 @@ function buildMapSnapshot(metadata, parts) {
     uploadId: metadata.uploadId,
     universeId: metadata.universeId,
     placeId: metadata.placeId,
+    placeVersion: normalizePlaceVersion(metadata.placeVersion),
+    environment: normalizeAnalyticsEnvironment(metadata.environment, metadata.placeVersion),
     rootName: metadata.rootName,
     exportedAt: metadata.exportedAt,
     receivedAt: Date.now(),
@@ -3368,6 +3407,8 @@ async function persistMapSnapshotToObjectStorage(snapshot, usageContext = {}) {
     Metadata: {
       universeid: String(snapshot.universeId),
       placeid: String(snapshot.placeId || 0),
+      placeversion: String(normalizePlaceVersion(snapshot.placeVersion)),
+      environment: normalizeAnalyticsEnvironment(snapshot.environment, snapshot.placeVersion),
       receivedat: String(snapshot.receivedAt || Date.now()),
       partcount: String(snapshot.partCount || 0),
     },
@@ -4357,6 +4398,9 @@ function serializeCustomEventHeatmapSample(event) {
   return {
     id: cleanString(event?.id, 180),
     eventName: normalizeCustomEventName(event?.eventName),
+    placeId: cleanInteger(event?.placeId) || null,
+    placeVersion: normalizePlaceVersion(event?.placeVersion),
+    environment: normalizeAnalyticsEnvironment(event?.environment, event?.placeVersion),
     userId: cleanInteger(event?.userId) || null,
     username: cleanString(event?.username, 64),
     displayName: cleanString(event?.displayName, 64),
@@ -4611,6 +4655,8 @@ function createSystemAnalyticsEvent(sample, definition) {
     id: `system:${definition.type}:${rawId}`,
     universeId: cleanInteger(sample?.universeId),
     placeId: cleanInteger(sample?.placeId),
+    placeVersion: normalizePlaceVersion(sample?.placeVersion),
+    environment: normalizeAnalyticsEnvironment(sample?.environment, sample?.placeVersion),
     jobId,
     eventName: definition.name,
     userId,
@@ -5463,6 +5509,229 @@ function mergeAnalyticsSamples(storedSamples, liveSamples) {
     merged.set(id, sample);
   }
   return [...merged.values()];
+}
+
+async function getVersionHealthFromQuery(searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const [rollup, mapResult] = await Promise.all([
+    getObjectStorageRollup(universeId),
+    getMapSnapshot({ universeId, maxParts: 1 }),
+  ]);
+  const versionRollups = Array.isArray(rollup?.versions) ? rollup.versions : [];
+  const runtimeVersions = buildRuntimeVersionHealth(universeId);
+  let versions;
+  let source;
+
+  if (versionRollups.length) {
+    versions = mergeDurableAndRuntimeVersionHealth(
+      versionRollups.map(buildRollupVersionHealth),
+      runtimeVersions,
+    );
+    source = runtimeVersions.length ? "b2-rollup+runtime" : "b2-rollup";
+  } else if (rollup) {
+    versions = mergeDurableAndRuntimeVersionHealth(
+      [buildRollupVersionHealth({
+        ...rollup,
+        placeId: 0,
+        placeVersion: 0,
+        environment: "unversioned",
+      })],
+      runtimeVersions,
+    );
+    source = runtimeVersions.length ? "b2-rollup-legacy+runtime" : "b2-rollup-legacy";
+  } else {
+    versions = runtimeVersions;
+    source = "runtime";
+  }
+
+  versions.sort((left, right) => (
+    right.lastSeenAt - left.lastSeenAt
+    || right.placeVersion - left.placeVersion
+    || right.placeId - left.placeId
+  ));
+  const totalObservations = versions.reduce((total, version) => total + version.observationCount, 0);
+  const studioObservations = versions
+    .filter((version) => version.environment === "studio")
+    .reduce((total, version) => total + version.observationCount, 0);
+  const unversionedObservations = versions
+    .filter((version) => version.placeVersion <= 0 || version.environment === "unversioned")
+    .reduce((total, version) => total + version.observationCount, 0);
+  const productionVersionedObservations = versions
+    .filter((version) => version.placeVersion > 0 && version.environment === "production")
+    .reduce((total, version) => total + version.observationCount, 0);
+  const productionCoverageDenominator = productionVersionedObservations + unversionedObservations;
+  const latestProductionByPlace = [...new Set(versions
+    .filter((version) => version.environment === "production" && version.placeVersion > 0)
+    .map((version) => version.placeId))]
+    .map((placeId) => versions
+      .filter((version) => (
+        version.placeId === placeId
+        && version.environment === "production"
+        && version.placeVersion > 0
+      ))
+      .sort((left, right) => right.placeVersion - left.placeVersion || right.lastSeenAt - left.lastSeenAt)[0])
+    .filter(Boolean)
+    .map((version) => ({
+      placeId: version.placeId,
+      placeVersion: version.placeVersion,
+      firstSeenAt: version.firstSeenAt,
+      lastSeenAt: version.lastSeenAt,
+      observationCount: version.observationCount,
+    }));
+  const snapshot = mapResult?.snapshot || null;
+
+  return {
+    universeId,
+    source,
+    generatedAt: Date.now(),
+    coverageCountBasis: rollup
+      ? "durable rollup totals; live totals are only added when a version is not in the rollup yet"
+      : "live runtime totals",
+    rollupGeneratedAt: cleanInteger(rollup?.generatedAt) || null,
+    rollupVersionLimit: cleanInteger(rollup?.versionRollupLimit) || null,
+    versionRollupsTruncated: Boolean(rollup?.versionRollupsTruncated),
+    droppedVersionCount: cleanInteger(rollup?.droppedVersionCount),
+    studioExcludedFromProductionCoverage: true,
+    coverage: {
+      totalObservations,
+      productionVersionedObservations,
+      studioObservations,
+      unversionedObservations,
+      productionVersionCoveragePercent: productionCoverageDenominator > 0
+        ? Math.round((productionVersionedObservations / productionCoverageDenominator) * 10_000) / 100
+        : null,
+    },
+    latestProductionByPlace,
+    mapSnapshot: snapshot ? {
+      placeId: cleanInteger(snapshot.placeId) || null,
+      placeVersion: normalizePlaceVersion(snapshot.placeVersion),
+      environment: normalizeAnalyticsEnvironment(snapshot.environment, snapshot.placeVersion),
+      exportedAt: cleanInteger(snapshot.exportedAt) || null,
+      receivedAt: cleanInteger(snapshot.receivedAt) || null,
+    } : null,
+    versions,
+  };
+}
+
+function buildRollupVersionHealth(rollup) {
+  const records = {
+    customEvents: cleanInteger(rollup?.customEvents?.sampleCount) || rollup?.customEvents?.samples?.length || 0,
+    chatMessages: Array.isArray(rollup?.chatLogs) ? rollup.chatLogs.length : 0,
+    movementObservations: cleanInteger(rollup?.movement?.sampleCount),
+    deaths: cleanInteger(rollup?.deaths?.sampleCount) || rollup?.deaths?.samples?.length || 0,
+    leaves: cleanInteger(rollup?.leaves?.sampleCount) || rollup?.leaves?.samples?.length || 0,
+  };
+  return {
+    key: `${cleanInteger(rollup?.placeId)}:${normalizePlaceVersion(rollup?.placeVersion)}:${normalizeAnalyticsEnvironment(rollup?.environment, rollup?.placeVersion)}`,
+    placeId: cleanInteger(rollup?.placeId),
+    placeVersion: normalizePlaceVersion(rollup?.placeVersion),
+    environment: normalizeAnalyticsEnvironment(rollup?.environment, rollup?.placeVersion),
+    firstSeenAt: cleanInteger(rollup?.firstSeenAt) || null,
+    lastSeenAt: cleanInteger(rollup?.lastSeenAt) || null,
+    sessionCount: cleanInteger(rollup?.sessionCount),
+    batchCount: cleanInteger(rollup?.batchCount),
+    rawObjectCount: cleanInteger(rollup?.rawObjectCount),
+    observationCount: Object.values(records).reduce((total, count) => total + cleanInteger(count), 0),
+    records,
+  };
+}
+
+function mergeDurableAndRuntimeVersionHealth(durableVersions, runtimeVersions) {
+  const merged = new Map((durableVersions || []).map((version) => [version.key, {
+    ...version,
+    sources: ["b2-rollup"],
+    liveObservationCount: 0,
+    liveSessionCount: 0,
+  }]));
+
+  for (const liveVersion of runtimeVersions || []) {
+    const durableVersion = merged.get(liveVersion.key);
+    if (!durableVersion) {
+      merged.set(liveVersion.key, {
+        ...liveVersion,
+        sources: ["runtime"],
+        liveObservationCount: liveVersion.observationCount,
+        liveSessionCount: liveVersion.sessionCount,
+      });
+      continue;
+    }
+
+    durableVersion.sources.push("runtime");
+    durableVersion.liveObservationCount = liveVersion.observationCount;
+    durableVersion.liveSessionCount = liveVersion.sessionCount;
+    durableVersion.firstSeenAt = durableVersion.firstSeenAt && liveVersion.firstSeenAt
+      ? Math.min(durableVersion.firstSeenAt, liveVersion.firstSeenAt)
+      : durableVersion.firstSeenAt || liveVersion.firstSeenAt;
+    durableVersion.lastSeenAt = Math.max(durableVersion.lastSeenAt || 0, liveVersion.lastSeenAt || 0) || null;
+  }
+
+  return [...merged.values()];
+}
+
+function buildRuntimeVersionHealth(universeId) {
+  const universeKey = String(universeId);
+  const versions = new Map();
+  const addRecord = (record, type, weight = 1) => {
+    const placeId = cleanInteger(record?.placeId);
+    const placeVersion = normalizePlaceVersion(record?.placeVersion);
+    const environment = normalizeAnalyticsEnvironment(record?.environment, placeVersion);
+    const key = `${placeId}:${placeVersion}:${environment}`;
+    let version = versions.get(key);
+    if (!version) {
+      version = {
+        key,
+        placeId,
+        placeVersion,
+        environment,
+        firstSeenAt: 0,
+        lastSeenAt: 0,
+        sessionIds: new Set(),
+        records: { customEvents: 0, chatMessages: 0, movementObservations: 0, deaths: 0, leaves: 0 },
+      };
+      versions.set(key, version);
+    }
+    const observedAt = getAnalyticsRecordObservedAt(record);
+    version.firstSeenAt = observedAt > 0 && version.firstSeenAt > 0 ? Math.min(version.firstSeenAt, observedAt) : Math.max(version.firstSeenAt, observedAt);
+    version.lastSeenAt = Math.max(version.lastSeenAt, observedAt);
+    const sessionId = cleanString(record?.sessionId, 180);
+    if (sessionId) version.sessionIds.add(sessionId);
+    version.records[type] += Math.max(cleanInteger(weight), 1);
+  };
+
+  for (const event of customEventsByUniverseId.get(universeKey) || []) addRecord(event, "customEvents");
+  for (const log of chatLogsByUniverseId.get(universeKey) || []) addRecord(log, "chatMessages");
+  for (const sample of movementSamplesByUniverseId.get(universeKey) || []) addRecord(sample, "movementObservations");
+  for (const sample of movementRollupsByUniverseId.get(universeKey) || []) addRecord(sample, "movementObservations", getSampleWeight(sample));
+  for (const sample of deathSamplesByUniverseId.get(universeKey) || []) addRecord(sample, "deaths");
+  for (const sample of leaveSamplesByUniverseId.get(universeKey) || []) addRecord(sample, "leaves");
+
+  return [...versions.values()].map((version) => ({
+    key: version.key,
+    placeId: version.placeId,
+    placeVersion: version.placeVersion,
+    environment: version.environment,
+    firstSeenAt: version.firstSeenAt || null,
+    lastSeenAt: version.lastSeenAt || null,
+    sessionCount: version.sessionIds.size,
+    batchCount: 0,
+    rawObjectCount: 0,
+    observationCount: Object.values(version.records).reduce((total, count) => total + count, 0),
+    records: version.records,
+    sources: ["runtime"],
+    liveObservationCount: Object.values(version.records).reduce((total, count) => total + count, 0),
+    liveSessionCount: version.sessionIds.size,
+  }));
+}
+
+function getAnalyticsRecordObservedAt(record) {
+  return cleanInteger(record?.occurredAt)
+    || cleanInteger(record?.sentAt)
+    || cleanInteger(record?.diedAt)
+    || cleanInteger(record?.leftAt)
+    || cleanInteger(record?.sampledAt)
+    || cleanInteger(record?.bucketEnd)
+    || cleanInteger(record?.receivedAt)
+    || 0;
 }
 
 function getAiAreaAnalysis(filters = {}) {

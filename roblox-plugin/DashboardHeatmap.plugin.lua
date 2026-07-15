@@ -1,4 +1,5 @@
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local DASHBOARD_BASE_URL = "https://game-dashboard-zaya.onrender.com"
@@ -217,6 +218,8 @@ local function buildMapChunks(parts, universeId, uploadId, targetBytes)
 			uploadId = uploadId,
 			universeId = universeId,
 			placeId = game.PlaceId,
+			placeVersion = game.PlaceVersion,
+			environment = if RunService:IsStudio() then "studio" else "production",
 			rootName = Workspace.Name,
 			exportedAt = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time()),
 			totalParts = #parts,

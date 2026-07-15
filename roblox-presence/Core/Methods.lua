@@ -1,5 +1,6 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Settings = require(script.Parent.Parent.Config.Settings)
 
@@ -22,6 +23,7 @@ local pendingCustomEvents = {}
 local lastPlayerPositions = {}
 local leaveSampledUserIds = {}
 local serverStartedAt = os.time()
+local runtimeEnvironment = if RunService:IsStudio() then "studio" else "production"
 local chatLogCounter = 0
 local movementSampleCounter = 0
 local movementRollupCounter = 0
@@ -792,6 +794,8 @@ local function buildPayload()
 	return {
 		universeId = game.GameId,
 		placeId = game.PlaceId,
+		placeVersion = game.PlaceVersion,
+		environment = runtimeEnvironment,
 		jobId = game.JobId,
 		serverStartedAt = serverStartedAt,
 		updatedAt = os.time(),
@@ -821,7 +825,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples, "customEvents", #payload.customEvents)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "placeVersion", payload.placeVersion, "environment", payload.environment, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples, "customEvents", #payload.customEvents)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -887,7 +891,7 @@ function Methods.Start()
 
 	started = true
 
-	debugWarn("Starting:", "script", script:GetFullName(), "universe", game.GameId, "place", game.PlaceId, "job", game.JobId)
+	debugWarn("Starting:", "script", script:GetFullName(), "universe", game.GameId, "place", game.PlaceId, "placeVersion", game.PlaceVersion, "environment", runtimeEnvironment, "job", game.JobId)
 	debugWarn("Settings:", "endpoint", Settings.Endpoint, "interval", Settings.HeartbeatInterval, "maxPlayers", Settings.MaxPlayersPerPayload, "debug", Settings.Debug)
 	debugWarn("Players at start:", #Players:GetPlayers(), getPlayerSummary())
 

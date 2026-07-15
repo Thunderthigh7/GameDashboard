@@ -22,7 +22,7 @@ Map export:
 - Paste the secret into the Studio plugin.
 - Click `Export Map To Dashboard`.
 
-The plugin automatically uses the current experience universe ID from `game.GameId`. The export sends visible `BasePart` geometry in throttled chunks so large maps can finish over multiple HTTPS requests.
+The plugin automatically uses the current experience universe ID, place ID, and `game.PlaceVersion`. Plugin exports are marked as `studio`, keeping map authoring uploads separate from production release health. The export sends visible `BasePart` geometry in throttled chunks so large maps can finish over multiple HTTPS requests.
 
 Requirements:
 

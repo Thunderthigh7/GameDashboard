@@ -70,7 +70,9 @@ Property leaves must be strings, finite numbers, or booleans. Nested tables are 
 
 To keep analytics payloads bounded, one event accepts up to 20 property paths, 3 nested levels, 10 items from an array, and 40 total values. Strings are limited to 240 characters. The event is still logged if a value is unsupported or exceeds a limit, and Data Health reports that some properties were omitted. For item-level relationships inside a large array, log one event per item instead of sending a large inventory table.
 
-The logger automatically includes the universe, place, server, event time, player, player session, and current character position. Pass the `Player` as the third argument so the event can participate in player funnels later.
+The heartbeat automatically includes `game.PlaceVersion` and marks the batch as `production` or `studio`. Every event inherits that release context along with its universe, place, server, event time, player, player session, and current character position. Pass the `Player` as the third argument so the event can participate in player funnels later.
+
+Version-aware history starts after this service update is published. Older stored analytics remain explicitly `unversioned`; the server does not guess which release produced them.
 
 Server-wide events may omit the player:
 

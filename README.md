@@ -125,7 +125,9 @@ Logger.Log("weapon_equipped", {
 }, player)
 ```
 
-The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. The logger adds player session, server time, universe, place, and character position. See `roblox-presence/README.md` for naming, property limits, and server-only requirements.
+The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. The logger adds player session, server time, universe, place, `game.PlaceVersion`, production/studio environment, and character position. See `roblox-presence/README.md` for naming, property limits, and server-only requirements.
+
+Authenticated projects can verify release tagging with `GET /api/version-health?universeId={id}`. It reports production coverage, unversioned history, studio observations, the latest production version per place, and counts for every observed version. Existing charts continue to aggregate across versions until release filters are added.
 
 ## Website Funnels
 
@@ -174,6 +176,7 @@ Useful environment variables:
 ROLLUP_LOOKBACK_HOURS=24
 ROLLUP_MAX_RAW_OBJECTS=5000
 ROLLUP_READ_CONCURRENCY=8
+ROLLUP_MAX_VERSIONS=50
 ROLLUP_UNIVERSE_IDS=
 ```
 
