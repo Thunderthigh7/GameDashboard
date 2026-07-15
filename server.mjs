@@ -72,6 +72,13 @@ const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_HEATMAP_RESPONSE = 5000;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
+const SYSTEM_ANALYTICS_EVENT_DEFINITIONS = Object.freeze([
+  { name: "player_died", type: "death", timestampField: "diedAt" },
+  { name: "player_left", type: "leave", timestampField: "leftAt" },
+  { name: "chat_message", type: "chat", timestampField: "sentAt" },
+]);
+const SYSTEM_ANALYTICS_EVENT_NAMES = new Set(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => event.name));
+const SYSTEM_ANALYTICS_EVENT_ORDER = new Map(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event, index) => [event.name, index]));
 const CUSTOM_EVENT_INTERVALS_MS = new Map([
   ["1m", 60 * 1000],
   ["5m", 5 * 60 * 1000],
@@ -2648,7 +2655,7 @@ function normalizeCustomEvents(value, context) {
       occurredAt: cleanTimestampMs(entry?.occurredAt) || context.receivedAt,
       receivedAt: context.receivedAt,
     };
-  }).filter((entry) => entry.eventName && entry.id);
+  }).filter((entry) => entry.eventName && entry.id && !SYSTEM_ANALYTICS_EVENT_NAMES.has(entry.eventName));
 }
 
 function normalizeCustomEventName(value) {
@@ -2754,15 +2761,17 @@ function normalizeChatLogs(value, context) {
     const x = cleanFiniteNumber(entry?.x);
     const y = cleanFiniteNumber(entry?.y);
     const z = cleanFiniteNumber(entry?.z);
+    const userId = cleanInteger(entry?.userId);
 
     return {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
       placeId: context.placeId,
       jobId: context.jobId,
-      userId: cleanInteger(entry?.userId),
+      userId,
       username: cleanString(entry?.username || entry?.name, 64),
       displayName: cleanString(entry?.displayName, 64),
+      sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
       message: cleanString(entry?.message, 500),
       x: Number.isFinite(x) ? x : null,
       y: Number.isFinite(y) ? y : null,
@@ -2872,21 +2881,25 @@ function normalizeMovementRollups(value, context) {
 function normalizeDeathSamples(value, context) {
   if (!Array.isArray(value)) return [];
 
-  return value.slice(0, MAX_DEATH_SAMPLES_PER_PAYLOAD).map((entry) => ({
-    id: cleanString(entry?.id, 160),
-    universeId: context.universeId,
-    placeId: context.placeId,
-    jobId: context.jobId,
-    userId: cleanInteger(entry?.userId),
-    username: cleanString(entry?.username || entry?.name, 64),
-    displayName: cleanString(entry?.displayName, 64),
-    x: cleanFiniteNumber(entry?.x),
-    y: cleanFiniteNumber(entry?.y),
-    z: cleanFiniteNumber(entry?.z),
-    diedAt: cleanTimestampMs(entry?.diedAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
-    sampledAt: cleanTimestampMs(entry?.diedAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
-    receivedAt: context.receivedAt,
-  })).filter((entry) => (
+  return value.slice(0, MAX_DEATH_SAMPLES_PER_PAYLOAD).map((entry) => {
+    const userId = cleanInteger(entry?.userId);
+    return {
+      id: cleanString(entry?.id, 160),
+      universeId: context.universeId,
+      placeId: context.placeId,
+      jobId: context.jobId,
+      userId,
+      username: cleanString(entry?.username || entry?.name, 64),
+      displayName: cleanString(entry?.displayName, 64),
+      sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
+      x: cleanFiniteNumber(entry?.x),
+      y: cleanFiniteNumber(entry?.y),
+      z: cleanFiniteNumber(entry?.z),
+      diedAt: cleanTimestampMs(entry?.diedAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+      sampledAt: cleanTimestampMs(entry?.diedAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter((entry) => (
     entry.userId > 0
     && entry.username
     && Number.isFinite(entry.x)
@@ -2898,21 +2911,25 @@ function normalizeDeathSamples(value, context) {
 function normalizeLeaveSamples(value, context) {
   if (!Array.isArray(value)) return [];
 
-  return value.slice(0, MAX_LEAVE_SAMPLES_PER_PAYLOAD).map((entry) => ({
-    id: cleanString(entry?.id, 160),
-    universeId: context.universeId,
-    placeId: context.placeId,
-    jobId: context.jobId,
-    userId: cleanInteger(entry?.userId),
-    username: cleanString(entry?.username || entry?.name, 64),
-    displayName: cleanString(entry?.displayName, 64),
-    x: cleanFiniteNumber(entry?.x),
-    y: cleanFiniteNumber(entry?.y),
-    z: cleanFiniteNumber(entry?.z),
-    leftAt: cleanTimestampMs(entry?.leftAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
-    sampledAt: cleanTimestampMs(entry?.leftAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
-    receivedAt: context.receivedAt,
-  })).filter((entry) => (
+  return value.slice(0, MAX_LEAVE_SAMPLES_PER_PAYLOAD).map((entry) => {
+    const userId = cleanInteger(entry?.userId);
+    return {
+      id: cleanString(entry?.id, 160),
+      universeId: context.universeId,
+      placeId: context.placeId,
+      jobId: context.jobId,
+      userId,
+      username: cleanString(entry?.username || entry?.name, 64),
+      displayName: cleanString(entry?.displayName, 64),
+      sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
+      x: cleanFiniteNumber(entry?.x),
+      y: cleanFiniteNumber(entry?.y),
+      z: cleanFiniteNumber(entry?.z),
+      leftAt: cleanTimestampMs(entry?.leftAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+      sampledAt: cleanTimestampMs(entry?.leftAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter((entry) => (
     entry.userId > 0
     && entry.username
     && Number.isFinite(entry.x)
@@ -4261,15 +4278,21 @@ function clusterSignalAreaSamples(samples = [], mode = "movement") {
 async function getCustomEventMapData(filters = {}, requestedEventName = "", options = {}) {
   const universeId = cleanInteger(filters.universeId);
   const normalizedRequestedEventName = normalizeCustomEventName(requestedEventName);
-  const { events, hasRollup } = await getCustomEventRecords({ universeId });
-  const catalogByName = new Map();
+  const { events, hasRollup } = await getAnalyticsEventRecords({ universeId });
+  const catalogByName = new Map(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => [event.name, {
+    name: event.name,
+    count: 0,
+    locationCount: 0,
+    lastSeenAt: 0,
+    sourceType: "system",
+  }]));
 
   for (const event of events) {
     const eventName = normalizeCustomEventName(event?.eventName);
     if (!eventName) continue;
     let summary = catalogByName.get(eventName);
     if (!summary) {
-      summary = { name: eventName, count: 0, locationCount: 0, lastSeenAt: 0 };
+      summary = { name: eventName, count: 0, locationCount: 0, lastSeenAt: 0, sourceType: event.sourceType || "custom" };
       catalogByName.set(eventName, summary);
     }
     summary.count += 1;
@@ -4281,6 +4304,7 @@ async function getCustomEventMapData(filters = {}, requestedEventName = "", opti
     .sort((left, right) => (
       right.lastSeenAt - left.lastSeenAt
       || right.count - left.count
+      || (SYSTEM_ANALYTICS_EVENT_ORDER.get(left.name) ?? 999) - (SYSTEM_ANALYTICS_EVENT_ORDER.get(right.name) ?? 999)
       || left.name.localeCompare(right.name)
     ));
   const selectedEventName = normalizedRequestedEventName && catalogByName.has(normalizedRequestedEventName)
@@ -4342,6 +4366,9 @@ function serializeCustomEventHeatmapSample(event) {
     z: cleanFiniteNumber(event?.z),
     occurredAt: getCustomEventTimestamp(event),
     value: typeof event?.value === "number" && Number.isFinite(event.value) ? event.value : null,
+    sourceType: event?.sourceType === "system" ? "system" : "custom",
+    systemEventType: cleanString(event?.systemEventType, 32),
+    message: cleanString(event?.message, 500),
   };
 }
 
@@ -4366,14 +4393,28 @@ async function getCustomEventsFromQuery(searchParams) {
   const interval = normalizeCustomEventInterval(searchParams.get("interval"));
   const recentLimit = Math.min(cleanInteger(searchParams.get("recentLimit")) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
   const propertyValueLimit = Math.min(cleanInteger(searchParams.get("propertyValueLimit")) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
-  const { events, hasRollup } = await getCustomEventRecords({ universeId, fromMs, toMs });
+  const { events, hasRollup } = await getAnalyticsEventRecords({ universeId, fromMs, toMs });
 
-  const catalogByName = new Map();
+  const catalogByName = new Map(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => [event.name, {
+    name: event.name,
+    count: 0,
+    playerIds: new Set(),
+    sessionIds: new Set(),
+    lastSeenAt: 0,
+    sourceType: "system",
+  }]));
   for (const event of events) {
     const eventName = normalizeCustomEventName(event.eventName);
     let summary = catalogByName.get(eventName);
     if (!summary) {
-      summary = { name: eventName, count: 0, playerIds: new Set(), sessionIds: new Set(), lastSeenAt: 0 };
+      summary = {
+        name: eventName,
+        count: 0,
+        playerIds: new Set(),
+        sessionIds: new Set(),
+        lastSeenAt: 0,
+        sourceType: event.sourceType || "custom",
+      };
       catalogByName.set(eventName, summary);
     }
     summary.count += 1;
@@ -4389,8 +4430,14 @@ async function getCustomEventsFromQuery(searchParams) {
       uniquePlayers: summary.playerIds.size,
       uniqueSessions: summary.sessionIds.size,
       lastSeenAt: summary.lastSeenAt,
+      sourceType: summary.sourceType,
     }))
-    .sort((left, right) => right.lastSeenAt - left.lastSeenAt || right.count - left.count || left.name.localeCompare(right.name));
+    .sort((left, right) => (
+      right.lastSeenAt - left.lastSeenAt
+      || right.count - left.count
+      || (SYSTEM_ANALYTICS_EVENT_ORDER.get(left.name) ?? 999) - (SYSTEM_ANALYTICS_EVENT_ORDER.get(right.name) ?? 999)
+      || left.name.localeCompare(right.name)
+    ));
   const selectedEventName = requestedEventName && catalogByName.has(requestedEventName)
     ? requestedEventName
     : (catalog[0]?.name || "");
@@ -4420,6 +4467,8 @@ async function getCustomEventsFromQuery(searchParams) {
       recentLimit,
       propertyValueLimit,
       selectedPropertyName,
+      sourceType: catalogByName.get(selectedEventName)?.sourceType,
+      systemEventType: SYSTEM_ANALYTICS_EVENT_DEFINITIONS.find((event) => event.name === selectedEventName)?.type,
     }) : null,
   };
 }
@@ -4431,6 +4480,9 @@ async function handleCustomEventDelete(req, res, auth, searchParams) {
     return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
   if (!eventName) return sendJson(res, 400, { error: "Select an event to delete" });
+  if (SYSTEM_ANALYTICS_EVENT_NAMES.has(eventName)) {
+    return sendJson(res, 400, { error: "System events cannot be deleted" });
+  }
 
   const universeKey = String(universeId);
   const deletedAt = Date.now();
@@ -4498,7 +4550,7 @@ async function getCustomEventDeletionCutoffs(universeId) {
   return cutoffs;
 }
 
-async function getCustomEventRecords(filters = {}) {
+async function getAnalyticsEventRecords(filters = {}) {
   const universeId = cleanInteger(filters.universeId);
   const fromMs = cleanInteger(filters.fromMs);
   const toMs = cleanInteger(filters.toMs);
@@ -4515,20 +4567,74 @@ async function getCustomEventRecords(filters = {}) {
   }
 
   const deletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
-  const events = [...eventsById.values()].filter((event) => {
+  const customEvents = [...eventsById.values()].filter((event) => {
     const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
     if (fromMs > 0 && occurredAt < fromMs) return false;
     if (toMs > 0 && occurredAt > toMs) return false;
     const eventName = normalizeCustomEventName(event?.eventName);
-    if (!eventName) return false;
+    if (!eventName || SYSTEM_ANALYTICS_EVENT_NAMES.has(eventName)) return false;
     const deletedAt = cleanTimestampMs(deletionCutoffs.get(eventName));
     if (deletedAt > 0 && occurredAt <= deletedAt) return false;
     return true;
-  });
+  }).map((event) => ({ ...event, sourceType: "custom" }));
+
+  const systemFilters = { universeId, fromMs, toMs };
+  const deathSamples = rollup
+    ? getCombinedDeathSamples(rollup, systemFilters)
+    : getDeathSamplesForFilters(systemFilters);
+  const leaveSamples = rollup
+    ? getCombinedLeaveSamples(rollup, systemFilters)
+    : getLeaveSamplesForFilters(systemFilters);
+  const chatLogs = rollup
+    ? getCombinedChatLogs(rollup, systemFilters)
+    : getChatLogs(systemFilters).logs;
+  const samplesByType = { death: deathSamples, leave: leaveSamples, chat: chatLogs };
+  const systemEvents = SYSTEM_ANALYTICS_EVENT_DEFINITIONS.flatMap((definition) => (
+    samplesByType[definition.type].map((sample) => createSystemAnalyticsEvent(sample, definition))
+  ));
+
   return {
-    events,
-    hasRollup: Boolean(rollup?.customEvents?.samples?.length),
+    events: [...customEvents, ...systemEvents],
+    hasRollup: Boolean(rollup),
   };
+}
+
+function createSystemAnalyticsEvent(sample, definition) {
+  const occurredAt = cleanTimestampMs(sample?.[definition.timestampField])
+    || cleanTimestampMs(sample?.sampledAt)
+    || cleanTimestampMs(sample?.receivedAt);
+  const jobId = cleanString(sample?.jobId, 180);
+  const userId = cleanInteger(sample?.userId) || null;
+  const rawId = cleanString(sample?.id, 180)
+    || `${jobId}:${userId || "server"}:${occurredAt}`;
+  return {
+    id: `system:${definition.type}:${rawId}`,
+    universeId: cleanInteger(sample?.universeId),
+    placeId: cleanInteger(sample?.placeId),
+    jobId,
+    eventName: definition.name,
+    userId,
+    username: cleanString(sample?.username, 64),
+    displayName: cleanString(sample?.displayName, 64),
+    sessionId: cleanString(sample?.sessionId, 180) || (userId ? `${jobId}:${userId}` : jobId),
+    value: null,
+    properties: {},
+    propertiesTruncated: false,
+    x: getSystemEventCoordinate(sample?.x),
+    y: getSystemEventCoordinate(sample?.y),
+    z: getSystemEventCoordinate(sample?.z),
+    occurredAt,
+    receivedAt: cleanTimestampMs(sample?.receivedAt) || occurredAt,
+    sourceType: "system",
+    systemEventType: definition.type,
+    message: definition.type === "chat" ? cleanString(sample?.message, 500) : "",
+  };
+}
+
+function getSystemEventCoordinate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const coordinate = cleanFiniteNumber(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
 }
 
 function buildCustomEventDetail(eventName, events, filters = {}) {
@@ -4552,6 +4658,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
   const propertyValueLimit = Math.min(cleanInteger(filters.propertyValueLimit) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   return {
     name: eventName,
+    sourceType: events[0]?.sourceType || filters.sourceType || "custom",
+    systemEventType: cleanString(events[0]?.systemEventType || filters.systemEventType, 32),
     count: events.length,
     uniquePlayers: playerIds.size,
     uniqueSessions: sessionIds.size,
@@ -4722,10 +4830,13 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const [definitions, eventRecords] = await Promise.all([
     readFunnelDefinitions(ownerUserId, universeId),
-    getCustomEventRecords({ universeId, fromMs, toMs }),
+    getAnalyticsEventRecords({ universeId, fromMs, toMs }),
   ]);
   const events = eventRecords.events;
-  const eventNames = [...new Set(events.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean))].sort();
+  const eventNames = [...new Set([
+    ...SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => event.name),
+    ...events.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean),
+  ])].sort();
   const sessions = groupCustomEventsBySession(events);
 
   return {
@@ -4755,7 +4866,7 @@ async function getFunnelMapFromQuery(definition, searchParams) {
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedStep = cleanInteger(searchParams.get("step")) || 1;
   const requestedMode = searchParams.get("mode") === "dropped" ? "dropped" : "reached";
-  const eventRecords = await getCustomEventRecords({ universeId, fromMs, toMs });
+  const eventRecords = await getAnalyticsEventRecords({ universeId, fromMs, toMs });
   const sessions = groupCustomEventsBySession(eventRecords.events);
   const mapAnalytics = calculateFunnelMapSamples(definition, sessions, requestedStep, requestedMode);
   const clustered = clusterFunnelMapSamples(mapAnalytics.samples);
@@ -4777,7 +4888,7 @@ async function getFunnelMapFromQuery(definition, searchParams) {
     clusterCount: clustered.clusters.length,
     clusterSizeStuds: clustered.binSize,
     locationMethod: mapAnalytics.mode === "dropped"
-      ? "last mapped custom event after the selected step"
+      ? "last mapped event after the selected step"
       : "mapped location of the selected step",
     clusters: clustered.clusters,
   };

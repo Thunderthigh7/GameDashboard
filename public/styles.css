@@ -2356,6 +2356,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .heatmapLegend,
 .heatmapOverlay,
 .mapPartCountBox,
+.mapAreaBreakdown,
 .aiAreaCard {
   position: absolute;
   border: 1px solid var(--line);
@@ -2366,7 +2367,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .heatmapLegend,
 .heatmapOverlay,
-.mapPartCountBox {
+.mapPartCountBox,
+.mapAreaBreakdown {
   z-index: 2;
   pointer-events: none;
 }
@@ -2416,6 +2418,91 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .mapPartCountBox strong {
   color: var(--text);
   font-size: 13px;
+}
+
+.mapAreaBreakdown {
+  right: 20px;
+  top: 78px;
+  display: grid;
+  width: min(292px, calc(100% - 40px));
+  max-height: min(390px, calc(100% - 176px));
+  overflow: hidden;
+  padding: 12px;
+}
+
+.mapAreaBreakdown header {
+  padding: 1px 3px 10px;
+}
+
+.mapAreaBreakdown header div,
+.mapAreaBreakdown li > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mapAreaBreakdown header strong {
+  overflow: hidden;
+  color: #eef2ff;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapAreaBreakdown header span,
+.mapAreaBreakdown li small {
+  color: #8d9abc;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.mapAreaBreakdown ol {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  overflow-y: auto;
+  padding: 0;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.mapAreaBreakdown li {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(91, 112, 159, 0.32);
+  border-radius: 7px;
+  background: rgba(10, 21, 44, 0.74);
+  padding: 7px 8px;
+}
+
+.mapAreaBreakdown li > b {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #c770ff, #7c3cff);
+  color: white;
+  font-size: 11px;
+}
+
+.mapAreaBreakdown li strong {
+  overflow: hidden;
+  color: #dfe6fa;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapAreaBreakdown li em {
+  color: #8deedb;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
 }
 
 .botMessage > span {
@@ -2608,16 +2695,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .aiAreaStats span {
   color: var(--muted);
   font-size: 11px;
-}
-
-.insightRail {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
-  gap: 18px;
-}
-
-.areasPage .insightRail {
-  grid-template-columns: repeat(3, minmax(270px, 1fr));
 }
 
 .insightMode {
@@ -3707,48 +3784,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
   min-width: 0;
 }
 
-.eventAreaCardHeader {
-  display: grid;
-  gap: 13px;
-}
-
-.signalEventSelectControl {
-  display: grid;
-  gap: 6px;
-}
-
-.signalEventSelectControl > span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.signalEventSelectControl select {
-  width: 100%;
-  min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  outline: 0;
-  background: var(--field-bg);
-  color: var(--text);
-  padding: 0 10px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.signalEventSelectControl select:focus {
-  border-color: rgba(45, 212, 191, 0.72);
-  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.09);
-}
-
-.signalEventSelectControl select:disabled {
-  color: var(--muted);
-  cursor: wait;
-}
-
 .barList {
   display: grid;
   gap: 12px;
@@ -3765,155 +3800,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .placeholderFeature .barList b {
   color: var(--muted);
-}
-
-.signalAreaList {
-  display: grid;
-  gap: 9px;
-  margin-top: 16px;
-}
-
-.signalEmptyStatus {
-  margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-soft);
-  padding: 10px;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.signalAreaItem {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 76px 58px;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 32px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text);
-  padding: 2px 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.signalAreaItem:hover {
-  color: var(--purple);
-}
-
-.signalAreaItem.placeholderSignal {
-  cursor: default;
-  opacity: 0.62;
-}
-
-.signalAreaItem.placeholderSignal:hover {
-  color: var(--text);
-}
-
-.signalRank {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--purple-soft);
-  color: var(--purple);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.signalAreaItem:nth-child(1) .signalRank {
-  background: rgba(239, 68, 68, 0.14);
-  color: #f87171;
-}
-
-.signalAreaItem:nth-child(2) .signalRank {
-  background: rgba(245, 158, 11, 0.14);
-  color: #f59e0b;
-}
-
-.signalAreaItem:nth-child(3) .signalRank {
-  background: rgba(109, 66, 232, 0.16);
-  color: #a78bfa;
-}
-
-.signalAreaItem:nth-child(4) .signalRank {
-  background: rgba(34, 211, 238, 0.14);
-  color: #22d3ee;
-}
-
-.signalAreaItem:nth-child(5) .signalRank {
-  background: rgba(53, 208, 131, 0.14);
-  color: var(--green);
-}
-
-.signalName {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.signalBar {
-  position: relative;
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--line);
-}
-
-.signalBar i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
-  background: #fb7185;
-}
-
-.signalAreaItem b {
-  color: #fb7185;
-  font-size: 12px;
-  font-weight: 900;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.signalAreaItem.movementSignal .signalBar i,
-.signalAreaItem.movementSignal b {
-  color: #22d3ee;
-  background: #22d3ee;
-}
-
-.signalAreaItem.leaveSignal .signalBar i,
-.signalAreaItem.leaveSignal b {
-  color: #f59e0b;
-  background: #f59e0b;
-}
-
-.signalAreaItem.deathSignal .signalBar i,
-.signalAreaItem.deathSignal b {
-  color: #fb7185;
-  background: #fb7185;
-}
-
-.signalAreaItem.chatSignal .signalBar i,
-.signalAreaItem.chatSignal b {
-  color: #a78bfa;
-  background: #a78bfa;
-}
-
-.signalAreaItem.eventSignal .signalBar i,
-.signalAreaItem.eventSignal b {
-  color: #2dd4bf;
-  background: #2dd4bf;
-}
-
-.signalAreaItem b {
-  background: transparent !important;
 }
 
 .status {
@@ -6035,14 +5921,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     min-height: clamp(520px, 62vh, 700px);
   }
 
-  .insightRail {
-    grid-template-columns: repeat(2, minmax(260px, 1fr));
-  }
-
-  .areasPage .insightRail {
-    grid-template-columns: repeat(2, minmax(260px, 1fr));
-  }
-
   .chatBotPanel {
     min-height: 520px;
   }
@@ -6215,15 +6093,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .connectUniverseForm,
   .integrationStatusGrid,
   .setupChecklist,
-  .insightRail,
   .overviewHeroGrid,
   .topbarFilters,
   .aiCardRow,
   .heatmapFilters {
-    grid-template-columns: 1fr;
-  }
-
-  .areasPage .insightRail {
     grid-template-columns: 1fr;
   }
 
@@ -6333,6 +6206,12 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .heatmapOverlay {
     right: 18px;
     top: 16px;
+  }
+
+  .mapAreaBreakdown {
+    right: 18px;
+    top: 72px;
+    width: min(270px, calc(100% - 36px));
   }
 
   .mapPartCountBox {
@@ -6464,7 +6343,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     padding-inline: 8px;
   }
 
-  .heatmapPresets > .miniButton:nth-child(5),
   .heatmapSelectModes {
     grid-column: 1 / -1;
   }
@@ -6493,6 +6371,20 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .heatmapOverlay strong {
     font-size: 13px;
+  }
+
+  .mapAreaBreakdown {
+    right: 12px;
+    top: 60px;
+    width: min(250px, calc(100% - 24px));
+    max-height: 230px;
+    padding: 9px;
+  }
+
+  .mapAreaBreakdown li {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 6px;
   }
 
   .connectUniversePanel {

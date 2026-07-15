@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-6">
+    <link rel="stylesheet" href="/styles.css?v=20260715-1">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -35,17 +35,6 @@
           <section class="navGroup" aria-labelledby="analyticsNavLabel">
             <h2 class="navGroupLabel" id="analyticsNavLabel">Analytics</h2>
             <div class="navGroupLinks">
-              <a href="#areas" data-dashboard-view="areas">
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <rect x="3.5" y="3.5" width="6" height="6" rx="2" />
-                    <rect x="14.5" y="3.5" width="6" height="6" rx="2" />
-                    <rect x="3.5" y="14.5" width="6" height="6" rx="2" />
-                    <rect x="14.5" y="14.5" width="6" height="6" rx="2" />
-                  </svg>
-                </span>
-                <span>Areas</span>
-              </a>
               <a href="#events" data-dashboard-view="events">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
@@ -227,9 +216,6 @@
                     <div class="heatmapPresets" aria-label="Heatmap mode">
                       <button class="miniButton aiAnalysisModeButton active" type="button" data-heatmap-mode="ai-analysis">AI Analysis</button>
                       <button class="miniButton" type="button" data-heatmap-mode="movement">Movement</button>
-                      <button class="miniButton" type="button" data-heatmap-mode="deaths">Deaths</button>
-                      <button class="miniButton" type="button" data-heatmap-mode="leaves">Leaves</button>
-                      <button class="miniButton" type="button" data-heatmap-mode="chat">Chat</button>
                       <div class="heatmapSelectModes">
                         <div class="heatmapEventControl" id="heatmapEventControl">
                           <span>Events</span>
@@ -272,6 +258,15 @@
                       <span>Map part count</span>
                       <strong id="mapPartCountValue">0</strong>
                     </div>
+                    <section class="mapAreaBreakdown" id="mapAreaBreakdown" aria-live="polite" hidden>
+                      <header>
+                        <div>
+                          <strong id="mapAreaBreakdownTitle">Event areas</strong>
+                          <span>Share of mapped activity</span>
+                        </div>
+                      </header>
+                      <ol id="mapAreaBreakdownList"></ol>
+                    </section>
                     <div class="mapViewDock">
                       <button class="dockIconButton areasDockButton active" type="button" data-heatmap-render="points" aria-label="Areas view" title="Areas">
                         <span>Areas</span>
@@ -367,60 +362,6 @@
               </div>
             </article>
           </div>
-        </section>
-
-        <section class="viewPage areasPage" data-view-panel="areas" hidden>
-          <aside class="insightRail">
-            <article class="panel dataCard">
-              <h2>Top movement areas</h2>
-              <p>Highest traffic share from player movement locations.</p>
-              <div class="signalAreaList" id="movementAreaList">
-                <p class="status">Waiting for movement samples...</p>
-              </div>
-            </article>
-
-            <article class="panel dataCard">
-              <h2>Top drop-off points</h2>
-              <p>Highest exit share from player leave locations.</p>
-              <div class="signalAreaList" id="dropOffAreaList">
-                <p class="status">Waiting for leave samples...</p>
-              </div>
-            </article>
-
-            <article class="panel dataCard placeholderFeature">
-              <h2>Top death areas</h2>
-              <p>Highest death share from raw event locations.</p>
-              <div class="signalAreaList" id="deathAreaList">
-                <p class="status">Waiting for death samples...</p>
-              </div>
-            </article>
-
-            <article class="panel dataCard">
-              <h2>Top chat areas</h2>
-              <p>Highest message share from chat locations.</p>
-              <div class="signalAreaList" id="chatAreaList">
-                <p class="status">Waiting for chat locations...</p>
-              </div>
-            </article>
-
-            <article class="panel dataCard eventAreaCard">
-              <div class="eventAreaCardHeader">
-                <div>
-                  <h2>Top event areas</h2>
-                  <p>Choose any tracked event to see where it happens.</p>
-                </div>
-                <label class="signalEventSelectControl" for="signalEventSelect">
-                  <span>Event</span>
-                  <select id="signalEventSelect" aria-label="Select a tracked event for top areas" disabled>
-                    <option value="">Loading events...</option>
-                  </select>
-                </label>
-              </div>
-              <div class="signalAreaList" id="eventAreaList">
-                <p class="status">Waiting for event locations...</p>
-              </div>
-            </article>
-          </aside>
         </section>
 
         <section class="viewPage eventsPage" data-view-panel="events" hidden>
@@ -974,6 +915,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260714-6"></script>
+    <script defer src="/app.js?v=20260715-1"></script>
   </body>
 </html>

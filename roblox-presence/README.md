@@ -34,6 +34,16 @@ With `Settings.Debug = true`, startup should print:
 
 This folder is synced by `default.project.json` and is not used by the website server.
 
+## Automatic system events
+
+The service records these events automatically, with the same player session ID used by custom events:
+
+- `player_died` when a tracked Humanoid dies
+- `player_left` when a player leaves or the server shuts down
+- `chat_message` when `Player.Chatted` fires
+
+They appear in the dashboard's **Events** page, the map's **Events** mode, and funnel step selectors. Do not call `Logger.Log` for them; their names are reserved so they cannot be duplicated or replaced by custom events.
+
 ## Logging custom events
 
 Require the service API from a server script, then call `Log` with an event name, an information table, and the player. Events are delivered in the existing heartbeat batch and automatically appear on the website's **Events** page.
@@ -54,7 +64,7 @@ Logger.Log("weapon_equipped", {
 }, player)
 ```
 
-Event names must start with a letter and may contain letters, numbers, `_`, `.`, `:`, or `-`. Keep names stable and lowercase, such as `weapon_equipped` or `tutorial.step_completed`.
+Event names must start with a letter and may contain letters, numbers, `_`, `.`, `:`, or `-`. Keep names stable and lowercase, such as `weapon_equipped` or `tutorial.step_completed`. The automatic names `player_died`, `player_left`, and `chat_message` are reserved.
 
 Property leaves must be strings, finite numbers, or booleans. Nested tables are flattened into stable paths such as `weapon.name` and `weapon.stats.damage`; arrays become repeated values such as `tags[]`. The Events page discovers every path automatically and lets you switch between their breakdowns.
 

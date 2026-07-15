@@ -109,6 +109,8 @@ ServerScriptService
 
 `Start` is a server Script that requires `PresenceService.API` and calls `Start()`.
 
+The service automatically records `player_died`, `player_left`, and `chat_message`. These use the same player session IDs as custom events and appear under **Events**, in the map's **Events** mode, and as funnel steps. Their names are reserved; game code should not log duplicates.
+
 Game server scripts can use that same API to send custom events:
 
 ```lua
@@ -127,7 +129,7 @@ The event is included in the existing batched heartbeat and appears automaticall
 
 ## Website Funnels
 
-After custom events arrive, open **Funnels** and select **New**. A funnel contains 2–10 ordered event names plus a conversion window. Funnel definitions are saved per account and universe, so changing a funnel does not require another Roblox publish.
+After events arrive, open **Funnels** and select **New**. A funnel can mix custom events with `player_died`, `player_left`, and `chat_message`, and contains 2–10 ordered event names plus a conversion window. Funnel definitions are saved per account and universe, so changing a funnel does not require another Roblox publish.
 
 Conversion is session-based: a session enters when it reaches step one, and it only reaches later steps when matching events occur after the previous step and inside the selected conversion window. The dashboard shows entry sessions, completed sessions, overall conversion, step drop-off, unique players, and time between steps. Results use the dashboard's current From/To date filters and refresh every 15 seconds while the Funnels page is open.
 

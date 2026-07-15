@@ -4,6 +4,11 @@ local Players = game:GetService("Players")
 local Settings = require(script.Parent.Parent.Config.Settings)
 
 local Methods = {}
+local SYSTEM_EVENT_NAMES = {
+	player_died = true,
+	player_left = true,
+	chat_message = true,
+}
 local playerJoinTimes = {}
 local playerConnections = {}
 local characterConnections = {}
@@ -123,6 +128,15 @@ local function trimChatMessage(message)
 	return text
 end
 
+local function getPlayerSessionId(player, fallbackAt)
+	if not player then
+		return game.JobId
+	end
+
+	local joinedAt = playerJoinTimes[player.UserId] or fallbackAt or os.time()
+	return game.JobId .. ":" .. tostring(player.UserId) .. ":" .. tostring(joinedAt)
+end
+
 local function queueChatLog(player, message)
 	local text = trimChatMessage(message)
 	if text == "" then
@@ -137,13 +151,15 @@ local function queueChatLog(player, message)
 	end
 
 	chatLogCounter += 1
+	local sentAt = os.time()
 	local chatLog = {
 		id = game.JobId .. ":" .. tostring(chatLogCounter),
 		userId = player.UserId,
 		username = player.Name,
 		displayName = player.DisplayName,
+		sessionId = getPlayerSessionId(player, sentAt),
 		message = text,
-		sentAt = os.time(),
+		sentAt = sentAt,
 	}
 
 	if position then
@@ -250,15 +266,17 @@ local function queueDeathSample(player, character)
 
 	lastPlayerPositions[player.UserId] = position
 	deathSampleCounter += 1
+	local diedAt = os.time()
 	table.insert(pendingDeathSamples, {
 		id = game.JobId .. ":death:" .. tostring(deathSampleCounter),
 		userId = player.UserId,
 		username = player.Name,
 		displayName = player.DisplayName,
+		sessionId = getPlayerSessionId(player, diedAt),
 		x = roundPosition(position.X),
 		y = roundPosition(position.Y),
 		z = roundPosition(position.Z),
-		diedAt = os.time(),
+		diedAt = diedAt,
 	})
 
 	while #pendingDeathSamples > getMaxPendingDeathSamples() do
@@ -278,15 +296,17 @@ local function queueLeaveSample(player)
 
 	leaveSampledUserIds[player.UserId] = true
 	leaveSampleCounter += 1
+	local leftAt = os.time()
 	table.insert(pendingLeaveSamples, {
 		id = game.JobId .. ":leave:" .. tostring(leaveSampleCounter),
 		userId = player.UserId,
 		username = player.Name,
 		displayName = player.DisplayName,
+		sessionId = getPlayerSessionId(player, leftAt),
 		x = roundPosition(position.X),
 		y = roundPosition(position.Y),
 		z = roundPosition(position.Z),
-		leftAt = os.time(),
+		leftAt = leftAt,
 	})
 
 	while #pendingLeaveSamples > getMaxPendingLeaveSamples() do
@@ -447,6 +467,10 @@ function Methods.Log(eventName, info, player)
 		debugWarn("Rejected custom event with invalid name:", eventName)
 		return false
 	end
+	if SYSTEM_EVENT_NAMES[normalizedName] then
+		debugWarn("Rejected reserved system event name:", normalizedName)
+		return false
+	end
 	if player ~= nil and (typeof(player) ~= "Instance" or not player:IsA("Player")) then
 		debugWarn("Rejected custom event with invalid player:", normalizedName)
 		return false
@@ -471,7 +495,7 @@ function Methods.Log(eventName, info, player)
 		userId = player and player.UserId or nil,
 		username = player and player.Name or nil,
 		displayName = player and player.DisplayName or nil,
-		sessionId = player and (game.JobId .. ":" .. tostring(player.UserId) .. ":" .. tostring(playerJoinTimes[player.UserId] or occurredAt)) or game.JobId,
+		sessionId = getPlayerSessionId(player, occurredAt),
 		occurredAt = occurredAt,
 		properties = properties,
 		propertiesTruncated = propertiesTruncated or nil,

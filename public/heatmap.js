@@ -17,6 +17,9 @@ const sampleCount = document.querySelector("#movementSampleCount");
 const statusLine = document.querySelector("#movementHeatmapStatus");
 const mapPartCountBox = document.querySelector("#mapPartCountBox");
 const mapPartCountValue = document.querySelector("#mapPartCountValue");
+const mapAreaBreakdown = document.querySelector("#mapAreaBreakdown");
+const mapAreaBreakdownTitle = document.querySelector("#mapAreaBreakdownTitle");
+const mapAreaBreakdownList = document.querySelector("#mapAreaBreakdownList");
 const emptyState = document.querySelector("#heatmapEmptyState");
 const emptyMessage = document.querySelector("#heatmapEmptyMessage");
 const heatmapLegend = document.querySelector(".heatmapLegend");
@@ -259,12 +262,13 @@ if (canvas) {
   });
   window.addEventListener("dashboard:chatLogSelected", (event) => {
     const id = event.detail?.id || "";
-    if (activeHeatmapMode !== "chat") {
-      setHeatmapMode("chat", { selectedChatLogId: id });
-      return;
-    }
-
-    selectChatLogOnMap(id, { notifyList: false });
+    selectedChatLogId = id;
+    selectedTrackedEventName = event.detail?.eventName || "chat_message";
+    syncEventSelect();
+    setHeatmapMode("events", {
+      focusArea: event.detail?.area || null,
+      forcePoints: true,
+    });
   });
   window.addEventListener("dashboard:aiAreaAnalysisUpdated", (event) => {
     if (event.detail?.analysis) {
@@ -829,6 +833,7 @@ function renderEventDropdownOption(event) {
   const locationCount = Math.max(Number(event?.locationCount) || 0, 0);
   const trackedCount = Math.max(Number(event?.count) || 0, 0);
   const selected = name === selectedTrackedEventName;
+  const sourceLabel = event?.sourceType === "system" ? "System event" : "Custom event";
   const detail = locationCount > 0
     ? `${locationCount.toLocaleString()} mapped location${locationCount === 1 ? "" : "s"}`
     : `${trackedCount.toLocaleString()} tracked - no positions`;
@@ -836,7 +841,7 @@ function renderEventDropdownOption(event) {
     <button class="heatmapEventOption" type="button" role="option" tabindex="-1" data-event-map-option="${escapeHtml(name)}" aria-selected="${selected ? "true" : "false"}">
       <span>
         <strong>${escapeHtml(formatTrackedEventName(name))}</strong>
-        <small>${escapeHtml(detail)}</small>
+        <small>${escapeHtml(`${sourceLabel} · ${detail}`)}</small>
       </span>
       <i aria-hidden="true">&#10003;</i>
     </button>
@@ -1435,6 +1440,11 @@ function syncMapOverlayVisibility(isEmpty = false) {
   if (heatmapLegend) heatmapLegend.hidden = Boolean(isEmpty) || activeRenderMode !== "heatmap";
   if (heatmapOverlay) heatmapOverlay.hidden = Boolean(isEmpty);
   if (mapPartCountBox) mapPartCountBox.hidden = Boolean(isEmpty);
+  if (mapAreaBreakdown && (
+    isEmpty
+    || activeRenderMode !== "points"
+    || (activeHeatmapMode !== "events" && activeHeatmapMode !== "funnels")
+  )) mapAreaBreakdown.hidden = true;
 }
 
 function updateMapPartCount(snapshot) {
@@ -1457,7 +1467,7 @@ function getEmptyHeatmapStatus(modeText, suffix = "") {
   if (activeHeatmapMode === "chat") return `No chat samples yet. Chat heatmaps appear after players send messages in a tracked server.${suffix}`;
   if (activeHeatmapMode === "events") {
     const eventLabel = formatTrackedEventName(selectedTrackedEventName);
-    return `No mapped ${eventLabel} samples in this range. Log the custom event with x, y, and z to place it on the map.${suffix}`;
+    return `No mapped ${eventLabel} samples in this range. Events appear here when their records include x, y, and z coordinates.${suffix}`;
   }
   if (activeHeatmapMode === "funnels") {
     const step = getSelectedMapFunnelStep();
@@ -1723,6 +1733,7 @@ function setHeatmapMode(mode, options = {}) {
   const requestedMode = ["ai-analysis", "movement", "deaths", "leaves", "chat", "events", "funnels"].includes(mode) ? mode : "ai-analysis";
   if (requestedMode === "funnels" && (!selectedMapFunnelId || !selectedMapFunnelStep)) return Promise.resolve(null);
   activeHeatmapMode = requestedMode;
+  if (mapAreaBreakdown) mapAreaBreakdown.hidden = true;
   if (activeHeatmapMode !== "events") closeEventDropdown();
   if (activeHeatmapMode !== "funnels") closeFunnelDropdown();
   if (options.selectedChatLogId) {
@@ -1933,6 +1944,7 @@ function renderScene(samples, mapSnapshot, options = {}) {
 
   const entries = getSampleEntries(samples, mapSnapshot, options);
   latestEntries = entries;
+  syncMapAreaBreakdown(entries);
   if (!previousSelectedAiAreaId) {
     hideAiAreaCard();
   }
@@ -2119,6 +2131,7 @@ function getSignalAreaEntries(samples, mode) {
     cluster.densityScore = getSignalAreaDensityScore(cluster, samples, radius);
   }
 
+  const totalCount = clusters.reduce((sum, cluster) => sum + Math.max(Number(cluster.count) || 0, 0), 0);
   const topClusters = clusters
     .sort((a, b) => (b.densityScore - a.densityScore) || (b.count - a.count))
     .slice(0, 5);
@@ -2130,6 +2143,7 @@ function getSignalAreaEntries(samples, mode) {
     id: `${mode}-area-${index + 1}`,
     label: `${labelPrefix} ${index + 1}`,
     rank: index + 1,
+    percent: totalCount > 0 ? (Math.max(Number(area.count) || 0, 0) / totalCount) * 100 : 0,
     score: clamp((area.densityScore || area.count) / maxScore, 0.12, 1),
     signalMode: mode,
   }));
@@ -2351,7 +2365,9 @@ function createSignalAreaMarker(entry, mode) {
   }
   group.add(core);
 
-  const badge = createNumberSprite(String(entry.rank || 1), color);
+  const badge = mode === "events" || mode === "funnels"
+    ? createAreaPercentageSprite(entry.rank || 1, entry.percent, color)
+    : createNumberSprite(String(entry.rank || 1), color);
   badge.position.y = isMovement ? 23 : 24;
   group.add(badge);
 
@@ -2362,7 +2378,7 @@ function getSignalAreaGroupName(mode) {
   if (mode === "movement") return "MovementAreaMarkers";
   if (mode === "deaths") return "DeathAreaMarkers";
   if (mode === "chat") return "ChatAreaMarkers";
-  if (mode === "events") return "CustomEventAreaMarkers";
+  if (mode === "events") return "EventAreaMarkers";
   if (mode === "funnels") return "FunnelAreaMarkers";
   return "DropOffAreaMarkers";
 }
@@ -2496,6 +2512,70 @@ function createNumberSprite(text, color) {
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(28, 28, 1);
   return sprite;
+}
+
+function createAreaPercentageSprite(rank, percent, color) {
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 240;
+  labelCanvas.height = 96;
+  const context = labelCanvas.getContext("2d");
+  const fill = `rgb(${color.r}, ${color.g}, ${color.b})`;
+  context.shadowColor = fill;
+  context.shadowBlur = 18;
+  context.fillStyle = fill;
+  context.beginPath();
+  context.roundRect(10, 12, 220, 72, 36);
+  context.fill();
+  context.shadowBlur = 0;
+  context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  context.lineWidth = 6;
+  context.stroke();
+  context.fillStyle = "#f5f7fb";
+  context.font = "900 36px Inter, Segoe UI, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(`${rank} · ${formatAreaPercentage(percent)}`, 120, 49);
+
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(58, 23, 1);
+  return sprite;
+}
+
+function syncMapAreaBreakdown(entries) {
+  if (!mapAreaBreakdown || !mapAreaBreakdownList) return;
+  const shouldShow = activeRenderMode === "points"
+    && (activeHeatmapMode === "events" || activeHeatmapMode === "funnels")
+    && entries.length > 0;
+  mapAreaBreakdown.hidden = !shouldShow;
+  if (!shouldShow) {
+    mapAreaBreakdownList.innerHTML = "";
+    return;
+  }
+
+  const isFunnel = activeHeatmapMode === "funnels";
+  const title = isFunnel
+    ? `${formatTrackedEventName(getSelectedMapFunnelStep()?.eventName || "Funnel step")} areas`
+    : `${formatTrackedEventName(selectedTrackedEventName)} areas`;
+  if (mapAreaBreakdownTitle) mapAreaBreakdownTitle.textContent = title;
+  mapAreaBreakdownList.innerHTML = entries.map((entry) => `
+    <li>
+      <b>${entry.rank || 1}</b>
+      <span><strong>${escapeHtml(entry.label || `Area ${entry.rank || 1}`)}</strong><small>${formatMapNumber(entry.count)} mapped ${isFunnel ? "sessions" : "events"}</small></span>
+      <em>${formatAreaPercentage(entry.percent)}</em>
+    </li>
+  `).join("");
+}
+
+function formatAreaPercentage(value) {
+  const percent = Math.max(0, Math.min(100, Number(value) || 0));
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(percent)}%`;
 }
 
 function updateAiAreaHover(event) {
