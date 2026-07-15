@@ -378,6 +378,13 @@ function addEventSample(target, event, timestampField) {
     x,
     y,
     z,
+    ...(timestampField === "leftAt"
+      && event.sessionDurationSeconds !== null
+      && event.sessionDurationSeconds !== undefined
+      && event.sessionDurationSeconds !== ""
+      && cleanFiniteNumberOrNull(event.sessionDurationSeconds) !== null
+      ? { sessionDurationSeconds: Math.max(0, cleanFiniteNumberOrNull(event.sessionDurationSeconds)) }
+      : {}),
     [timestampField]: cleanTimestamp(event[timestampField]) || cleanTimestamp(event.sampledAt) || cleanTimestamp(event.receivedAt),
     sampledAt: cleanTimestamp(event.sampledAt) || cleanTimestamp(event[timestampField]) || cleanTimestamp(event.receivedAt),
     receivedAt: cleanTimestamp(event.receivedAt),

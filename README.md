@@ -129,9 +129,13 @@ The event is included in the existing batched heartbeat and appears automaticall
 
 Authenticated projects can verify release tagging with `GET /api/version-health?universeId={id}`. It reports production coverage, unversioned history, studio observations, the latest production version per place, and counts for every observed version.
 
-Open **Releases** to inspect the automatic release cohorts returned by `GET /api/releases?universeId={id}`. For each place, the immediately previous production `PlaceVersion` is the before cohort and the exact release `PlaceVersion` is the after cohort. Studio data is excluded, old and new live servers remain separated even when they overlap, and the UI waits for at least 20 sessions on both sides before marking a release ready to compare. This step establishes trustworthy cohorts and sample readiness; metric deltas and regression findings are the next layer.
+Open **Releases** to inspect the automatic release cohorts returned by `GET /api/releases?universeId={id}`. For each place, the immediately previous production `PlaceVersion` is the before cohort and the exact release `PlaceVersion` is the after cohort. Studio data is excluded, old and new live servers remain separated even when they overlap, and the UI waits for at least 20 sessions on both sides before marking a release ready to compare.
 
-The generated demo universe includes production versions `120` and `121`. On **Releases**, version `121` appears as current with version `120` as its baseline, so the version workflow can be reviewed without publishing a Roblox experience.
+Ready releases compare death-session rate, completed-purchase session rate, custom events per player, median session duration, every saved funnel, top event rates, and leave-area distribution. Rate findings use a 95% two-proportion test plus practical effect and affected-session minimums. Median and event-rate findings are explicitly labeled directional because the dashboard does not pretend those threshold checks are full distribution tests. Every finding shows its before/after sample sizes, and no OpenAI call is used to create the diagnosis.
+
+Completed-purchase tracking recognizes stable success names such as `item_purchased`, `product_purchased`, `gamepass_purchased`, `purchase_completed`, and `checkout_completed`. Prompt, started, cancelled, failed, and refunded events are intentionally not counted as purchases.
+
+The generated demo universe includes production versions `120` and `121`. On **Releases**, version `121` appears as current with version `120` as its baseline and contains deliberate onboarding, session-duration, boss-funnel, and purchase changes so the regression workflow can be reviewed without publishing a Roblox experience.
 
 ## Website Funnels
 

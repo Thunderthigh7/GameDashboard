@@ -39,7 +39,7 @@ This folder is synced by `default.project.json` and is not used by the website s
 The service records these events automatically, with the same player session ID used by custom events:
 
 - `player_died` when a tracked Humanoid dies
-- `player_left` when a player leaves or the server shuts down
+- `player_left` when a player leaves or the server shuts down; it includes the server-measured session duration
 - `chat_message` when `Player.Chatted` fires
 
 They appear in the dashboard's **Events** page, the map's **Events** mode, and funnel step selectors. Do not call `Logger.Log` for them; their names are reserved so they cannot be duplicated or replaced by custom events.
@@ -73,6 +73,8 @@ To keep analytics payloads bounded, one event accepts up to 20 property paths, 3
 The heartbeat automatically includes `game.PlaceVersion` and marks the batch as `production` or `studio`. Every event inherits that release context along with its universe, place, server, event time, player, player session, and current character position. Pass the `Player` as the third argument so the event can participate in player funnels later.
 
 Version-aware history starts after this service update is published. Older stored analytics remain explicitly `unversioned`; the server does not guess which release produced them.
+
+Release purchase-rate comparisons recognize completed purchase names such as `item_purchased`, `product_purchased`, `gamepass_purchased`, `purchase_completed`, and `checkout_completed`. Log prompts and failures with separate names; they are useful funnel steps but are not counted as completed purchases.
 
 Server-wide events may omit the player:
 

@@ -299,6 +299,7 @@ local function queueLeaveSample(player)
 	leaveSampledUserIds[player.UserId] = true
 	leaveSampleCounter += 1
 	local leftAt = os.time()
+	local joinedAt = playerJoinTimes[player.UserId] or leftAt
 	table.insert(pendingLeaveSamples, {
 		id = game.JobId .. ":leave:" .. tostring(leaveSampleCounter),
 		userId = player.UserId,
@@ -308,6 +309,7 @@ local function queueLeaveSample(player)
 		x = roundPosition(position.X),
 		y = roundPosition(position.Y),
 		z = roundPosition(position.Z),
+		sessionDurationSeconds = math.max(0, leftAt - joinedAt),
 		leftAt = leftAt,
 	})
 

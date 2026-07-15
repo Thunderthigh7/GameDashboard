@@ -5594,6 +5594,434 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   line-height: 1.5;
 }
 
+.releaseAnalysis {
+  border-top: 1px solid var(--line);
+  background: rgba(5, 10, 22, 0.38);
+}
+
+.releaseAnalysisSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 15px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.releaseAnalysisSummary::-webkit-details-marker {
+  display: none;
+}
+
+.releaseAnalysisSummary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.releaseAnalysis[open] > .releaseAnalysisSummary::after {
+  transform: rotate(225deg);
+}
+
+.releaseAnalysisSummary > div,
+.releaseAnalysisSummary > div:first-child > span:last-child,
+.releaseAnalysisSection > header > div,
+.releaseImpactMetricTitle {
+  display: grid;
+  gap: 2px;
+}
+
+.releaseAnalysisSummary > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.releaseAnalysisSummary strong,
+.releaseAnalysisSection > header strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.releaseAnalysisSummary small,
+.releaseAnalysisSection > header span,
+.releaseAnalysisSection > header small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.releaseAnalysisIcon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(124, 60, 255, 0.4);
+  border-radius: 8px;
+  background: rgba(124, 60, 255, 0.12);
+  color: #c9b2ff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.releaseFindingCounts {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px !important;
+  margin-left: auto;
+}
+
+.releaseFindingCounts span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.releaseFindingCounts .regression {
+  border-color: rgba(244, 89, 103, 0.4);
+  background: rgba(244, 89, 103, 0.1);
+  color: #ffabb4;
+}
+
+.releaseFindingCounts .improvement {
+  border-color: rgba(53, 208, 131, 0.4);
+  background: rgba(53, 208, 131, 0.1);
+  color: #91ecc0;
+}
+
+.releaseFindingCounts .deterministic {
+  border-color: rgba(84, 150, 255, 0.38);
+  background: rgba(84, 150, 255, 0.1);
+  color: #a8caff;
+}
+
+.releaseFindingCounts .partial {
+  border-color: rgba(245, 184, 70, 0.38);
+  background: rgba(245, 184, 70, 0.1);
+  color: #f8cf78;
+}
+
+.releaseAnalysisBody {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 14px;
+}
+
+.releaseAnalysisSection {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(80, 99, 150, 0.28);
+  border-radius: 10px;
+  background: rgba(10, 17, 34, 0.6);
+  padding: 12px;
+}
+
+.releaseAnalysisSection > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.releaseAnalysisSection > header b {
+  color: var(--nav-text);
+}
+
+.releaseImpactMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.releaseImpactMetric {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(7, 13, 27, 0.65);
+  padding: 11px;
+}
+
+.releaseImpactMetric.regression {
+  border-color: rgba(244, 89, 103, 0.34);
+}
+
+.releaseImpactMetric.improvement {
+  border-color: rgba(53, 208, 131, 0.32);
+}
+
+.releaseImpactMetric.contextual {
+  border-color: rgba(84, 150, 255, 0.34);
+}
+
+.releaseImpactMetricTitle strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.releaseImpactMetricTitle span {
+  min-height: 29px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.releaseImpactValues {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 6px;
+}
+
+.releaseImpactValues > span {
+  display: grid;
+  gap: 2px;
+}
+
+.releaseImpactValues > span:last-child {
+  text-align: right;
+}
+
+.releaseImpactValues small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.releaseImpactValues strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.releaseImpactValues i {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.releaseImpactDelta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(80, 99, 150, 0.24);
+  padding-top: 8px;
+}
+
+.releaseImpactDelta strong,
+.releaseComparisonTableRow .releaseTableDelta {
+  color: var(--nav-text);
+  font-size: 11px;
+}
+
+.releaseImpactMetric.regression .releaseImpactDelta strong,
+.releaseComparisonTableRow.regression .releaseTableDelta {
+  color: #ff9ca7;
+}
+
+.releaseImpactMetric.improvement .releaseImpactDelta strong,
+.releaseComparisonTableRow.improvement .releaseTableDelta {
+  color: #79e3aa;
+}
+
+.releaseImpactMetric.contextual .releaseImpactDelta strong,
+.releaseComparisonTableRow.contextual .releaseTableDelta {
+  color: #91bfff;
+}
+
+.releaseImpactDelta span {
+  color: var(--muted);
+  font-size: 8px;
+  text-align: right;
+}
+
+.releaseFindingList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.releaseFinding {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(7, 13, 27, 0.62);
+  padding: 10px;
+}
+
+.releaseFinding.regression {
+  border-color: rgba(244, 89, 103, 0.34);
+}
+
+.releaseFinding.improvement {
+  border-color: rgba(53, 208, 131, 0.32);
+}
+
+.releaseFinding.observation {
+  border-color: rgba(84, 150, 255, 0.32);
+}
+
+.releaseFindingMark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(120, 134, 177, 0.12);
+  color: var(--nav-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.releaseFinding.regression .releaseFindingMark {
+  background: rgba(244, 89, 103, 0.13);
+  color: #ffabb4;
+}
+
+.releaseFinding.improvement .releaseFindingMark {
+  background: rgba(53, 208, 131, 0.12);
+  color: #85e8b3;
+}
+
+.releaseFinding.observation .releaseFindingMark {
+  background: rgba(84, 150, 255, 0.12);
+  color: #9fc6ff;
+}
+
+.releaseFinding > div,
+.releaseFinding header {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.releaseFinding header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.releaseFinding header strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.releaseFinding header span {
+  border-radius: 999px;
+  background: rgba(105, 120, 164, 0.12);
+  color: var(--muted);
+  padding: 3px 6px;
+  font-size: 8px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.releaseFinding p {
+  color: var(--nav-text);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.releaseFinding > div > small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.releaseNoFinding {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  padding: 16px;
+  text-align: center;
+}
+
+.releaseNoFinding strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.releaseNoFinding p {
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.releaseComparisonTable {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(80, 99, 150, 0.25);
+  border-radius: 8px;
+}
+
+.releaseComparisonTableHeader,
+.releaseComparisonTableRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) repeat(3, minmax(72px, 0.6fr)) minmax(90px, 0.7fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.releaseComparisonTableHeader {
+  background: rgba(19, 29, 54, 0.66);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.releaseComparisonTableRow {
+  border-top: 1px solid rgba(80, 99, 150, 0.2);
+  color: var(--nav-text);
+  font-size: 10px;
+}
+
+.releaseComparisonTableRow > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseComparisonTableRow > small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.releaseCodeLabel {
+  color: #c6b2f9 !important;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-weight: 700;
+}
+
+.releaseMethodNote {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 body[data-active-view="funnels"] .topbar > div:first-child {
   flex: 1 1 310px;
 }
@@ -7189,6 +7617,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .releaseRecordGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .releaseImpactMetricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -7256,6 +7688,35 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .releaseCohortCard.isMissing {
     min-height: 180px;
   }
+
+  .releaseAnalysisSummary,
+  .releaseAnalysisSection > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .releaseFindingCounts {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .releaseFindingList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .releaseComparisonTableHeader {
+    display: none;
+  }
+
+  .releaseComparisonTableRow {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .releaseComparisonTableRow > strong {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
 }
 
 @media (max-width: 520px) {
@@ -7270,5 +7731,21 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .releaseHeaderBadges {
     justify-content: flex-start;
+  }
+
+  .releaseImpactMetricGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .releaseAnalysisBody {
+    padding: 10px;
+  }
+
+  .releaseComparisonTableRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .releaseFinding header {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

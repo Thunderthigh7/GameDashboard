@@ -15,6 +15,7 @@ import {
   getDemoAiReportSummary,
 } from "./lib/demo-universe.mjs";
 import { calculateFunnelAnalytics, calculateFunnelMapSamples, groupCustomEventsBySession } from "./lib/funnels.mjs";
+import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -613,12 +614,12 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/releases" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getReleaseCohortsFromQuery(url.searchParams));
+      if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getReleaseCohortsFromQuery(auth.userId, url.searchParams));
       return sendJson(res, 200, await getCachedAnalyticsResponse(
         auth.userId,
         "release-cohorts",
         url.searchParams,
-        () => getReleaseCohortsFromQuery(url.searchParams),
+        () => getReleaseCohortsFromQuery(auth.userId, url.searchParams),
       ));
     }
 
@@ -2970,6 +2971,7 @@ function normalizeLeaveSamples(value, context) {
       x: cleanFiniteNumber(entry?.x),
       y: cleanFiniteNumber(entry?.y),
       z: cleanFiniteNumber(entry?.z),
+      sessionDurationSeconds: normalizeSessionDurationSeconds(entry?.sessionDurationSeconds),
       leftAt: cleanTimestampMs(entry?.leftAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
       sampledAt: cleanTimestampMs(entry?.leftAt) || cleanTimestampMs(entry?.sampledAt) || context.receivedAt,
       receivedAt: context.receivedAt,
@@ -2981,6 +2983,13 @@ function normalizeLeaveSamples(value, context) {
     && Number.isFinite(entry.y)
     && Number.isFinite(entry.z)
   ));
+}
+
+function normalizeSessionDurationSeconds(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration < 0) return null;
+  return Math.round(duration * 100) / 100;
 }
 
 function saveMovementSamples(presence) {
@@ -4613,7 +4622,11 @@ async function getAnalyticsEventRecords(filters = {}) {
   const eventsById = new Map();
   const rollup = await getObjectStorageRollup(universeId);
 
-  for (const event of rollup?.customEvents?.samples || []) {
+  for (const event of getAnalyticsRollupSamples(
+    rollup,
+    (source) => source?.customEvents?.samples,
+    Boolean(filters.includeVersionRollups),
+  )) {
     const id = cleanString(event?.id, 180);
     if (id) eventsById.set(id, event);
   }
@@ -4635,15 +4648,27 @@ async function getAnalyticsEventRecords(filters = {}) {
   }).map((event) => ({ ...event, sourceType: "custom" }));
 
   const systemFilters = { universeId, fromMs, toMs };
-  const deathSamples = rollup
-    ? getCombinedDeathSamples(rollup, systemFilters)
-    : getDeathSamplesForFilters(systemFilters);
-  const leaveSamples = rollup
-    ? getCombinedLeaveSamples(rollup, systemFilters)
-    : getLeaveSamplesForFilters(systemFilters);
-  const chatLogs = rollup
-    ? getCombinedChatLogs(rollup, systemFilters)
-    : getChatLogs(systemFilters).logs;
+  const deathSamples = getAnalyticsEventSignalSamples(
+    rollup,
+    systemFilters,
+    (source) => source?.deaths?.samples,
+    getDeathSamplesForFilters,
+    Boolean(filters.includeVersionRollups),
+  );
+  const leaveSamples = getAnalyticsEventSignalSamples(
+    rollup,
+    systemFilters,
+    (source) => source?.leaves?.samples,
+    getLeaveSamplesForFilters,
+    Boolean(filters.includeVersionRollups),
+  );
+  const chatLogs = getAnalyticsEventSignalSamples(
+    rollup,
+    systemFilters,
+    (source) => source?.chatLogs,
+    (activeFilters) => getChatLogs(activeFilters).logs,
+    Boolean(filters.includeVersionRollups),
+  );
   const samplesByType = { death: deathSamples, leave: leaveSamples, chat: chatLogs };
   const systemEvents = SYSTEM_ANALYTICS_EVENT_DEFINITIONS.flatMap((definition) => (
     samplesByType[definition.type].map((sample) => createSystemAnalyticsEvent(sample, definition))
@@ -4655,6 +4680,27 @@ async function getAnalyticsEventRecords(filters = {}) {
   };
 }
 
+function getAnalyticsEventSignalSamples(rollup, filters, sampleSelector, runtimeLoader, includeVersionRollups) {
+  const runtimeSamples = runtimeLoader(filters);
+  if (!rollup) return runtimeSamples;
+  const storedSamples = getRollupSamplesForFilters(
+    getAnalyticsRollupSamples(rollup, sampleSelector, includeVersionRollups),
+    filters,
+  );
+  return mergeAnalyticsSamples(storedSamples, runtimeSamples);
+}
+
+function getAnalyticsRollupSamples(rollup, sampleSelector, includeVersionRollups = false) {
+  if (!rollup) return [];
+  const samples = [...(sampleSelector(rollup) || [])];
+  if (includeVersionRollups) {
+    for (const versionRollup of rollup.versions || []) {
+      samples.push(...(sampleSelector(versionRollup) || []));
+    }
+  }
+  return mergeAnalyticsSamples(samples, []);
+}
+
 function createSystemAnalyticsEvent(sample, definition) {
   const occurredAt = cleanTimestampMs(sample?.[definition.timestampField])
     || cleanTimestampMs(sample?.sampledAt)
@@ -4663,6 +4709,9 @@ function createSystemAnalyticsEvent(sample, definition) {
   const userId = cleanInteger(sample?.userId) || null;
   const rawId = cleanString(sample?.id, 180)
     || `${jobId}:${userId || "server"}:${occurredAt}`;
+  const sessionDurationSeconds = definition.type === "leave"
+    ? normalizeSessionDurationSeconds(sample?.sessionDurationSeconds)
+    : null;
   return {
     id: `system:${definition.type}:${rawId}`,
     universeId: cleanInteger(sample?.universeId),
@@ -4676,7 +4725,7 @@ function createSystemAnalyticsEvent(sample, definition) {
     displayName: cleanString(sample?.displayName, 64),
     sessionId: cleanString(sample?.sessionId, 180) || (userId ? `${jobId}:${userId}` : jobId),
     value: null,
-    properties: {},
+    properties: sessionDurationSeconds === null ? {} : { sessionDurationSeconds },
     propertiesTruncated: false,
     x: getSystemEventCoordinate(sample?.x),
     y: getSystemEventCoordinate(sample?.y),
@@ -4685,6 +4734,7 @@ function createSystemAnalyticsEvent(sample, definition) {
     receivedAt: cleanTimestampMs(sample?.receivedAt) || occurredAt,
     sourceType: "system",
     systemEventType: definition.type,
+    sessionDurationSeconds,
     message: definition.type === "chat" ? cleanString(sample?.message, 500) : "",
   };
 }
@@ -5625,8 +5675,13 @@ async function getVersionHealthFromQuery(searchParams) {
   };
 }
 
-async function getReleaseCohortsFromQuery(searchParams) {
-  const health = await getVersionHealthFromQuery(searchParams);
+async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const [health, funnelDefinitions, eventRecords] = await Promise.all([
+    getVersionHealthFromQuery(searchParams),
+    readFunnelDefinitions(ownerUserId, universeId),
+    getAnalyticsEventRecords({ universeId, includeVersionRollups: true }),
+  ]);
   const productionVersionsByPlace = new Map();
 
   for (const version of health.versions || []) {
@@ -5637,7 +5692,10 @@ async function getReleaseCohortsFromQuery(searchParams) {
   }
 
   const places = [...productionVersionsByPlace.entries()]
-    .map(([placeId, versions]) => buildPlaceReleaseCohorts(placeId, versions))
+    .map(([placeId, versions]) => buildPlaceReleaseCohorts(placeId, versions, {
+      events: eventRecords.events,
+      funnelDefinitions,
+    }))
     .sort((left, right) => (
       right.currentVersion - left.currentVersion
       || right.lastSeenAt - left.lastSeenAt
@@ -5656,6 +5714,13 @@ async function getReleaseCohortsFromQuery(searchParams) {
       studioExcluded: true,
       minimumSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
     },
+    comparisonMethod: {
+      deterministic: true,
+      aiGenerated: false,
+      exactVersionSamples: true,
+      nestedVersionRollupsIncluded: true,
+      metrics: ["death session rate", "purchase session rate", "custom events per player", "median session duration", "saved funnel conversion", "leave-area distribution"],
+    },
     coverage: health.coverage,
     versionRollupsTruncated: health.versionRollupsTruncated,
     droppedVersionCount: health.droppedVersionCount,
@@ -5668,7 +5733,7 @@ async function getReleaseCohortsFromQuery(searchParams) {
   };
 }
 
-function buildPlaceReleaseCohorts(placeId, rawVersions) {
+function buildPlaceReleaseCohorts(placeId, rawVersions, comparisonContext = {}) {
   const versions = [...rawVersions]
     .sort((left, right) => left.placeVersion - right.placeVersion || left.firstSeenAt - right.firstSeenAt);
   const currentVersion = versions.at(-1)?.placeVersion || 0;
@@ -5699,6 +5764,13 @@ function buildPlaceReleaseCohorts(placeId, rawVersions) {
       overlapDurationMs,
       before,
       after,
+      comparison: before ? buildReleaseComparison({
+        placeId,
+        before,
+        after,
+        events: comparisonContext.events,
+        funnelDefinitions: comparisonContext.funnelDefinitions,
+      }) : null,
     };
   }).sort((left, right) => right.placeVersion - left.placeVersion);
 
