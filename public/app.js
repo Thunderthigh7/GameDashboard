@@ -81,6 +81,13 @@ const chatLogList = document.querySelector("#chatLogList");
 const chatMessageCount = document.querySelector("#chatMessageCount");
 const chatPlayerCount = document.querySelector("#chatPlayerCount");
 const chatLiveBadge = document.querySelector("#chatLiveBadge");
+const refreshReleasesButton = document.querySelector("#refreshReleasesButton");
+const releaseStatus = document.querySelector("#releaseStatus");
+const releaseCurrentVersion = document.querySelector("#releaseCurrentVersion");
+const releaseTrackedVersions = document.querySelector("#releaseTrackedVersions");
+const releaseCoverage = document.querySelector("#releaseCoverage");
+const releaseStudioCount = document.querySelector("#releaseStudioCount");
+const releaseCohortList = document.querySelector("#releaseCohortList");
 const refreshEventsButton = document.querySelector("#refreshEventsButton");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventSelect = document.querySelector("#eventSelect");
@@ -185,6 +192,7 @@ let aiAutomationSettingsRequestSequence = 0;
 let usageRequestSequence = 0;
 let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
+let releaseRequestSequence = 0;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
@@ -202,7 +210,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260715-1";
+const DASHBOARD_ASSET_VERSION = "20260715-2";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -222,7 +230,7 @@ window.getDashboardCacheScope = resolveDashboardCacheScope;
 const CHAT_REFRESH_MS = 5000;
 const RECENT_CHAT_LIMIT = 100;
 const FUNNEL_REFRESH_MS = 15000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "releases", "ai-runs", "chat"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -324,6 +332,7 @@ function bindEvents() {
   document.addEventListener("pointerdown", handleUniverseDropdownOutsidePointer);
   window.addEventListener("resize", positionUniverseDropdown);
   window.addEventListener("scroll", positionUniverseDropdown, true);
+  refreshReleasesButton?.addEventListener("click", () => loadReleases({ force: true }));
   refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
   eventSelect?.addEventListener("change", () => {
     selectedCustomEventName = eventSelect.value || "";
@@ -517,6 +526,7 @@ function handleDashboardVisibilityChange() {
       if (activeView === "chat") loadChatLogs({ includeInsights: false });
       if (activeView === "events") loadCustomEvents();
       if (activeView === "funnels") loadFunnels();
+      if (activeView === "releases") loadReleases();
     }
   }
 
@@ -670,6 +680,7 @@ function abortActiveDashboardRequests() {
   usageRequestSequence += 1;
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
+  releaseRequestSequence += 1;
   customEventsRequestSequence += 1;
   funnelRequestSequence += 1;
   aiReportPayloadCache.clear();
@@ -789,6 +800,7 @@ function notifyAnalyticsReady() {
 function getViewFromHash() {
   if (window.location.hash === "#events") return "events";
   if (window.location.hash === "#funnels") return "funnels";
+  if (window.location.hash === "#releases") return "releases";
   if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#usage") return "usage";
@@ -798,7 +810,7 @@ function getViewFromHash() {
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "releases" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (activeView !== "funnels") closeFunnelMoreMenu();
   document.body.dataset.activeView = activeView;
@@ -807,17 +819,19 @@ function setActiveView(view, options = {}) {
         ? "#events"
         : activeView === "funnels"
           ? "#funnels"
-          : activeView === "ai-runs"
-            ? "#ai-runs"
-            : activeView === "chat"
-              ? "#chat"
-              : activeView === "usage"
-                ? "#usage"
-                : activeView === "connect"
-                  ? "#connect"
-                  : activeView === "admin"
-                    ? "#admin"
-                    : "#overview";
+          : activeView === "releases"
+            ? "#releases"
+            : activeView === "ai-runs"
+              ? "#ai-runs"
+              : activeView === "chat"
+                ? "#chat"
+                : activeView === "usage"
+                  ? "#usage"
+                  : activeView === "connect"
+                    ? "#connect"
+                    : activeView === "admin"
+                      ? "#admin"
+                      : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -852,6 +866,10 @@ function renderActiveView(options = {}) {
     funnels: {
       title: "Funnels",
       subtitle: "Understand player progression and conversion across key moments.",
+    },
+    releases: {
+      title: "Releases",
+      subtitle: "Compare exact Roblox PlaceVersions without mixing old and new servers.",
     },
     "ai-runs": {
       title: "AI Runs",
@@ -915,6 +933,8 @@ function loadActiveViewData(view, options = {}) {
       loadCustomEvents();
     } else if (view === "funnels") {
       loadFunnels();
+    } else if (view === "releases") {
+      loadReleases();
     } else if (view === "chat") {
       loadChatLogs({ includeInsights: true });
     }
@@ -926,6 +946,8 @@ function loadActiveViewData(view, options = {}) {
     loadCustomEvents();
   } else if (view === "funnels") {
     loadFunnels();
+  } else if (view === "releases") {
+    loadReleases();
   } else if (view === "ai-runs") {
     loadAiAutomationSettings();
     loadAiReportHistory();
@@ -2243,6 +2265,187 @@ function selectUniverse(value) {
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
   }));
+}
+
+async function loadReleases(options = {}) {
+  if (!authenticated || !releaseStatus || !releaseCohortList) return false;
+  const requestSequence = ++releaseRequestSequence;
+  const universeId = selectedUniverseId;
+
+  if (!universeId) {
+    renderReleases({ places: [], coverage: {} });
+    releaseStatus.textContent = "Connect or select a Roblox game to inspect releases.";
+    return false;
+  }
+
+  releaseStatus.textContent = "Loading release cohorts...";
+  releaseCohortList.setAttribute("aria-busy", "true");
+  if (refreshReleasesButton) refreshReleasesButton.disabled = true;
+  const params = new URLSearchParams({ universeId });
+  if (options.force) params.set("fresh", "1");
+
+  try {
+    const payload = await request(`/api/releases?${params.toString()}`, { dedupe: !options.force });
+    if (requestSequence !== releaseRequestSequence || universeId !== selectedUniverseId) return false;
+    renderReleases(payload);
+    const releaseCount = Number(payload.releaseCount) || 0;
+    const comparableCount = Number(payload.comparableReleaseCount) || 0;
+    const truncationWarning = payload.versionRollupsTruncated
+      ? ` Older version history was capped; ${formatCompactNumber(payload.droppedVersionCount)} version${Number(payload.droppedVersionCount) === 1 ? "" : "s"} omitted.`
+      : "";
+    releaseStatus.textContent = releaseCount
+      ? `${formatCompactNumber(releaseCount)} production version${releaseCount === 1 ? "" : "s"} tracked. ${formatCompactNumber(comparableCount)} ready to compare.`
+      : "No production PlaceVersions recorded yet.";
+    releaseStatus.textContent += truncationWarning;
+    return true;
+  } catch (error) {
+    if (requestSequence !== releaseRequestSequence) return false;
+    handleAuthError(error);
+    if (authenticated) releaseStatus.textContent = formatRequestError(error);
+    return false;
+  } finally {
+    if (requestSequence === releaseRequestSequence) {
+      releaseCohortList.setAttribute("aria-busy", "false");
+      if (refreshReleasesButton) refreshReleasesButton.disabled = false;
+    }
+  }
+}
+
+function renderReleases(payload = {}) {
+  const places = Array.isArray(payload.places) ? payload.places : [];
+  const coverage = payload.coverage || {};
+  const releaseCount = Number(payload.releaseCount) || places.reduce((total, place) => total + (place.releases?.length || 0), 0);
+  const coveragePercent = coverage.productionVersionCoveragePercent;
+
+  if (releaseCurrentVersion) {
+    releaseCurrentVersion.textContent = places.length === 1
+      ? `v${formatReleaseVersion(places[0].currentVersion)}`
+      : places.length > 1
+        ? `${formatCompactNumber(places.length)} places`
+        : "--";
+  }
+  if (releaseTrackedVersions) releaseTrackedVersions.textContent = formatCompactNumber(releaseCount);
+  if (releaseCoverage) {
+    releaseCoverage.textContent = coveragePercent === null || coveragePercent === undefined
+      ? "--"
+      : `${formatEventNumber(coveragePercent)}%`;
+  }
+  if (releaseStudioCount) releaseStudioCount.textContent = formatCompactNumber(coverage.studioObservations);
+  if (!releaseCohortList) return;
+
+  if (!places.length) {
+    releaseCohortList.innerHTML = `
+      <article class="panel releaseEmptyState">
+        <strong>No production versions yet.</strong>
+        <p>Install the current Roblox analytics script and join a published server. Studio observations stay separate and will not create a release.</p>
+      </article>
+    `;
+    return;
+  }
+
+  releaseCohortList.innerHTML = places.map(renderReleasePlace).join("");
+}
+
+function renderReleasePlace(place = {}) {
+  const releases = Array.isArray(place.releases) ? place.releases : [];
+  return `
+    <article class="panel releasePlaceCard">
+      <header class="releasePlaceHeader">
+        <div>
+          <span>Roblox place</span>
+          <strong>${escapeHtml(String(place.placeId || "Unknown"))}</strong>
+        </div>
+        <p><strong>v${escapeHtml(formatReleaseVersion(place.currentVersion))}</strong> current <span>${escapeHtml(formatCompactNumber(place.versionCount))} version${Number(place.versionCount) === 1 ? "" : "s"} observed</span></p>
+      </header>
+      <div class="releaseTimeline">
+        ${releases.map(renderReleaseComparison).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderReleaseComparison(release = {}) {
+  const allowedReadiness = new Set(["ready", "no_baseline", "collecting_both", "collecting_baseline", "collecting_release"]);
+  const readiness = allowedReadiness.has(release.readiness) ? release.readiness : "collecting_both";
+  const readinessClass = readiness.replaceAll("_", "-");
+  const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
+  const overlapNote = release.serverOverlapDetected
+    ? `<span class="releaseOverlapBadge">Server overlap: ${escapeHtml(formatDuration(release.overlapDurationMs))}</span>`
+    : "";
+
+  return `
+    <article class="releaseComparisonCard ${release.isCurrent ? "isCurrent" : ""}">
+      <header class="releaseComparisonHeader">
+        <div>
+          <span>Release</span>
+          <strong>PlaceVersion ${escapeHtml(formatReleaseVersion(release.placeVersion))}</strong>
+        </div>
+        <div class="releaseHeaderBadges">
+          ${release.isCurrent ? '<span class="releaseCurrentBadge">Current</span>' : ""}
+          ${overlapNote}
+          <span class="releaseReadinessBadge ${readinessClass}">${escapeHtml(release.readinessLabel || "Collecting cohorts")}</span>
+        </div>
+      </header>
+      <div class="releaseCohortComparison">
+        ${renderReleaseCohort(release.before, "Before / baseline", minimumSessions)}
+        <div class="releaseComparisonDivider" aria-hidden="true"><span>vs</span></div>
+        ${renderReleaseCohort(release.after, "After / release", minimumSessions)}
+      </div>
+      <footer class="releaseComparisonFooter">
+        <span>Minimum sample: ${escapeHtml(formatCompactNumber(minimumSessions))} sessions per cohort</span>
+        <span>${readiness === "ready" ? "Cohorts are ready for metric analysis." : "No performance conclusion is shown until both sides are ready."}</span>
+      </footer>
+    </article>
+  `;
+}
+
+function renderReleaseCohort(cohort, label, minimumSessions) {
+  if (!cohort) {
+    return `
+      <section class="releaseCohortCard isMissing">
+        <div class="releaseCohortTitle"><span>${escapeHtml(label)}</span><strong>No previous version</strong></div>
+        <p>This is the first production version RoAnalytics observed for this place, so it has no automatic baseline.</p>
+      </section>
+    `;
+  }
+
+  const sessions = Math.max(Number(cohort.sessionCount) || 0, 0);
+  const progressPercent = Math.min(100, (sessions / minimumSessions) * 100);
+  const records = cohort.records || {};
+  const observedFrom = formatFullDate(cohort.firstSeenAt);
+  const observedTo = formatFullDate(cohort.lastSeenAt);
+  return `
+    <section class="releaseCohortCard ${cohort.meetsMinimumSessions ? "isReady" : "isCollecting"}">
+      <div class="releaseCohortTitle">
+        <span>${escapeHtml(label)}</span>
+        <strong>PlaceVersion ${escapeHtml(formatReleaseVersion(cohort.placeVersion))}</strong>
+      </div>
+      <div class="releaseCohortStats">
+        <div><span>Sessions</span><strong>${escapeHtml(formatCompactNumber(sessions))}</strong></div>
+        <div><span>Records</span><strong>${escapeHtml(formatCompactNumber(cohort.observationCount))}</strong></div>
+      </div>
+      <div class="releaseSampleProgress">
+        <div><span>${cohort.meetsMinimumSessions ? "Sample ready" : `${escapeHtml(formatCompactNumber(Math.max(minimumSessions - sessions, 0)))} sessions needed`}</span><strong>${escapeHtml(formatCompactNumber(sessions))} / ${escapeHtml(formatCompactNumber(minimumSessions))}</strong></div>
+        <span class="releaseSampleTrack"><span style="width: ${progressPercent.toFixed(2)}%"></span></span>
+      </div>
+      <div class="releaseRecordGrid" aria-label="Analytics records in this cohort">
+        ${renderReleaseRecord("Events", records.customEvents)}
+        ${renderReleaseRecord("Deaths", records.deaths)}
+        ${renderReleaseRecord("Leaves", records.leaves)}
+        ${renderReleaseRecord("Chat", records.chatMessages)}
+        ${renderReleaseRecord("Movement", records.movementObservations)}
+      </div>
+      <p class="releaseObservedRange">Observed ${escapeHtml(observedFrom)} to ${escapeHtml(observedTo)}</p>
+    </section>
+  `;
+}
+
+function renderReleaseRecord(label, count) {
+  return `<span><small>${escapeHtml(label)}</small><strong>${escapeHtml(formatCompactNumber(count))}</strong></span>`;
+}
+
+function formatReleaseVersion(value) {
+  return String(Math.max(0, Math.trunc(Number(value) || 0)));
 }
 
 async function loadCustomEvents(options = {}) {

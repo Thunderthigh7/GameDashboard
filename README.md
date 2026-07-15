@@ -127,7 +127,11 @@ Logger.Log("weapon_equipped", {
 
 The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. The logger adds player session, server time, universe, place, `game.PlaceVersion`, production/studio environment, and character position. See `roblox-presence/README.md` for naming, property limits, and server-only requirements.
 
-Authenticated projects can verify release tagging with `GET /api/version-health?universeId={id}`. It reports production coverage, unversioned history, studio observations, the latest production version per place, and counts for every observed version. Existing charts continue to aggregate across versions until release filters are added.
+Authenticated projects can verify release tagging with `GET /api/version-health?universeId={id}`. It reports production coverage, unversioned history, studio observations, the latest production version per place, and counts for every observed version.
+
+Open **Releases** to inspect the automatic release cohorts returned by `GET /api/releases?universeId={id}`. For each place, the immediately previous production `PlaceVersion` is the before cohort and the exact release `PlaceVersion` is the after cohort. Studio data is excluded, old and new live servers remain separated even when they overlap, and the UI waits for at least 20 sessions on both sides before marking a release ready to compare. This step establishes trustworthy cohorts and sample readiness; metric deltas and regression findings are the next layer.
+
+The generated demo universe includes production versions `120` and `121`. On **Releases**, version `121` appears as current with version `120` as its baseline, so the version workflow can be reviewed without publishing a Roblox experience.
 
 ## Website Funnels
 

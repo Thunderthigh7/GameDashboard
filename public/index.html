@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260715-1">
+    <link rel="stylesheet" href="/styles.css?v=20260715-2">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -54,6 +54,16 @@
                   </svg>
                 </span>
                 <span>Funnels</span>
+              </a>
+              <a href="#releases" data-dashboard-view="releases">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <circle cx="6" cy="6" r="2.2" />
+                    <circle cx="18" cy="18" r="2.2" />
+                    <path d="M8.2 6H13a3 3 0 0 1 3 3v7M6 8.2V16a2 2 0 0 0 2 2h7.8" />
+                  </svg>
+                </span>
+                <span>Releases</span>
               </a>
               <a href="#chat" data-dashboard-view="chat">
                 <span class="navIconTile" aria-hidden="true">
@@ -362,6 +372,61 @@
               </div>
             </article>
           </div>
+        </section>
+
+        <section class="viewPage releasesPage" data-view-panel="releases" hidden>
+          <div class="releaseCommandBar">
+            <span class="releaseCommandIcon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2" /><circle cx="18" cy="18" r="2.2" /><path d="M8.2 6H13a3 3 0 0 1 3 3v7M6 8.2V16a2 2 0 0 0 2 2h7.8" /></svg>
+            </span>
+            <div class="releaseCommandCopy">
+              <strong>Automatic release cohorts</strong>
+              <span>Exact Roblox PlaceVersions, separated from Studio sessions.</span>
+            </div>
+            <p class="status releaseStatus" id="releaseStatus" aria-live="polite">Waiting for version data...</p>
+            <button class="releaseRefreshButton" id="refreshReleasesButton" type="button" aria-label="Refresh releases" title="Refresh releases">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8a7 7 0 1 0 1 6M19 4v4h-4" /></svg>
+            </button>
+          </div>
+
+          <section class="releaseSummaryGrid" aria-label="Release tracking summary">
+            <article class="releaseSummaryCard">
+              <span>Current version</span>
+              <strong id="releaseCurrentVersion">--</strong>
+              <small>Latest production version observed</small>
+            </article>
+            <article class="releaseSummaryCard">
+              <span>Tracked versions</span>
+              <strong id="releaseTrackedVersions">0</strong>
+              <small>Exact production cohorts</small>
+            </article>
+            <article class="releaseSummaryCard">
+              <span>Version coverage</span>
+              <strong id="releaseCoverage">--</strong>
+              <small>Analytics records with version metadata</small>
+            </article>
+            <article class="releaseSummaryCard">
+              <span>Studio observations</span>
+              <strong id="releaseStudioCount">0</strong>
+              <small>Excluded from release comparisons</small>
+            </article>
+          </section>
+
+          <article class="panel releaseMethodCard">
+            <span class="releaseMethodIcon" aria-hidden="true">v</span>
+            <div>
+              <strong>How a release is compared</strong>
+              <p>The immediately previous production PlaceVersion is the before cohort. The exact release PlaceVersion is the after cohort, so old Roblox servers cannot leak into the new release.</p>
+            </div>
+            <span class="releaseMinimumLabel">20 sessions per side</span>
+          </article>
+
+          <section class="releaseCohortList" id="releaseCohortList" aria-live="polite" aria-busy="false">
+            <article class="panel releaseEmptyState">
+              <strong>Select a universe to inspect releases.</strong>
+              <p>Production PlaceVersions will appear after analytics reaches a live Roblox server.</p>
+            </article>
+          </section>
         </section>
 
         <section class="viewPage eventsPage" data-view-panel="events" hidden>
@@ -915,6 +980,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260715-1"></script>
+    <script defer src="/app.js?v=20260715-2"></script>
   </body>
 </html>

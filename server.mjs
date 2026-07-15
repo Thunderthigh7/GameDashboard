@@ -72,6 +72,7 @@ const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_HEATMAP_RESPONSE = 5000;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
+const RELEASE_COHORT_MIN_SESSIONS = 20;
 const SYSTEM_ANALYTICS_EVENT_DEFINITIONS = Object.freeze([
   { name: "player_died", type: "death", timestampField: "diedAt" },
   { name: "player_left", type: "leave", timestampField: "leftAt" },
@@ -607,6 +608,17 @@ const server = http.createServer(async (req, res) => {
         "version-health",
         url.searchParams,
         () => getVersionHealthFromQuery(url.searchParams),
+      ));
+    }
+
+    if (url.pathname === "/api/releases" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getReleaseCohortsFromQuery(url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(
+        auth.userId,
+        "release-cohorts",
+        url.searchParams,
+        () => getReleaseCohortsFromQuery(url.searchParams),
       ));
     }
 
@@ -5611,6 +5623,132 @@ async function getVersionHealthFromQuery(searchParams) {
     } : null,
     versions,
   };
+}
+
+async function getReleaseCohortsFromQuery(searchParams) {
+  const health = await getVersionHealthFromQuery(searchParams);
+  const productionVersionsByPlace = new Map();
+
+  for (const version of health.versions || []) {
+    if (version.environment !== "production" || version.placeVersion <= 0 || version.placeId <= 0) continue;
+    const versions = productionVersionsByPlace.get(version.placeId) || [];
+    versions.push(version);
+    productionVersionsByPlace.set(version.placeId, versions);
+  }
+
+  const places = [...productionVersionsByPlace.entries()]
+    .map(([placeId, versions]) => buildPlaceReleaseCohorts(placeId, versions))
+    .sort((left, right) => (
+      right.currentVersion - left.currentVersion
+      || right.lastSeenAt - left.lastSeenAt
+      || left.placeId - right.placeId
+    ));
+  const releases = places.flatMap((place) => place.releases);
+
+  return {
+    universeId: health.universeId,
+    generatedAt: Date.now(),
+    source: health.source,
+    cohortMethod: {
+      type: "exact_place_version",
+      description: "Before uses the immediately previous production PlaceVersion. After uses the release PlaceVersion.",
+      handlesServerOverlap: true,
+      studioExcluded: true,
+      minimumSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
+    },
+    coverage: health.coverage,
+    versionRollupsTruncated: health.versionRollupsTruncated,
+    droppedVersionCount: health.droppedVersionCount,
+    mapSnapshot: health.mapSnapshot,
+    placeCount: places.length,
+    releaseCount: releases.length,
+    comparableReleaseCount: releases.filter((release) => release.readiness === "ready").length,
+    collectingReleaseCount: releases.filter((release) => release.readiness.startsWith("collecting_")).length,
+    places,
+  };
+}
+
+function buildPlaceReleaseCohorts(placeId, rawVersions) {
+  const versions = [...rawVersions]
+    .sort((left, right) => left.placeVersion - right.placeVersion || left.firstSeenAt - right.firstSeenAt);
+  const currentVersion = versions.at(-1)?.placeVersion || 0;
+  const observedFirstSeenTimes = versions
+    .map((version) => cleanInteger(version.firstSeenAt))
+    .filter((timestamp) => timestamp > 0);
+  const releases = versions.map((version, index) => {
+    const previousVersion = index > 0 ? versions[index - 1] : null;
+    const before = previousVersion ? createReleaseCohortSnapshot(previousVersion, "before") : null;
+    const after = createReleaseCohortSnapshot(version, "after");
+    const readiness = getReleaseCohortReadiness(before, after);
+    const overlapDurationMs = previousVersion?.lastSeenAt && version.firstSeenAt
+      ? Math.max(0, previousVersion.lastSeenAt - version.firstSeenAt)
+      : 0;
+
+    return {
+      id: `${placeId}:${version.placeVersion}`,
+      placeId,
+      placeVersion: version.placeVersion,
+      previousPlaceVersion: previousVersion?.placeVersion || null,
+      isCurrent: version.placeVersion === currentVersion,
+      firstObservedAt: version.firstSeenAt,
+      lastObservedAt: version.lastSeenAt,
+      readiness,
+      readinessLabel: getReleaseCohortReadinessLabel(readiness),
+      minimumSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
+      serverOverlapDetected: overlapDurationMs > 0,
+      overlapDurationMs,
+      before,
+      after,
+    };
+  }).sort((left, right) => right.placeVersion - left.placeVersion);
+
+  return {
+    placeId,
+    currentVersion,
+    firstSeenAt: observedFirstSeenTimes.length ? Math.min(...observedFirstSeenTimes) : null,
+    lastSeenAt: Math.max(...versions.map((version) => version.lastSeenAt || 0)),
+    versionCount: versions.length,
+    releases,
+  };
+}
+
+function createReleaseCohortSnapshot(version, role) {
+  const sessionCount = Math.max(cleanInteger(version?.sessionCount), cleanInteger(version?.liveSessionCount));
+  return {
+    role,
+    placeId: cleanInteger(version?.placeId),
+    placeVersion: normalizePlaceVersion(version?.placeVersion),
+    environment: "production",
+    firstSeenAt: cleanInteger(version?.firstSeenAt) || null,
+    lastSeenAt: cleanInteger(version?.lastSeenAt) || null,
+    sessionCount,
+    observationCount: cleanInteger(version?.observationCount),
+    liveObservationCount: cleanInteger(version?.liveObservationCount),
+    meetsMinimumSessions: sessionCount >= RELEASE_COHORT_MIN_SESSIONS,
+    records: {
+      customEvents: cleanInteger(version?.records?.customEvents),
+      chatMessages: cleanInteger(version?.records?.chatMessages),
+      movementObservations: cleanInteger(version?.records?.movementObservations),
+      deaths: cleanInteger(version?.records?.deaths),
+      leaves: cleanInteger(version?.records?.leaves),
+    },
+  };
+}
+
+function getReleaseCohortReadiness(before, after) {
+  if (!before) return "no_baseline";
+  if (!before.meetsMinimumSessions && !after.meetsMinimumSessions) return "collecting_both";
+  if (!before.meetsMinimumSessions) return "collecting_baseline";
+  if (!after.meetsMinimumSessions) return "collecting_release";
+  return "ready";
+}
+
+function getReleaseCohortReadinessLabel(readiness) {
+  if (readiness === "ready") return "Ready to compare";
+  if (readiness === "collecting_both") return "Collecting both cohorts";
+  if (readiness === "collecting_baseline") return "Baseline sample is too small";
+  if (readiness === "collecting_release") return "Collecting release sessions";
+  return "No previous version recorded";
 }
 
 function buildRollupVersionHealth(rollup) {

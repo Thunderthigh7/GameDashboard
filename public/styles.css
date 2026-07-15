@@ -5072,6 +5072,528 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   order: 4;
 }
 
+body[data-active-view="releases"] .topbar > div:first-child {
+  flex: 1 1 410px;
+}
+
+body[data-active-view="releases"] .topbarActions {
+  flex: 0 1 480px;
+}
+
+body[data-active-view="releases"] .topbarFilters .dateDisplayField {
+  display: none;
+}
+
+body[data-active-view="releases"] .topbarUniverseSelector {
+  width: min(100%, 480px);
+  max-width: 480px;
+}
+
+.releasesPage,
+.releaseCohortList,
+.releaseTimeline {
+  display: grid;
+  min-width: 0;
+}
+
+.releasesPage,
+.releaseCohortList {
+  gap: 14px;
+}
+
+.releaseTimeline {
+  gap: 12px;
+}
+
+.releaseCommandBar {
+  display: flex;
+  align-items: center;
+  position: relative;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(13, 22, 44, 0.96), rgba(8, 16, 33, 0.94));
+  padding: 10px;
+}
+
+.releaseCommandIcon,
+.releaseRefreshButton {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.releaseCommandIcon {
+  border-color: rgba(158, 96, 255, 0.5);
+  background: rgba(124, 60, 255, 0.14);
+  color: #b997ff;
+}
+
+.releaseCommandIcon svg,
+.releaseRefreshButton svg {
+  width: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.releaseCommandCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+}
+
+.releaseCommandCopy strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.releaseCommandCopy span,
+.releaseStatus {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.releaseStatus {
+  min-width: 0;
+  margin: 0 4px 0 auto;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseRefreshButton {
+  background: var(--control-bg);
+  color: var(--nav-text);
+  cursor: pointer;
+}
+
+.releaseRefreshButton:hover:not(:disabled),
+.releaseRefreshButton:focus-visible {
+  border-color: rgba(124, 60, 255, 0.72);
+  color: var(--text);
+  outline: none;
+}
+
+.releaseRefreshButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.releaseRefreshButton:active:not(:disabled) svg {
+  transform: rotate(90deg);
+}
+
+.releaseSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.releaseSummaryCard {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(17, 26, 50, 0.9), rgba(9, 16, 32, 0.9));
+  padding: 16px;
+}
+
+.releaseSummaryCard > span,
+.releasePlaceHeader span,
+.releaseComparisonHeader > div:first-child > span,
+.releaseCohortTitle span,
+.releaseCohortStats span,
+.releaseRecordGrid small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.releaseSummaryCard > strong {
+  color: var(--text);
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.releaseSummaryCard small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.releaseMethodCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(145deg, rgba(38, 25, 78, 0.36), rgba(12, 20, 39, 0.86));
+}
+
+.releaseMethodIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(161, 107, 255, 0.48);
+  border-radius: 10px;
+  background: rgba(124, 60, 255, 0.14);
+  color: #c9afff;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.releaseMethodCard > div {
+  min-width: 0;
+}
+
+.releaseMethodCard strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.releaseMethodCard p {
+  max-width: 900px;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.releaseMinimumLabel {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 1px solid rgba(124, 60, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(124, 60, 255, 0.12);
+  color: #cbb7f7;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.releasePlaceCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.releasePlaceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding: 15px 18px;
+}
+
+.releasePlaceHeader > div {
+  display: grid;
+  gap: 3px;
+}
+
+.releasePlaceHeader > div > strong {
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+.releasePlaceHeader p {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.releasePlaceHeader p > strong {
+  color: #ccb7ff;
+  font-size: 16px;
+}
+
+.releasePlaceHeader p span {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.releaseTimeline {
+  padding: 14px;
+}
+
+.releaseComparisonCard {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(7, 13, 27, 0.54);
+  overflow: hidden;
+}
+
+.releaseComparisonCard.isCurrent {
+  border-color: rgba(124, 60, 255, 0.48);
+  box-shadow: inset 3px 0 0 rgba(124, 60, 255, 0.78);
+}
+
+.releaseComparisonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 13px 15px;
+}
+
+.releaseComparisonHeader > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.releaseComparisonHeader > div:first-child > strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.releaseHeaderBadges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.releaseCurrentBadge,
+.releaseOverlapBadge,
+.releaseReadinessBadge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.releaseCurrentBadge {
+  border-color: rgba(155, 104, 255, 0.48);
+  background: rgba(124, 60, 255, 0.16);
+  color: #cfbaff;
+}
+
+.releaseOverlapBadge {
+  border-color: rgba(61, 157, 255, 0.38);
+  background: rgba(61, 157, 255, 0.1);
+  color: #9dccff;
+}
+
+.releaseReadinessBadge.ready {
+  border-color: rgba(53, 208, 131, 0.42);
+  background: rgba(53, 208, 131, 0.12);
+  color: #8bf0bb;
+}
+
+.releaseReadinessBadge.no-baseline,
+.releaseReadinessBadge.collecting-both,
+.releaseReadinessBadge.collecting-baseline,
+.releaseReadinessBadge.collecting-release {
+  border-color: rgba(245, 184, 70, 0.36);
+  background: rgba(245, 184, 70, 0.1);
+  color: #f8cf78;
+}
+
+.releaseCohortComparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  padding: 14px;
+}
+
+.releaseCohortCard {
+  display: grid;
+  align-content: start;
+  gap: 13px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(14, 22, 42, 0.74);
+  padding: 14px;
+}
+
+.releaseCohortCard.isReady {
+  border-color: rgba(53, 208, 131, 0.3);
+}
+
+.releaseCohortCard.isMissing {
+  place-content: center;
+  min-height: 260px;
+  border-style: dashed;
+  background: rgba(9, 15, 29, 0.45);
+  text-align: center;
+}
+
+.releaseCohortCard.isMissing p {
+  max-width: 360px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.releaseCohortTitle {
+  display: grid;
+  gap: 4px;
+}
+
+.releaseCohortTitle strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.releaseCohortStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.releaseCohortStats > div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(80, 99, 150, 0.28);
+  border-radius: 8px;
+  background: rgba(7, 13, 28, 0.52);
+  padding: 9px 10px;
+}
+
+.releaseCohortStats strong {
+  color: var(--text);
+  font-size: 20px;
+}
+
+.releaseSampleProgress {
+  display: grid;
+  gap: 7px;
+}
+
+.releaseSampleProgress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.releaseSampleProgress > div strong {
+  color: var(--nav-text);
+}
+
+.releaseSampleTrack {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(87, 101, 143, 0.24);
+  overflow: hidden;
+}
+
+.releaseSampleTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7840e7, #37cf87);
+}
+
+.releaseRecordGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.releaseRecordGrid > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border-radius: 7px;
+  background: rgba(7, 13, 28, 0.56);
+  padding: 7px;
+  text-align: center;
+}
+
+.releaseRecordGrid small {
+  overflow: hidden;
+  font-size: 8px;
+  text-overflow: ellipsis;
+}
+
+.releaseRecordGrid strong {
+  color: var(--nav-text);
+  font-size: 12px;
+}
+
+.releaseObservedRange {
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.releaseComparisonDivider {
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.releaseComparisonDivider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--line);
+}
+
+.releaseComparisonDivider span {
+  z-index: 1;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #0b1328;
+  color: var(--muted);
+  padding: 5px;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.releaseComparisonFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  padding: 10px 15px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.releaseEmptyState {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  min-height: 240px;
+  text-align: center;
+}
+
+.releaseEmptyState strong {
+  color: var(--text);
+}
+
+.releaseEmptyState p {
+  max-width: 560px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 body[data-active-view="funnels"] .topbar > div:first-child {
   flex: 1 1 310px;
 }
@@ -6656,5 +7178,97 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .chatQuestionRow .questionBody > small {
     white-space: normal;
+  }
+}
+
+@media (max-width: 1100px) {
+  .releaseSummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .releaseRecordGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .releaseMethodCard,
+  .releaseComparisonHeader,
+  .releasePlaceHeader,
+  .releaseComparisonFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .releaseCommandBar {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+    align-items: center;
+  }
+
+  .releaseCommandIcon {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .releaseCommandCopy {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .releaseStatus {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    margin: 0;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .releaseRefreshButton {
+    grid-column: 3;
+    grid-row: 1;
+    position: static;
+  }
+
+  .releaseMinimumLabel {
+    margin-left: 0;
+  }
+
+  .releaseCohortComparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .releaseComparisonDivider {
+    min-height: 38px;
+  }
+
+  .releaseComparisonDivider::before {
+    top: 50%;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 1px;
+  }
+
+  .releaseCohortCard.isMissing {
+    min-height: 180px;
+  }
+}
+
+@media (max-width: 520px) {
+  .releaseSummaryGrid,
+  .releaseCohortStats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .releaseRecordGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .releaseHeaderBadges {
+    justify-content: flex-start;
   }
 }
