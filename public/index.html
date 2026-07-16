@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260715-3">
+    <link rel="stylesheet" href="/styles.css?v=20260715-4">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -416,9 +416,9 @@
             <span class="releaseMethodIcon" aria-hidden="true">v</span>
             <div>
               <strong>How a release is compared</strong>
-              <p>The immediately previous production PlaceVersion is the before cohort. Metrics and findings are calculated deterministically from exact-version records, so old Roblox servers cannot leak into the new release.</p>
+              <p>The immediately previous production PlaceVersion is the baseline. Raw metrics stay visible, but findings use exact-matched first-seen/returning and platform groups so a traffic-mix change cannot impersonate a release regression.</p>
             </div>
-            <span class="releaseMinimumLabel">20 sessions per side</span>
+            <span class="releaseMinimumLabel">20 matched sessions per side</span>
           </article>
 
           <section class="releaseCohortList" id="releaseCohortList" aria-live="polite" aria-busy="false">
@@ -980,6 +980,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260715-3"></script>
+    <script defer src="/app.js?v=20260715-4"></script>
   </body>
 </html>

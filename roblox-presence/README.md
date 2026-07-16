@@ -74,6 +74,20 @@ The heartbeat automatically includes `game.PlaceVersion` and marks the batch as 
 
 Version-aware history starts after this service update is published. Older stored analytics remain explicitly `unversioned`; the server does not guess which release produced them.
 
+## Player context for release matching
+
+The service calls `AnalyticsService:GetPlayerSegmentsAsync()` on the server and attaches Roblox's `WhenUserFirstPlayed` bucket when available. PlayLens independently classifies the earliest session in its retained telemetry as **First seen** and later sessions as **Returning**; it does not claim that the first observed session is the player's first-ever Roblox session.
+
+Roblox does not expose a trustworthy per-player client platform to this server module. If your existing client networking already reports a validated device category, pass the server-approved value into the API:
+
+```lua
+Logger.SetPlayerContext(player, {
+	platform = "Mobile", -- Desktop, Mobile, Tablet, Console, or VR
+})
+```
+
+Call this only from trusted server handling after validating the client's value through your game's normal action/networking layer. Do not add a raw analytics RemoteEvent. Until context is supplied, PlayLens keeps that player's platform as **Unknown**, reports the coverage percentage, and matches Unknown as its own group rather than guessing.
+
 Release purchase-rate comparisons recognize completed purchase names such as `item_purchased`, `product_purchased`, `gamepass_purchased`, `purchase_completed`, and `checkout_completed`. Log prompts and failures with separate names; they are useful funnel steps but are not counted as completed purchases.
 
 Server-wide events may omit the player:

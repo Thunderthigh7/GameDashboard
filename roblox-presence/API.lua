@@ -10,6 +10,10 @@ function PresenceService.Log(eventName, info, player)
 	return Methods.Log(eventName, info, player)
 end
 
+function PresenceService.SetPlayerContext(player, context)
+	return Methods.SetPlayerContext(player, context)
+end
+
 function PresenceService.Start()
 	warn("[PresenceService] API Start called:", script:GetFullName())
 	Methods.Start()

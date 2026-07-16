@@ -30,6 +30,7 @@ Settings.MaxCustomEventPropertyDepth = 3
 Settings.MaxCustomEventArrayItems = 10
 Settings.MaxCustomEventPropertyObservations = 40
 Settings.MaxCustomEventStringLength = 240
+Settings.CollectRobloxPlayerSegments = true
 Settings.ShutdownFlushTimeout = 8
 Settings.Debug = true
 

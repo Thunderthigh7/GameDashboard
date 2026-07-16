@@ -5710,6 +5710,12 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   color: #f8cf78;
 }
 
+.releaseFindingCounts .matched {
+  border-color: rgba(53, 208, 131, 0.4);
+  background: rgba(53, 208, 131, 0.1);
+  color: #91ecc0;
+}
+
 .releaseAnalysisBody {
   display: grid;
   gap: 12px;
@@ -5736,6 +5742,111 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseAnalysisSection > header b {
   color: var(--nav-text);
+}
+
+.releaseTrafficSection {
+  border-color: rgba(84, 150, 255, 0.34);
+}
+
+.releaseTrafficSection.isReady {
+  border-color: rgba(53, 208, 131, 0.28);
+}
+
+.releaseTrafficSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.releaseTrafficSummaryGrid > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(80, 99, 150, 0.26);
+  border-radius: 9px;
+  background: rgba(7, 13, 27, 0.62);
+  padding: 10px;
+}
+
+.releaseTrafficSummaryGrid > div.warning {
+  border-color: rgba(245, 184, 70, 0.38);
+  background: rgba(245, 184, 70, 0.06);
+}
+
+.releaseTrafficSummaryGrid span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.releaseTrafficSummaryGrid strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.releaseTrafficSummaryGrid small,
+.releaseTrafficDefinition {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.releaseTrafficTable {
+  display: grid;
+  min-width: 0;
+  max-height: 250px;
+  overflow: auto;
+  border: 1px solid rgba(80, 99, 150, 0.25);
+  border-radius: 8px;
+}
+
+.releaseTrafficTableRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.5fr) repeat(3, minmax(80px, 0.6fr));
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-top: 1px solid rgba(80, 99, 150, 0.2);
+  padding: 8px 10px;
+  color: var(--nav-text);
+  font-size: 10px;
+}
+
+.releaseTrafficTableRow:first-child {
+  border-top: 0;
+}
+
+.releaseTrafficTableHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgb(19, 29, 54);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.releaseTrafficTableRow strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.releaseTrafficTableRow small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.releaseTrafficDefinition {
+  text-align: center;
+}
+
+.releaseAdjustedMetricsSection {
+  border-color: rgba(53, 208, 131, 0.28);
+  background: rgba(9, 28, 29, 0.34);
 }
 
 .releaseImpactMetricGrid {
@@ -7621,6 +7732,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .releaseImpactMetricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .releaseTrafficSummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -7708,6 +7823,18 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     display: none;
   }
 
+  .releaseTrafficTableHeader {
+    display: none;
+  }
+
+  .releaseTrafficTableRow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .releaseTrafficTableRow > strong {
+    grid-column: 1 / -1;
+  }
+
   .releaseComparisonTableRow {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
@@ -7734,6 +7861,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 
   .releaseImpactMetricGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .releaseTrafficSummaryGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 

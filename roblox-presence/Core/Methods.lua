@@ -1,3 +1,4 @@
+local AnalyticsService = game:GetService("AnalyticsService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,6 +12,8 @@ local SYSTEM_EVENT_NAMES = {
 	chat_message = true,
 }
 local playerJoinTimes = {}
+local playerAnalyticsContexts = {}
+local playerSegmentRequests = {}
 local playerConnections = {}
 local characterConnections = {}
 local pendingChatLogs = {}
@@ -33,6 +36,23 @@ local customEventCounter = 0
 
 local started = false
 local sending = false
+
+local PLATFORM_NAMES = {
+	desktop = "Desktop",
+	computer = "Desktop",
+	pc = "Desktop",
+	windows = "Desktop",
+	mac = "Desktop",
+	mobile = "Mobile",
+	phone = "Mobile",
+	ios = "Mobile",
+	android = "Mobile",
+	tablet = "Tablet",
+	console = "Console",
+	xbox = "Console",
+	playstation = "Console",
+	vr = "VR",
+}
 
 local function debugWarn(...)
 	if Settings.Debug then
@@ -139,6 +159,57 @@ local function getPlayerSessionId(player, fallbackAt)
 	return game.JobId .. ":" .. tostring(player.UserId) .. ":" .. tostring(joinedAt)
 end
 
+local function normalizePlatform(value)
+	local normalized = string.lower(tostring(value or ""))
+	normalized = string.gsub(normalized, "[^%a]", "")
+	return PLATFORM_NAMES[normalized]
+end
+
+local function normalizeEnumName(value)
+	local text = tostring(value or "")
+	return string.match(text, "([%w_]+)$")
+end
+
+local function applyPlayerAnalyticsContext(entry, player)
+	if not player then
+		return entry
+	end
+
+	local context = playerAnalyticsContexts[player.UserId]
+	if not context then
+		return entry
+	end
+
+	entry.platform = context.platform
+	entry.whenUserFirstPlayed = context.whenUserFirstPlayed
+	return entry
+end
+
+local function requestPlayerSegments(player)
+	if Settings.CollectRobloxPlayerSegments == false or playerSegmentRequests[player.UserId] then
+		return
+	end
+
+	playerSegmentRequests[player.UserId] = true
+	task.spawn(function()
+		local success, segments = pcall(function()
+			return AnalyticsService:GetPlayerSegmentsAsync(player)
+		end)
+		if not success or typeof(segments) ~= "table" or segments.HasData ~= true then
+			debugWarn("Player segments unavailable:", player.Name, player.UserId, success and "no data" or segments)
+			return
+		end
+		if player.Parent ~= Players then
+			return
+		end
+
+		local context = playerAnalyticsContexts[player.UserId] or {}
+		context.whenUserFirstPlayed = normalizeEnumName(segments.WhenUserFirstPlayed)
+		playerAnalyticsContexts[player.UserId] = context
+		debugWarn("Loaded player segments:", player.Name, player.UserId, context.whenUserFirstPlayed or "unknown")
+	end)
+end
+
 local function queueChatLog(player, message)
 	local text = trimChatMessage(message)
 	if text == "" then
@@ -163,6 +234,7 @@ local function queueChatLog(player, message)
 		message = text,
 		sentAt = sentAt,
 	}
+	applyPlayerAnalyticsContext(chatLog, player)
 
 	if position then
 		chatLog.x = roundPosition(position.X)
@@ -192,16 +264,19 @@ local function queueMovementSample(player)
 	movementSampleCounter += 1
 
 	if Settings.SendRawMovementSamples ~= false then
-		table.insert(pendingMovementSamples, {
+		local movementSample = {
 			id = game.JobId .. ":move:" .. tostring(movementSampleCounter),
 			userId = player.UserId,
 			username = player.Name,
 			displayName = player.DisplayName,
+			sessionId = getPlayerSessionId(player, sampledAt),
 			x = roundPosition(position.X),
 			y = roundPosition(position.Y),
 			z = roundPosition(position.Z),
 			sampledAt = sampledAt,
-		})
+		}
+		applyPlayerAnalyticsContext(movementSample, player)
+		table.insert(pendingMovementSamples, movementSample)
 
 		while #pendingMovementSamples > getMaxPendingMovementSamples() do
 			table.remove(pendingMovementSamples, 1)
@@ -269,7 +344,7 @@ local function queueDeathSample(player, character)
 	lastPlayerPositions[player.UserId] = position
 	deathSampleCounter += 1
 	local diedAt = os.time()
-	table.insert(pendingDeathSamples, {
+	local deathSample = {
 		id = game.JobId .. ":death:" .. tostring(deathSampleCounter),
 		userId = player.UserId,
 		username = player.Name,
@@ -279,7 +354,9 @@ local function queueDeathSample(player, character)
 		y = roundPosition(position.Y),
 		z = roundPosition(position.Z),
 		diedAt = diedAt,
-	})
+	}
+	applyPlayerAnalyticsContext(deathSample, player)
+	table.insert(pendingDeathSamples, deathSample)
 
 	while #pendingDeathSamples > getMaxPendingDeathSamples() do
 		table.remove(pendingDeathSamples, 1)
@@ -300,7 +377,7 @@ local function queueLeaveSample(player)
 	leaveSampleCounter += 1
 	local leftAt = os.time()
 	local joinedAt = playerJoinTimes[player.UserId] or leftAt
-	table.insert(pendingLeaveSamples, {
+	local leaveSample = {
 		id = game.JobId .. ":leave:" .. tostring(leaveSampleCounter),
 		userId = player.UserId,
 		username = player.Name,
@@ -311,7 +388,9 @@ local function queueLeaveSample(player)
 		z = roundPosition(position.Z),
 		sessionDurationSeconds = math.max(0, leftAt - joinedAt),
 		leftAt = leftAt,
-	})
+	}
+	applyPlayerAnalyticsContext(leaveSample, player)
+	table.insert(pendingLeaveSamples, leaveSample)
 
 	while #pendingLeaveSamples > getMaxPendingLeaveSamples() do
 		table.remove(pendingLeaveSamples, 1)
@@ -504,6 +583,7 @@ function Methods.Log(eventName, info, player)
 		properties = properties,
 		propertiesTruncated = propertiesTruncated or nil,
 	}
+	applyPlayerAnalyticsContext(event, player)
 	if typeof(info) == "table" and typeof(info.value) == "number" and info.value == info.value and info.value > -math.huge and info.value < math.huge then
 		event.value = info.value
 	end
@@ -521,6 +601,25 @@ function Methods.Log(eventName, info, player)
 		debugWarn("Custom event properties reached a safety limit:", normalizedName)
 	end
 	debugWarn("Queued custom event:", normalizedName, player and player.Name or "server")
+	return true
+end
+
+function Methods.SetPlayerContext(player, context)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or typeof(context) ~= "table" then
+		debugWarn("Rejected invalid player analytics context")
+		return false
+	end
+
+	local platform = normalizePlatform(context.platform or context.device)
+	if not platform then
+		debugWarn("Rejected player analytics context with invalid platform:", player.Name, context.platform or context.device)
+		return false
+	end
+
+	local current = playerAnalyticsContexts[player.UserId] or {}
+	current.platform = platform
+	playerAnalyticsContexts[player.UserId] = current
+	debugWarn("Updated player analytics context:", player.Name, player.UserId, platform)
 	return true
 end
 
@@ -569,7 +668,9 @@ end
 
 local function trackPlayer(player)
 	playerJoinTimes[player.UserId] = playerJoinTimes[player.UserId] or os.time()
+	playerAnalyticsContexts[player.UserId] = playerAnalyticsContexts[player.UserId] or {}
 	leaveSampledUserIds[player.UserId] = nil
+	requestPlayerSegments(player)
 	debugWarn("Tracking player:", player.Name, player.UserId, "joinedAt", playerJoinTimes[player.UserId])
 end
 
@@ -617,6 +718,8 @@ local function untrackPlayer(player)
 
 	disconnectCharacterWatch(player)
 	lastPlayerPositions[player.UserId] = nil
+	playerAnalyticsContexts[player.UserId] = nil
+	playerSegmentRequests[player.UserId] = nil
 end
 
 local function processHeartbeatResponse(response)
@@ -648,12 +751,14 @@ local function getPlayersPayload()
 
 		trackPlayer(player)
 
-		table.insert(players, {
+		local playerPayload = {
 			userId = player.UserId,
 			username = player.Name,
 			displayName = player.DisplayName,
 			joinedAt = playerJoinTimes[player.UserId],
-		})
+		}
+		applyPlayerAnalyticsContext(playerPayload, player)
+		table.insert(players, playerPayload)
 	end
 
 	return players

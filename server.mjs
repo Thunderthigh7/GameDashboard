@@ -2596,6 +2596,8 @@ function normalizePresence(body) {
     username: cleanString(player?.username || player?.name, 64),
     displayName: cleanString(player?.displayName, 64),
     joinedAt: cleanTimestampMs(player?.joinedAt),
+    platform: normalizeAnalyticsPlatform(player?.platform || player?.device),
+    whenUserFirstPlayed: normalizeWhenUserFirstPlayed(player?.whenUserFirstPlayed),
   })).filter((player) => player.userId > 0 && player.username);
 
   const receivedAt = Date.now();
@@ -2608,6 +2610,7 @@ function normalizePresence(body) {
     environment: normalizeAnalyticsEnvironment(body.environment, body.placeVersion),
     jobId,
     receivedAt,
+    playersByUserId: new Map(cleanPlayers.map((player) => [player.userId, player])),
   };
   const chatLogs = normalizeChatLogs(body.chatLogs, context);
   const movementSamples = normalizeMovementSamples(body.movementSamples, context);
@@ -2649,6 +2652,41 @@ function normalizeAnalyticsEnvironment(value, placeVersion = 0) {
   return normalizePlaceVersion(placeVersion) > 0 ? "production" : "unversioned";
 }
 
+function normalizeAnalyticsPlatform(value) {
+  const platform = cleanString(value, 32).trim().toLowerCase().replace(/[^a-z]/g, "");
+  const platforms = {
+    desktop: "Desktop",
+    computer: "Desktop",
+    pc: "Desktop",
+    windows: "Desktop",
+    mac: "Desktop",
+    mobile: "Mobile",
+    phone: "Mobile",
+    ios: "Mobile",
+    android: "Mobile",
+    tablet: "Tablet",
+    console: "Console",
+    xbox: "Console",
+    playstation: "Console",
+    vr: "VR",
+  };
+  return platforms[platform] || "";
+}
+
+function normalizeWhenUserFirstPlayed(value) {
+  const segment = cleanString(value, 64).trim().split(".").at(-1) || "";
+  return /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(segment) ? segment : "";
+}
+
+function getAnalyticsPlayerContext(entry, context) {
+  const userId = cleanInteger(entry?.userId);
+  const player = context.playersByUserId?.get(userId) || {};
+  return {
+    platform: normalizeAnalyticsPlatform(entry?.platform || entry?.device || player.platform),
+    whenUserFirstPlayed: normalizeWhenUserFirstPlayed(entry?.whenUserFirstPlayed || player.whenUserFirstPlayed),
+  };
+}
+
 function getAnalyticsRecordVersion(entry, context) {
   const hasEntryVersion = entry?.placeVersion !== undefined && entry?.placeVersion !== null;
   const placeVersion = normalizePlaceVersion(hasEntryVersion ? entry.placeVersion : context.placeVersion);
@@ -2668,6 +2706,7 @@ function normalizeCustomEvents(value, context) {
     const z = cleanFiniteNumber(entry?.z);
     const numericValue = typeof entry?.value === "number" ? cleanFiniteNumber(entry.value) : NaN;
     const normalizedProperties = normalizeCustomEventProperties(entry?.properties);
+    const playerContext = getAnalyticsPlayerContext(entry, context);
 
     return {
       id: cleanString(entry?.id, 180),
@@ -2679,6 +2718,7 @@ function normalizeCustomEvents(value, context) {
       userId: userId > 0 ? userId : null,
       username: cleanString(entry?.username || entry?.nameOfPlayer, 64),
       displayName: cleanString(entry?.displayName, 64),
+      ...playerContext,
       sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
       value: Number.isFinite(numericValue) ? numericValue : null,
       properties: normalizedProperties.properties,
@@ -2797,6 +2837,7 @@ function normalizeChatLogs(value, context) {
     const y = cleanFiniteNumber(entry?.y);
     const z = cleanFiniteNumber(entry?.z);
     const userId = cleanInteger(entry?.userId);
+    const playerContext = getAnalyticsPlayerContext(entry, context);
 
     return {
       id: cleanString(entry?.id, 160),
@@ -2807,6 +2848,7 @@ function normalizeChatLogs(value, context) {
       userId,
       username: cleanString(entry?.username || entry?.name, 64),
       displayName: cleanString(entry?.displayName, 64),
+      ...playerContext,
       sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
       message: cleanString(entry?.message, 500),
       x: Number.isFinite(x) ? x : null,
@@ -2853,6 +2895,7 @@ function normalizeMovementSamples(value, context) {
 
   return value.slice(0, MAX_MOVEMENT_SAMPLES_PER_PAYLOAD).map((entry) => {
     const version = getAnalyticsRecordVersion(entry, context);
+    const playerContext = getAnalyticsPlayerContext(entry, context);
     return {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
@@ -2862,6 +2905,8 @@ function normalizeMovementSamples(value, context) {
       userId: cleanInteger(entry?.userId),
       username: cleanString(entry?.username || entry?.name, 64),
       displayName: cleanString(entry?.displayName, 64),
+      ...playerContext,
+      sessionId: cleanString(entry?.sessionId, 180) || `${context.jobId}:${cleanInteger(entry?.userId)}`,
       x: cleanFiniteNumber(entry?.x),
       y: cleanFiniteNumber(entry?.y),
       z: cleanFiniteNumber(entry?.z),
@@ -2926,6 +2971,7 @@ function normalizeDeathSamples(value, context) {
   return value.slice(0, MAX_DEATH_SAMPLES_PER_PAYLOAD).map((entry) => {
     const version = getAnalyticsRecordVersion(entry, context);
     const userId = cleanInteger(entry?.userId);
+    const playerContext = getAnalyticsPlayerContext(entry, context);
     return {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
@@ -2935,6 +2981,7 @@ function normalizeDeathSamples(value, context) {
       userId,
       username: cleanString(entry?.username || entry?.name, 64),
       displayName: cleanString(entry?.displayName, 64),
+      ...playerContext,
       sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
       x: cleanFiniteNumber(entry?.x),
       y: cleanFiniteNumber(entry?.y),
@@ -2958,6 +3005,7 @@ function normalizeLeaveSamples(value, context) {
   return value.slice(0, MAX_LEAVE_SAMPLES_PER_PAYLOAD).map((entry) => {
     const version = getAnalyticsRecordVersion(entry, context);
     const userId = cleanInteger(entry?.userId);
+    const playerContext = getAnalyticsPlayerContext(entry, context);
     return {
       id: cleanString(entry?.id, 160),
       universeId: context.universeId,
@@ -2967,6 +3015,7 @@ function normalizeLeaveSamples(value, context) {
       userId,
       username: cleanString(entry?.username || entry?.name, 64),
       displayName: cleanString(entry?.displayName, 64),
+      ...playerContext,
       sessionId: cleanString(entry?.sessionId, 180) || (userId > 0 ? `${context.jobId}:${userId}` : context.jobId),
       x: cleanFiniteNumber(entry?.x),
       y: cleanFiniteNumber(entry?.y),
@@ -4723,6 +4772,8 @@ function createSystemAnalyticsEvent(sample, definition) {
     userId,
     username: cleanString(sample?.username, 64),
     displayName: cleanString(sample?.displayName, 64),
+    platform: normalizeAnalyticsPlatform(sample?.platform || sample?.device),
+    whenUserFirstPlayed: normalizeWhenUserFirstPlayed(sample?.whenUserFirstPlayed),
     sessionId: cleanString(sample?.sessionId, 180) || (userId ? `${jobId}:${userId}` : jobId),
     value: null,
     properties: sessionDurationSeconds === null ? {} : { sessionDurationSeconds },
@@ -5719,6 +5770,10 @@ async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {
       aiGenerated: false,
       exactVersionSamples: true,
       nestedVersionRollupsIncluded: true,
+      trafficMatchedFindings: true,
+      matchDimensions: ["first-seen vs returning", "observed platform"],
+      minimumMatchedSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
+      missingPlatformIsExplicit: true,
       metrics: ["death session rate", "purchase session rate", "custom events per player", "median session duration", "saved funnel conversion", "leave-area distribution"],
     },
     coverage: health.coverage,
