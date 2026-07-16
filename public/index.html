@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260716-2">
+    <link rel="stylesheet" href="/styles.css?v=20260716-3">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -392,24 +392,24 @@
           <article class="panel releaseComparePanel" aria-label="Choose versions and funnels to compare">
             <div class="releaseCompareHeading">
               <span>Version comparison</span>
-              <strong>Choose the baseline and the version you want to measure</strong>
+              <strong>Choose two production versions to compare</strong>
             </div>
             <div class="releaseCompareControls">
               <label class="releaseSelectField releasePlaceField" for="releasePlaceSelect">
                 <span>Place</span>
                 <select id="releasePlaceSelect" aria-label="Select Roblox place"></select>
               </label>
-              <label class="releaseSelectField" for="releaseBeforeVersionSelect">
-                <span>Baseline version</span>
-                <select id="releaseBeforeVersionSelect" aria-label="Select baseline version"></select>
-              </label>
-              <button class="releaseSwapButton" id="releaseSwapVersionsButton" type="button" aria-label="Swap compared versions" title="Swap versions">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7l-3 3M6 17l3-3" /></svg>
-              </button>
-              <label class="releaseSelectField" for="releaseAfterVersionSelect">
-                <span>Compare to</span>
-                <select id="releaseAfterVersionSelect" aria-label="Select comparison version"></select>
-              </label>
+              <div class="releaseVersionPair" aria-label="Versions being compared">
+                <label class="releaseVersionSide" for="releaseBeforeVersionSelect">
+                  <span><select id="releaseBeforeVersionSelect" aria-label="Select before version"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg><b>Before</b></span>
+                  <small id="releaseBeforeDateRange">No version selected</small>
+                </label>
+                <span class="releaseVersionVs" aria-hidden="true">vs</span>
+                <label class="releaseVersionSide" for="releaseAfterVersionSelect">
+                  <span><select id="releaseAfterVersionSelect" aria-label="Select after version"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg><b>After</b></span>
+                  <small id="releaseAfterDateRange">No version selected</small>
+                </label>
+              </div>
               <div class="releaseFunnelPicker">
                 <span>Funnels</span>
                 <button id="releaseFunnelPickerButton" type="button" aria-haspopup="true" aria-expanded="false">
@@ -421,7 +421,7 @@
             </div>
             <div class="releaseNormalizationNote">
               <span aria-hidden="true">&#10003;</span>
-              <p><strong>Player-count adjusted</strong> Rates, the same post-release window, and equal-sized new/returning + platform matches prevent an update traffic spike from becoming a fake improvement or regression.</p>
+              <p><strong>Player-count adjusted</strong> Rates, the same post-release window, and equal-sized new/returning + platform matches prevent an update traffic spike from becoming a fake change.</p>
             </div>
           </article>
 
@@ -984,6 +984,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260716-2"></script>
+    <script defer src="/app.js?v=20260716-3"></script>
   </body>
 </html>

@@ -88,7 +88,8 @@ const releasePlaceSelect = document.querySelector("#releasePlaceSelect");
 const releasePlaceField = document.querySelector(".releasePlaceField");
 const releaseBeforeVersionSelect = document.querySelector("#releaseBeforeVersionSelect");
 const releaseAfterVersionSelect = document.querySelector("#releaseAfterVersionSelect");
-const releaseSwapVersionsButton = document.querySelector("#releaseSwapVersionsButton");
+const releaseBeforeDateRange = document.querySelector("#releaseBeforeDateRange");
+const releaseAfterDateRange = document.querySelector("#releaseAfterDateRange");
 const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
 const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const refreshEventsButton = document.querySelector("#refreshEventsButton");
@@ -215,7 +216,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260716-2";
+const DASHBOARD_ASSET_VERSION = "20260716-3";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -355,7 +356,6 @@ function bindEvents() {
     closeReleaseFunnelMenu();
     loadReleases();
   });
-  releaseSwapVersionsButton?.addEventListener("click", swapReleaseVersions);
   releaseFunnelPickerButton?.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleReleaseFunnelMenu();
@@ -2407,6 +2407,8 @@ function renderReleaseComparisonControls(payload = {}) {
   const places = Array.isArray(payload.places) ? payload.places : [];
   const selectedPlace = places.find((place) => String(place.placeId) === releaseSelection.placeId) || places[0] || null;
   const versions = (selectedPlace?.releases || []).map((release) => release.after).filter(Boolean);
+  const selectedBeforeVersion = versions.find((version) => String(version.placeVersion) === releaseSelection.beforeVersion) || null;
+  const selectedAfterVersion = versions.find((version) => String(version.placeVersion) === releaseSelection.afterVersion) || null;
   const funnels = Array.isArray(payload.availableFunnels) ? payload.availableFunnels : [];
   const selectedFunnelIds = new Set(releaseSelection.funnelIds);
 
@@ -2420,7 +2422,8 @@ function renderReleaseComparisonControls(payload = {}) {
 
   renderReleaseVersionSelect(releaseBeforeVersionSelect, versions, releaseSelection.beforeVersion, releaseSelection.afterVersion, "Choose baseline");
   renderReleaseVersionSelect(releaseAfterVersionSelect, versions, releaseSelection.afterVersion, releaseSelection.beforeVersion, "Choose version");
-  if (releaseSwapVersionsButton) releaseSwapVersionsButton.disabled = !releaseSelection.beforeVersion || !releaseSelection.afterVersion;
+  if (releaseBeforeDateRange) releaseBeforeDateRange.textContent = formatReleaseVersionDateRange(selectedBeforeVersion);
+  if (releaseAfterDateRange) releaseAfterDateRange.textContent = formatReleaseVersionDateRange(selectedAfterVersion);
 
   if (releaseFunnelPickerButton) {
     const label = !funnels.length
@@ -2462,18 +2465,20 @@ function renderReleaseVersionSelect(select, versions, selectedVersion, unavailab
     ${versions.map((version) => {
       const value = String(version.placeVersion || "");
       const isUnavailable = value === String(unavailableVersion || "");
-      return `<option value="${escapeHtml(value)}" ${value === String(selectedVersion || "") ? "selected" : ""} ${isUnavailable ? "disabled" : ""}>v${escapeHtml(formatReleaseVersion(value))} · ${escapeHtml(formatCompactNumber(version.sessionCount))} sessions</option>`;
+      return `<option value="${escapeHtml(value)}" ${value === String(selectedVersion || "") ? "selected" : ""} ${isUnavailable ? "disabled" : ""}>v${escapeHtml(formatReleaseVersion(value))}</option>`;
     }).join("")}
   `;
 }
 
-function swapReleaseVersions() {
-  if (!releaseSelection.beforeVersion || !releaseSelection.afterVersion) return;
-  const beforeVersion = releaseSelection.beforeVersion;
-  releaseSelection.beforeVersion = releaseSelection.afterVersion;
-  releaseSelection.afterVersion = beforeVersion;
-  closeReleaseFunnelMenu();
-  loadReleases();
+function formatReleaseVersionDateRange(version) {
+  const firstSeenAt = Number(version?.firstSeenAt) || 0;
+  const lastSeenAt = Number(version?.lastSeenAt) || 0;
+  if (!firstSeenAt || !lastSeenAt) return "No observed date range";
+  const start = new Date(firstSeenAt);
+  const end = new Date(lastSeenAt);
+  const startLabel = start.toLocaleDateString([], { month: "short", day: "numeric" });
+  const endLabel = end.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  return `${startLabel} – ${endLabel}`;
 }
 
 function toggleReleaseFunnelMenu(forceOpen) {
@@ -2606,6 +2611,7 @@ function renderReleaseAnalysis(comparison = null) {
     ? trafficAdjustment.events
     : (Array.isArray(comparison.events) ? comparison.events : []);
   const eventMetrics = getReleaseEventOutcomeMetrics(coreMetrics, events);
+  const findingDirections = summarizeReleaseFindingDirections(findingItems);
   const evidenceSessions = trafficReady
     ? Math.min(Number(trafficAdjustment.samples?.before?.sessions) || 0, Number(trafficAdjustment.samples?.after?.sessions) || 0)
     : Math.min(Number(comparison.samples?.before?.sessions) || 0, Number(comparison.samples?.after?.sessions) || 0);
@@ -2617,32 +2623,31 @@ function renderReleaseAnalysis(comparison = null) {
       <header class="releaseAnalysisSummary">
         <div>
           <span class="releaseAnalysisIcon" aria-hidden="true">&#8597;</span>
-          <span><strong>Impact analysis</strong><small>${ready ? "Meaningful funnel and event changes" : "Waiting for enough sessions to compare"}</small></span>
+          <span><strong>Comparison summary</strong><small>${ready ? "Thresholded funnel and event differences" : "Waiting for enough sessions to compare"}</small></span>
         </div>
         <div class="releaseFindingCounts">
-          <span class="regression">${escapeHtml(formatCompactNumber(findings.regressions))} regression${Number(findings.regressions) === 1 ? "" : "s"}</span>
-          <span class="improvement">${escapeHtml(formatCompactNumber(findings.improvements))} improvement${Number(findings.improvements) === 1 ? "" : "s"}</span>
+          <span class="increase">${escapeHtml(formatCompactNumber(findingDirections.increase))} increase${findingDirections.increase === 1 ? "" : "s"}</span>
+          <span class="decrease">${escapeHtml(formatCompactNumber(findingDirections.decrease))} decrease${findingDirections.decrease === 1 ? "" : "s"}</span>
           ${partialData ? '<span class="partial">Partial data</span>' : ""}
         </div>
       </header>
       <div class="releaseAnalysisBody">
-        ${renderReleaseOutcomeSummary({ findings, ready, partialData, evidenceSessions, beforeVersion, afterVersion, matched: trafficReady })}
+        ${renderReleaseOutcomeSummary({ findingItems, findingDirections, ready, partialData, evidenceSessions, beforeVersion, afterVersion, matched: trafficReady })}
         <div class="releasePrimaryImpactGrid ${funnels.length ? "" : "findingsOnly"}">
           ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
           ${renderReleaseFindingsSection(findingItems, { ready, partialData })}
         </div>
         ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics, beforeVersion, afterVersion) : ""}
-        <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is intentionally excluded because a larger event count alone does not mean an update performed better.</p>
+        <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
       </div>
     </section>
   `;
 }
 
-function renderReleaseOutcomeSummary({ findings = {}, ready = false, partialData = false, evidenceSessions = 0, beforeVersion, afterVersion, matched = false } = {}) {
-  const regressions = Number(findings.regressions) || 0;
-  const improvements = Number(findings.improvements) || 0;
-  const observations = Number(findings.observations) || 0;
-  const meaningfulChanges = regressions + improvements + observations;
+function renderReleaseOutcomeSummary({ findingItems = [], findingDirections = {}, ready = false, partialData = false, evidenceSessions = 0, beforeVersion, afterVersion, matched = false } = {}) {
+  const increases = Number(findingDirections.increase) || 0;
+  const decreases = Number(findingDirections.decrease) || 0;
+  const meaningfulChanges = findingItems.length;
   const headline = !ready
     ? "Waiting for enough evidence"
     : partialData
@@ -2653,11 +2658,12 @@ function renderReleaseOutcomeSummary({ findings = {}, ready = false, partialData
   const summary = !ready
     ? "The comparison will unlock after both versions have enough usable sessions."
     : meaningfulChanges
-      ? `${formatCompactNumber(improvements)} improvement${improvements === 1 ? "" : "s"}, ${formatCompactNumber(regressions)} regression${regressions === 1 ? "" : "s"}${observations ? `, and ${formatCompactNumber(observations)} neutral observation${observations === 1 ? "" : "s"}` : ""}.`
+      ? `${formatCompactNumber(increases)} increase${increases === 1 ? "" : "s"} and ${formatCompactNumber(decreases)} decrease${decreases === 1 ? "" : "s"} crossed the evidence thresholds.`
       : "Funnels and event rates stayed inside the practical and statistical thresholds.";
+  const direction = increases && decreases ? "mixed" : increases ? "increase" : decreases ? "decrease" : "unchanged";
   return `
-    <section class="releaseOutcomeSummary ${regressions ? "hasRegression" : ""}">
-      <div class="releaseOutcomeMark" aria-hidden="true">${regressions ? "!" : ready ? "&#10003;" : "&hellip;"}</div>
+    <section class="releaseOutcomeSummary ${direction}">
+      <div class="releaseOutcomeMark" aria-hidden="true">${!ready ? "&hellip;" : direction === "mixed" ? "&#8597;" : direction === "increase" ? "&#8593;" : direction === "decrease" ? "&#8595;" : "="}</div>
       <div>
         <span>v${escapeHtml(formatReleaseVersion(beforeVersion))} &rarr; v${escapeHtml(formatReleaseVersion(afterVersion))}</span>
         <strong>${escapeHtml(headline)}</strong>
@@ -2713,12 +2719,32 @@ function getReleaseEventOutcomeMetrics(coreMetrics, events) {
   return [...coreOutcomes, ...customOutcomes];
 }
 
+function summarizeReleaseFindingDirections(findingItems) {
+  return findingItems.reduce((counts, finding) => {
+    const direction = getReleaseFindingDirection(finding);
+    counts[direction] += 1;
+    return counts;
+  }, { increase: 0, decrease: 0, unchanged: 0 });
+}
+
+function getReleaseFindingDirection(finding = {}) {
+  const beforeValue = Number(finding.evidence?.before?.value);
+  const afterValue = Number(finding.evidence?.after?.value);
+  if (Number.isFinite(beforeValue) && Number.isFinite(afterValue)) {
+    if (Math.abs(afterValue - beforeValue) < 0.0001) return "unchanged";
+    return afterValue > beforeValue ? "increase" : "decrease";
+  }
+  const title = String(finding.title || "").toLowerCase();
+  if (title.includes(" increased")) return "increase";
+  if (title.includes(" decreased")) return "decrease";
+  return "unchanged";
+}
+
 function renderReleaseFinding(finding = {}) {
-  const allowedOutcomes = new Set(["regression", "improvement", "observation"]);
-  const outcome = allowedOutcomes.has(finding.outcome) ? finding.outcome : "observation";
+  const direction = getReleaseFindingDirection(finding);
   return `
-    <article class="releaseFinding ${outcome}">
-      <span class="releaseFindingMark" aria-hidden="true">${outcome === "regression" ? "!" : outcome === "improvement" ? "+" : "i"}</span>
+    <article class="releaseFinding ${direction}">
+      <span class="releaseFindingMark" aria-hidden="true">${direction === "increase" ? "&#8593;" : direction === "decrease" ? "&#8595;" : "="}</span>
       <div>
         <header><strong>${escapeHtml(finding.title || "Release finding")}</strong><span>${escapeHtml(formatReleaseConfidence(finding.confidence))}</span></header>
         <p>${escapeHtml(finding.summary || "")}</p>
@@ -2730,7 +2756,7 @@ function renderReleaseFinding(finding = {}) {
 function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseFunnelImpactSection">
-      <header><div><strong>Funnel conversion</strong><span>The clearest view of where update behavior changed</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <header><div><strong>Funnel differences</strong><span>Conversion rates before and after</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
       <div class="releaseFunnelImpactList">
         ${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}
       </div>
@@ -2747,7 +2773,7 @@ function renderReleaseFunnelImpact(funnel = {}, beforeVersion, afterVersion) {
     <article class="releaseFunnelImpact ${tone}">
       <header>
         <div><strong>${escapeHtml(funnel.name || "Funnel")}</strong><span>${escapeHtml(formatCompactNumber(funnel.before?.entrySessions))} / ${escapeHtml(formatCompactNumber(funnel.after?.entrySessions))} entering sessions</span></div>
-        <b>${escapeHtml(formatReleaseMetricDelta(metric))}</b>
+        <b>${escapeHtml(formatReleaseMetricDifference(metric))}</b>
       </header>
       <div class="releaseFunnelBarRow">
         <span>v${escapeHtml(formatReleaseVersion(beforeVersion))}</span>
@@ -2772,9 +2798,9 @@ function getReleaseBarWidth(value) {
 function renderReleaseEventComparisons(events, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>Event-rate changes</strong><span>Rates only; raw event volume is excluded</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <header><div><strong>Event differences</strong><span>Rates only; raw event volume is excluded</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
       <div class="releaseComparisonTable" role="table" aria-label="Event rate release comparisons">
-        <div class="releaseComparisonTableHeader" role="row"><span>Event outcome</span><span>Before</span><span>After</span><span>Change</span><span>Evidence</span></div>
+        <div class="releaseComparisonTableHeader" role="row"><span>Event outcome</span><span>Before</span><span>After</span><span>Difference</span><span>Evidence</span></div>
         ${events.map((event) => renderReleaseComparisonRow(
           event.label || event.eventName || "event",
           event.metric,
@@ -2793,7 +2819,7 @@ function renderReleaseComparisonRow(label, metric = {}, sampleText = "--", codeL
       <strong${codeLabel ? ' class="releaseCodeLabel"' : ""}>${escapeHtml(label)}</strong>
       <span>${escapeHtml(formatReleaseMetricValue(metric, metric.before))}</span>
       <span>${escapeHtml(formatReleaseMetricValue(metric, metric.after))}</span>
-      <span class="releaseTableDelta">${escapeHtml(formatReleaseMetricDelta(metric))}</span>
+      <span class="releaseTableDelta">${escapeHtml(formatReleaseMetricDifference(metric))}</span>
       <small>${escapeHtml(sampleText)}</small>
     </div>
   `;
@@ -2816,12 +2842,18 @@ function formatReleaseMetricDelta(metric = {}) {
   return `${sign}${formatEventNumber(delta)}`;
 }
 
+function formatReleaseMetricDifference(metric = {}) {
+  const direction = getReleaseMetricTone(metric);
+  if (direction === "unchanged") {
+    return metric.available ? "Unchanged" : "No comparison";
+  }
+  return `${direction === "increase" ? "Increased" : "Decreased"} ${formatReleaseMetricDelta(metric)}`;
+}
+
 function getReleaseMetricTone(metric = {}) {
   const delta = Number(metric.delta);
-  if (!metric.available || !Number.isFinite(delta) || Math.abs(delta) < 0.0001) return "neutral";
-  if (metric.betterDirection === "contextual") return "contextual";
-  const improved = metric.betterDirection === "higher" ? delta > 0 : delta < 0;
-  return improved ? "improvement" : "regression";
+  if (!metric.available || !Number.isFinite(delta) || Math.abs(delta) < 0.0001) return "unchanged";
+  return delta > 0 ? "increase" : "decrease";
 }
 
 function formatReleaseConfidence(value) {

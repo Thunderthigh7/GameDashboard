@@ -5263,7 +5263,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseSelectField select:focus-visible,
 .releaseFunnelPicker > button:focus-visible,
-.releaseSwapButton:focus-visible {
+.releaseVersionSide select:focus-visible {
   border-color: rgba(151, 102, 255, 0.8);
   outline: 2px solid rgba(124, 60, 255, 0.18);
   outline-offset: 1px;
@@ -5271,30 +5271,11 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseSelectField select:disabled,
 .releaseFunnelPicker > button:disabled,
-.releaseSwapButton:disabled {
+.releaseVersionSide select:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
-.releaseSwapButton {
-  display: grid;
-  place-items: center;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(124, 60, 255, 0.4);
-  border-radius: 9px;
-  background: rgba(124, 60, 255, 0.12);
-  color: #cbb6ff;
-  cursor: pointer;
-}
-
-.releaseSwapButton:hover:not(:disabled) {
-  border-color: rgba(151, 102, 255, 0.72);
-  background: rgba(124, 60, 255, 0.2);
-}
-
-.releaseSwapButton svg,
 .releaseFunnelPicker > button svg {
   width: 18px;
   fill: none;
@@ -5302,6 +5283,101 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.releaseVersionPair {
+  display: grid;
+  position: relative;
+  flex: 2 1 430px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 340px;
+  border: 1px solid rgba(89, 105, 151, 0.42);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(12, 21, 41, 0.96), rgba(8, 15, 30, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  overflow: visible;
+}
+
+.releaseVersionSide {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.releaseVersionSide:first-child {
+  border-right: 1px solid rgba(89, 105, 151, 0.28);
+}
+
+.releaseVersionSide > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.releaseVersionSide select {
+  width: auto;
+  max-width: 92px;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.releaseVersionSide select:focus-visible {
+  border-radius: 4px;
+  outline-offset: 3px;
+}
+
+.releaseVersionSide svg {
+  flex: 0 0 auto;
+  width: 14px;
+  fill: none;
+  stroke: #8f9bb5;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.releaseVersionSide b {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.releaseVersionSide small {
+  overflow: hidden;
+  color: #9aa7c0;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseVersionVs {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(89, 105, 151, 0.42);
+  border-radius: 999px;
+  background: #111b32;
+  color: #8793ad;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
 }
 
 .releaseFunnelPicker {
@@ -5776,16 +5852,16 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   white-space: nowrap;
 }
 
-.releaseFindingCounts .regression {
-  border-color: rgba(244, 89, 103, 0.4);
-  background: rgba(244, 89, 103, 0.1);
-  color: #ffabb4;
+.releaseFindingCounts .increase {
+  border-color: rgba(84, 150, 255, 0.4);
+  background: rgba(84, 150, 255, 0.1);
+  color: #a8caff;
 }
 
-.releaseFindingCounts .improvement {
-  border-color: rgba(53, 208, 131, 0.4);
-  background: rgba(53, 208, 131, 0.1);
-  color: #91ecc0;
+.releaseFindingCounts .decrease {
+  border-color: rgba(151, 102, 255, 0.42);
+  background: rgba(151, 102, 255, 0.1);
+  color: #cab8ff;
 }
 
 .releaseFindingCounts .partial {
@@ -5828,15 +5904,25 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   align-items: center;
   gap: 13px;
   min-width: 0;
-  border: 1px solid rgba(53, 208, 131, 0.3);
+  border: 1px solid rgba(84, 150, 255, 0.3);
   border-radius: 11px;
-  background: linear-gradient(135deg, rgba(16, 53, 48, 0.48), rgba(10, 18, 35, 0.82));
+  background: linear-gradient(135deg, rgba(22, 42, 72, 0.48), rgba(10, 18, 35, 0.82));
   padding: 17px;
 }
 
-.releaseOutcomeSummary.hasRegression {
-  border-color: rgba(244, 89, 103, 0.34);
-  background: linear-gradient(135deg, rgba(65, 27, 39, 0.42), rgba(10, 18, 35, 0.82));
+.releaseOutcomeSummary.decrease {
+  border-color: rgba(151, 102, 255, 0.38);
+  background: linear-gradient(135deg, rgba(48, 31, 78, 0.45), rgba(10, 18, 35, 0.82));
+}
+
+.releaseOutcomeSummary.mixed {
+  border-color: rgba(107, 127, 201, 0.38);
+  background: linear-gradient(135deg, rgba(29, 45, 77, 0.48), rgba(38, 27, 65, 0.42));
+}
+
+.releaseOutcomeSummary.unchanged {
+  border-color: rgba(105, 120, 164, 0.3);
+  background: rgba(10, 18, 35, 0.72);
 }
 
 .releaseOutcomeMark {
@@ -5845,15 +5931,25 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   width: 42px;
   height: 42px;
   border-radius: 11px;
-  background: rgba(53, 208, 131, 0.13);
-  color: #86e8b4;
+  background: rgba(84, 150, 255, 0.13);
+  color: #a8caff;
   font-size: 18px;
   font-weight: 900;
 }
 
-.releaseOutcomeSummary.hasRegression .releaseOutcomeMark {
-  background: rgba(244, 89, 103, 0.13);
-  color: #ff9da7;
+.releaseOutcomeSummary.decrease .releaseOutcomeMark {
+  background: rgba(151, 102, 255, 0.14);
+  color: #cab8ff;
+}
+
+.releaseOutcomeSummary.mixed .releaseOutcomeMark {
+  background: rgba(107, 127, 201, 0.14);
+  color: #bec8ec;
+}
+
+.releaseOutcomeSummary.unchanged .releaseOutcomeMark {
+  background: rgba(105, 120, 164, 0.12);
+  color: #a7b0c7;
 }
 
 .releaseOutcomeSummary > div:nth-child(2) {
@@ -5926,12 +6022,12 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   padding: 14px;
 }
 
-.releaseFunnelImpact.regression {
-  border-color: rgba(244, 89, 103, 0.3);
+.releaseFunnelImpact.increase {
+  border-color: rgba(84, 150, 255, 0.3);
 }
 
-.releaseFunnelImpact.improvement {
-  border-color: rgba(53, 208, 131, 0.3);
+.releaseFunnelImpact.decrease {
+  border-color: rgba(151, 102, 255, 0.32);
 }
 
 .releaseFunnelImpact > header {
@@ -5965,14 +6061,14 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   white-space: nowrap;
 }
 
-.releaseFunnelImpact.regression > header b {
-  background: rgba(244, 89, 103, 0.12);
-  color: #ff9ca7;
+.releaseFunnelImpact.increase > header b {
+  background: rgba(84, 150, 255, 0.12);
+  color: #a8caff;
 }
 
-.releaseFunnelImpact.improvement > header b {
-  background: rgba(53, 208, 131, 0.11);
-  color: #79e3aa;
+.releaseFunnelImpact.decrease > header b {
+  background: rgba(151, 102, 255, 0.12);
+  color: #cab8ff;
 }
 
 .releaseFunnelBarRow {
@@ -6021,16 +6117,16 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   font-size: 11px;
 }
 
-.releaseComparisonTableRow.regression .releaseTableDelta {
-  color: #ff9ca7;
+.releaseComparisonTableRow.increase .releaseTableDelta {
+  color: #a8caff;
 }
 
-.releaseComparisonTableRow.improvement .releaseTableDelta {
-  color: #79e3aa;
+.releaseComparisonTableRow.decrease .releaseTableDelta {
+  color: #cab8ff;
 }
 
-.releaseComparisonTableRow.contextual .releaseTableDelta {
-  color: #91bfff;
+.releaseComparisonTableRow.unchanged .releaseTableDelta {
+  color: #a7b0c7;
 }
 
 .releaseFindingList {
@@ -6050,16 +6146,16 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   padding: 10px;
 }
 
-.releaseFinding.regression {
-  border-color: rgba(244, 89, 103, 0.34);
+.releaseFinding.increase {
+  border-color: rgba(84, 150, 255, 0.34);
 }
 
-.releaseFinding.improvement {
-  border-color: rgba(53, 208, 131, 0.32);
+.releaseFinding.decrease {
+  border-color: rgba(151, 102, 255, 0.34);
 }
 
-.releaseFinding.observation {
-  border-color: rgba(84, 150, 255, 0.32);
+.releaseFinding.unchanged {
+  border-color: rgba(105, 120, 164, 0.3);
 }
 
 .releaseFindingMark {
@@ -6074,19 +6170,19 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   font-weight: 900;
 }
 
-.releaseFinding.regression .releaseFindingMark {
-  background: rgba(244, 89, 103, 0.13);
-  color: #ffabb4;
+.releaseFinding.increase .releaseFindingMark {
+  background: rgba(84, 150, 255, 0.13);
+  color: #a8caff;
 }
 
-.releaseFinding.improvement .releaseFindingMark {
-  background: rgba(53, 208, 131, 0.12);
-  color: #85e8b3;
+.releaseFinding.decrease .releaseFindingMark {
+  background: rgba(151, 102, 255, 0.13);
+  color: #cab8ff;
 }
 
-.releaseFinding.observation .releaseFindingMark {
-  background: rgba(84, 150, 255, 0.12);
-  color: #9fc6ff;
+.releaseFinding.unchanged .releaseFindingMark {
+  background: rgba(105, 120, 164, 0.12);
+  color: #a7b0c7;
 }
 
 .releaseFinding > div,
@@ -7798,8 +7894,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     flex-wrap: wrap;
   }
 
-  .releasePlaceField,
-  .releaseFunnelPicker {
+  .releaseVersionPair {
     flex-basis: 100%;
   }
 
@@ -7816,12 +7911,13 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .releaseCompareControls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .releasePlaceField,
+  .releaseVersionPair,
   .releaseFunnelPicker {
-    grid-column: 1 / -1;
+    grid-column: 1;
   }
 
   .releaseCommandBar {
@@ -7939,14 +8035,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .releaseSelectField,
   .releasePlaceField,
-  .releaseFunnelPicker,
-  .releaseSwapButton {
+  .releaseVersionPair,
+  .releaseFunnelPicker {
     grid-column: 1;
   }
 
-  .releaseSwapButton {
-    justify-self: center;
-    transform: rotate(90deg);
+  .releaseVersionPair {
+    min-width: 0;
+  }
+
+  .releaseVersionSide {
+    padding-inline: 11px;
   }
 
   .releaseHeaderBadges {
