@@ -83,11 +83,14 @@ const chatPlayerCount = document.querySelector("#chatPlayerCount");
 const chatLiveBadge = document.querySelector("#chatLiveBadge");
 const refreshReleasesButton = document.querySelector("#refreshReleasesButton");
 const releaseStatus = document.querySelector("#releaseStatus");
-const releaseCurrentVersion = document.querySelector("#releaseCurrentVersion");
-const releaseTrackedVersions = document.querySelector("#releaseTrackedVersions");
-const releaseCoverage = document.querySelector("#releaseCoverage");
-const releaseStudioCount = document.querySelector("#releaseStudioCount");
 const releaseCohortList = document.querySelector("#releaseCohortList");
+const releasePlaceSelect = document.querySelector("#releasePlaceSelect");
+const releasePlaceField = document.querySelector(".releasePlaceField");
+const releaseBeforeVersionSelect = document.querySelector("#releaseBeforeVersionSelect");
+const releaseAfterVersionSelect = document.querySelector("#releaseAfterVersionSelect");
+const releaseSwapVersionsButton = document.querySelector("#releaseSwapVersionsButton");
+const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
+const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const refreshEventsButton = document.querySelector("#refreshEventsButton");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventSelect = document.querySelector("#eventSelect");
@@ -193,6 +196,8 @@ let usageRequestSequence = 0;
 let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
 let releaseRequestSequence = 0;
+let currentReleasePayload = null;
+let releaseSelection = createEmptyReleaseSelection();
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
@@ -210,7 +215,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260716-1";
+const DASHBOARD_ASSET_VERSION = "20260716-2";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -333,6 +338,32 @@ function bindEvents() {
   window.addEventListener("resize", positionUniverseDropdown);
   window.addEventListener("scroll", positionUniverseDropdown, true);
   refreshReleasesButton?.addEventListener("click", () => loadReleases({ force: true }));
+  releasePlaceSelect?.addEventListener("change", () => {
+    releaseSelection.placeId = releasePlaceSelect.value || "";
+    releaseSelection.beforeVersion = "";
+    releaseSelection.afterVersion = "";
+    closeReleaseFunnelMenu();
+    loadReleases();
+  });
+  releaseBeforeVersionSelect?.addEventListener("change", () => {
+    releaseSelection.beforeVersion = releaseBeforeVersionSelect.value || "";
+    closeReleaseFunnelMenu();
+    loadReleases();
+  });
+  releaseAfterVersionSelect?.addEventListener("change", () => {
+    releaseSelection.afterVersion = releaseAfterVersionSelect.value || "";
+    closeReleaseFunnelMenu();
+    loadReleases();
+  });
+  releaseSwapVersionsButton?.addEventListener("click", swapReleaseVersions);
+  releaseFunnelPickerButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleReleaseFunnelMenu();
+  });
+  releaseFunnelMenu?.addEventListener("click", handleReleaseFunnelMenuClick);
+  releaseFunnelMenu?.addEventListener("change", handleReleaseFunnelSelectionChange);
+  document.addEventListener("pointerdown", handleReleaseFunnelOutsidePointer);
+  document.addEventListener("keydown", handleReleaseFunnelEscape);
   refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
   eventSelect?.addEventListener("change", () => {
     selectedCustomEventName = eventSelect.value || "";
@@ -2249,6 +2280,8 @@ function selectUniverse(value) {
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
+  currentReleasePayload = null;
+  releaseSelection = createEmptyReleaseSelection();
   isCreatingFunnel = false;
   setFunnelBuilderVisible(false);
   renderChatSummary();
@@ -2267,6 +2300,16 @@ function selectUniverse(value) {
   }));
 }
 
+function createEmptyReleaseSelection() {
+  return {
+    placeId: "",
+    beforeVersion: "",
+    afterVersion: "",
+    funnelIds: [],
+    funnelSelectionInitialized: false,
+  };
+}
+
 async function loadReleases(options = {}) {
   if (!authenticated || !releaseStatus || !releaseCohortList) return false;
   const requestSequence = ++releaseRequestSequence;
@@ -2278,30 +2321,38 @@ async function loadReleases(options = {}) {
     return false;
   }
 
-  releaseStatus.textContent = "Loading release cohorts...";
+  releaseStatus.textContent = "Building version comparison...";
   releaseCohortList.setAttribute("aria-busy", "true");
   if (refreshReleasesButton) refreshReleasesButton.disabled = true;
   const params = new URLSearchParams({ universeId });
+  if (releaseSelection.placeId) params.set("placeId", releaseSelection.placeId);
+  if (releaseSelection.beforeVersion) params.set("beforeVersion", releaseSelection.beforeVersion);
+  if (releaseSelection.afterVersion) params.set("afterVersion", releaseSelection.afterVersion);
+  if (releaseSelection.funnelSelectionInitialized) {
+    params.set("funnelIds", releaseSelection.funnelIds.length ? releaseSelection.funnelIds.join(",") : "none");
+  }
   if (options.force) params.set("fresh", "1");
 
   try {
     const payload = await request(`/api/releases?${params.toString()}`, { dedupe: !options.force });
     if (requestSequence !== releaseRequestSequence || universeId !== selectedUniverseId) return false;
     renderReleases(payload);
-    const releaseCount = Number(payload.releaseCount) || 0;
-    const comparableCount = Number(payload.comparableReleaseCount) || 0;
-    const currentRelease = (payload.places || []).flatMap((place) => place.releases || []).find((release) => release.isCurrent);
-    const currentFindings = currentRelease?.comparison?.findings || null;
-    const findingSummary = currentRelease?.comparison?.status === "ready"
-      ? ` Current release: ${formatCompactNumber(currentFindings?.regressions)} regression${Number(currentFindings?.regressions) === 1 ? "" : "s"}, ${formatCompactNumber(currentFindings?.improvements)} improvement${Number(currentFindings?.improvements) === 1 ? "" : "s"}.`
-      : "";
+    const selectedComparison = payload.selectedComparison || null;
+    const comparison = selectedComparison?.comparison || null;
+    const findings = comparison?.findings || {};
+    const matchedSessions = Math.min(
+      Number(comparison?.trafficAdjustment?.samples?.before?.sessions) || 0,
+      Number(comparison?.trafficAdjustment?.samples?.after?.sessions) || 0,
+    );
     const truncationWarning = payload.versionRollupsTruncated
       ? ` Older version history was capped; ${formatCompactNumber(payload.droppedVersionCount)} version${Number(payload.droppedVersionCount) === 1 ? "" : "s"} omitted.`
       : "";
-    releaseStatus.textContent = releaseCount
-      ? `${formatCompactNumber(releaseCount)} production version${releaseCount === 1 ? "" : "s"} tracked. ${formatCompactNumber(comparableCount)} ready to compare.`
-      : "No production PlaceVersions recorded yet.";
-    releaseStatus.textContent += findingSummary;
+    const comparisonReady = comparison?.status === "ready" && comparison?.trafficAdjustment?.status === "ready";
+    releaseStatus.textContent = !selectedComparison?.before
+      ? "At least two production versions are required for a comparison."
+      : comparisonReady
+        ? `v${formatReleaseVersion(selectedComparison.previousPlaceVersion)} vs v${formatReleaseVersion(selectedComparison.placeVersion)} · ${formatCompactNumber(matchedSessions)} matched sessions per side · ${formatCompactNumber((findings.items || []).length)} supported finding${Number((findings.items || []).length) === 1 ? "" : "s"}.`
+        : `v${formatReleaseVersion(selectedComparison.previousPlaceVersion)} vs v${formatReleaseVersion(selectedComparison.placeVersion)} is still collecting enough comparable sessions.`;
     releaseStatus.textContent += truncationWarning;
     return true;
   } catch (error) {
@@ -2319,29 +2370,14 @@ async function loadReleases(options = {}) {
 
 function renderReleases(payload = {}) {
   const places = Array.isArray(payload.places) ? payload.places : [];
-  const coverage = payload.coverage || {};
-  const comparableCount = Number(payload.comparableReleaseCount) || 0;
-  const coveragePercent = coverage.productionVersionCoveragePercent;
-  const currentRelease = places
-    .flatMap((place) => Array.isArray(place.releases) ? place.releases : [])
-    .find((release) => release.isCurrent) || null;
-
-  if (releaseCurrentVersion) {
-    releaseCurrentVersion.textContent = currentRelease
-      ? `v${formatReleaseVersion(currentRelease.placeVersion)}`
-      : "--";
-  }
-  if (releaseTrackedVersions) {
-    releaseTrackedVersions.textContent = currentRelease?.previousPlaceVersion
-      ? `v${formatReleaseVersion(currentRelease.previousPlaceVersion)}`
-      : "--";
-  }
-  if (releaseCoverage) releaseCoverage.textContent = formatCompactNumber(comparableCount);
-  if (releaseStudioCount) {
-    releaseStudioCount.textContent = coveragePercent === null || coveragePercent === undefined
-      ? "--"
-      : `${formatEventNumber(coveragePercent)}%`;
-  }
+  const selection = payload.selection || {};
+  currentReleasePayload = payload;
+  releaseSelection.placeId = selection.placeId ? String(selection.placeId) : "";
+  releaseSelection.beforeVersion = selection.beforeVersion ? String(selection.beforeVersion) : "";
+  releaseSelection.afterVersion = selection.afterVersion ? String(selection.afterVersion) : "";
+  releaseSelection.funnelIds = Array.isArray(selection.funnelIds) ? selection.funnelIds.map(String) : [];
+  releaseSelection.funnelSelectionInitialized = true;
+  renderReleaseComparisonControls(payload);
   if (!releaseCohortList) return;
 
   if (!places.length) {
@@ -2354,29 +2390,140 @@ function renderReleases(payload = {}) {
     return;
   }
 
-  releaseCohortList.innerHTML = places.map(renderReleasePlace).join("");
+  if (!payload.selectedComparison?.before) {
+    releaseCohortList.innerHTML = `
+      <article class="panel releaseEmptyState">
+        <strong>Two versions are needed.</strong>
+        <p>Keep the Roblox analytics script installed through another published update. Once both PlaceVersions have sessions, you can compare them here.</p>
+      </article>
+    `;
+    return;
+  }
+
+  releaseCohortList.innerHTML = renderReleaseComparison(payload.selectedComparison);
 }
 
-function renderReleasePlace(place = {}) {
-  const releases = Array.isArray(place.releases) ? place.releases : [];
-  return `
-    <article class="panel releasePlaceCard">
-      <header class="releasePlaceHeader">
-        <div>
-          <span>Roblox place</span>
-          <strong>${escapeHtml(String(place.placeId || "Unknown"))}</strong>
-        </div>
-        <p><strong>v${escapeHtml(formatReleaseVersion(place.currentVersion))}</strong> current <span>${escapeHtml(formatCompactNumber(place.versionCount))} version${Number(place.versionCount) === 1 ? "" : "s"} observed</span></p>
-      </header>
-      <div class="releaseTimeline">
-        ${releases.map(renderReleaseComparison).join("")}
+function renderReleaseComparisonControls(payload = {}) {
+  const places = Array.isArray(payload.places) ? payload.places : [];
+  const selectedPlace = places.find((place) => String(place.placeId) === releaseSelection.placeId) || places[0] || null;
+  const versions = (selectedPlace?.releases || []).map((release) => release.after).filter(Boolean);
+  const funnels = Array.isArray(payload.availableFunnels) ? payload.availableFunnels : [];
+  const selectedFunnelIds = new Set(releaseSelection.funnelIds);
+
+  if (releasePlaceField) releasePlaceField.hidden = places.length <= 1;
+  if (releasePlaceSelect) {
+    releasePlaceSelect.disabled = !places.length;
+    releasePlaceSelect.innerHTML = places.map((place) => `
+      <option value="${escapeHtml(String(place.placeId))}" ${String(place.placeId) === releaseSelection.placeId ? "selected" : ""}>Place ${escapeHtml(String(place.placeId))} · current v${escapeHtml(formatReleaseVersion(place.currentVersion))}</option>
+    `).join("");
+  }
+
+  renderReleaseVersionSelect(releaseBeforeVersionSelect, versions, releaseSelection.beforeVersion, releaseSelection.afterVersion, "Choose baseline");
+  renderReleaseVersionSelect(releaseAfterVersionSelect, versions, releaseSelection.afterVersion, releaseSelection.beforeVersion, "Choose version");
+  if (releaseSwapVersionsButton) releaseSwapVersionsButton.disabled = !releaseSelection.beforeVersion || !releaseSelection.afterVersion;
+
+  if (releaseFunnelPickerButton) {
+    const label = !funnels.length
+      ? "No saved funnels"
+      : selectedFunnelIds.size === funnels.length
+        ? `All funnels (${funnels.length})`
+        : selectedFunnelIds.size
+          ? `${selectedFunnelIds.size} of ${funnels.length} funnels`
+          : "Events only";
+    releaseFunnelPickerButton.disabled = !funnels.length;
+    const labelNode = releaseFunnelPickerButton.querySelector("strong");
+    if (labelNode) labelNode.textContent = label;
+  }
+
+  if (releaseFunnelMenu) {
+    releaseFunnelMenu.innerHTML = funnels.length ? `
+      <header><strong>Funnels in this comparison</strong><span>Findings recalculate from this selection.</span></header>
+      <div class="releaseFunnelMenuActions">
+        <button type="button" data-release-funnel-action="all">Select all</button>
+        <button type="button" data-release-funnel-action="none">Clear</button>
       </div>
-    </article>
+      <div class="releaseFunnelOptions">
+        ${funnels.map((funnel) => `
+          <label>
+            <input type="checkbox" value="${escapeHtml(String(funnel.id || ""))}" ${selectedFunnelIds.has(String(funnel.id || "")) ? "checked" : ""}>
+            <span><strong>${escapeHtml(funnel.name || "Untitled funnel")}</strong><small>${escapeHtml((funnel.steps || []).join(" → ") || "No steps")}</small></span>
+          </label>
+        `).join("")}
+      </div>
+    ` : "";
+  }
+}
+
+function renderReleaseVersionSelect(select, versions, selectedVersion, unavailableVersion, placeholder) {
+  if (!select) return;
+  select.disabled = versions.length < 2;
+  select.innerHTML = `
+    <option value="">${escapeHtml(placeholder)}</option>
+    ${versions.map((version) => {
+      const value = String(version.placeVersion || "");
+      const isUnavailable = value === String(unavailableVersion || "");
+      return `<option value="${escapeHtml(value)}" ${value === String(selectedVersion || "") ? "selected" : ""} ${isUnavailable ? "disabled" : ""}>v${escapeHtml(formatReleaseVersion(value))} · ${escapeHtml(formatCompactNumber(version.sessionCount))} sessions</option>`;
+    }).join("")}
   `;
 }
 
+function swapReleaseVersions() {
+  if (!releaseSelection.beforeVersion || !releaseSelection.afterVersion) return;
+  const beforeVersion = releaseSelection.beforeVersion;
+  releaseSelection.beforeVersion = releaseSelection.afterVersion;
+  releaseSelection.afterVersion = beforeVersion;
+  closeReleaseFunnelMenu();
+  loadReleases();
+}
+
+function toggleReleaseFunnelMenu(forceOpen) {
+  if (!releaseFunnelMenu || !releaseFunnelPickerButton || releaseFunnelPickerButton.disabled) return;
+  const shouldOpen = forceOpen === undefined ? releaseFunnelMenu.hidden : Boolean(forceOpen);
+  releaseFunnelMenu.hidden = !shouldOpen;
+  releaseFunnelPickerButton.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+function closeReleaseFunnelMenu() {
+  if (!releaseFunnelMenu || !releaseFunnelPickerButton) return;
+  releaseFunnelMenu.hidden = true;
+  releaseFunnelPickerButton.setAttribute("aria-expanded", "false");
+}
+
+function handleReleaseFunnelMenuClick(event) {
+  event.stopPropagation();
+  const actionButton = event.target.closest("[data-release-funnel-action]");
+  if (!actionButton) return;
+  const funnels = Array.isArray(currentReleasePayload?.availableFunnels) ? currentReleasePayload.availableFunnels : [];
+  releaseSelection.funnelIds = actionButton.dataset.releaseFunnelAction === "all"
+    ? funnels.map((funnel) => String(funnel.id || "")).filter(Boolean)
+    : [];
+  releaseSelection.funnelSelectionInitialized = true;
+  closeReleaseFunnelMenu();
+  loadReleases();
+}
+
+function handleReleaseFunnelSelectionChange(event) {
+  if (!event.target.matches('input[type="checkbox"]')) return;
+  releaseSelection.funnelIds = [...releaseFunnelMenu.querySelectorAll('input[type="checkbox"]:checked')]
+    .map((input) => input.value)
+    .filter(Boolean);
+  releaseSelection.funnelSelectionInitialized = true;
+  closeReleaseFunnelMenu();
+  loadReleases();
+}
+
+function handleReleaseFunnelOutsidePointer(event) {
+  if (releaseFunnelMenu?.hidden) return;
+  if (releaseFunnelMenu?.contains(event.target) || releaseFunnelPickerButton?.contains(event.target)) return;
+  closeReleaseFunnelMenu();
+}
+
+function handleReleaseFunnelEscape(event) {
+  if (event.key === "Escape") closeReleaseFunnelMenu();
+}
+
 function renderReleaseComparison(release = {}) {
-  const allowedReadiness = new Set(["ready", "no_baseline", "collecting_both", "collecting_baseline", "collecting_release"]);
+  const allowedReadiness = new Set(["ready", "no_baseline", "collecting_both", "collecting_baseline", "collecting_release", "collecting_matched"]);
   const readiness = allowedReadiness.has(release.readiness) ? release.readiness : "collecting_both";
   const readinessClass = readiness.replaceAll("_", "-");
   const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
@@ -2384,6 +2531,8 @@ function renderReleaseComparison(release = {}) {
     ? `v${formatReleaseVersion(release.previousPlaceVersion)}`
     : "No baseline";
   const afterVersion = `v${formatReleaseVersion(release.placeVersion)}`;
+  const selectedFunnelCount = Array.isArray(release.selectedFunnelIds) ? release.selectedFunnelIds.length : 0;
+  const comparisonWindowMs = Number(release.comparison?.trafficAdjustment?.comparisonWindow?.durationMs) || 0;
 
   return `
     <article class="releaseComparisonCard ${release.isCurrent ? "isCurrent" : ""}">
@@ -2395,6 +2544,8 @@ function renderReleaseComparison(release = {}) {
         </div>
         <div class="releaseHeaderBadges">
           ${release.isCurrent ? '<span class="releaseCurrentBadge">Current release</span>' : ""}
+          <span class="releaseFunnelCountBadge">${selectedFunnelCount ? `${escapeHtml(formatCompactNumber(selectedFunnelCount))} funnel${selectedFunnelCount === 1 ? "" : "s"}` : "Events only"}</span>
+          ${comparisonWindowMs ? `<span class="releaseWindowBadge">Matched ${escapeHtml(formatDuration(comparisonWindowMs))} window</span>` : ""}
           <span class="releaseReadinessBadge ${readinessClass}">${escapeHtml(release.readinessLabel || "Collecting cohorts")}</span>
         </div>
       </header>
@@ -2403,7 +2554,7 @@ function renderReleaseComparison(release = {}) {
         <div class="releaseComparisonDivider" aria-hidden="true"><span>vs</span></div>
         ${renderReleaseCohort(release.after, "After", minimumSessions)}
       </div>
-      ${renderReleaseAnalysis(release.comparison, Boolean(release.isCurrent))}
+      ${renderReleaseAnalysis(release.comparison)}
       ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
     </article>
   `;
@@ -2437,14 +2588,14 @@ function renderReleaseCohort(cohort, label, minimumSessions) {
   `;
 }
 
-function renderReleaseAnalysis(comparison = null, isCurrent = false) {
+function renderReleaseAnalysis(comparison = null) {
   if (!comparison) return "";
   const findings = comparison.findings || {};
   const findingItems = Array.isArray(findings.items) ? findings.items : [];
-  const ready = comparison.status === "ready";
   const partialData = Boolean(comparison.dataQuality?.partial);
   const trafficAdjustment = comparison.trafficAdjustment || {};
   const trafficReady = trafficAdjustment.status === "ready";
+  const ready = comparison.status === "ready" && trafficReady;
   const coreMetrics = trafficReady && Array.isArray(trafficAdjustment.coreMetrics)
     ? trafficAdjustment.coreMetrics
     : (Array.isArray(comparison.coreMetrics) ? comparison.coreMetrics : []);
@@ -2462,8 +2613,8 @@ function renderReleaseAnalysis(comparison = null, isCurrent = false) {
   const afterVersion = comparison.samples?.after?.placeVersion;
 
   return `
-    <details class="releaseAnalysis" ${isCurrent ? "open" : ""}>
-      <summary class="releaseAnalysisSummary">
+    <section class="releaseAnalysis">
+      <header class="releaseAnalysisSummary">
         <div>
           <span class="releaseAnalysisIcon" aria-hidden="true">&#8597;</span>
           <span><strong>Impact analysis</strong><small>${ready ? "Meaningful funnel and event changes" : "Waiting for enough sessions to compare"}</small></span>
@@ -2473,9 +2624,9 @@ function renderReleaseAnalysis(comparison = null, isCurrent = false) {
           <span class="improvement">${escapeHtml(formatCompactNumber(findings.improvements))} improvement${Number(findings.improvements) === 1 ? "" : "s"}</span>
           ${partialData ? '<span class="partial">Partial data</span>' : ""}
         </div>
-      </summary>
+      </header>
       <div class="releaseAnalysisBody">
-        ${renderReleaseOutcomeSummary({ findings, ready, partialData, evidenceSessions, beforeVersion, afterVersion })}
+        ${renderReleaseOutcomeSummary({ findings, ready, partialData, evidenceSessions, beforeVersion, afterVersion, matched: trafficReady })}
         <div class="releasePrimaryImpactGrid ${funnels.length ? "" : "findingsOnly"}">
           ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
           ${renderReleaseFindingsSection(findingItems, { ready, partialData })}
@@ -2483,11 +2634,11 @@ function renderReleaseAnalysis(comparison = null, isCurrent = false) {
         ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics, beforeVersion, afterVersion) : ""}
         <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is intentionally excluded because a larger event count alone does not mean an update performed better.</p>
       </div>
-    </details>
+    </section>
   `;
 }
 
-function renderReleaseOutcomeSummary({ findings = {}, ready = false, partialData = false, evidenceSessions = 0, beforeVersion, afterVersion } = {}) {
+function renderReleaseOutcomeSummary({ findings = {}, ready = false, partialData = false, evidenceSessions = 0, beforeVersion, afterVersion, matched = false } = {}) {
   const regressions = Number(findings.regressions) || 0;
   const improvements = Number(findings.improvements) || 0;
   const observations = Number(findings.observations) || 0;
@@ -2512,7 +2663,7 @@ function renderReleaseOutcomeSummary({ findings = {}, ready = false, partialData
         <strong>${escapeHtml(headline)}</strong>
         <p>${escapeHtml(summary)}</p>
       </div>
-      <div class="releaseOutcomeEvidence"><strong>${escapeHtml(formatCompactNumber(evidenceSessions))}</strong><span>sessions / version</span></div>
+      <div class="releaseOutcomeEvidence"><strong>${escapeHtml(formatCompactNumber(evidenceSessions))}</strong><span>${matched ? "matched" : "usable"} sessions / side</span></div>
     </section>
   `;
 }

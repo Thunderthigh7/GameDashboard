@@ -119,9 +119,12 @@ const demoEvents = [
 const demoVersions = [...new Set(demo.customEvents.map((event) => event.placeVersion))].sort((left, right) => left - right);
 const demoCohort = (placeVersion) => {
   const matching = demoEvents.filter((event) => event.placeVersion === placeVersion);
+  const timestamps = matching.map((event) => Number(event.occurredAt) || 0).filter((timestamp) => timestamp > 0);
   return {
     placeId: demo.placeId,
     placeVersion,
+    firstSeenAt: Math.min(...timestamps),
+    lastSeenAt: Math.max(...timestamps),
     sessionCount: new Set(matching.map((event) => event.sessionId)).size,
     meetsMinimumSessions: true,
     records: {
@@ -133,10 +136,17 @@ const demoCohort = (placeVersion) => {
 };
 const demoComparison = buildReleaseComparison({
   placeId: demo.placeId,
-  before: demoCohort(demoVersions[0]),
-  after: demoCohort(demoVersions[1]),
+  before: demoCohort(demoVersions.at(-2)),
+  after: demoCohort(demoVersions.at(-1)),
   events: demoEvents,
   funnelDefinitions: demo.funnels,
+});
+const selectedFunnelComparison = buildReleaseComparison({
+  placeId: demo.placeId,
+  before: demoCohort(demoVersions[0]),
+  after: demoCohort(demoVersions.at(-1)),
+  events: demoEvents,
+  funnelDefinitions: [demo.funnels[0]],
 });
 
 if (demoComparison.trafficAdjustment.status !== "ready") {
@@ -152,7 +162,14 @@ assert.equal(demoComparison.trafficAdjustment.status, "ready");
 assert.equal(demoComparison.trafficAdjustment.coverage.before.platformPercent, 100);
 assert.equal(demoComparison.trafficAdjustment.coverage.after.platformPercent, 100);
 assert.ok(demoComparison.trafficAdjustment.samples.before.sessions >= 20);
+assert.equal(demoComparison.trafficAdjustment.comparisonWindow.enabled, true);
+assert.ok(demoComparison.trafficAdjustment.comparisonWindow.durationMs <= 7 * 24 * 60 * 60 * 1000);
 assert.ok(demoComparison.findings.items.length > 0, "the demo should contain reviewable matched release findings");
+assert.equal(demoVersions.length, 3, "the demo should expose enough versions to test arbitrary selection");
+assert.equal(selectedFunnelComparison.status, "ready", "non-adjacent demo versions should be comparable");
+assert.equal(selectedFunnelComparison.funnels.length, 1, "only selected funnels should be computed");
+assert.equal(selectedFunnelComparison.funnels[0]?.id, demo.funnels[0]?.id);
+assert.equal(selectedFunnelComparison.trafficAdjustment.funnels.length, 1, "traffic-matched findings should use only selected funnels");
 
 console.log("Release comparison traffic-matching tests passed.", {
   demoMatchedSessions: demoComparison.trafficAdjustment.samples.before.sessions,

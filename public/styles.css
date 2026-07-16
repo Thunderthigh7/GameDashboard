@@ -5089,20 +5089,10 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   max-width: 480px;
 }
 
-.releasesPage,
-.releaseCohortList,
-.releaseTimeline {
+.releasesPage {
   display: grid;
   min-width: 0;
-}
-
-.releasesPage,
-.releaseCohortList {
   gap: 14px;
-}
-
-.releaseTimeline {
-  gap: 12px;
 }
 
 .releaseCommandBar {
@@ -5192,37 +5182,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   transform: rotate(90deg);
 }
 
-.releaseSummaryGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.releaseSummaryCard {
-  position: relative;
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: linear-gradient(145deg, rgba(19, 29, 55, 0.9), rgba(8, 15, 30, 0.94));
-  padding: 16px;
-  overflow: hidden;
-}
-
-.releaseSummaryCard::before {
-  position: absolute;
-  top: 0;
-  right: 16px;
-  left: 16px;
-  height: 2px;
-  border-radius: 0 0 999px 999px;
-  background: linear-gradient(90deg, rgba(124, 60, 255, 0.85), rgba(56, 207, 154, 0.7));
-  content: "";
-}
-
-.releaseSummaryCard > span,
-.releasePlaceHeader span,
+.releaseCompareHeading > span,
 .releaseComparisonHeader > div:first-child > span,
 .releaseCohortTitle span {
   color: var(--muted);
@@ -5232,68 +5192,282 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   text-transform: uppercase;
 }
 
-.releaseSummaryCard > strong {
-  color: var(--text);
-  font-size: clamp(22px, 2.5vw, 30px);
-  letter-spacing: -0.04em;
-}
-
-.releaseSummaryCard small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.releasePlaceCard {
-  padding: 0;
-  overflow: hidden;
-}
-
-.releasePlaceHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  border-bottom: 1px solid var(--line);
-  padding: 15px 18px;
-}
-
-.releasePlaceHeader > div {
+.releaseComparePanel {
   display: grid;
-  gap: 3px;
+  position: relative;
+  gap: 17px;
+  overflow: visible;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(124, 60, 255, 0.12), transparent 32%),
+    linear-gradient(145deg, rgba(17, 27, 51, 0.96), rgba(8, 15, 31, 0.96));
+  padding: 18px;
 }
 
-.releasePlaceHeader > div > strong {
+.releaseCompareHeading {
+  display: grid;
+  gap: 4px;
+}
+
+.releaseCompareHeading > strong {
   color: var(--text);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
+  font-size: 18px;
+  letter-spacing: -0.025em;
 }
 
-.releasePlaceHeader p {
+.releaseCompareControls {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.releaseSelectField,
+.releaseFunnelPicker {
+  display: grid;
+  position: relative;
+  flex: 1 1 210px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.releasePlaceField {
+  flex: 0.75 1 185px;
+}
+
+.releaseSelectField > span,
+.releaseFunnelPicker > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.releaseSelectField select,
+.releaseFunnelPicker > button {
+  width: 100%;
+  height: 44px;
+  min-width: 0;
+  border: 1px solid rgba(89, 105, 151, 0.38);
+  border-radius: 9px;
+  background: rgba(7, 13, 27, 0.86);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
   font-size: 12px;
 }
 
-.releasePlaceHeader p > strong {
-  color: #ccb7ff;
-  font-size: 16px;
+.releaseSelectField select {
+  cursor: pointer;
 }
 
-.releasePlaceHeader p span {
-  letter-spacing: 0;
-  text-transform: none;
+.releaseSelectField select:focus-visible,
+.releaseFunnelPicker > button:focus-visible,
+.releaseSwapButton:focus-visible {
+  border-color: rgba(151, 102, 255, 0.8);
+  outline: 2px solid rgba(124, 60, 255, 0.18);
+  outline-offset: 1px;
 }
 
-.releaseTimeline {
-  padding: 14px;
+.releaseSelectField select:disabled,
+.releaseFunnelPicker > button:disabled,
+.releaseSwapButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.releaseSwapButton {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(124, 60, 255, 0.4);
+  border-radius: 9px;
+  background: rgba(124, 60, 255, 0.12);
+  color: #cbb6ff;
+  cursor: pointer;
+}
+
+.releaseSwapButton:hover:not(:disabled) {
+  border-color: rgba(151, 102, 255, 0.72);
+  background: rgba(124, 60, 255, 0.2);
+}
+
+.releaseSwapButton svg,
+.releaseFunnelPicker > button svg {
+  width: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.releaseFunnelPicker {
+  flex: 1.1 1 230px;
+}
+
+.releaseFunnelPicker > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.releaseFunnelPicker > button strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseFunnelMenu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(390px, calc(100vw - 42px));
+  border: 1px solid rgba(103, 121, 172, 0.48);
+  border-radius: 11px;
+  background: rgba(10, 17, 34, 0.99);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.4);
+  padding: 11px;
+}
+
+.releaseFunnelMenu[hidden] {
+  display: none;
+}
+
+.releaseFunnelMenu > header {
+  display: grid;
+  gap: 3px;
+  padding: 3px 3px 10px;
+}
+
+.releaseFunnelMenu > header strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.releaseFunnelMenu > header span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.releaseFunnelMenuActions {
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid rgba(80, 99, 150, 0.24);
+  border-bottom: 1px solid rgba(80, 99, 150, 0.24);
+  padding: 8px 3px;
+}
+
+.releaseFunnelMenuActions button {
+  border: 0;
+  background: transparent;
+  color: #bca3fb;
+  padding: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.releaseFunnelOptions {
+  display: grid;
+  max-height: 280px;
+  padding-top: 6px;
+  overflow: auto;
+}
+
+.releaseFunnelOptions label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border-radius: 8px;
+  padding: 8px 6px;
+  cursor: pointer;
+}
+
+.releaseFunnelOptions label:hover {
+  background: rgba(124, 60, 255, 0.08);
+}
+
+.releaseFunnelOptions input {
+  width: 15px;
+  height: 15px;
+  accent-color: #8b58f2;
+}
+
+.releaseFunnelOptions label > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.releaseFunnelOptions strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.releaseFunnelOptions small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseNormalizationNote {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid rgba(80, 99, 150, 0.23);
+  padding-top: 12px;
+}
+
+.releaseNormalizationNote > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(53, 208, 131, 0.12);
+  color: #85e7b3;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.releaseNormalizationNote p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.releaseNormalizationNote strong {
+  color: #9ce8bf;
+}
+
+.releaseComparisonWorkspace {
+  display: grid;
+  min-width: 0;
+}
+
+.releaseComparisonWorkspace[aria-busy="true"] .releaseComparisonCard {
+  opacity: 0.58;
+  pointer-events: none;
 }
 
 .releaseComparisonCard {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(7, 13, 27, 0.54);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(12, 20, 39, 0.92), rgba(6, 12, 25, 0.94));
+  box-shadow: 0 18px 50px rgba(1, 5, 14, 0.18);
   overflow: hidden;
 }
 
@@ -5308,7 +5482,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--line);
-  padding: 13px 15px;
+  padding: 19px 21px;
 }
 
 .releaseComparisonHeader > div:first-child {
@@ -5318,7 +5492,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseComparisonHeader > div:first-child > strong {
   color: var(--text);
-  font-size: 20px;
+  font-size: clamp(24px, 3vw, 32px);
   letter-spacing: -0.025em;
 }
 
@@ -5330,7 +5504,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseComparisonHeader > div:first-child > small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .releaseHeaderBadges {
@@ -5342,6 +5516,8 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 }
 
 .releaseCurrentBadge,
+.releaseFunnelCountBadge,
+.releaseWindowBadge,
 .releaseReadinessBadge {
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -5358,6 +5534,18 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   color: #cfbaff;
 }
 
+.releaseFunnelCountBadge {
+  border-color: rgba(84, 150, 255, 0.38);
+  background: rgba(84, 150, 255, 0.1);
+  color: #a9cbff;
+}
+
+.releaseWindowBadge {
+  border-color: rgba(53, 208, 131, 0.32);
+  background: rgba(53, 208, 131, 0.08);
+  color: #9ce8bf;
+}
+
 .releaseReadinessBadge.ready {
   border-color: rgba(53, 208, 131, 0.42);
   background: rgba(53, 208, 131, 0.12);
@@ -5367,7 +5555,8 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 .releaseReadinessBadge.no-baseline,
 .releaseReadinessBadge.collecting-both,
 .releaseReadinessBadge.collecting-baseline,
-.releaseReadinessBadge.collecting-release {
+.releaseReadinessBadge.collecting-release,
+.releaseReadinessBadge.collecting-matched {
   border-color: rgba(245, 184, 70, 0.36);
   background: rgba(245, 184, 70, 0.1);
   color: #f8cf78;
@@ -5379,7 +5568,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   align-items: stretch;
   gap: 0;
   min-width: 0;
-  padding: 14px;
+  padding: 18px 20px;
 }
 
 .releaseCohortCard {
@@ -5391,7 +5580,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(14, 22, 42, 0.74);
-  padding: 13px 14px;
+  padding: 17px 18px;
 }
 
 .releaseCohortCard.isReady {
@@ -5419,7 +5608,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseCohortTitle strong {
   color: var(--text);
-  font-size: 24px;
+  font-size: 30px;
   letter-spacing: -0.035em;
 }
 
@@ -5527,28 +5716,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 13px 15px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.releaseAnalysisSummary::-webkit-details-marker {
-  display: none;
-}
-
-.releaseAnalysisSummary::after {
-  content: "";
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  transform: rotate(45deg);
-  transition: transform 160ms ease;
-}
-
-.releaseAnalysis[open] > .releaseAnalysisSummary::after {
-  transform: rotate(225deg);
+  padding: 17px 20px;
 }
 
 .releaseAnalysisSummary > div,
@@ -5567,14 +5735,14 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 .releaseAnalysisSummary strong,
 .releaseAnalysisSection > header strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .releaseAnalysisSummary small,
 .releaseAnalysisSection > header span,
 .releaseAnalysisSection > header small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .releaseAnalysisIcon {
@@ -5630,7 +5798,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   display: grid;
   gap: 14px;
   border-top: 1px solid var(--line);
-  padding: 15px;
+  padding: 20px;
 }
 
 .releaseAnalysisSection {
@@ -5640,7 +5808,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   border: 1px solid rgba(80, 99, 150, 0.28);
   border-radius: 10px;
   background: rgba(10, 17, 34, 0.6);
-  padding: 12px;
+  padding: 16px;
 }
 
 .releaseAnalysisSection > header {
@@ -5663,7 +5831,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   border: 1px solid rgba(53, 208, 131, 0.3);
   border-radius: 11px;
   background: linear-gradient(135deg, rgba(16, 53, 48, 0.48), rgba(10, 18, 35, 0.82));
-  padding: 14px;
+  padding: 17px;
 }
 
 .releaseOutcomeSummary.hasRegression {
@@ -5704,12 +5872,12 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseOutcomeSummary > div:nth-child(2) > strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: 19px;
 }
 
 .releaseOutcomeSummary p {
   color: var(--nav-text);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .releaseOutcomeEvidence {
@@ -5746,7 +5914,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseFunnelImpactList {
   display: grid;
-  gap: 9px;
+  gap: 11px;
 }
 
 .releaseFunnelImpact {
@@ -5755,7 +5923,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   border: 1px solid rgba(80, 99, 150, 0.28);
   border-radius: 9px;
   background: rgba(7, 13, 27, 0.62);
-  padding: 11px;
+  padding: 14px;
 }
 
 .releaseFunnelImpact.regression {
@@ -5780,12 +5948,12 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseFunnelImpact > header strong {
   color: var(--text);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .releaseFunnelImpact > header span {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .releaseFunnelImpact > header b {
@@ -5813,11 +5981,11 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .releaseFunnelBarRow > div {
-  height: 7px;
+  height: 9px;
   border-radius: 999px;
   background: rgba(89, 101, 143, 0.2);
   overflow: hidden;
@@ -5836,7 +6004,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 
 .releaseFunnelBarRow strong {
   color: var(--nav-text);
-  font-size: 9px;
+  font-size: 10px;
   text-align: right;
 }
 
@@ -7626,8 +7794,13 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 1100px) {
-  .releaseSummaryGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .releaseCompareControls {
+    flex-wrap: wrap;
+  }
+
+  .releasePlaceField,
+  .releaseFunnelPicker {
+    flex-basis: 100%;
   }
 
   .releasePrimaryImpactGrid {
@@ -7636,10 +7809,19 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 760px) {
-  .releaseComparisonHeader,
-  .releasePlaceHeader {
+  .releaseComparisonHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .releaseCompareControls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  }
+
+  .releasePlaceField,
+  .releaseFunnelPicker {
+    grid-column: 1 / -1;
   }
 
   .releaseCommandBar {
@@ -7747,8 +7929,24 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 520px) {
-  .releaseSummaryGrid {
+  .releaseComparePanel {
+    padding: 14px;
+  }
+
+  .releaseCompareControls {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .releaseSelectField,
+  .releasePlaceField,
+  .releaseFunnelPicker,
+  .releaseSwapButton {
+    grid-column: 1;
+  }
+
+  .releaseSwapButton {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 
   .releaseHeaderBadges {

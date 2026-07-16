@@ -5743,16 +5743,21 @@ async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {
   }
 
   const places = [...productionVersionsByPlace.entries()]
-    .map(([placeId, versions]) => buildPlaceReleaseCohorts(placeId, versions, {
-      events: eventRecords.events,
-      funnelDefinitions,
-    }))
+    .map(([placeId, versions]) => buildPlaceReleaseCohorts(placeId, versions))
     .sort((left, right) => (
       right.currentVersion - left.currentVersion
       || right.lastSeenAt - left.lastSeenAt
       || left.placeId - right.placeId
     ));
   const releases = places.flatMap((place) => place.releases);
+  const selected = buildSelectedReleaseComparison(places, {
+    placeId: searchParams.get("placeId"),
+    beforeVersion: searchParams.get("beforeVersion"),
+    afterVersion: searchParams.get("afterVersion"),
+    funnelIds: searchParams.get("funnelIds"),
+    events: eventRecords.events,
+    funnelDefinitions,
+  });
 
   return {
     universeId: health.universeId,
@@ -5760,7 +5765,7 @@ async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {
     source: health.source,
     cohortMethod: {
       type: "exact_place_version",
-      description: "Before uses the immediately previous production PlaceVersion. After uses the release PlaceVersion.",
+      description: "The developer selects any two observed production PlaceVersions for the same place.",
       handlesServerOverlap: true,
       studioExcluded: true,
       minimumSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
@@ -5771,10 +5776,11 @@ async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {
       exactVersionSamples: true,
       nestedVersionRollupsIncluded: true,
       trafficMatchedFindings: true,
-      matchDimensions: ["first-seen vs returning", "observed platform"],
+      matchDimensions: ["same post-release window", "first-seen vs returning", "observed platform"],
       minimumMatchedSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
+      playerCountHandling: "Metrics use rates and findings use equal-sized exact-matched session strata, so extra traffic volume cannot create a finding by itself.",
       missingPlatformIsExplicit: true,
-      metrics: ["death session rate", "purchase session rate", "custom events per player", "median session duration", "saved funnel conversion", "leave-area distribution"],
+      metrics: ["death session rate", "purchase session rate", "custom events per player", "median session duration", "saved funnel conversion"],
     },
     coverage: health.coverage,
     versionRollupsTruncated: health.versionRollupsTruncated,
@@ -5784,11 +5790,95 @@ async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {
     releaseCount: releases.length,
     comparableReleaseCount: releases.filter((release) => release.readiness === "ready").length,
     collectingReleaseCount: releases.filter((release) => release.readiness.startsWith("collecting_")).length,
+    availableFunnels: funnelDefinitions.map(serializeFunnelDefinition),
+    selection: selected.selection,
+    selectedComparison: selected.comparison,
     places,
   };
 }
 
-function buildPlaceReleaseCohorts(placeId, rawVersions, comparisonContext = {}) {
+function buildSelectedReleaseComparison(places, options = {}) {
+  const requestedPlaceId = cleanInteger(options.placeId);
+  const place = places.find((entry) => entry.placeId === requestedPlaceId) || places[0] || null;
+  const funnelDefinitions = Array.isArray(options.funnelDefinitions) ? options.funnelDefinitions : [];
+  const requestedFunnelIds = String(options.funnelIds ?? "all").trim();
+  const selectedFunnelIds = requestedFunnelIds === "none"
+    ? []
+    : requestedFunnelIds && requestedFunnelIds !== "all"
+      ? requestedFunnelIds.split(",").map((id) => cleanString(id, 120)).filter(Boolean)
+      : funnelDefinitions.map((funnel) => cleanString(funnel?.id, 120)).filter(Boolean);
+  const selectedFunnelIdSet = new Set(selectedFunnelIds);
+  const selectedFunnelDefinitions = funnelDefinitions.filter((funnel) => selectedFunnelIdSet.has(cleanString(funnel?.id, 120)));
+
+  if (!place) {
+    return {
+      selection: { placeId: null, beforeVersion: null, afterVersion: null, funnelIds: selectedFunnelDefinitions.map((funnel) => funnel.id) },
+      comparison: null,
+    };
+  }
+
+  const versions = [...place.releases]
+    .map((release) => release.after)
+    .filter(Boolean)
+    .sort((left, right) => right.placeVersion - left.placeVersion);
+  const requestedAfterVersion = normalizePlaceVersion(options.afterVersion);
+  const requestedBeforeVersion = normalizePlaceVersion(options.beforeVersion);
+  const after = versions.find((version) => version.placeVersion === requestedAfterVersion)
+    || versions.find((version) => version.placeVersion === place.currentVersion)
+    || versions[0]
+    || null;
+  const defaultBefore = versions.find((version) => version.placeVersion < cleanInteger(after?.placeVersion))
+    || versions.find((version) => version.placeVersion !== cleanInteger(after?.placeVersion))
+    || null;
+  const before = versions.find((version) => (
+    version.placeVersion === requestedBeforeVersion
+    && version.placeVersion !== cleanInteger(after?.placeVersion)
+  )) || defaultBefore;
+  const readiness = getReleaseCohortReadiness(before, after);
+  const overlapDurationMs = before?.lastSeenAt && after?.firstSeenAt
+    ? Math.max(0, before.lastSeenAt - after.firstSeenAt)
+    : 0;
+  const selectedFunnelIdsInOrder = selectedFunnelDefinitions.map((funnel) => cleanString(funnel?.id, 120));
+  const comparison = before ? buildReleaseComparison({
+    placeId: place.placeId,
+    before,
+    after,
+    events: options.events,
+    funnelDefinitions: selectedFunnelDefinitions,
+  }) : null;
+  const comparisonReadiness = readiness === "ready" && comparison?.trafficAdjustment?.status !== "ready"
+    ? "collecting_matched"
+    : readiness;
+
+  return {
+    selection: {
+      placeId: place.placeId,
+      beforeVersion: before?.placeVersion || null,
+      afterVersion: after?.placeVersion || null,
+      funnelIds: selectedFunnelIdsInOrder,
+    },
+    comparison: after ? {
+      id: `${place.placeId}:${before?.placeVersion || 0}:${after.placeVersion}`,
+      placeId: place.placeId,
+      placeVersion: after.placeVersion,
+      previousPlaceVersion: before?.placeVersion || null,
+      isCurrent: after.placeVersion === place.currentVersion,
+      firstObservedAt: after.firstSeenAt,
+      lastObservedAt: after.lastSeenAt,
+      readiness: comparisonReadiness,
+      readinessLabel: getReleaseCohortReadinessLabel(comparisonReadiness),
+      minimumSessionsPerCohort: RELEASE_COHORT_MIN_SESSIONS,
+      serverOverlapDetected: overlapDurationMs > 0,
+      overlapDurationMs,
+      selectedFunnelIds: selectedFunnelIdsInOrder,
+      before,
+      after,
+      comparison,
+    } : null,
+  };
+}
+
+function buildPlaceReleaseCohorts(placeId, rawVersions) {
   const versions = [...rawVersions]
     .sort((left, right) => left.placeVersion - right.placeVersion || left.firstSeenAt - right.firstSeenAt);
   const currentVersion = versions.at(-1)?.placeVersion || 0;
@@ -5819,13 +5909,6 @@ function buildPlaceReleaseCohorts(placeId, rawVersions, comparisonContext = {}) 
       overlapDurationMs,
       before,
       after,
-      comparison: before ? buildReleaseComparison({
-        placeId,
-        before,
-        after,
-        events: comparisonContext.events,
-        funnelDefinitions: comparisonContext.funnelDefinitions,
-      }) : null,
     };
   }).sort((left, right) => right.placeVersion - left.placeVersion);
 
@@ -5872,6 +5955,7 @@ function getReleaseCohortReadiness(before, after) {
 
 function getReleaseCohortReadinessLabel(readiness) {
   if (readiness === "ready") return "Ready to compare";
+  if (readiness === "collecting_matched") return "Balancing comparable players";
   if (readiness === "collecting_both") return "Collecting both cohorts";
   if (readiness === "collecting_baseline") return "Baseline sample is too small";
   if (readiness === "collecting_release") return "Collecting release sessions";

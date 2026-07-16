@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260716-1">
+    <link rel="stylesheet" href="/styles.css?v=20260716-2">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -381,7 +381,7 @@
             </span>
             <div class="releaseCommandCopy">
               <strong>Update impact</strong>
-              <span>What changed in events and funnels after each Roblox release.</span>
+              <span>Compare the events and funnels that matter between any two Roblox versions.</span>
             </div>
             <p class="status releaseStatus" id="releaseStatus" aria-live="polite">Waiting for version data...</p>
             <button class="releaseRefreshButton" id="refreshReleasesButton" type="button" aria-label="Refresh releases" title="Refresh releases">
@@ -389,30 +389,43 @@
             </button>
           </div>
 
-          <section class="releaseSummaryGrid" aria-label="Release tracking summary">
-            <article class="releaseSummaryCard">
-              <span>Current release</span>
-              <strong id="releaseCurrentVersion">--</strong>
-              <small>Latest production PlaceVersion</small>
-            </article>
-            <article class="releaseSummaryCard">
-              <span>Baseline</span>
-              <strong id="releaseTrackedVersions">--</strong>
-              <small>Immediately previous PlaceVersion</small>
-            </article>
-            <article class="releaseSummaryCard">
-              <span>Ready comparisons</span>
-              <strong id="releaseCoverage">0</strong>
-              <small>Enough sessions to state findings</small>
-            </article>
-            <article class="releaseSummaryCard">
-              <span>Version coverage</span>
-              <strong id="releaseStudioCount">--</strong>
-              <small>Production data tagged to a release</small>
-            </article>
-          </section>
+          <article class="panel releaseComparePanel" aria-label="Choose versions and funnels to compare">
+            <div class="releaseCompareHeading">
+              <span>Version comparison</span>
+              <strong>Choose the baseline and the version you want to measure</strong>
+            </div>
+            <div class="releaseCompareControls">
+              <label class="releaseSelectField releasePlaceField" for="releasePlaceSelect">
+                <span>Place</span>
+                <select id="releasePlaceSelect" aria-label="Select Roblox place"></select>
+              </label>
+              <label class="releaseSelectField" for="releaseBeforeVersionSelect">
+                <span>Baseline version</span>
+                <select id="releaseBeforeVersionSelect" aria-label="Select baseline version"></select>
+              </label>
+              <button class="releaseSwapButton" id="releaseSwapVersionsButton" type="button" aria-label="Swap compared versions" title="Swap versions">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7l-3 3M6 17l3-3" /></svg>
+              </button>
+              <label class="releaseSelectField" for="releaseAfterVersionSelect">
+                <span>Compare to</span>
+                <select id="releaseAfterVersionSelect" aria-label="Select comparison version"></select>
+              </label>
+              <div class="releaseFunnelPicker">
+                <span>Funnels</span>
+                <button id="releaseFunnelPickerButton" type="button" aria-haspopup="true" aria-expanded="false">
+                  <strong>All funnels</strong>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5" /></svg>
+                </button>
+                <div class="releaseFunnelMenu" id="releaseFunnelMenu" hidden></div>
+              </div>
+            </div>
+            <div class="releaseNormalizationNote">
+              <span aria-hidden="true">&#10003;</span>
+              <p><strong>Player-count adjusted</strong> Rates, the same post-release window, and equal-sized new/returning + platform matches prevent an update traffic spike from becoming a fake improvement or regression.</p>
+            </div>
+          </article>
 
-          <section class="releaseCohortList" id="releaseCohortList" aria-live="polite" aria-busy="false">
+          <section class="releaseComparisonWorkspace" id="releaseCohortList" aria-live="polite" aria-busy="false">
             <article class="panel releaseEmptyState">
               <strong>Select a universe to inspect releases.</strong>
               <p>Production PlaceVersions will appear after analytics reaches a live Roblox server.</p>
@@ -971,6 +984,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260716-1"></script>
+    <script defer src="/app.js?v=20260716-2"></script>
   </body>
 </html>
