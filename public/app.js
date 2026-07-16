@@ -81,13 +81,16 @@ const chatLogList = document.querySelector("#chatLogList");
 const chatMessageCount = document.querySelector("#chatMessageCount");
 const chatPlayerCount = document.querySelector("#chatPlayerCount");
 const chatLiveBadge = document.querySelector("#chatLiveBadge");
-const refreshReleasesButton = document.querySelector("#refreshReleasesButton");
 const releaseStatus = document.querySelector("#releaseStatus");
-const releaseCohortList = document.querySelector("#releaseCohortList");
+const releaseComparisonContent = document.querySelector("#releaseComparisonContent");
 const releasePlaceSelect = document.querySelector("#releasePlaceSelect");
 const releasePlaceField = document.querySelector(".releasePlaceField");
-const releaseBeforeVersionSelect = document.querySelector("#releaseBeforeVersionSelect");
-const releaseAfterVersionSelect = document.querySelector("#releaseAfterVersionSelect");
+const releaseBeforeVersionButton = document.querySelector("#releaseBeforeVersionButton");
+const releaseAfterVersionButton = document.querySelector("#releaseAfterVersionButton");
+const releaseBeforeVersionLabel = document.querySelector("#releaseBeforeVersionLabel");
+const releaseAfterVersionLabel = document.querySelector("#releaseAfterVersionLabel");
+const releaseBeforeVersionMenu = document.querySelector("#releaseBeforeVersionMenu");
+const releaseAfterVersionMenu = document.querySelector("#releaseAfterVersionMenu");
 const releaseBeforeDateRange = document.querySelector("#releaseBeforeDateRange");
 const releaseAfterDateRange = document.querySelector("#releaseAfterDateRange");
 const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
@@ -216,7 +219,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260716-3";
+const DASHBOARD_ASSET_VERSION = "20260716-4";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -338,7 +341,6 @@ function bindEvents() {
   document.addEventListener("pointerdown", handleUniverseDropdownOutsidePointer);
   window.addEventListener("resize", positionUniverseDropdown);
   window.addEventListener("scroll", positionUniverseDropdown, true);
-  refreshReleasesButton?.addEventListener("click", () => loadReleases({ force: true }));
   releasePlaceSelect?.addEventListener("change", () => {
     releaseSelection.placeId = releasePlaceSelect.value || "";
     releaseSelection.beforeVersion = "";
@@ -346,24 +348,26 @@ function bindEvents() {
     closeReleaseFunnelMenu();
     loadReleases();
   });
-  releaseBeforeVersionSelect?.addEventListener("change", () => {
-    releaseSelection.beforeVersion = releaseBeforeVersionSelect.value || "";
-    closeReleaseFunnelMenu();
-    loadReleases();
+  releaseBeforeVersionButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleReleaseVersionMenu("before");
   });
-  releaseAfterVersionSelect?.addEventListener("change", () => {
-    releaseSelection.afterVersion = releaseAfterVersionSelect.value || "";
-    closeReleaseFunnelMenu();
-    loadReleases();
+  releaseAfterVersionButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleReleaseVersionMenu("after");
   });
+  releaseBeforeVersionMenu?.addEventListener("click", handleReleaseVersionMenuClick);
+  releaseAfterVersionMenu?.addEventListener("click", handleReleaseVersionMenuClick);
   releaseFunnelPickerButton?.addEventListener("click", (event) => {
     event.stopPropagation();
+    closeReleaseVersionMenus();
     toggleReleaseFunnelMenu();
   });
   releaseFunnelMenu?.addEventListener("click", handleReleaseFunnelMenuClick);
   releaseFunnelMenu?.addEventListener("change", handleReleaseFunnelSelectionChange);
   document.addEventListener("pointerdown", handleReleaseFunnelOutsidePointer);
-  document.addEventListener("keydown", handleReleaseFunnelEscape);
+  document.addEventListener("pointerdown", handleReleaseVersionOutsidePointer);
+  document.addEventListener("keydown", handleReleaseControlEscape);
   refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
   eventSelect?.addEventListener("change", () => {
     selectedCustomEventName = eventSelect.value || "";
@@ -2311,7 +2315,7 @@ function createEmptyReleaseSelection() {
 }
 
 async function loadReleases(options = {}) {
-  if (!authenticated || !releaseStatus || !releaseCohortList) return false;
+  if (!authenticated || !releaseStatus || !releaseComparisonContent) return false;
   const requestSequence = ++releaseRequestSequence;
   const universeId = selectedUniverseId;
 
@@ -2322,8 +2326,7 @@ async function loadReleases(options = {}) {
   }
 
   releaseStatus.textContent = "Building version comparison...";
-  releaseCohortList.setAttribute("aria-busy", "true");
-  if (refreshReleasesButton) refreshReleasesButton.disabled = true;
+  releaseComparisonContent.setAttribute("aria-busy", "true");
   const params = new URLSearchParams({ universeId });
   if (releaseSelection.placeId) params.set("placeId", releaseSelection.placeId);
   if (releaseSelection.beforeVersion) params.set("beforeVersion", releaseSelection.beforeVersion);
@@ -2362,8 +2365,7 @@ async function loadReleases(options = {}) {
     return false;
   } finally {
     if (requestSequence === releaseRequestSequence) {
-      releaseCohortList.setAttribute("aria-busy", "false");
-      if (refreshReleasesButton) refreshReleasesButton.disabled = false;
+      releaseComparisonContent.setAttribute("aria-busy", "false");
     }
   }
 }
@@ -2378,10 +2380,10 @@ function renderReleases(payload = {}) {
   releaseSelection.funnelIds = Array.isArray(selection.funnelIds) ? selection.funnelIds.map(String) : [];
   releaseSelection.funnelSelectionInitialized = true;
   renderReleaseComparisonControls(payload);
-  if (!releaseCohortList) return;
+  if (!releaseComparisonContent) return;
 
   if (!places.length) {
-    releaseCohortList.innerHTML = `
+    releaseComparisonContent.innerHTML = `
       <article class="panel releaseEmptyState">
         <strong>No production versions yet.</strong>
         <p>Install the current Roblox analytics script and join a published server. Studio observations stay separate and will not create a release.</p>
@@ -2391,7 +2393,7 @@ function renderReleases(payload = {}) {
   }
 
   if (!payload.selectedComparison?.before) {
-    releaseCohortList.innerHTML = `
+    releaseComparisonContent.innerHTML = `
       <article class="panel releaseEmptyState">
         <strong>Two versions are needed.</strong>
         <p>Keep the Roblox analytics script installed through another published update. Once both PlaceVersions have sessions, you can compare them here.</p>
@@ -2400,7 +2402,7 @@ function renderReleases(payload = {}) {
     return;
   }
 
-  releaseCohortList.innerHTML = renderReleaseComparison(payload.selectedComparison);
+  releaseComparisonContent.innerHTML = renderReleaseComparison(payload.selectedComparison);
 }
 
 function renderReleaseComparisonControls(payload = {}) {
@@ -2420,8 +2422,26 @@ function renderReleaseComparisonControls(payload = {}) {
     `).join("");
   }
 
-  renderReleaseVersionSelect(releaseBeforeVersionSelect, versions, releaseSelection.beforeVersion, releaseSelection.afterVersion, "Choose baseline");
-  renderReleaseVersionSelect(releaseAfterVersionSelect, versions, releaseSelection.afterVersion, releaseSelection.beforeVersion, "Choose version");
+  renderReleaseVersionSelect({
+    button: releaseBeforeVersionButton,
+    label: releaseBeforeVersionLabel,
+    menu: releaseBeforeVersionMenu,
+    side: "before",
+    versions,
+    selectedVersion: releaseSelection.beforeVersion,
+    unavailableVersion: releaseSelection.afterVersion,
+    placeholder: "Choose version",
+  });
+  renderReleaseVersionSelect({
+    button: releaseAfterVersionButton,
+    label: releaseAfterVersionLabel,
+    menu: releaseAfterVersionMenu,
+    side: "after",
+    versions,
+    selectedVersion: releaseSelection.afterVersion,
+    unavailableVersion: releaseSelection.beforeVersion,
+    placeholder: "Choose version",
+  });
   if (releaseBeforeDateRange) releaseBeforeDateRange.textContent = formatReleaseVersionDateRange(selectedBeforeVersion);
   if (releaseAfterDateRange) releaseAfterDateRange.textContent = formatReleaseVersionDateRange(selectedAfterVersion);
 
@@ -2457,17 +2477,23 @@ function renderReleaseComparisonControls(payload = {}) {
   }
 }
 
-function renderReleaseVersionSelect(select, versions, selectedVersion, unavailableVersion, placeholder) {
-  if (!select) return;
-  select.disabled = versions.length < 2;
-  select.innerHTML = `
-    <option value="">${escapeHtml(placeholder)}</option>
-    ${versions.map((version) => {
-      const value = String(version.placeVersion || "");
-      const isUnavailable = value === String(unavailableVersion || "");
-      return `<option value="${escapeHtml(value)}" ${value === String(selectedVersion || "") ? "selected" : ""} ${isUnavailable ? "disabled" : ""}>v${escapeHtml(formatReleaseVersion(value))}</option>`;
-    }).join("")}
-  `;
+function renderReleaseVersionSelect({ button, label, menu, side, versions = [], selectedVersion, unavailableVersion, placeholder }) {
+  const disabled = versions.length < 2;
+  const selected = versions.find((version) => String(version.placeVersion || "") === String(selectedVersion || "")) || null;
+  if (button) button.disabled = disabled;
+  if (label) label.textContent = selected ? `v${formatReleaseVersion(selected.placeVersion)}` : placeholder;
+  if (!menu) return;
+  menu.innerHTML = versions.map((version) => {
+    const value = String(version.placeVersion || "");
+    const isSelected = value === String(selectedVersion || "");
+    const isUnavailable = value === String(unavailableVersion || "");
+    return `
+      <button type="button" class="releaseVersionOption" role="option" data-release-version-side="${escapeHtml(side)}" data-release-version-value="${escapeHtml(value)}" aria-selected="${isSelected}" ${isUnavailable ? "disabled" : ""}>
+        <span><strong>v${escapeHtml(formatReleaseVersion(value))}</strong>${isSelected ? "<b>Selected</b>" : ""}</span>
+        <small>${escapeHtml(formatReleaseVersionDateRange(version))}</small>
+      </button>
+    `;
+  }).join("");
 }
 
 function formatReleaseVersionDateRange(version) {
@@ -2479,6 +2505,50 @@ function formatReleaseVersionDateRange(version) {
   const startLabel = start.toLocaleDateString([], { month: "short", day: "numeric" });
   const endLabel = end.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
   return `${startLabel} – ${endLabel}`;
+}
+
+function getReleaseVersionMenuElements(side) {
+  return side === "before"
+    ? { button: releaseBeforeVersionButton, menu: releaseBeforeVersionMenu }
+    : { button: releaseAfterVersionButton, menu: releaseAfterVersionMenu };
+}
+
+function toggleReleaseVersionMenu(side) {
+  const { button, menu } = getReleaseVersionMenuElements(side);
+  if (!button || !menu || button.disabled) return;
+  const shouldOpen = menu.hidden;
+  closeReleaseVersionMenus();
+  closeReleaseFunnelMenu();
+  menu.hidden = !shouldOpen;
+  button.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+function closeReleaseVersionMenus() {
+  for (const { button, menu } of [
+    { button: releaseBeforeVersionButton, menu: releaseBeforeVersionMenu },
+    { button: releaseAfterVersionButton, menu: releaseAfterVersionMenu },
+  ]) {
+    if (menu) menu.hidden = true;
+    if (button) button.setAttribute("aria-expanded", "false");
+  }
+}
+
+function handleReleaseVersionMenuClick(event) {
+  event.stopPropagation();
+  const option = event.target.closest("[data-release-version-value]");
+  if (!option || option.disabled) return;
+  const side = option.dataset.releaseVersionSide === "before" ? "before" : "after";
+  const value = option.dataset.releaseVersionValue || "";
+  if (side === "before") releaseSelection.beforeVersion = value;
+  else releaseSelection.afterVersion = value;
+  closeReleaseVersionMenus();
+  loadReleases();
+}
+
+function handleReleaseVersionOutsidePointer(event) {
+  if (releaseBeforeVersionMenu?.contains(event.target) || releaseBeforeVersionButton?.contains(event.target)) return;
+  if (releaseAfterVersionMenu?.contains(event.target) || releaseAfterVersionButton?.contains(event.target)) return;
+  closeReleaseVersionMenus();
 }
 
 function toggleReleaseFunnelMenu(forceOpen) {
@@ -2523,73 +2593,22 @@ function handleReleaseFunnelOutsidePointer(event) {
   closeReleaseFunnelMenu();
 }
 
-function handleReleaseFunnelEscape(event) {
-  if (event.key === "Escape") closeReleaseFunnelMenu();
+function handleReleaseControlEscape(event) {
+  if (event.key !== "Escape") return;
+  closeReleaseVersionMenus();
+  closeReleaseFunnelMenu();
 }
 
 function renderReleaseComparison(release = {}) {
   const allowedReadiness = new Set(["ready", "no_baseline", "collecting_both", "collecting_baseline", "collecting_release", "collecting_matched"]);
   const readiness = allowedReadiness.has(release.readiness) ? release.readiness : "collecting_both";
-  const readinessClass = readiness.replaceAll("_", "-");
   const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
-  const beforeVersion = release.previousPlaceVersion
-    ? `v${formatReleaseVersion(release.previousPlaceVersion)}`
-    : "No baseline";
-  const afterVersion = `v${formatReleaseVersion(release.placeVersion)}`;
-  const selectedFunnelCount = Array.isArray(release.selectedFunnelIds) ? release.selectedFunnelIds.length : 0;
-  const comparisonWindowMs = Number(release.comparison?.trafficAdjustment?.comparisonWindow?.durationMs) || 0;
 
   return `
-    <article class="releaseComparisonCard ${release.isCurrent ? "isCurrent" : ""}">
-      <header class="releaseComparisonHeader">
-        <div>
-          <span>Update comparison</span>
-          <strong>${escapeHtml(beforeVersion)} <i aria-hidden="true">&rarr;</i> ${escapeHtml(afterVersion)}</strong>
-          <small>${release.before ? `${escapeHtml(formatFullDate(release.before.firstSeenAt))} baseline against ${escapeHtml(formatFullDate(release.after?.firstSeenAt))} release traffic` : "Waiting for an earlier production version"}</small>
-        </div>
-        <div class="releaseHeaderBadges">
-          ${release.isCurrent ? '<span class="releaseCurrentBadge">Current release</span>' : ""}
-          <span class="releaseFunnelCountBadge">${selectedFunnelCount ? `${escapeHtml(formatCompactNumber(selectedFunnelCount))} funnel${selectedFunnelCount === 1 ? "" : "s"}` : "Events only"}</span>
-          ${comparisonWindowMs ? `<span class="releaseWindowBadge">Matched ${escapeHtml(formatDuration(comparisonWindowMs))} window</span>` : ""}
-          <span class="releaseReadinessBadge ${readinessClass}">${escapeHtml(release.readinessLabel || "Collecting cohorts")}</span>
-        </div>
-      </header>
-      <div class="releaseCohortComparison">
-        ${renderReleaseCohort(release.before, "Before", minimumSessions)}
-        <div class="releaseComparisonDivider" aria-hidden="true"><span>vs</span></div>
-        ${renderReleaseCohort(release.after, "After", minimumSessions)}
-      </div>
+    <article class="releaseComparisonCard releaseDataWorkspace">
       ${renderReleaseAnalysis(release.comparison)}
       ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
     </article>
-  `;
-}
-
-function renderReleaseCohort(cohort, label, minimumSessions) {
-  if (!cohort) {
-    return `
-      <section class="releaseCohortCard isMissing">
-        <div class="releaseCohortTitle"><span>${escapeHtml(label)}</span><strong>No previous version</strong></div>
-        <p>This is the first production version RoAnalytics observed for this place, so it has no automatic baseline.</p>
-      </section>
-    `;
-  }
-
-  const sessions = Math.max(Number(cohort.sessionCount) || 0, 0);
-  const observedFrom = formatFullDate(cohort.firstSeenAt);
-  const observedTo = formatFullDate(cohort.lastSeenAt);
-  return `
-    <section class="releaseCohortCard ${cohort.meetsMinimumSessions ? "isReady" : "isCollecting"}">
-      <div class="releaseCohortTitle">
-        <span>${escapeHtml(label)}</span>
-        <strong>v${escapeHtml(formatReleaseVersion(cohort.placeVersion))}</strong>
-      </div>
-      <div class="releaseCohortEvidence">
-        <span><strong>${escapeHtml(formatCompactNumber(sessions))}</strong> sessions</span>
-        <span class="${cohort.meetsMinimumSessions ? "ready" : "collecting"}">${cohort.meetsMinimumSessions ? "Sample ready" : `${escapeHtml(formatCompactNumber(Math.max(minimumSessions - sessions, 0)))} more needed`}</span>
-      </div>
-      <p class="releaseObservedRange">${escapeHtml(observedFrom)} &ndash; ${escapeHtml(observedTo)}</p>
-    </section>
   `;
 }
 
@@ -2633,11 +2652,9 @@ function renderReleaseAnalysis(comparison = null) {
       </header>
       <div class="releaseAnalysisBody">
         ${renderReleaseOutcomeSummary({ findingItems, findingDirections, ready, partialData, evidenceSessions, beforeVersion, afterVersion, matched: trafficReady })}
-        <div class="releasePrimaryImpactGrid ${funnels.length ? "" : "findingsOnly"}">
-          ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
-          ${renderReleaseFindingsSection(findingItems, { ready, partialData })}
-        </div>
+        ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
         ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics, beforeVersion, afterVersion) : ""}
+        ${renderReleaseFindingsSection(findingItems, { ready, partialData })}
         <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
       </div>
     </section>
@@ -2756,7 +2773,7 @@ function renderReleaseFinding(finding = {}) {
 function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseFunnelImpactSection">
-      <header><div><strong>Funnel differences</strong><span>Conversion rates before and after</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <header><div><strong>Funnel conversion</strong><span>Conversion rate changes for the selected funnels</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
       <div class="releaseFunnelImpactList">
         ${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}
       </div>
@@ -2798,7 +2815,7 @@ function getReleaseBarWidth(value) {
 function renderReleaseEventComparisons(events, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>Event differences</strong><span>Rates only; raw event volume is excluded</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <header><div><strong>Event rate changes</strong><span>Player and session rates; raw event volume is excluded</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
       <div class="releaseComparisonTable" role="table" aria-label="Event rate release comparisons">
         <div class="releaseComparisonTableHeader" role="row"><span>Event outcome</span><span>Before</span><span>After</span><span>Difference</span><span>Evidence</span></div>
         ${events.map((event) => renderReleaseComparisonRow(

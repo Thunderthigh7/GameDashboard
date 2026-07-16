@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260716-3">
+    <link rel="stylesheet" href="/styles.css?v=20260716-4">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -172,6 +172,37 @@
                 <select id="universeSelect" hidden tabindex="-1" aria-hidden="true" disabled>
                   <option value="">Loading universes...</option>
                 </select>
+              </div>
+              <div class="releaseTopbarControls" aria-label="Release comparison controls">
+                <label class="releaseSelectField releasePlaceField" for="releasePlaceSelect">
+                  <span>Place</span>
+                  <select id="releasePlaceSelect" aria-label="Select Roblox place"></select>
+                </label>
+                <div class="releaseVersionPair" aria-label="Versions being compared">
+                  <div class="releaseVersionDropdown">
+                    <button class="releaseVersionSide" id="releaseBeforeVersionButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="releaseBeforeVersionMenu">
+                      <span><strong id="releaseBeforeVersionLabel">Choose version</strong><b>Before</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></span>
+                      <small id="releaseBeforeDateRange">No version selected</small>
+                    </button>
+                    <div class="releaseVersionMenu" id="releaseBeforeVersionMenu" role="listbox" aria-label="Select before version" hidden></div>
+                  </div>
+                  <span class="releaseVersionVs" aria-hidden="true">vs</span>
+                  <div class="releaseVersionDropdown">
+                    <button class="releaseVersionSide" id="releaseAfterVersionButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="releaseAfterVersionMenu">
+                      <span><strong id="releaseAfterVersionLabel">Choose version</strong><b>After</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></span>
+                      <small id="releaseAfterDateRange">No version selected</small>
+                    </button>
+                    <div class="releaseVersionMenu" id="releaseAfterVersionMenu" role="listbox" aria-label="Select after version" hidden></div>
+                  </div>
+                </div>
+                <div class="releaseFunnelPicker">
+                  <span>Funnels</span>
+                  <button id="releaseFunnelPickerButton" type="button" aria-haspopup="true" aria-expanded="false">
+                    <strong>All funnels</strong>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5" /></svg>
+                  </button>
+                  <div class="releaseFunnelMenu" id="releaseFunnelMenu" hidden></div>
+                </div>
               </div>
               <div class="funnelTopbarExtras" aria-label="Funnel actions">
                 <button class="funnelTimelineButton" id="funnelTimelineButton" type="button">
@@ -375,57 +406,9 @@
         </section>
 
         <section class="viewPage releasesPage" data-view-panel="releases" hidden>
-          <div class="releaseCommandBar">
-            <span class="releaseCommandIcon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2" /><circle cx="18" cy="18" r="2.2" /><path d="M8.2 6H13a3 3 0 0 1 3 3v7M6 8.2V16a2 2 0 0 0 2 2h7.8" /></svg>
-            </span>
-            <div class="releaseCommandCopy">
-              <strong>Update impact</strong>
-              <span>Compare the events and funnels that matter between any two Roblox versions.</span>
-            </div>
-            <p class="status releaseStatus" id="releaseStatus" aria-live="polite">Waiting for version data...</p>
-            <button class="releaseRefreshButton" id="refreshReleasesButton" type="button" aria-label="Refresh releases" title="Refresh releases">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8a7 7 0 1 0 1 6M19 4v4h-4" /></svg>
-            </button>
-          </div>
+          <p class="status srOnly" id="releaseStatus" aria-live="polite">Waiting for version data...</p>
 
-          <article class="panel releaseComparePanel" aria-label="Choose versions and funnels to compare">
-            <div class="releaseCompareHeading">
-              <span>Version comparison</span>
-              <strong>Choose two production versions to compare</strong>
-            </div>
-            <div class="releaseCompareControls">
-              <label class="releaseSelectField releasePlaceField" for="releasePlaceSelect">
-                <span>Place</span>
-                <select id="releasePlaceSelect" aria-label="Select Roblox place"></select>
-              </label>
-              <div class="releaseVersionPair" aria-label="Versions being compared">
-                <label class="releaseVersionSide" for="releaseBeforeVersionSelect">
-                  <span><select id="releaseBeforeVersionSelect" aria-label="Select before version"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg><b>Before</b></span>
-                  <small id="releaseBeforeDateRange">No version selected</small>
-                </label>
-                <span class="releaseVersionVs" aria-hidden="true">vs</span>
-                <label class="releaseVersionSide" for="releaseAfterVersionSelect">
-                  <span><select id="releaseAfterVersionSelect" aria-label="Select after version"></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg><b>After</b></span>
-                  <small id="releaseAfterDateRange">No version selected</small>
-                </label>
-              </div>
-              <div class="releaseFunnelPicker">
-                <span>Funnels</span>
-                <button id="releaseFunnelPickerButton" type="button" aria-haspopup="true" aria-expanded="false">
-                  <strong>All funnels</strong>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5" /></svg>
-                </button>
-                <div class="releaseFunnelMenu" id="releaseFunnelMenu" hidden></div>
-              </div>
-            </div>
-            <div class="releaseNormalizationNote">
-              <span aria-hidden="true">&#10003;</span>
-              <p><strong>Player-count adjusted</strong> Rates, the same post-release window, and equal-sized new/returning + platform matches prevent an update traffic spike from becoming a fake change.</p>
-            </div>
-          </article>
-
-          <section class="releaseComparisonWorkspace" id="releaseCohortList" aria-live="polite" aria-busy="false">
+          <section class="releaseComparisonWorkspace" id="releaseComparisonContent" aria-live="polite" aria-busy="false">
             <article class="panel releaseEmptyState">
               <strong>Select a universe to inspect releases.</strong>
               <p>Production PlaceVersions will appear after analytics reaches a live Roblox server.</p>
@@ -984,6 +967,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260716-3"></script>
+    <script defer src="/app.js?v=20260716-4"></script>
   </body>
 </html>

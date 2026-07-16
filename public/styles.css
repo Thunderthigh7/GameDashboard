@@ -5072,153 +5072,47 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   order: 4;
 }
 
+.releaseTopbarControls {
+  display: none;
+}
+
 body[data-active-view="releases"] .topbar > div:first-child {
-  flex: 1 1 410px;
+  flex: 0 1 250px;
 }
 
 body[data-active-view="releases"] .topbarActions {
-  flex: 0 1 480px;
+  flex: 1 1 1040px;
 }
 
 body[data-active-view="releases"] .topbarFilters .dateDisplayField {
   display: none;
 }
 
+body[data-active-view="releases"] .topbarFilters {
+  align-items: flex-end;
+  width: 100%;
+  gap: 12px;
+}
+
 body[data-active-view="releases"] .topbarUniverseSelector {
-  width: min(100%, 480px);
-  max-width: 480px;
+  flex: 0.8 1 270px;
+  width: min(100%, 340px);
+  min-width: 250px;
+  max-width: 340px;
+}
+
+body[data-active-view="releases"] .releaseTopbarControls {
+  display: flex;
+  align-items: flex-end;
+  flex: 2 1 690px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .releasesPage {
   display: grid;
   min-width: 0;
   gap: 14px;
-}
-
-.releaseCommandBar {
-  display: flex;
-  align-items: center;
-  position: relative;
-  gap: 12px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: linear-gradient(145deg, rgba(13, 22, 44, 0.96), rgba(8, 16, 33, 0.94));
-  padding: 10px;
-}
-
-.releaseCommandIcon,
-.releaseRefreshButton {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-
-.releaseCommandIcon {
-  border-color: rgba(158, 96, 255, 0.5);
-  background: rgba(124, 60, 255, 0.14);
-  color: #b997ff;
-}
-
-.releaseCommandIcon svg,
-.releaseRefreshButton svg {
-  width: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.releaseCommandCopy {
-  display: grid;
-  gap: 2px;
-  min-width: 220px;
-}
-
-.releaseCommandCopy strong {
-  color: var(--text);
-  font-size: 14px;
-}
-
-.releaseCommandCopy span,
-.releaseStatus {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.releaseStatus {
-  min-width: 0;
-  margin: 0 4px 0 auto;
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.releaseRefreshButton {
-  background: var(--control-bg);
-  color: var(--nav-text);
-  cursor: pointer;
-}
-
-.releaseRefreshButton:hover:not(:disabled),
-.releaseRefreshButton:focus-visible {
-  border-color: rgba(124, 60, 255, 0.72);
-  color: var(--text);
-  outline: none;
-}
-
-.releaseRefreshButton:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
-.releaseRefreshButton:active:not(:disabled) svg {
-  transform: rotate(90deg);
-}
-
-.releaseCompareHeading > span,
-.releaseComparisonHeader > div:first-child > span,
-.releaseCohortTitle span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.releaseComparePanel {
-  display: grid;
-  position: relative;
-  gap: 17px;
-  overflow: visible;
-  background:
-    radial-gradient(circle at 88% 0%, rgba(124, 60, 255, 0.12), transparent 32%),
-    linear-gradient(145deg, rgba(17, 27, 51, 0.96), rgba(8, 15, 31, 0.96));
-  padding: 18px;
-}
-
-.releaseCompareHeading {
-  display: grid;
-  gap: 4px;
-}
-
-.releaseCompareHeading > strong {
-  color: var(--text);
-  font-size: 18px;
-  letter-spacing: -0.025em;
-}
-
-.releaseCompareControls {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  min-width: 0;
 }
 
 .releaseSelectField,
@@ -5262,16 +5156,14 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 }
 
 .releaseSelectField select:focus-visible,
-.releaseFunnelPicker > button:focus-visible,
-.releaseVersionSide select:focus-visible {
+.releaseFunnelPicker > button:focus-visible {
   border-color: rgba(151, 102, 255, 0.8);
   outline: 2px solid rgba(124, 60, 255, 0.18);
   outline-offset: 1px;
 }
 
 .releaseSelectField select:disabled,
-.releaseFunnelPicker > button:disabled,
-.releaseVersionSide select:disabled {
+.releaseFunnelPicker > button:disabled {
   cursor: default;
   opacity: 0.5;
 }
@@ -5288,7 +5180,7 @@ body[data-active-view="releases"] .topbarUniverseSelector {
 .releaseVersionPair {
   display: grid;
   position: relative;
-  flex: 2 1 430px;
+  flex: 2 1 440px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   min-width: 340px;
   border: 1px solid rgba(89, 105, 151, 0.42);
@@ -5298,16 +5190,40 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   overflow: visible;
 }
 
+.releaseVersionDropdown {
+  position: relative;
+  min-width: 0;
+}
+
 .releaseVersionSide {
   display: grid;
   gap: 4px;
+  width: 100%;
+  min-height: 64px;
   min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   padding: 10px 16px;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.releaseVersionSide:first-child {
+.releaseVersionDropdown:first-child .releaseVersionSide {
   border-right: 1px solid rgba(89, 105, 151, 0.28);
+}
+
+.releaseVersionSide:hover:not(:disabled),
+.releaseVersionSide:focus-visible,
+.releaseVersionSide[aria-expanded="true"] {
+  background: rgba(124, 60, 255, 0.09);
+  outline: none;
+}
+
+.releaseVersionSide:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .releaseVersionSide > span {
@@ -5317,27 +5233,18 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   min-width: 0;
 }
 
-.releaseVersionSide select {
-  width: auto;
-  max-width: 92px;
-  border: 0;
-  appearance: none;
-  background: transparent;
+.releaseVersionSide strong {
+  overflow: hidden;
   color: var(--text);
-  padding: 0;
-  font: inherit;
   font-size: 13px;
   font-weight: 900;
-  cursor: pointer;
-}
-
-.releaseVersionSide select:focus-visible {
-  border-radius: 4px;
-  outline-offset: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .releaseVersionSide svg {
   flex: 0 0 auto;
+  margin-left: auto;
   width: 14px;
   fill: none;
   stroke: #8f9bb5;
@@ -5345,6 +5252,10 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
+}
+
+.releaseVersionSide[aria-expanded="true"] svg {
+  transform: rotate(180deg);
 }
 
 .releaseVersionSide b {
@@ -5378,6 +5289,85 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   font-weight: 900;
   text-transform: uppercase;
   transform: translate(-50%, -50%);
+}
+
+.releaseVersionMenu {
+  display: grid;
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 8px);
+  left: 0;
+  gap: 4px;
+  width: min(290px, calc(100vw - 38px));
+  max-height: 330px;
+  border: 1px solid rgba(103, 121, 172, 0.54);
+  border-radius: 11px;
+  background: rgba(9, 16, 33, 0.99);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.48);
+  padding: 7px;
+  overflow-y: auto;
+}
+
+.releaseVersionDropdown:last-child .releaseVersionMenu {
+  right: 0;
+  left: auto;
+}
+
+.releaseVersionMenu[hidden] {
+  display: none;
+}
+
+.releaseVersionOption {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nav-text);
+  padding: 10px 11px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.releaseVersionOption:hover:not(:disabled),
+.releaseVersionOption:focus-visible,
+.releaseVersionOption[aria-selected="true"] {
+  border-color: rgba(124, 60, 255, 0.34);
+  background: rgba(124, 60, 255, 0.14);
+  color: var(--text);
+  outline: none;
+}
+
+.releaseVersionOption:disabled {
+  cursor: default;
+  opacity: 0.34;
+}
+
+.releaseVersionOption > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.releaseVersionOption strong {
+  color: inherit;
+  font-size: 12px;
+}
+
+.releaseVersionOption b {
+  border-radius: 999px;
+  background: rgba(124, 60, 255, 0.2);
+  color: #cebaff;
+  padding: 3px 6px;
+  font-size: 8px;
+}
+
+.releaseVersionOption small {
+  color: var(--muted);
+  font-size: 9px;
 }
 
 .releaseFunnelPicker {
@@ -5497,37 +5487,6 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   white-space: nowrap;
 }
 
-.releaseNormalizationNote {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  border-top: 1px solid rgba(80, 99, 150, 0.23);
-  padding-top: 12px;
-}
-
-.releaseNormalizationNote > span {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgba(53, 208, 131, 0.12);
-  color: #85e7b3;
-  font-size: 10px;
-  font-weight: 900;
-}
-
-.releaseNormalizationNote p {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.releaseNormalizationNote strong {
-  color: #9ce8bf;
-}
-
 .releaseComparisonWorkspace {
   display: grid;
   min-width: 0;
@@ -5547,221 +5506,12 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   overflow: hidden;
 }
 
-.releaseComparisonCard.isCurrent {
-  border-color: rgba(124, 60, 255, 0.48);
-  box-shadow: inset 3px 0 0 rgba(124, 60, 255, 0.78);
-}
-
-.releaseComparisonHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--line);
-  padding: 19px 21px;
-}
-
-.releaseComparisonHeader > div:first-child {
-  display: grid;
-  gap: 3px;
-}
-
-.releaseComparisonHeader > div:first-child > strong {
-  color: var(--text);
-  font-size: clamp(24px, 3vw, 32px);
-  letter-spacing: -0.025em;
-}
-
-.releaseComparisonHeader > div:first-child > strong i {
-  margin: 0 5px;
-  color: #9170e9;
-  font-style: normal;
-}
-
-.releaseComparisonHeader > div:first-child > small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.releaseHeaderBadges {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.releaseCurrentBadge,
-.releaseFunnelCountBadge,
-.releaseWindowBadge,
-.releaseReadinessBadge {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 8px;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.releaseCurrentBadge {
-  border-color: rgba(155, 104, 255, 0.48);
-  background: rgba(124, 60, 255, 0.16);
-  color: #cfbaff;
-}
-
-.releaseFunnelCountBadge {
-  border-color: rgba(84, 150, 255, 0.38);
-  background: rgba(84, 150, 255, 0.1);
-  color: #a9cbff;
-}
-
-.releaseWindowBadge {
-  border-color: rgba(53, 208, 131, 0.32);
-  background: rgba(53, 208, 131, 0.08);
-  color: #9ce8bf;
-}
-
-.releaseReadinessBadge.ready {
-  border-color: rgba(53, 208, 131, 0.42);
-  background: rgba(53, 208, 131, 0.12);
-  color: #8bf0bb;
-}
-
-.releaseReadinessBadge.no-baseline,
-.releaseReadinessBadge.collecting-both,
-.releaseReadinessBadge.collecting-baseline,
-.releaseReadinessBadge.collecting-release,
-.releaseReadinessBadge.collecting-matched {
-  border-color: rgba(245, 184, 70, 0.36);
-  background: rgba(245, 184, 70, 0.1);
-  color: #f8cf78;
-}
-
-.releaseCohortComparison {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px minmax(0, 1fr);
-  align-items: stretch;
-  gap: 0;
-  min-width: 0;
-  padding: 18px 20px;
-}
-
-.releaseCohortCard {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px 18px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(14, 22, 42, 0.74);
-  padding: 17px 18px;
-}
-
-.releaseCohortCard.isReady {
-  border-color: rgba(53, 208, 131, 0.3);
-}
-
-.releaseCohortCard.isMissing {
-  place-content: center;
-  min-height: 120px;
-  border-style: dashed;
-  background: rgba(9, 15, 29, 0.45);
-  text-align: center;
-}
-
-.releaseCohortCard.isMissing p {
-  max-width: 360px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.releaseCohortTitle {
-  display: grid;
-  gap: 4px;
-}
-
-.releaseCohortTitle strong {
-  color: var(--text);
-  font-size: 30px;
-  letter-spacing: -0.035em;
-}
-
-.releaseCohortEvidence {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 7px;
-  color: var(--nav-text);
-  font-size: 10px;
-}
-
-.releaseCohortEvidence > span {
-  border: 1px solid rgba(80, 99, 150, 0.28);
-  border-radius: 999px;
-  background: rgba(7, 13, 28, 0.52);
-  padding: 6px 8px;
-  white-space: nowrap;
-}
-
-.releaseCohortEvidence strong {
-  color: var(--text);
-}
-
-.releaseCohortEvidence .ready {
-  border-color: rgba(53, 208, 131, 0.34);
-  background: rgba(53, 208, 131, 0.09);
-  color: #8ee8b8;
-}
-
-.releaseCohortEvidence .collecting {
-  border-color: rgba(245, 184, 70, 0.34);
-  background: rgba(245, 184, 70, 0.08);
-  color: #f5ca72;
-}
-
-.releaseObservedRange {
-  grid-column: 1 / -1;
-  font-size: 10px;
-  line-height: 1.4;
-}
-
 .releaseComparisonNotice {
   border-top: 1px solid var(--line);
   padding: 10px 15px;
   color: var(--muted);
   font-size: 10px;
   text-align: center;
-}
-
-.releaseComparisonDivider {
-  display: grid;
-  place-items: center;
-  position: relative;
-}
-
-.releaseComparisonDivider::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  background: var(--line);
-}
-
-.releaseComparisonDivider span {
-  z-index: 1;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #0b1328;
-  color: var(--muted);
-  padding: 5px;
-  font-size: 9px;
-  font-weight: 900;
-  text-transform: uppercase;
 }
 
 .releaseEmptyState {
@@ -5996,18 +5746,6 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   text-transform: uppercase;
 }
 
-.releasePrimaryImpactGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
-  align-items: start;
-  gap: 14px;
-  min-width: 0;
-}
-
-.releasePrimaryImpactGrid.findingsOnly {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .releaseFunnelImpactList {
   display: grid;
   gap: 11px;
@@ -6102,14 +5840,6 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   color: var(--nav-text);
   font-size: 10px;
   text-align: right;
-}
-
-.releasePrimaryImpactGrid .releaseFindingList {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.releasePrimaryImpactGrid .releaseFinding {
-  padding: 11px;
 }
 
 .releaseComparisonTableRow .releaseTableDelta {
@@ -6300,6 +6030,103 @@ body[data-active-view="releases"] .topbarUniverseSelector {
   font-size: 9px;
   line-height: 1.45;
   text-align: center;
+}
+
+.releaseDataWorkspace {
+  border-color: rgba(80, 99, 150, 0.34);
+  border-radius: 14px;
+  box-shadow: 0 20px 54px rgba(1, 5, 14, 0.22);
+}
+
+.releaseDataWorkspace .releaseAnalysis {
+  border-top: 0;
+}
+
+.releaseDataWorkspace .releaseAnalysisBody {
+  gap: 20px;
+  padding: 25px;
+}
+
+.releaseDataWorkspace .releaseAnalysisSection {
+  gap: 16px;
+  border-radius: 12px;
+  padding: 22px;
+}
+
+.releaseDataWorkspace .releaseAnalysisSummary strong,
+.releaseDataWorkspace .releaseAnalysisSection > header strong {
+  font-size: 16px;
+}
+
+.releaseDataWorkspace .releaseAnalysisSummary small,
+.releaseDataWorkspace .releaseAnalysisSection > header span,
+.releaseDataWorkspace .releaseAnalysisSection > header small {
+  font-size: 12px;
+}
+
+.releaseDataWorkspace .releaseFunnelImpactList {
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 14px;
+}
+
+.releaseDataWorkspace .releaseFunnelImpact {
+  gap: 13px;
+  border-radius: 11px;
+  padding: 18px;
+}
+
+.releaseDataWorkspace .releaseFunnelImpact > header strong {
+  font-size: 15px;
+}
+
+.releaseDataWorkspace .releaseFunnelImpact > header span,
+.releaseDataWorkspace .releaseFunnelImpact > header b {
+  font-size: 10px;
+}
+
+.releaseDataWorkspace .releaseFunnelImpact > header b {
+  padding: 5px 8px;
+}
+
+.releaseDataWorkspace .releaseFunnelBarRow {
+  grid-template-columns: 54px minmax(0, 1fr) 62px;
+  gap: 11px;
+  font-size: 10px;
+}
+
+.releaseDataWorkspace .releaseFunnelBarRow > div {
+  height: 13px;
+}
+
+.releaseDataWorkspace .releaseFunnelBarRow strong {
+  font-size: 12px;
+}
+
+.releaseDataWorkspace .releaseComparisonTable {
+  border-radius: 10px;
+}
+
+.releaseDataWorkspace .releaseComparisonTableHeader,
+.releaseDataWorkspace .releaseComparisonTableRow {
+  gap: 16px;
+  padding: 13px 16px;
+}
+
+.releaseDataWorkspace .releaseComparisonTableHeader {
+  font-size: 9px;
+}
+
+.releaseDataWorkspace .releaseComparisonTableRow {
+  min-height: 54px;
+  font-size: 12px;
+}
+
+.releaseDataWorkspace .releaseComparisonTableRow > strong {
+  font-size: 12px;
+}
+
+.releaseDataWorkspace .releaseComparisonTableRow > small {
+  font-size: 10px;
 }
 
 body[data-active-view="funnels"] .topbar > div:first-child {
@@ -7890,95 +7717,42 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 1100px) {
-  .releaseCompareControls {
-    flex-wrap: wrap;
-  }
-
-  .releaseVersionPair {
+  body[data-active-view="releases"] .topbar > div:first-child,
+  body[data-active-view="releases"] .topbarActions {
     flex-basis: 100%;
   }
 
-  .releasePrimaryImpactGrid {
-    grid-template-columns: minmax(0, 1fr);
+  body[data-active-view="releases"] .topbarFilters {
+    flex-wrap: wrap;
   }
+
+  body[data-active-view="releases"] .topbarUniverseSelector {
+    flex: 0.8 1 260px;
+  }
+
+  body[data-active-view="releases"] .releaseTopbarControls {
+    flex: 2 1 620px;
+  }
+
 }
 
 @media (max-width: 760px) {
-  .releaseComparisonHeader {
-    align-items: flex-start;
-    flex-direction: column;
+  body[data-active-view="releases"] .topbarUniverseSelector {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 
-  .releaseCompareControls {
+  body[data-active-view="releases"] .releaseTopbarControls {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    width: 100%;
   }
 
   .releasePlaceField,
   .releaseVersionPair,
   .releaseFunnelPicker {
     grid-column: 1;
-  }
-
-  .releaseCommandBar {
-    display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) 42px;
-    align-items: center;
-  }
-
-  .releaseCommandIcon {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .releaseCommandCopy {
-    grid-column: 2;
-    grid-row: 1;
-    min-width: 0;
-  }
-
-  .releaseStatus {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-    margin: 0;
-    text-align: left;
-    white-space: normal;
-  }
-
-  .releaseRefreshButton {
-    grid-column: 3;
-    grid-row: 1;
-    position: static;
-  }
-
-  .releaseCohortComparison {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .releaseCohortCard {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .releaseCohortEvidence {
-    justify-content: flex-start;
-  }
-
-  .releaseComparisonDivider {
-    min-height: 38px;
-  }
-
-  .releaseComparisonDivider::before {
-    top: 50%;
-    right: 0;
-    bottom: auto;
-    left: 0;
-    width: auto;
-    height: 1px;
-  }
-
-  .releaseCohortCard.isMissing {
-    min-height: 180px;
   }
 
   .releaseAnalysisSummary,
@@ -8025,14 +7799,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 520px) {
-  .releaseComparePanel {
-    padding: 14px;
-  }
-
-  .releaseCompareControls {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .releaseSelectField,
   .releasePlaceField,
   .releaseVersionPair,
@@ -8048,12 +7814,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     padding-inline: 11px;
   }
 
-  .releaseHeaderBadges {
-    justify-content: flex-start;
+  .releaseAnalysisBody {
+    padding: 12px;
   }
 
-  .releaseAnalysisBody {
-    padding: 10px;
+  .releaseDataWorkspace .releaseAnalysisBody {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .releaseDataWorkspace .releaseAnalysisSection {
+    padding: 15px;
   }
 
   .releaseFunnelBarRow {
