@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260715-4">
+    <link rel="stylesheet" href="/styles.css?v=20260716-1">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -380,8 +380,8 @@
               <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2" /><circle cx="18" cy="18" r="2.2" /><path d="M8.2 6H13a3 3 0 0 1 3 3v7M6 8.2V16a2 2 0 0 0 2 2h7.8" /></svg>
             </span>
             <div class="releaseCommandCopy">
-              <strong>Automatic release cohorts</strong>
-              <span>Exact Roblox PlaceVersions, separated from Studio sessions.</span>
+              <strong>Update impact</strong>
+              <span>What changed in events and funnels after each Roblox release.</span>
             </div>
             <p class="status releaseStatus" id="releaseStatus" aria-live="polite">Waiting for version data...</p>
             <button class="releaseRefreshButton" id="refreshReleasesButton" type="button" aria-label="Refresh releases" title="Refresh releases">
@@ -391,35 +391,26 @@
 
           <section class="releaseSummaryGrid" aria-label="Release tracking summary">
             <article class="releaseSummaryCard">
-              <span>Current version</span>
+              <span>Current release</span>
               <strong id="releaseCurrentVersion">--</strong>
-              <small>Latest production version observed</small>
+              <small>Latest production PlaceVersion</small>
             </article>
             <article class="releaseSummaryCard">
-              <span>Tracked versions</span>
-              <strong id="releaseTrackedVersions">0</strong>
-              <small>Exact production cohorts</small>
+              <span>Baseline</span>
+              <strong id="releaseTrackedVersions">--</strong>
+              <small>Immediately previous PlaceVersion</small>
+            </article>
+            <article class="releaseSummaryCard">
+              <span>Ready comparisons</span>
+              <strong id="releaseCoverage">0</strong>
+              <small>Enough sessions to state findings</small>
             </article>
             <article class="releaseSummaryCard">
               <span>Version coverage</span>
-              <strong id="releaseCoverage">--</strong>
-              <small>Analytics records with version metadata</small>
-            </article>
-            <article class="releaseSummaryCard">
-              <span>Studio observations</span>
-              <strong id="releaseStudioCount">0</strong>
-              <small>Excluded from release comparisons</small>
+              <strong id="releaseStudioCount">--</strong>
+              <small>Production data tagged to a release</small>
             </article>
           </section>
-
-          <article class="panel releaseMethodCard">
-            <span class="releaseMethodIcon" aria-hidden="true">v</span>
-            <div>
-              <strong>How a release is compared</strong>
-              <p>The immediately previous production PlaceVersion is the baseline. Raw metrics stay visible, but findings use exact-matched first-seen/returning and platform groups so a traffic-mix change cannot impersonate a release regression.</p>
-            </div>
-            <span class="releaseMinimumLabel">20 matched sessions per side</span>
-          </article>
 
           <section class="releaseCohortList" id="releaseCohortList" aria-live="polite" aria-busy="false">
             <article class="panel releaseEmptyState">
@@ -980,6 +971,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260715-4"></script>
+    <script defer src="/app.js?v=20260716-1"></script>
   </body>
 </html>

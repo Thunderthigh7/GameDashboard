@@ -210,7 +210,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260715-4";
+const DASHBOARD_ASSET_VERSION = "20260716-1";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -2320,23 +2320,28 @@ async function loadReleases(options = {}) {
 function renderReleases(payload = {}) {
   const places = Array.isArray(payload.places) ? payload.places : [];
   const coverage = payload.coverage || {};
-  const releaseCount = Number(payload.releaseCount) || places.reduce((total, place) => total + (place.releases?.length || 0), 0);
+  const comparableCount = Number(payload.comparableReleaseCount) || 0;
   const coveragePercent = coverage.productionVersionCoveragePercent;
+  const currentRelease = places
+    .flatMap((place) => Array.isArray(place.releases) ? place.releases : [])
+    .find((release) => release.isCurrent) || null;
 
   if (releaseCurrentVersion) {
-    releaseCurrentVersion.textContent = places.length === 1
-      ? `v${formatReleaseVersion(places[0].currentVersion)}`
-      : places.length > 1
-        ? `${formatCompactNumber(places.length)} places`
-        : "--";
+    releaseCurrentVersion.textContent = currentRelease
+      ? `v${formatReleaseVersion(currentRelease.placeVersion)}`
+      : "--";
   }
-  if (releaseTrackedVersions) releaseTrackedVersions.textContent = formatCompactNumber(releaseCount);
-  if (releaseCoverage) {
-    releaseCoverage.textContent = coveragePercent === null || coveragePercent === undefined
+  if (releaseTrackedVersions) {
+    releaseTrackedVersions.textContent = currentRelease?.previousPlaceVersion
+      ? `v${formatReleaseVersion(currentRelease.previousPlaceVersion)}`
+      : "--";
+  }
+  if (releaseCoverage) releaseCoverage.textContent = formatCompactNumber(comparableCount);
+  if (releaseStudioCount) {
+    releaseStudioCount.textContent = coveragePercent === null || coveragePercent === undefined
       ? "--"
       : `${formatEventNumber(coveragePercent)}%`;
   }
-  if (releaseStudioCount) releaseStudioCount.textContent = formatCompactNumber(coverage.studioObservations);
   if (!releaseCohortList) return;
 
   if (!places.length) {
@@ -2375,33 +2380,31 @@ function renderReleaseComparison(release = {}) {
   const readiness = allowedReadiness.has(release.readiness) ? release.readiness : "collecting_both";
   const readinessClass = readiness.replaceAll("_", "-");
   const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
-  const overlapNote = release.serverOverlapDetected
-    ? `<span class="releaseOverlapBadge">Server overlap: ${escapeHtml(formatDuration(release.overlapDurationMs))}</span>`
-    : "";
+  const beforeVersion = release.previousPlaceVersion
+    ? `v${formatReleaseVersion(release.previousPlaceVersion)}`
+    : "No baseline";
+  const afterVersion = `v${formatReleaseVersion(release.placeVersion)}`;
 
   return `
     <article class="releaseComparisonCard ${release.isCurrent ? "isCurrent" : ""}">
       <header class="releaseComparisonHeader">
         <div>
-          <span>Release</span>
-          <strong>PlaceVersion ${escapeHtml(formatReleaseVersion(release.placeVersion))}</strong>
+          <span>Update comparison</span>
+          <strong>${escapeHtml(beforeVersion)} <i aria-hidden="true">&rarr;</i> ${escapeHtml(afterVersion)}</strong>
+          <small>${release.before ? `${escapeHtml(formatFullDate(release.before.firstSeenAt))} baseline against ${escapeHtml(formatFullDate(release.after?.firstSeenAt))} release traffic` : "Waiting for an earlier production version"}</small>
         </div>
         <div class="releaseHeaderBadges">
-          ${release.isCurrent ? '<span class="releaseCurrentBadge">Current</span>' : ""}
-          ${overlapNote}
+          ${release.isCurrent ? '<span class="releaseCurrentBadge">Current release</span>' : ""}
           <span class="releaseReadinessBadge ${readinessClass}">${escapeHtml(release.readinessLabel || "Collecting cohorts")}</span>
         </div>
       </header>
       <div class="releaseCohortComparison">
-        ${renderReleaseCohort(release.before, "Before / baseline", minimumSessions)}
+        ${renderReleaseCohort(release.before, "Before", minimumSessions)}
         <div class="releaseComparisonDivider" aria-hidden="true"><span>vs</span></div>
-        ${renderReleaseCohort(release.after, "After / release", minimumSessions)}
+        ${renderReleaseCohort(release.after, "After", minimumSessions)}
       </div>
       ${renderReleaseAnalysis(release.comparison, Boolean(release.isCurrent))}
-      <footer class="releaseComparisonFooter">
-        <span>Minimum sample: ${escapeHtml(formatCompactNumber(minimumSessions))} sessions per cohort</span>
-        <span>${readiness === "ready" ? "Deterministic metric analysis is available below." : "No performance conclusion is shown until both sides are ready."}</span>
-      </footer>
+      ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
     </article>
   `;
 }
@@ -2417,159 +2420,146 @@ function renderReleaseCohort(cohort, label, minimumSessions) {
   }
 
   const sessions = Math.max(Number(cohort.sessionCount) || 0, 0);
-  const progressPercent = Math.min(100, (sessions / minimumSessions) * 100);
-  const records = cohort.records || {};
   const observedFrom = formatFullDate(cohort.firstSeenAt);
   const observedTo = formatFullDate(cohort.lastSeenAt);
   return `
     <section class="releaseCohortCard ${cohort.meetsMinimumSessions ? "isReady" : "isCollecting"}">
       <div class="releaseCohortTitle">
         <span>${escapeHtml(label)}</span>
-        <strong>PlaceVersion ${escapeHtml(formatReleaseVersion(cohort.placeVersion))}</strong>
+        <strong>v${escapeHtml(formatReleaseVersion(cohort.placeVersion))}</strong>
       </div>
-      <div class="releaseCohortStats">
-        <div><span>Sessions</span><strong>${escapeHtml(formatCompactNumber(sessions))}</strong></div>
-        <div><span>Records</span><strong>${escapeHtml(formatCompactNumber(cohort.observationCount))}</strong></div>
+      <div class="releaseCohortEvidence">
+        <span><strong>${escapeHtml(formatCompactNumber(sessions))}</strong> sessions</span>
+        <span class="${cohort.meetsMinimumSessions ? "ready" : "collecting"}">${cohort.meetsMinimumSessions ? "Sample ready" : `${escapeHtml(formatCompactNumber(Math.max(minimumSessions - sessions, 0)))} more needed`}</span>
       </div>
-      <div class="releaseSampleProgress">
-        <div><span>${cohort.meetsMinimumSessions ? "Sample ready" : `${escapeHtml(formatCompactNumber(Math.max(minimumSessions - sessions, 0)))} sessions needed`}</span><strong>${escapeHtml(formatCompactNumber(sessions))} / ${escapeHtml(formatCompactNumber(minimumSessions))}</strong></div>
-        <span class="releaseSampleTrack"><span style="width: ${progressPercent.toFixed(2)}%"></span></span>
-      </div>
-      <div class="releaseRecordGrid" aria-label="Analytics records in this cohort">
-        ${renderReleaseRecord("Events", records.customEvents)}
-        ${renderReleaseRecord("Deaths", records.deaths)}
-        ${renderReleaseRecord("Leaves", records.leaves)}
-        ${renderReleaseRecord("Chat", records.chatMessages)}
-        ${renderReleaseRecord("Movement", records.movementObservations)}
-      </div>
-      <p class="releaseObservedRange">Observed ${escapeHtml(observedFrom)} to ${escapeHtml(observedTo)}</p>
+      <p class="releaseObservedRange">${escapeHtml(observedFrom)} &ndash; ${escapeHtml(observedTo)}</p>
     </section>
   `;
 }
 
-function renderReleaseRecord(label, count) {
-  return `<span><small>${escapeHtml(label)}</small><strong>${escapeHtml(formatCompactNumber(count))}</strong></span>`;
-}
-
 function renderReleaseAnalysis(comparison = null, isCurrent = false) {
   if (!comparison) return "";
-  const metrics = Array.isArray(comparison.coreMetrics) ? comparison.coreMetrics : [];
-  const funnels = Array.isArray(comparison.funnels) ? comparison.funnels : [];
-  const events = Array.isArray(comparison.events) ? comparison.events : [];
-  const leaveAreas = Array.isArray(comparison.leaveAreas) ? comparison.leaveAreas : [];
   const findings = comparison.findings || {};
   const findingItems = Array.isArray(findings.items) ? findings.items : [];
   const ready = comparison.status === "ready";
   const partialData = Boolean(comparison.dataQuality?.partial);
   const trafficAdjustment = comparison.trafficAdjustment || {};
   const trafficReady = trafficAdjustment.status === "ready";
-  const adjustedMetrics = Array.isArray(trafficAdjustment.coreMetrics) ? trafficAdjustment.coreMetrics : [];
-  const detailedFunnels = trafficReady && Array.isArray(trafficAdjustment.funnels) ? trafficAdjustment.funnels : funnels;
-  const detailedEvents = trafficReady && Array.isArray(trafficAdjustment.events) ? trafficAdjustment.events : events;
-  const detailedLeaveAreas = trafficReady && Array.isArray(trafficAdjustment.leaveAreas) ? trafficAdjustment.leaveAreas : leaveAreas;
+  const coreMetrics = trafficReady && Array.isArray(trafficAdjustment.coreMetrics)
+    ? trafficAdjustment.coreMetrics
+    : (Array.isArray(comparison.coreMetrics) ? comparison.coreMetrics : []);
+  const funnels = trafficReady && Array.isArray(trafficAdjustment.funnels)
+    ? trafficAdjustment.funnels
+    : (Array.isArray(comparison.funnels) ? comparison.funnels : []);
+  const events = trafficReady && Array.isArray(trafficAdjustment.events)
+    ? trafficAdjustment.events
+    : (Array.isArray(comparison.events) ? comparison.events : []);
+  const eventMetrics = getReleaseEventOutcomeMetrics(coreMetrics, events);
+  const evidenceSessions = trafficReady
+    ? Math.min(Number(trafficAdjustment.samples?.before?.sessions) || 0, Number(trafficAdjustment.samples?.after?.sessions) || 0)
+    : Math.min(Number(comparison.samples?.before?.sessions) || 0, Number(comparison.samples?.after?.sessions) || 0);
+  const beforeVersion = comparison.samples?.before?.placeVersion;
+  const afterVersion = comparison.samples?.after?.placeVersion;
 
   return `
     <details class="releaseAnalysis" ${isCurrent ? "open" : ""}>
       <summary class="releaseAnalysisSummary">
         <div>
-          <span class="releaseAnalysisIcon" aria-hidden="true">&#916;</span>
-          <span><strong>Release impact</strong><small>${ready ? (trafficReady ? "Traffic-matched deterministic analysis" : "Raw metrics ready; balanced sample still collecting") : "Metrics collecting; findings suppressed"}</small></span>
+          <span class="releaseAnalysisIcon" aria-hidden="true">&#8597;</span>
+          <span><strong>Impact analysis</strong><small>${ready ? "Meaningful funnel and event changes" : "Waiting for enough sessions to compare"}</small></span>
         </div>
         <div class="releaseFindingCounts">
           <span class="regression">${escapeHtml(formatCompactNumber(findings.regressions))} regression${Number(findings.regressions) === 1 ? "" : "s"}</span>
           <span class="improvement">${escapeHtml(formatCompactNumber(findings.improvements))} improvement${Number(findings.improvements) === 1 ? "" : "s"}</span>
           ${partialData ? '<span class="partial">Partial data</span>' : ""}
-          <span class="${trafficReady ? "matched" : "partial"}">${trafficReady ? "Mix adjusted" : "Match collecting"}</span>
-          <span class="deterministic">No AI</span>
         </div>
       </summary>
       <div class="releaseAnalysisBody">
-        <section class="releaseAnalysisSection">
-          <header><div><strong>Raw cohort metrics</strong><span>Exact PlaceVersions before traffic balancing</span></div><small>Before <b>v${escapeHtml(formatReleaseVersion(comparison.samples?.before?.placeVersion))}</b> &rarr; After <b>v${escapeHtml(formatReleaseVersion(comparison.samples?.after?.placeVersion))}</b></small></header>
-          <div class="releaseImpactMetricGrid">
-            ${metrics.map(renderReleaseImpactMetric).join("") || '<p class="status">No comparable metrics yet.</p>'}
-          </div>
-        </section>
-        ${renderReleaseTrafficAdjustment(trafficAdjustment)}
-        ${adjustedMetrics.length ? `
-          <section class="releaseAnalysisSection releaseAdjustedMetricsSection">
-            <header><div><strong>Traffic-adjusted metrics</strong><span>Equal-sized exact matches inside shared lifecycle and platform groups</span></div><small>${escapeHtml(formatCompactNumber(trafficAdjustment.samples?.before?.sessions))} matched sessions per side</small></header>
-            <div class="releaseImpactMetricGrid">
-              ${adjustedMetrics.map(renderReleaseImpactMetric).join("")}
-            </div>
-          </section>
-        ` : ""}
-        <section class="releaseAnalysisSection releaseFindingsSection">
-          <header><div><strong>Findings</strong><span>${trafficReady ? "Thresholded changes from the matched sample" : "Suppressed until the matched sample is large enough"}</span></div><small>95% test for rate metrics</small></header>
-          <div class="releaseFindingList">
-            ${findingItems.length
-              ? findingItems.map(renderReleaseFinding).join("")
-              : `<article class="releaseNoFinding"><strong>${ready ? (trafficReady ? (partialData ? "No finding can be claimed from the incomplete metrics." : "No matched regression crossed the thresholds.") : "The balanced comparison needs more sessions.") : "Findings are waiting for both cohorts."}</strong><p>${ready ? (trafficReady ? (partialData ? "Sampled values remain visible, but capped record types are excluded from deterministic findings." : "Raw and traffic-adjusted values remain visible; RoAnalytics will not force a conclusion from normal noise.") : "Raw values are shown, but no conclusion is generated until at least 20 matched sessions remain on each side.") : "At least 20 sessions are required on both sides before findings are generated."}</p></article>`}
-          </div>
-        </section>
-        ${detailedFunnels.length ? renderReleaseFunnelComparisons(detailedFunnels, trafficReady) : ""}
-        ${detailedEvents.length ? renderReleaseEventComparisons(detailedEvents, trafficReady) : ""}
-        ${detailedLeaveAreas.length ? renderReleaseLeaveAreaComparisons(detailedLeaveAreas, trafficReady) : ""}
-        <p class="releaseMethodNote">${escapeHtml(findings.note || comparison.dataQuality?.note || comparison.methodology?.note || "Metric values are computed directly from exact version records.")}</p>
+        ${renderReleaseOutcomeSummary({ findings, ready, partialData, evidenceSessions, beforeVersion, afterVersion })}
+        <div class="releasePrimaryImpactGrid ${funnels.length ? "" : "findingsOnly"}">
+          ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
+          ${renderReleaseFindingsSection(findingItems, { ready, partialData })}
+        </div>
+        ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics, beforeVersion, afterVersion) : ""}
+        <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is intentionally excluded because a larger event count alone does not mean an update performed better.</p>
       </div>
     </details>
   `;
 }
 
-function renderReleaseTrafficAdjustment(traffic = {}) {
-  const coverage = traffic.coverage || {};
-  const before = coverage.before || {};
-  const after = coverage.after || {};
-  const segments = Array.isArray(traffic.segments) ? traffic.segments : [];
-  const matchedSessions = Math.min(Number(traffic.samples?.before?.sessions) || 0, Number(traffic.samples?.after?.sessions) || 0);
-  const ready = traffic.status === "ready";
-  const platformReady = Boolean(traffic.platformCoverageSufficient);
+function renderReleaseOutcomeSummary({ findings = {}, ready = false, partialData = false, evidenceSessions = 0, beforeVersion, afterVersion } = {}) {
+  const regressions = Number(findings.regressions) || 0;
+  const improvements = Number(findings.improvements) || 0;
+  const observations = Number(findings.observations) || 0;
+  const meaningfulChanges = regressions + improvements + observations;
+  const headline = !ready
+    ? "Waiting for enough evidence"
+    : partialData
+      ? "Some conclusions are suppressed"
+      : meaningfulChanges
+        ? `${formatCompactNumber(meaningfulChanges)} meaningful change${meaningfulChanges === 1 ? "" : "s"} detected`
+        : "No meaningful change detected";
+  const summary = !ready
+    ? "The comparison will unlock after both versions have enough usable sessions."
+    : meaningfulChanges
+      ? `${formatCompactNumber(improvements)} improvement${improvements === 1 ? "" : "s"}, ${formatCompactNumber(regressions)} regression${regressions === 1 ? "" : "s"}${observations ? `, and ${formatCompactNumber(observations)} neutral observation${observations === 1 ? "" : "s"}` : ""}.`
+      : "Funnels and event rates stayed inside the practical and statistical thresholds.";
   return `
-    <section class="releaseAnalysisSection releaseTrafficSection ${ready ? "isReady" : "isCollecting"}">
-      <header>
-        <div><strong>Traffic-mix control</strong><span>First-seen vs returning players crossed with observed platform</span></div>
-        <small>${ready ? "Balanced comparison ready" : "Balanced sample collecting"}</small>
-      </header>
-      <div class="releaseTrafficSummaryGrid">
-        <div><span>Matched sessions</span><strong>${escapeHtml(formatCompactNumber(matchedSessions))} / side</strong><small>${escapeHtml(formatEventNumber(traffic.samples?.before?.retainedPercent || 0))}% of before traffic retained</small></div>
-        <div class="${traffic.materialMixShift ? "warning" : ""}"><span>Traffic mix shift</span><strong>${escapeHtml(formatEventNumber(traffic.mixShiftPoints || 0))} pp</strong><small>${traffic.materialMixShift ? "Large enough to distort raw results" : "No material composition shift"}</small></div>
-        <div class="${platformReady ? "" : "warning"}"><span>Platform coverage</span><strong>${escapeHtml(formatEventNumber(before.platformPercent || 0))}% / ${escapeHtml(formatEventNumber(after.platformPercent || 0))}%</strong><small>${platformReady ? "Before / after coverage is usable" : `Below ${escapeHtml(formatEventNumber(traffic.minimumPlatformCoveragePercent || 70))}% on at least one side`}</small></div>
-        <div><span>First-seen share</span><strong>${escapeHtml(formatEventNumber(before.firstSeenPercent || 0))}% / ${escapeHtml(formatEventNumber(after.firstSeenPercent || 0))}%</strong><small>Before / after retained telemetry</small></div>
+    <section class="releaseOutcomeSummary ${regressions ? "hasRegression" : ""}">
+      <div class="releaseOutcomeMark" aria-hidden="true">${regressions ? "!" : ready ? "&#10003;" : "&hellip;"}</div>
+      <div>
+        <span>v${escapeHtml(formatReleaseVersion(beforeVersion))} &rarr; v${escapeHtml(formatReleaseVersion(afterVersion))}</span>
+        <strong>${escapeHtml(headline)}</strong>
+        <p>${escapeHtml(summary)}</p>
       </div>
-      ${segments.length ? `
-        <div class="releaseTrafficTable" role="table" aria-label="Release traffic segment matching">
-          <div class="releaseTrafficTableRow releaseTrafficTableHeader" role="row"><span>Segment</span><span>Before</span><span>After</span><span>Matched</span></div>
-          ${segments.map((segment) => `
-            <div class="releaseTrafficTableRow" role="row">
-              <strong>${escapeHtml(segment.lifecycleLabel || "Player")} &middot; ${escapeHtml(segment.platform || "Unknown")}</strong>
-              <span>${escapeHtml(formatCompactNumber(segment.before?.sessions))} <small>${escapeHtml(formatEventNumber(segment.before?.sharePercent || 0))}%</small></span>
-              <span>${escapeHtml(formatCompactNumber(segment.after?.sessions))} <small>${escapeHtml(formatEventNumber(segment.after?.sharePercent || 0))}%</small></span>
-              <span>${escapeHtml(formatCompactNumber(segment.matchedSessions))}</span>
-            </div>
-          `).join("")}
-        </div>
-      ` : '<p class="status">No shared player-context segments have been observed yet.</p>'}
-      <p class="releaseTrafficDefinition">First-seen means the player’s earliest session in retained PlayLens telemetry—not necessarily their first-ever Roblox session. Unknown platform is kept visible and matched separately.</p>
+      <div class="releaseOutcomeEvidence"><strong>${escapeHtml(formatCompactNumber(evidenceSessions))}</strong><span>sessions / version</span></div>
     </section>
   `;
 }
 
-function renderReleaseImpactMetric(metric = {}) {
-  const tone = getReleaseMetricTone(metric);
+function renderReleaseFindingsSection(findingItems, options = {}) {
   return `
-    <article class="releaseImpactMetric ${tone}">
-      <div class="releaseImpactMetricTitle"><strong>${escapeHtml(metric.label || "Metric")}</strong><span>${escapeHtml(metric.description || "")}</span></div>
-      <div class="releaseImpactValues">
-        <span><small>Before</small><strong>${escapeHtml(formatReleaseMetricValue(metric, metric.before))}</strong></span>
-        <i aria-hidden="true">&rarr;</i>
-        <span><small>After</small><strong>${escapeHtml(formatReleaseMetricValue(metric, metric.after))}</strong></span>
+    <section class="releaseAnalysisSection releaseFindingsSection">
+      <header><div><strong>Key findings</strong><span>Only changes that crossed the evidence thresholds</span></div></header>
+      <div class="releaseFindingList">
+        ${findingItems.length
+          ? findingItems.map(renderReleaseFinding).join("")
+          : `<article class="releaseNoFinding"><strong>${options.ready ? (options.partialData ? "No supported conclusion from the incomplete metrics." : "No significant change found.") : "Findings are still collecting."}</strong><p>${options.ready ? "Visible rates stayed inside the practical and statistical thresholds." : "At least 20 usable sessions are required on both versions."}</p></article>`}
       </div>
-      <div class="releaseImpactDelta">
-        <strong>${escapeHtml(formatReleaseMetricDelta(metric))}</strong>
-        <span>${escapeHtml(formatReleaseMetricSample(metric))}</span>
-      </div>
-    </article>
+    </section>
   `;
+}
+
+function getReleaseEventOutcomeMetrics(coreMetrics, events) {
+  const purchaseEventNames = new Set([
+    "item_purchased", "product_purchased", "gamepass_purchased", "purchase_completed",
+    "purchase_succeeded", "checkout_completed", "transaction_completed",
+  ]);
+  const coreOutcomes = coreMetrics
+    .filter((metric) => metric.id === "death_session_rate" || metric.id === "purchase_session_rate")
+    .map((metric) => ({
+      eventName: metric.id === "death_session_rate" ? "player_died" : "purchase_completed",
+      label: metric.id === "death_session_rate" ? "Sessions with a death" : "Purchase session rate",
+      metric,
+      sampleKind: "sessions",
+      codeLabel: false,
+    }));
+  const customOutcomes = events
+    .filter((event) => !purchaseEventNames.has(String(event.eventName || "").toLowerCase()))
+    .filter((event) => {
+      const metric = event.metric || {};
+      return metric.available
+        && Number(metric.before?.denominator) >= 20
+        && Number(metric.after?.denominator) >= 20
+        && Number(metric.before?.numerator || 0) + Number(metric.after?.numerator || 0) >= 20;
+    })
+    .sort((left, right) => (
+      Math.abs(Number(right.metric?.relativeDeltaPercent) || Number(right.metric?.delta) || 0)
+      - Math.abs(Number(left.metric?.relativeDeltaPercent) || Number(left.metric?.delta) || 0)
+    ))
+    .slice(0, 8)
+    .map((event) => ({ ...event, label: event.eventName, sampleKind: "players", codeLabel: true }));
+  return [...coreOutcomes, ...customOutcomes];
 }
 
 function renderReleaseFinding(finding = {}) {
@@ -2581,55 +2571,64 @@ function renderReleaseFinding(finding = {}) {
       <div>
         <header><strong>${escapeHtml(finding.title || "Release finding")}</strong><span>${escapeHtml(formatReleaseConfidence(finding.confidence))}</span></header>
         <p>${escapeHtml(finding.summary || "")}</p>
-        <small>${escapeHtml(finding.method || "Computed deterministically from the cohort samples.")}</small>
       </div>
     </article>
   `;
 }
 
-function renderReleaseFunnelComparisons(funnels, matched = false) {
+function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
   return `
-    <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>${matched ? "Traffic-adjusted" : "Raw"} saved funnel conversion</strong><span>${matched ? "Recalculated from the balanced session sample" : "Every funnel is recalculated inside each exact version"}</span></div></header>
-      <div class="releaseComparisonTable" role="table" aria-label="Saved funnel release comparisons">
-        <div class="releaseComparisonTableHeader" role="row"><span>Funnel</span><span>Before</span><span>After</span><span>Change</span><span>Entries</span></div>
-        ${funnels.map((funnel) => renderReleaseComparisonRow(
-          funnel.name || "Funnel",
-          funnel.metric,
-          `${formatCompactNumber(funnel.before?.entrySessions)} / ${formatCompactNumber(funnel.after?.entrySessions)}`,
-        )).join("")}
+    <section class="releaseAnalysisSection releaseFunnelImpactSection">
+      <header><div><strong>Funnel conversion</strong><span>The clearest view of where update behavior changed</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <div class="releaseFunnelImpactList">
+        ${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}
       </div>
     </section>
   `;
 }
 
-function renderReleaseEventComparisons(events, matched = false) {
+function renderReleaseFunnelImpact(funnel = {}, beforeVersion, afterVersion) {
+  const metric = funnel.metric || {};
+  const tone = getReleaseMetricTone(metric);
+  const beforeWidth = getReleaseBarWidth(metric.before?.value);
+  const afterWidth = getReleaseBarWidth(metric.after?.value);
+  return `
+    <article class="releaseFunnelImpact ${tone}">
+      <header>
+        <div><strong>${escapeHtml(funnel.name || "Funnel")}</strong><span>${escapeHtml(formatCompactNumber(funnel.before?.entrySessions))} / ${escapeHtml(formatCompactNumber(funnel.after?.entrySessions))} entering sessions</span></div>
+        <b>${escapeHtml(formatReleaseMetricDelta(metric))}</b>
+      </header>
+      <div class="releaseFunnelBarRow">
+        <span>v${escapeHtml(formatReleaseVersion(beforeVersion))}</span>
+        <div><i style="width:${beforeWidth}%"></i></div>
+        <strong>${escapeHtml(formatReleaseMetricValue(metric, metric.before))}</strong>
+      </div>
+      <div class="releaseFunnelBarRow after">
+        <span>v${escapeHtml(formatReleaseVersion(afterVersion))}</span>
+        <div><i style="width:${afterWidth}%"></i></div>
+        <strong>${escapeHtml(formatReleaseMetricValue(metric, metric.after))}</strong>
+      </div>
+    </article>
+  `;
+}
+
+function getReleaseBarWidth(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.max(2, Math.min(100, number));
+}
+
+function renderReleaseEventComparisons(events, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>${matched ? "Traffic-adjusted" : "Raw"} event rates</strong><span>Occurrences per observed player</span></div></header>
+      <header><div><strong>Event-rate changes</strong><span>Rates only; raw event volume is excluded</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
       <div class="releaseComparisonTable" role="table" aria-label="Event rate release comparisons">
-        <div class="releaseComparisonTableHeader" role="row"><span>Event</span><span>Before</span><span>After</span><span>Change</span><span>Events</span></div>
+        <div class="releaseComparisonTableHeader" role="row"><span>Event outcome</span><span>Before</span><span>After</span><span>Change</span><span>Evidence</span></div>
         ${events.map((event) => renderReleaseComparisonRow(
-          event.eventName || "event",
+          event.label || event.eventName || "event",
           event.metric,
-          `${formatCompactNumber(event.metric?.before?.numerator)} / ${formatCompactNumber(event.metric?.after?.numerator)}`,
-          true,
-        )).join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderReleaseLeaveAreaComparisons(areas, matched = false) {
-  return `
-    <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>${matched ? "Traffic-adjusted" : "Raw"} leave-area shifts</strong><span>Share of recorded leaves in matching 48-stud cells</span></div></header>
-      <div class="releaseComparisonTable releaseAreaComparisonTable" role="table" aria-label="Leave area release comparisons">
-        <div class="releaseComparisonTableHeader" role="row"><span>Map area</span><span>Before</span><span>After</span><span>Change</span><span>Leaves</span></div>
-        ${areas.map((area) => renderReleaseComparisonRow(
-          area.label || `X ${area.x}, Z ${area.z}`,
-          area.metric,
-          `${formatCompactNumber(area.metric?.before?.numerator)} / ${formatCompactNumber(area.metric?.after?.numerator)}`,
+          `${formatCompactNumber(event.metric?.before?.denominator)} / ${formatCompactNumber(event.metric?.after?.denominator)} ${event.sampleKind || "players"}`,
+          Boolean(event.codeLabel),
         )).join("")}
       </div>
     </section>
@@ -2664,15 +2663,6 @@ function formatReleaseMetricDelta(metric = {}) {
   if (metric.unit === "percent") return `${sign}${formatEventNumber(delta)} pp`;
   if (metric.unit === "minutes") return `${sign}${formatEventNumber(delta)}m`;
   return `${sign}${formatEventNumber(delta)}`;
-}
-
-function formatReleaseMetricSample(metric = {}) {
-  const partialLabel = metric.dataComplete === false ? " · partial" : "";
-  if (metric.unit === "minutes") {
-    return `${formatCompactNumber(metric.before?.sampleSize)} / ${formatCompactNumber(metric.after?.sampleSize)} samples${partialLabel}`;
-  }
-  const denominatorLabel = metric.unit === "per_player" ? "players" : "sessions";
-  return `${formatCompactNumber(metric.before?.denominator)} / ${formatCompactNumber(metric.after?.denominator)} ${denominatorLabel}${partialLabel}`;
 }
 
 function getReleaseMetricTone(metric = {}) {
