@@ -81,6 +81,7 @@ console.log(JSON.stringify({
     movementSampleCount: rollup.movement.samples.length,
     deathSampleCount: rollup.deaths.samples.length,
     leaveSampleCount: rollup.leaves.samples.length,
+    visitCount: rollup.visits.sampleCount,
     customEventCount: rollup.customEvents.samples.length,
     versionCount: rollup.versions.length,
     rollupWriteSkipped: skipAllRollupWrites || failedRawObjectUniverseIds.has(rollup.universeId),
@@ -179,11 +180,7 @@ function ingestRollupEvent(rollup, event, objectKey) {
     rollup.batchCount += 1;
     rollup.playerPeak = Math.max(rollup.playerPeak, cleanPositiveInteger(event.playerCount, 0));
     rollup.lastSeenAt = Math.max(rollup.lastSeenAt, cleanTimestamp(event.receivedAt));
-    for (const player of Array.isArray(event.players) ? event.players : []) {
-      const userId = cleanPositiveInteger(player?.userId, 0);
-      if (userId <= 0) continue;
-      rollup.sessionIds.add(`${cleanString(event.jobId, 128) || "job"}:${userId}:${cleanTimestamp(player?.joinedAt) || 0}`);
-    }
+    addVisitSamplesFromBatch(rollup, event);
   } else if (event.type === "chat") {
     addChatEvent(rollup, event);
   } else if (event.type === "movement") {
@@ -204,7 +201,7 @@ function getUniverseRollup(universeId) {
   let rollup = rollupsByUniverseId.get(key);
   if (!rollup) {
     rollup = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       universeId,
       generatedAt: Date.now(),
       window: {
@@ -236,6 +233,7 @@ function createRollupAccumulator() {
     movement: { source: "rollups", sampleCount: 0, cells: new Map(), samples: [] },
     deaths: { sampleCount: 0, samples: [] },
     leaves: { sampleCount: 0, samples: [] },
+    visits: { sampleCount: 0, samples: [], ids: new Set() },
     customEvents: { sampleCount: 0, samples: [] },
   };
 }
@@ -248,7 +246,7 @@ function getVersionRollup(rollup, event) {
   let versionRollup = rollup.versionRollups.get(key);
   if (!versionRollup && rollup.versionRollups.size < MAX_VERSION_ROLLUPS) {
     versionRollup = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       universeId: rollup.universeId,
       placeId,
       placeVersion,
@@ -260,6 +258,42 @@ function getVersionRollup(rollup, event) {
     rollup.droppedVersionKeys.add(key);
   }
   return versionRollup || null;
+}
+
+function addVisitSamplesFromBatch(rollup, event) {
+  const jobId = cleanString(event.jobId, 128) || "job";
+  const receivedAt = cleanTimestamp(event.receivedAt);
+  for (const player of Array.isArray(event.players) ? event.players : []) {
+    const userId = cleanPositiveInteger(player?.userId, 0);
+    const joinedAt = cleanTimestamp(player?.joinedAt);
+    if (userId <= 0 || joinedAt <= 0) continue;
+
+    const sessionId = `${jobId}:${userId}:${joinedAt}`;
+    const id = `visit:${sessionId}`;
+    rollup.sessionIds.add(sessionId);
+    if (rollup.visits.ids.has(id)) continue;
+
+    rollup.visits.ids.add(id);
+    rollup.visits.sampleCount += 1;
+    rollup.visits.samples.push({
+      id,
+      universeId: rollup.universeId,
+      placeId: cleanPositiveInteger(event.placeId, 0),
+      placeVersion: cleanNonNegativeInteger(event.placeVersion, 0),
+      environment: cleanAnalyticsEnvironment(event.environment, event.placeVersion),
+      jobId,
+      userId,
+      username: cleanString(player?.username, 64),
+      displayName: cleanString(player?.displayName, 64),
+      platform: cleanString(player?.platform, 32),
+      whenUserFirstPlayed: cleanString(player?.whenUserFirstPlayed, 64),
+      sessionId,
+      joinedAt,
+      sampledAt: joinedAt,
+      receivedAt,
+    });
+    trimNewestSamples(rollup.visits.samples, MAX_EVENT_SAMPLES, compareEventSamples);
+  }
 }
 
 function addChatEvent(rollup, event) {
@@ -477,9 +511,12 @@ function finalizeRollupData(rollup) {
   delete rollup.movement.cells;
   rollup.deaths.samples.sort(compareEventSamples);
   rollup.leaves.samples.sort(compareEventSamples);
+  rollup.visits.samples.sort(compareEventSamples);
   rollup.customEvents.samples.sort(compareCustomEvents);
   rollup.deaths.samples = rollup.deaths.samples.slice(0, MAX_EVENT_SAMPLES);
   rollup.leaves.samples = rollup.leaves.samples.slice(0, MAX_EVENT_SAMPLES);
+  rollup.visits.samples = rollup.visits.samples.slice(0, MAX_EVENT_SAMPLES);
+  delete rollup.visits.ids;
   rollup.customEvents.samples = rollup.customEvents.samples.slice(0, MAX_EVENT_SAMPLES);
 }
 

@@ -203,7 +203,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260720-3";
+const DASHBOARD_ASSET_VERSION = "20260720-4";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
@@ -3156,7 +3156,7 @@ function renderCustomEventChart(series, selectedBucketMs) {
     </div>
     <div class="eventChartLegend">
       <span><i class="eventChartEventLegend" aria-hidden="true"></i>Selected event</span>
-      <span><i class="eventChartVisitLegend" aria-hidden="true"></i>Visits (unique sessions)</span>
+      <span><i class="eventChartVisitLegend" aria-hidden="true"></i>Visits</span>
     </div>
   `;
 }

@@ -60,6 +60,7 @@ const MAX_DEATH_SAMPLES_RESPONSE = 5000;
 const MAX_LEAVE_SAMPLES_PER_PAYLOAD = 200;
 const MAX_LEAVE_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_LEAVE_SAMPLES_RESPONSE = 5000;
+const MAX_VISIT_SAMPLES_PER_UNIVERSE = 25_000;
 const MAX_CUSTOM_EVENTS_PER_PAYLOAD = 200;
 const MAX_CUSTOM_EVENTS_PER_UNIVERSE = 25_000;
 const MAX_CUSTOM_EVENT_PROPERTIES = 20;
@@ -290,6 +291,7 @@ const ANALYTICS_COLLECTION_RETENTION_MS = {
   movement_rollups: 14 * 24 * 60 * 60 * 1000,
   death_samples: 14 * 24 * 60 * 60 * 1000,
   leave_samples: 14 * 24 * 60 * 60 * 1000,
+  visit_samples: 14 * 24 * 60 * 60 * 1000,
   custom_events: 14 * 24 * 60 * 60 * 1000,
 };
 const DEMO_RUNTIME_REFRESH_MS = 30 * 60 * 1000;
@@ -304,6 +306,8 @@ const deathSamplesByUniverseId = new Map();
 const deathSampleIdsByUniverseId = new Map();
 const leaveSamplesByUniverseId = new Map();
 const leaveSampleIdsByUniverseId = new Map();
+const visitSamplesByUniverseId = new Map();
+const visitSampleIdsByUniverseId = new Map();
 const customEventsByUniverseId = new Map();
 const customEventIdsByUniverseId = new Map();
 const customEventDeletionCutoffsByUniverseId = new Map();
@@ -958,6 +962,7 @@ function getRuntimeDataCounts() {
       ...movementRollupsByUniverseId.keys(),
       ...deathSamplesByUniverseId.keys(),
       ...leaveSamplesByUniverseId.keys(),
+      ...visitSamplesByUniverseId.keys(),
       ...customEventsByUniverseId.keys(),
       ...mapSnapshotsByUniverseId.keys(),
     ]).size,
@@ -966,6 +971,7 @@ function getRuntimeDataCounts() {
     movementRollups: countMapEntries(movementRollupsByUniverseId),
     deathSamples: countMapEntries(deathSamplesByUniverseId),
     leaveSamples: countMapEntries(leaveSamplesByUniverseId),
+    visits: countMapEntries(visitSamplesByUniverseId),
     customEvents: countMapEntries(customEventsByUniverseId),
   };
 }
@@ -1176,6 +1182,7 @@ async function ensureMongoAnalyticsIndexes(db) {
     ensureAnalyticsIndexes(db, "movement_rollups", "sampledAt"),
     ensureAnalyticsIndexes(db, "death_samples", "sampledAt"),
     ensureAnalyticsIndexes(db, "leave_samples", "sampledAt"),
+    ensureAnalyticsIndexes(db, "visit_samples", "joinedAt"),
     ensureAnalyticsIndexes(db, "custom_events", "occurredAt"),
     db.collection("custom_events").createIndex({ universeId: 1, eventName: 1, occurredAt: -1 }),
   ]);
@@ -1212,6 +1219,7 @@ async function hydrateRuntimeFromMongo(db) {
     ["movement_rollups", movementRollupsByUniverseId, movementRollupIdsByUniverseId, MAX_MOVEMENT_ROLLUPS_PER_UNIVERSE],
     ["death_samples", deathSamplesByUniverseId, deathSampleIdsByUniverseId, MAX_DEATH_SAMPLES_PER_UNIVERSE],
     ["leave_samples", leaveSamplesByUniverseId, leaveSampleIdsByUniverseId, MAX_LEAVE_SAMPLES_PER_UNIVERSE],
+    ["visit_samples", visitSamplesByUniverseId, visitSampleIdsByUniverseId, MAX_VISIT_SAMPLES_PER_UNIVERSE],
     ["custom_events", customEventsByUniverseId, customEventIdsByUniverseId, MAX_CUSTOM_EVENTS_PER_UNIVERSE],
   ];
 
@@ -1271,6 +1279,7 @@ async function persistPresenceToMongo(presence) {
       upsertAnalyticsDocuments(db, "movement_rollups", presence.movementRollups),
       upsertAnalyticsDocuments(db, "death_samples", presence.deathSamples),
       upsertAnalyticsDocuments(db, "leave_samples", presence.leaveSamples),
+      upsertAnalyticsDocuments(db, "visit_samples", presence.visitSamples),
       upsertAnalyticsDocuments(db, "custom_events", presence.customEvents),
     ]);
 
@@ -1662,6 +1671,7 @@ function createPresenceJsonLines(presence) {
         movementRollups: presence.movementRollups.length,
         deathSamples: presence.deathSamples.length,
         leaveSamples: presence.leaveSamples.length,
+        visits: presence.visitSamples.length,
         customEvents: presence.customEvents.length,
       },
     },
@@ -2406,8 +2416,9 @@ async function handlePresenceHeartbeat(req, res) {
   const savedMovementRollupCount = saveMovementRollups(presence.value);
   const savedDeathCount = saveDeathSamples(presence.value);
   const savedLeaveCount = saveLeaveSamples(presence.value);
+  const savedVisitCount = saveVisitSamples(presence.value);
   const savedCustomEventCount = saveCustomEvents(presence.value);
-  if (savedChatCount + savedMovementCount + savedMovementRollupCount + savedDeathCount + savedLeaveCount + savedCustomEventCount > 0) {
+  if (savedChatCount + savedMovementCount + savedMovementRollupCount + savedDeathCount + savedLeaveCount + savedVisitCount + savedCustomEventCount > 0) {
     invalidateAnalyticsResponses(presence.value.universeId);
   }
   await persistPresenceToMongo(presence.value);
@@ -2426,6 +2437,7 @@ async function handlePresenceHeartbeat(req, res) {
         savedMovementRollupCount,
         savedDeathCount,
         savedLeaveCount,
+        savedVisitCount,
         savedCustomEventCount,
       },
     });
@@ -2452,6 +2464,7 @@ async function handlePresenceHeartbeat(req, res) {
     savedMovementRollupCount,
     savedDeathCount,
     savedLeaveCount,
+    savedVisitCount,
     savedCustomEventCount,
     heatmap: getRobloxHeatmap(presence.value.universeId),
   });
@@ -2626,6 +2639,7 @@ function normalizePresence(body) {
   const movementRollups = normalizeMovementRollups(body.movementRollups, context);
   const deathSamples = normalizeDeathSamples(body.deathSamples, context);
   const leaveSamples = normalizeLeaveSamples(body.leaveSamples, context);
+  const visitSamples = normalizeVisitSamples(cleanPlayers, context);
   const customEvents = normalizeCustomEvents(body.customEvents, context);
 
   return {
@@ -2646,9 +2660,36 @@ function normalizePresence(body) {
       movementRollups,
       deathSamples,
       leaveSamples,
+      visitSamples,
       customEvents,
     },
   };
+}
+
+function normalizeVisitSamples(players, context) {
+  return players.map((player) => {
+    const joinedAt = cleanTimestampMs(player?.joinedAt);
+    const userId = cleanInteger(player?.userId);
+    if (joinedAt <= 0 || userId <= 0) return null;
+    const id = `visit:${context.jobId}:${userId}:${joinedAt}`;
+    return {
+      id,
+      universeId: context.universeId,
+      placeId: context.placeId,
+      placeVersion: context.placeVersion,
+      environment: context.environment,
+      jobId: context.jobId,
+      userId,
+      username: cleanString(player?.username, 64),
+      displayName: cleanString(player?.displayName, 64),
+      platform: normalizeAnalyticsPlatform(player?.platform),
+      whenUserFirstPlayed: normalizeWhenUserFirstPlayed(player?.whenUserFirstPlayed),
+      sessionId: `${context.jobId}:${userId}:${joinedAt}`,
+      joinedAt,
+      sampledAt: joinedAt,
+      receivedAt: context.receivedAt,
+    };
+  }).filter(Boolean);
 }
 
 function normalizePlaceVersion(value) {
@@ -3167,6 +3208,31 @@ function saveLeaveSamples(presence) {
 
   leaveSamplesByUniverseId.set(universeKey, samples);
   leaveSampleIdsByUniverseId.set(universeKey, ids);
+  return savedCount;
+}
+
+function saveVisitSamples(presence) {
+  if (!presence.visitSamples?.length || presence.universeId <= 0) return 0;
+
+  const universeKey = String(presence.universeId);
+  const samples = visitSamplesByUniverseId.get(universeKey) || [];
+  const ids = visitSampleIdsByUniverseId.get(universeKey) || new Set();
+  let savedCount = 0;
+
+  for (const sample of presence.visitSamples) {
+    if (!sample.id || ids.has(sample.id)) continue;
+    ids.add(sample.id);
+    samples.push(sample);
+    savedCount += 1;
+  }
+
+  while (samples.length > MAX_VISIT_SAMPLES_PER_UNIVERSE) {
+    const removed = samples.shift();
+    if (removed?.id) ids.delete(removed.id);
+  }
+
+  visitSamplesByUniverseId.set(universeKey, samples);
+  visitSampleIdsByUniverseId.set(universeKey, ids);
   return savedCount;
 }
 
@@ -4516,7 +4582,7 @@ async function getCustomEventsFromQuery(searchParams) {
   const interval = normalizeCustomEventInterval(searchParams.get("interval"));
   const recentLimit = Math.min(cleanInteger(searchParams.get("recentLimit")) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
   const propertyValueLimit = Math.min(cleanInteger(searchParams.get("propertyValueLimit")) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
-  const { events, hasRollup } = await getAnalyticsEventRecords({ universeId, fromMs, toMs });
+  const { events, visits, hasRollup } = await getAnalyticsEventRecords({ universeId, fromMs, toMs });
 
   const catalogByName = new Map(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => [event.name, {
     name: event.name,
@@ -4571,6 +4637,9 @@ async function getCustomEventsFromQuery(searchParams) {
     (cleanTimestampMs(right.occurredAt) || cleanTimestampMs(right.receivedAt))
     - (cleanTimestampMs(left.occurredAt) || cleanTimestampMs(left.receivedAt))
   ));
+  const visitEvents = visits.length
+    ? visits
+    : events.filter((event) => normalizeCustomEventName(event.eventName) === "session_started");
 
   return {
     universeId: universeId || null,
@@ -4590,7 +4659,7 @@ async function getCustomEventsFromQuery(searchParams) {
       recentLimit,
       propertyValueLimit,
       selectedPropertyName,
-      visitEvents: events,
+      visitEvents,
       sourceType: catalogByName.get(selectedEventName)?.sourceType,
       systemEventType: SYSTEM_ANALYTICS_EVENT_DEFINITIONS.find((event) => event.name === selectedEventName)?.type,
     }) : null,
@@ -4728,6 +4797,13 @@ async function getAnalyticsEventRecords(filters = {}) {
     (activeFilters) => getChatLogs(activeFilters).logs,
     Boolean(filters.includeVersionRollups),
   );
+  const visitSamples = getAnalyticsEventSignalSamples(
+    rollup,
+    systemFilters,
+    (source) => source?.visits?.samples,
+    getVisitSamplesForFilters,
+    Boolean(filters.includeVersionRollups),
+  );
   const samplesByType = { death: deathSamples, leave: leaveSamples, chat: chatLogs };
   const systemEvents = SYSTEM_ANALYTICS_EVENT_DEFINITIONS.flatMap((definition) => (
     samplesByType[definition.type].map((sample) => createSystemAnalyticsEvent(sample, definition))
@@ -4735,7 +4811,24 @@ async function getAnalyticsEventRecords(filters = {}) {
 
   return {
     events: [...customEvents, ...systemEvents],
+    visits: visitSamples.map(createVisitAnalyticsEvent),
     hasRollup: Boolean(rollup),
+  };
+}
+
+function createVisitAnalyticsEvent(sample) {
+  const joinedAt = cleanTimestampMs(sample?.joinedAt)
+    || cleanTimestampMs(sample?.sampledAt)
+    || cleanTimestampMs(sample?.receivedAt);
+  return {
+    id: cleanString(sample?.id, 180),
+    eventName: "player_joined",
+    userId: cleanInteger(sample?.userId) || null,
+    sessionId: cleanString(sample?.sessionId, 180),
+    occurredAt: joinedAt,
+    receivedAt: cleanTimestampMs(sample?.receivedAt) || joinedAt,
+    sourceType: "system",
+    systemEventType: "visit",
   };
 }
 
@@ -4890,17 +4983,11 @@ function buildCustomEventSeries(events, filters = {}) {
     bucket.count += 1;
     if (cleanInteger(event.userId) > 0) bucket.playerIds.add(cleanInteger(event.userId));
   }
-  const visitStartedAtBySessionId = new Map();
   const visitEvents = Array.isArray(filters.visitEvents) ? filters.visitEvents : events;
   for (const event of visitEvents) {
-    const sessionId = cleanString(event?.sessionId, 180);
     const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
-    if (!sessionId || !occurredAt) continue;
-    const previousStartedAt = visitStartedAtBySessionId.get(sessionId);
-    if (!previousStartedAt || occurredAt < previousStartedAt) visitStartedAtBySessionId.set(sessionId, occurredAt);
-  }
-  for (const startedAt of visitStartedAtBySessionId.values()) {
-    const start = Math.floor(startedAt / bucketMs) * bucketMs;
+    if (!occurredAt) continue;
+    const start = Math.floor(occurredAt / bucketMs) * bucketMs;
     const bucket = byStart.get(start);
     if (bucket) bucket.visits += 1;
   }
@@ -5445,6 +5532,25 @@ function getLeaveSamplesForFilters(filters = {}) {
   return samples.filter((sample) => {
     if (filters.fromMs > 0 && sample.sampledAt < filters.fromMs) return false;
     if (filters.toMs > 0 && sample.sampledAt > filters.toMs) return false;
+    if (filters.userIds?.size && !filters.userIds.has(sample.userId)) return false;
+    return true;
+  });
+}
+
+function getVisitSamplesForFilters(filters = {}) {
+  const universeIdFilter = cleanInteger(filters.universeId);
+  const samples = [];
+
+  if (universeIdFilter > 0) {
+    samples.push(...(visitSamplesByUniverseId.get(String(universeIdFilter)) || []));
+  } else {
+    for (const universeSamples of visitSamplesByUniverseId.values()) samples.push(...universeSamples);
+  }
+
+  return samples.filter((sample) => {
+    const joinedAt = cleanTimestampMs(sample.joinedAt) || cleanTimestampMs(sample.sampledAt);
+    if (filters.fromMs > 0 && joinedAt < filters.fromMs) return false;
+    if (filters.toMs > 0 && joinedAt > filters.toMs) return false;
     if (filters.userIds?.size && !filters.userIds.has(sample.userId)) return false;
     return true;
   });
@@ -10869,6 +10975,8 @@ function clearUniverseRuntimeData(universeKey) {
     deathSampleIdsByUniverseId,
     leaveSamplesByUniverseId,
     leaveSampleIdsByUniverseId,
+    visitSamplesByUniverseId,
+    visitSampleIdsByUniverseId,
     customEventsByUniverseId,
     customEventIdsByUniverseId,
     customEventDeletionCutoffsByUniverseId,
@@ -10902,6 +11010,7 @@ async function deleteMongoUniverseData(universeId) {
     "movement_rollups",
     "death_samples",
     "leave_samples",
+    "visit_samples",
     "custom_events",
     "custom_event_deletions",
     "funnels",
