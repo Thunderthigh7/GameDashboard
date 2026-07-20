@@ -203,7 +203,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260720-2";
+const DASHBOARD_ASSET_VERSION = "20260720-3";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
@@ -3079,15 +3079,17 @@ function renderCustomEventChart(series, selectedBucketMs) {
   }
 
   const maxCount = Math.max(...series.map((bucket) => Number(bucket.count) || 0), 1);
+  const maxVisits = Math.max(...series.map((bucket) => Number(bucket.visits) || 0), 1);
   const axisMax = getEventChartAxisMax(maxCount);
+  const visitAxisMax = getEventChartAxisMax(maxVisits);
   const tickCount = 4;
   const bucketMs = Number(selectedBucketMs) || getSeriesBucketMs(series);
   const bucketCount = series.length;
   const pointSpacing = bucketCount > 120 ? 18 : bucketCount > 72 ? 28 : bucketCount > 36 ? 40 : 78;
-  const chartWidth = Math.max(Math.floor(eventChart.clientWidth || 760), ((bucketCount - 1) * pointSpacing) + 96);
+  const chartWidth = Math.max(Math.floor(eventChart.clientWidth || 760), ((bucketCount - 1) * pointSpacing) + 140);
   const chartHeight = 286;
   const left = 62;
-  const right = 18;
+  const right = 62;
   const top = 18;
   const bottom = 48;
   const plotWidth = chartWidth - left - right;
@@ -3096,18 +3098,23 @@ function renderCustomEventChart(series, selectedBucketMs) {
   const labelStep = Math.max(1, Math.ceil(bucketCount / 12));
   const points = series.map((bucket, index) => {
     const count = Number(bucket.count) || 0;
+    const visits = Number(bucket.visits) || 0;
     const x = bucketCount === 1 ? left + (plotWidth / 2) : left + ((index / (bucketCount - 1)) * plotWidth);
     const y = top + (plotHeight - ((count / axisMax) * plotHeight));
-    return { bucket, count, x, y, label: formatEventChartLabel(bucket.start, bucketMs) };
+    const visitY = top + (plotHeight - ((visits / visitAxisMax) * plotHeight));
+    return { bucket, count, visits, x, y, visitY, label: formatEventChartLabel(bucket.start, bucketMs) };
   });
   const linePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  const visitLinePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.visitY.toFixed(2)}`).join(" ");
   const areaPath = `${linePath} L${points.at(-1).x.toFixed(2)} ${plotBottom} L${points[0].x.toFixed(2)} ${plotBottom} Z`;
   const grid = Array.from({ length: tickCount + 1 }, (_, index) => {
     const value = axisMax - ((axisMax / tickCount) * index);
+    const visitValue = visitAxisMax - ((visitAxisMax / tickCount) * index);
     const y = top + ((plotHeight / tickCount) * index);
     return `
       <line x1="${left}" y1="${y}" x2="${chartWidth - right}" y2="${y}" />
       <text x="${left - 11}" y="${y + 4}" text-anchor="end">${formatCompactNumber(value)}</text>
+      <text class="eventChartVisitTick" x="${chartWidth - right + 11}" y="${y + 4}" text-anchor="start">${formatCompactNumber(visitValue)}</text>
     `;
   }).join("");
   const xLabels = points.map((point, index) => (
@@ -3117,14 +3124,19 @@ function renderCustomEventChart(series, selectedBucketMs) {
   )).join("");
   const dots = points.map((point) => `
     <g class="eventChartPoint">
-      <circle cx="${point.x}" cy="${point.y}" r="4.5"><title>${escapeHtml(point.label)}: ${formatCompactNumber(point.count)} events, ${formatCompactNumber(point.bucket.uniquePlayers)} players</title></circle>
+      <circle cx="${point.x}" cy="${point.y}" r="4.5"><title>${escapeHtml(point.label)}: ${formatCompactNumber(point.count)} events, ${formatCompactNumber(point.visits)} visits, ${formatCompactNumber(point.bucket.uniquePlayers)} players</title></circle>
       <text x="${point.x}" y="${Math.max(point.y - 11, 12)}" text-anchor="middle">${point.count ? formatCompactNumber(point.count) : ""}</text>
+    </g>
+  `).join("");
+  const visitDots = points.map((point) => `
+    <g class="eventChartVisitPoint">
+      <circle cx="${point.x}" cy="${point.visitY}" r="3.5"><title>${escapeHtml(point.label)}: ${formatCompactNumber(point.visits)} visits</title></circle>
     </g>
   `).join("");
 
   eventChart.innerHTML = `
     <div class="eventChartScroller">
-      <svg class="eventChartSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Events over time">
+      <svg class="eventChartSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Selected events and game visits over time">
         <defs>
           <linearGradient id="eventChartAreaGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.48" />
@@ -3133,13 +3145,19 @@ function renderCustomEventChart(series, selectedBucketMs) {
         </defs>
         <g class="eventChartSvgGrid">${grid}</g>
         <text class="eventChartSvgYAxisTitle" x="16" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 16 ${top + (plotHeight / 2)})">Events</text>
+        <text class="eventChartSvgYAxisTitle eventChartVisitAxisTitle" x="${chartWidth - 16}" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(90 ${chartWidth - 16} ${top + (plotHeight / 2)})">Visits</text>
         <path class="eventChartArea" d="${areaPath}" />
         <path class="eventChartLine" d="${linePath}" />
+        <path class="eventChartVisitLine" d="${visitLinePath}" />
         ${dots}
+        ${visitDots}
         ${xLabels}
       </svg>
     </div>
-    <div class="eventChartLegend"><i aria-hidden="true"></i><span>Events</span></div>
+    <div class="eventChartLegend">
+      <span><i class="eventChartEventLegend" aria-hidden="true"></i>Selected event</span>
+      <span><i class="eventChartVisitLegend" aria-hidden="true"></i>Visits (unique sessions)</span>
+    </div>
   `;
 }
 

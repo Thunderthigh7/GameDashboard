@@ -4580,6 +4580,7 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
 }
 
 .eventChartSvgGrid text,
+.eventChartVisitTick,
 .eventChartXLabel,
 .eventChartSvgYAxisTitle {
   fill: var(--muted);
@@ -4606,6 +4607,15 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   filter: drop-shadow(0 4px 8px rgba(124, 60, 255, 0.36));
 }
 
+.eventChartVisitLine {
+  fill: none;
+  stroke: #2dd4bf;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 3px 7px rgba(45, 212, 191, 0.26));
+}
+
 .eventChartPoint circle {
   fill: #a878ff;
   stroke: #dfd2ff;
@@ -4619,15 +4629,36 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   font-weight: 800;
 }
 
+.eventChartVisitPoint circle {
+  fill: #071b24;
+  stroke: #5eead4;
+  stroke-width: 2;
+}
+
 .eventChartLegend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
   margin-top: 0;
 }
 
+.eventChartLegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .eventChartLegend i {
+  display: inline-block;
   width: 16px;
   height: 3px;
   border-radius: 999px;
   background: #925cff;
+}
+
+.eventChartLegend .eventChartVisitLegend {
+  background: #2dd4bf;
 }
 
 .eventBreakdownCard,

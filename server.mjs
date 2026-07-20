@@ -4590,6 +4590,7 @@ async function getCustomEventsFromQuery(searchParams) {
       recentLimit,
       propertyValueLimit,
       selectedPropertyName,
+      visitEvents: events,
       sourceType: catalogByName.get(selectedEventName)?.sourceType,
       systemEventType: SYSTEM_ANALYTICS_EVENT_DEFINITIONS.find((event) => event.name === selectedEventName)?.type,
     }) : null,
@@ -4877,7 +4878,7 @@ function buildCustomEventSeries(events, filters = {}) {
   const buckets = [];
   const byStart = new Map();
   for (let timestamp = bucketStart; timestamp < bucketEnd; timestamp += bucketMs) {
-    const bucket = { start: timestamp, count: 0, playerIds: new Set() };
+    const bucket = { start: timestamp, count: 0, visits: 0, playerIds: new Set() };
     buckets.push(bucket);
     byStart.set(timestamp, bucket);
   }
@@ -4889,6 +4890,20 @@ function buildCustomEventSeries(events, filters = {}) {
     bucket.count += 1;
     if (cleanInteger(event.userId) > 0) bucket.playerIds.add(cleanInteger(event.userId));
   }
+  const visitStartedAtBySessionId = new Map();
+  const visitEvents = Array.isArray(filters.visitEvents) ? filters.visitEvents : events;
+  for (const event of visitEvents) {
+    const sessionId = cleanString(event?.sessionId, 180);
+    const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
+    if (!sessionId || !occurredAt) continue;
+    const previousStartedAt = visitStartedAtBySessionId.get(sessionId);
+    if (!previousStartedAt || occurredAt < previousStartedAt) visitStartedAtBySessionId.set(sessionId, occurredAt);
+  }
+  for (const startedAt of visitStartedAtBySessionId.values()) {
+    const start = Math.floor(startedAt / bucketMs) * bucketMs;
+    const bucket = byStart.get(start);
+    if (bucket) bucket.visits += 1;
+  }
   return {
     bucketMs,
     availableIntervals,
@@ -4896,6 +4911,7 @@ function buildCustomEventSeries(events, filters = {}) {
     buckets: buckets.map((bucket) => ({
       start: bucket.start,
       count: bucket.count,
+      visits: bucket.visits,
       uniquePlayers: bucket.playerIds.size,
     })),
   };
