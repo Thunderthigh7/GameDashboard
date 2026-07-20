@@ -50,6 +50,17 @@ for (const [eventName, propertyName] of primaryProperties) {
   assert.equal(Object.keys(eventsByName.get(eventName)[0].properties)[0], propertyName, `${eventName} should open on its useful category`);
 }
 
+const genericContextProperties = ["cohort", "device", "region"];
+for (const event of fixture.customEvents) {
+  for (const propertyName of genericContextProperties) {
+    assert.equal(
+      Object.hasOwn(event.properties || {}, propertyName),
+      false,
+      `${event.eventName} should keep ${propertyName} out of its gameplay property breakdown`,
+    );
+  }
+}
+
 const laserFailureShare = propertyShare("obby_failed", "obstacle", "Laser Ladder");
 const shotgunUsageShare = propertyShare("weapon_selected", "weapon", "Shotgun");
 const shotgunDeathShare = propertyShare("combat_death", "killedByWeapon", "Shotgun");
@@ -58,7 +69,7 @@ const voidEdgeDefeatShare = propertyShare("sword_duel_defeat", "defeatedBySword"
 const inventoryExitShare = propertyShare("simulator_session_ended", "reason", "Pet inventory full");
 const priceObjectionShare = propertyShare("purchase_prompt_closed", "reason", "Too expensive");
 
-assert.equal(DEMO_SEED_VERSION, 7);
+assert.equal(DEMO_SEED_VERSION, 8);
 assert.equal(eventsByName.get("session_started")?.length, fixture.counts.sessions);
 assert.ok(fixture.customEvents.length >= 4_000, "the demo should contain enough event history for useful charts");
 assertShareBetween(laserFailureShare, 0.55, 0.61, "Laser Ladder failure share");

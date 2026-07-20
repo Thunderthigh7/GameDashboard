@@ -209,7 +209,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260719-3";
+const DASHBOARD_ASSET_VERSION = "20260720-1";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -217,6 +217,37 @@ const RECENT_EVENT_EXPANDED_LIMIT = 100;
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
 const MAX_AI_CHAT_PROMPT_CHARS = 800;
 const MAX_AI_CHAT_RENDER_CHARS = 6000;
+const PRIMARY_EVENT_PROPERTIES = new Map([
+  ["genre_portal_entered", "genre"],
+  ["obby_run_started", "course"],
+  ["obby_checkpoint_reached", "checkpoint"],
+  ["obby_failed", "obstacle"],
+  ["obby_completed", "completionTimeSeconds"],
+  ["fps_match_joined", "mode"],
+  ["weapon_selected", "weapon"],
+  ["combat_death", "killedByWeapon"],
+  ["fps_match_completed", "result"],
+  ["sword_duel_started", "arena"],
+  ["sword_selected", "sword"],
+  ["sword_duel_defeat", "defeatedBySword"],
+  ["sword_duel_completed", "result"],
+  ["simulator_zone_entered", "zone"],
+  ["egg_hatched", "egg"],
+  ["simulator_session_ended", "reason"],
+  ["purchase_prompt", "product"],
+  ["item_purchased", "product"],
+  ["purchase_prompt_closed", "reason"],
+]);
+const GENERIC_EVENT_PROPERTY_NAMES = new Set([
+  "cohort",
+  "device",
+  "environment",
+  "platform",
+  "placeversion",
+  "region",
+  "serverversion",
+  "whenuserfirstplayed",
+]);
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
@@ -3215,7 +3246,9 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
   if (!eventPropertyList) return;
   const cleanProperties = (Array.isArray(properties) ? properties : [])
     .filter((property) => property?.name)
-    .sort((left, right) => (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0));
+    .sort((left, right) => getEventPropertyPriority(left, selectedCustomEventName) - getEventPropertyPriority(right, selectedCustomEventName)
+      || (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0)
+      || String(left.name).localeCompare(String(right.name)));
 
   const requestedPropertyName = selectedEventPropertyName;
   const selectedProperty = cleanProperties.find((property) => property.name === requestedPropertyName) || cleanProperties[0] || null;
@@ -3254,7 +3287,7 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
   const coverage = (eventCount / selectedTotal) * 100;
   if (eventPropertySubtitle) {
     const distinctDetail = valuesTruncated ? ` · at least ${formatCompactNumber(totalValues)} distinct values.` : "";
-    eventPropertySubtitle.textContent = `${formatCompactNumber(cleanProperties.length)} ${cleanProperties.length === 1 ? "property" : "properties"} detected · present in ${formatCompactNumber(eventCount)} of ${formatCompactNumber(selectedTotal)} events (${formatEventNumber(coverage)}%).${distinctDetail}`;
+    eventPropertySubtitle.textContent = `${formatEventPropertyName(selectedProperty.name)} breakdown · ${formatCompactNumber(eventCount)} of ${formatCompactNumber(selectedTotal)} events (${formatEventNumber(coverage)}% coverage).${distinctDetail}`;
   }
 
   const numericSummary = selectedProperty.type === "number"
@@ -3270,7 +3303,10 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
     : (eventPropertyValuesExpanded && totalValues > values.length
       ? `<p class="eventPropertyLimitNote" role="note">Showing the top ${formatCompactNumber(values.length)} of ${formatCompactNumber(totalValues)} distinct values.</p>`
       : "");
-  if (eventPropertySummary) eventPropertySummary.innerHTML = numericSummary + cappedValueNote;
+  const categoryInsight = selectedProperty.type !== "number" && returnedValues.length
+    ? renderEventPropertyInsight(selectedCustomEventName, selectedProperty.name, returnedValues[0], selectedTotal)
+    : "";
+  if (eventPropertySummary) eventPropertySummary.innerHTML = categoryInsight + numericSummary + cappedValueNote;
 
   if (eventPropertyTableHeader) {
     eventPropertyTableHeader.hidden = !values.length;
@@ -3309,6 +3345,33 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
       ? 'Show fewer values <span aria-hidden="true">↑</span>'
       : `${!valuesTruncated && totalValues <= EVENT_PROPERTY_VALUE_EXPANDED_LIMIT ? `View all ${formatCompactNumber(totalValues)} values` : `View top ${formatCompactNumber(EVENT_PROPERTY_VALUE_EXPANDED_LIMIT)}${valuesTruncated ? " tracked" : ""} values`} <span aria-hidden="true">→</span>`;
   }
+}
+
+function getEventPropertyPriority(property, eventName) {
+  const propertyName = String(property?.name || "");
+  const normalizedName = propertyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const preferredName = String(PRIMARY_EVENT_PROPERTIES.get(String(eventName || "")) || "");
+  if (preferredName && propertyName.toLowerCase() === preferredName.toLowerCase()) return 0;
+  if (GENERIC_EVENT_PROPERTY_NAMES.has(normalizedName)) return 30;
+  if (property?.type !== "number") return 10;
+  return 20;
+}
+
+function renderEventPropertyInsight(eventName, propertyName, leader, totalEventCount) {
+  const count = Number(leader?.count) || 0;
+  const percent = totalEventCount ? (count / totalEventCount) * 100 : 0;
+  const value = formatEventPropertyValue(leader?.value);
+  const normalizedPropertyName = String(propertyName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  let finding;
+  if (eventName === "obby_failed" && normalizedPropertyName === "obstacle") finding = `${value} causes the most obby failures`;
+  else if (eventName === "weapon_selected" && normalizedPropertyName === "weapon") finding = `${value} is the most selected weapon`;
+  else if (eventName === "combat_death" && normalizedPropertyName === "killedbyweapon") finding = `${value} causes the most combat deaths`;
+  else if (eventName === "sword_selected" && normalizedPropertyName === "sword") finding = `${value} is the most selected sword`;
+  else if (eventName === "sword_duel_defeat" && normalizedPropertyName === "defeatedbysword") finding = `${value} causes the most duel defeats`;
+  else if (eventName === "simulator_session_ended" && normalizedPropertyName === "reason") finding = `${value} is the top simulator exit reason`;
+  else if (eventName === "purchase_prompt_closed" && normalizedPropertyName === "reason") finding = `${value} is the top reason players close the shop`;
+  else finding = `${value} is the most common ${formatEventPropertyName(propertyName).toLowerCase()}`;
+  return `<div class="eventCategoryInsight"><span>Top finding</span><strong>${escapeHtml(finding)}</strong><small>${formatCompactNumber(count)} events · ${formatEventNumber(percent)}% of this event</small></div>`;
 }
 
 function renderRecentCustomEvents(events, properties = []) {
