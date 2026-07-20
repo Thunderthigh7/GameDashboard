@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260720-1">
+    <link rel="stylesheet" href="/styles.css?v=20260720-2">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -461,20 +461,9 @@
               <article class="panel dataCard eventBreakdownCard">
                 <header class="eventDataCardHeader eventPropertyCardHeader">
                   <span class="eventDataCardIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v5c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 10v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5M5 15v4c0 1.7 3.1 3 7 3s7-1.3 7-3v-4" /></svg></span>
-                  <div><h2>Property breakdowns</h2><p id="eventPropertySubtitle">Values sent with the selected event.</p></div>
-                  <label class="eventPropertySelectControl" for="eventPropertySelect">
-                    <span class="srOnly">Select an event property</span>
-                    <select id="eventPropertySelect" aria-label="Select an event property" aria-describedby="eventPropertySubtitle" aria-controls="eventPropertyList" disabled>
-                      <option value="">No properties</option>
-                    </select>
-                  </label>
+                  <div><h2>Property breakdowns</h2><p id="eventPropertySubtitle">Every property sent with the selected event.</p></div>
                 </header>
-                <div class="eventPropertySummary" id="eventPropertySummary"></div>
-                <div class="eventPropertyTable" role="table" aria-label="Selected property value breakdown">
-                  <div class="eventPropertyTableHeader" id="eventPropertyTableHeader" role="row"><span role="columnheader">#</span><span role="columnheader">Value</span><span role="columnheader">Events</span><span role="columnheader">% of events</span></div>
-                  <div class="eventPropertyList" id="eventPropertyList" role="rowgroup" aria-live="polite" aria-atomic="false"></div>
-                </div>
-                <button class="eventViewAllButton" id="viewAllPropertyValuesButton" type="button" hidden>View all values <span aria-hidden="true">→</span></button>
+                <div class="eventPropertyList eventPropertyGrid" id="eventPropertyList" aria-live="polite" aria-atomic="false"></div>
               </article>
 
               <details class="eventRecentDisclosure">
@@ -937,6 +926,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260720-1"></script>
+    <script defer src="/app.js?v=20260720-2"></script>
   </body>
 </html>

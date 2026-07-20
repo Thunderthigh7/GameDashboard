@@ -104,11 +104,7 @@ const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
 const eventPropertySubtitle = document.querySelector("#eventPropertySubtitle");
-const eventPropertySelect = document.querySelector("#eventPropertySelect");
-const eventPropertySummary = document.querySelector("#eventPropertySummary");
-const eventPropertyTableHeader = document.querySelector("#eventPropertyTableHeader");
 const eventPropertyList = document.querySelector("#eventPropertyList");
-const viewAllPropertyValuesButton = document.querySelector("#viewAllPropertyValuesButton");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
 const viewAllRecentEventsButton = document.querySelector("#viewAllRecentEventsButton");
@@ -195,8 +191,6 @@ let releaseSelection = createEmptyReleaseSelection();
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
-let selectedEventPropertyName = "";
-let eventPropertyValuesExpanded = false;
 let currentEventPropertySummaries = [];
 let currentSelectedEventCount = 0;
 let recentEventsExpanded = false;
@@ -209,9 +203,8 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260720-1";
+const DASHBOARD_ASSET_VERSION = "20260720-2";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
-const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
@@ -398,8 +391,6 @@ function bindEvents() {
     selectedCustomEventName = eventName;
     syncEventCatalogSelection(eventName);
     if (selectionChanged) {
-      selectedEventPropertyName = "";
-      eventPropertyValuesExpanded = false;
       currentEventPropertySummaries = [];
       currentSelectedEventCount = 0;
       recentEventsExpanded = false;
@@ -413,32 +404,6 @@ function bindEvents() {
   eventIntervalSelect?.addEventListener("change", () => {
     selectedEventInterval = eventIntervalSelect.value || "auto";
     loadCustomEvents({ force: true });
-  });
-  eventPropertySelect?.addEventListener("change", () => {
-    selectedEventPropertyName = eventPropertySelect.value || "";
-    eventPropertyValuesExpanded = false;
-    renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
-  });
-  viewAllPropertyValuesButton?.addEventListener("click", async () => {
-    const previousExpandedState = eventPropertyValuesExpanded;
-    const requestedExpandedState = !previousExpandedState;
-    const requestedEventName = selectedCustomEventName;
-    const requestedPropertyName = selectedEventPropertyName;
-    eventPropertyValuesExpanded = requestedExpandedState;
-    if (!requestedExpandedState) {
-      renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
-      return;
-    }
-    viewAllPropertyValuesButton.disabled = true;
-    const loaded = await loadCustomEvents({ force: true });
-    viewAllPropertyValuesButton.disabled = false;
-    if (!loaded
-      && selectedCustomEventName === requestedEventName
-      && selectedEventPropertyName === requestedPropertyName
-      && eventPropertyValuesExpanded === requestedExpandedState) {
-      eventPropertyValuesExpanded = previousExpandedState;
-      renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
-    }
   });
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
@@ -519,8 +484,6 @@ function bindEvents() {
   movementFromFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     if (activeView === "events") {
-      selectedEventPropertyName = "";
-      eventPropertyValuesExpanded = false;
       currentEventPropertySummaries = [];
       currentSelectedEventCount = 0;
       renderCustomEventProperties([], 0);
@@ -532,8 +495,6 @@ function bindEvents() {
   movementToFilter?.addEventListener("change", () => {
     syncDateFilterDisplays();
     if (activeView === "events") {
-      selectedEventPropertyName = "";
-      eventPropertyValuesExpanded = false;
       currentEventPropertySummaries = [];
       currentSelectedEventCount = 0;
       renderCustomEventProperties([], 0);
@@ -578,8 +539,6 @@ function bindEvents() {
     if (!eventName) return;
     const selectionChanged = eventName !== selectedCustomEventName;
     if (selectionChanged) {
-      selectedEventPropertyName = "";
-      eventPropertyValuesExpanded = false;
       currentEventPropertySummaries = [];
       currentSelectedEventCount = 0;
       recentEventsExpanded = false;
@@ -2324,8 +2283,6 @@ function selectUniverse(value) {
   selectedChatLogId = "";
   currentChatLogs = [];
   selectedCustomEventName = "";
-  selectedEventPropertyName = "";
-  eventPropertyValuesExpanded = false;
   currentEventPropertySummaries = [];
   currentSelectedEventCount = 0;
   recentEventsExpanded = false;
@@ -2954,9 +2911,8 @@ async function loadCustomEvents(options = {}) {
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
   if (selectedCustomEventName) params.set("eventName", selectedCustomEventName);
-  if (selectedEventPropertyName) params.set("propertyName", selectedEventPropertyName);
   params.set("interval", selectedEventInterval);
-  params.set("propertyValueLimit", String(eventPropertyValuesExpanded ? EVENT_PROPERTY_VALUE_EXPANDED_LIMIT : EVENT_PROPERTY_VALUE_LIMIT));
+  params.set("propertyValueLimit", String(EVENT_PROPERTY_VALUE_LIMIT));
   params.set("recentLimit", String(recentEventsExpanded ? RECENT_EVENT_EXPANDED_LIMIT : RECENT_EVENT_LIMIT));
   if (options.force) params.set("fresh", "1");
 
@@ -3036,8 +2992,6 @@ function renderCustomEvents(payload = {}) {
   const previousEventName = selectedCustomEventName;
   selectedCustomEventName = selected?.name || "";
   if (previousEventName && previousEventName !== selectedCustomEventName) {
-    selectedEventPropertyName = "";
-    eventPropertyValuesExpanded = false;
     recentEventsExpanded = false;
   }
 
@@ -3250,76 +3204,50 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
       || (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0)
       || String(left.name).localeCompare(String(right.name)));
 
-  const requestedPropertyName = selectedEventPropertyName;
-  const selectedProperty = cleanProperties.find((property) => property.name === requestedPropertyName) || cleanProperties[0] || null;
-  if (requestedPropertyName && selectedProperty?.name !== requestedPropertyName) eventPropertyValuesExpanded = false;
-  selectedEventPropertyName = selectedProperty?.name || "";
-
-  if (eventPropertySelect) {
-    eventPropertySelect.disabled = !cleanProperties.length;
-    eventPropertySelect.innerHTML = cleanProperties.length
-      ? cleanProperties.map((property) => {
-        const typeLabel = property.type === "number" ? "number" : (property.type === "mixed" ? "mixed" : "values");
-        return `<option value="${escapeHtml(property.name)}" ${property.name === selectedEventPropertyName ? "selected" : ""}>${escapeHtml(formatEventPropertyName(property.name))} · ${typeLabel}</option>`;
-      }).join("")
-      : '<option value="">No properties</option>';
-    if (selectedEventPropertyName) eventPropertySelect.value = selectedEventPropertyName;
-  }
-
-  if (!selectedProperty) {
-    eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">No properties were sent with this event.</span></div>';
-    if (eventPropertySummary) eventPropertySummary.innerHTML = "";
+  if (!cleanProperties.length) {
+    eventPropertyList.innerHTML = '<p class="status eventPropertyEmptyRow">No properties were sent with this event.</p>';
     if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Values sent with the selected event.";
-    if (eventPropertyTableHeader) eventPropertyTableHeader.hidden = true;
-    eventPropertyTableHeader?.parentElement?.setAttribute("aria-label", "Property value breakdown");
-    if (viewAllPropertyValuesButton) viewAllPropertyValuesButton.hidden = true;
     return;
   }
 
-  const eventCount = Number(selectedProperty.eventCount ?? selectedProperty.count) || 0;
-  const observationCount = Number(selectedProperty.observationCount) || eventCount;
-  const returnedValues = Array.isArray(selectedProperty.topValues) ? selectedProperty.topValues : [];
-  const totalValues = Number(selectedProperty.totalValues) || returnedValues.length;
-  const valuesTruncated = Boolean(selectedProperty.valuesTruncated);
-  if (eventPropertyValuesExpanded && !valuesTruncated && totalValues <= EVENT_PROPERTY_VALUE_LIMIT) eventPropertyValuesExpanded = false;
-  const values = returnedValues.slice(0, eventPropertyValuesExpanded ? EVENT_PROPERTY_VALUE_EXPANDED_LIMIT : EVENT_PROPERTY_VALUE_LIMIT);
-  const selectedTotal = Math.max(Number(totalEventCount) || eventCount, eventCount, 1);
-  const coverage = (eventCount / selectedTotal) * 100;
+  const selectedTotal = Math.max(Number(totalEventCount) || 0, ...cleanProperties.map((property) => Number(property.eventCount ?? property.count) || 0), 1);
   if (eventPropertySubtitle) {
-    const distinctDetail = valuesTruncated ? ` · at least ${formatCompactNumber(totalValues)} distinct values.` : "";
-    eventPropertySubtitle.textContent = `${formatEventPropertyName(selectedProperty.name)} breakdown · ${formatCompactNumber(eventCount)} of ${formatCompactNumber(selectedTotal)} events (${formatEventNumber(coverage)}% coverage).${distinctDetail}`;
+    eventPropertySubtitle.textContent = `${formatCompactNumber(cleanProperties.length)} ${cleanProperties.length === 1 ? "property" : "properties"} · percentages based on ${formatCompactNumber(selectedTotal)} selected events.`;
   }
+  eventPropertyList.innerHTML = cleanProperties
+    .map((property) => renderCustomEventPropertyCard(property, selectedTotal))
+    .join("");
+}
 
-  const numericSummary = selectedProperty.type === "number"
+function renderCustomEventPropertyCard(property, selectedTotal) {
+  const propertyName = String(property.name || "Property");
+  const eventCount = Number(property.eventCount ?? property.count) || 0;
+  const observationCount = Number(property.observationCount) || eventCount;
+  const returnedValues = Array.isArray(property.topValues) ? property.topValues : [];
+  const values = returnedValues.slice(0, EVENT_PROPERTY_VALUE_LIMIT);
+  const totalValues = Number(property.totalValues) || returnedValues.length;
+  const valuesTruncated = Boolean(property.valuesTruncated);
+  const coverage = selectedTotal ? (eventCount / selectedTotal) * 100 : 0;
+  const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
+  const normalizedName = propertyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const propertyKind = GENERIC_EVENT_PROPERTY_NAMES.has(normalizedName) ? "Context property" : "Gameplay property";
+  const numericSummary = property.type === "number"
     ? `<dl class="eventNumericSummaryGrid">
         <div><dt>Events</dt><dd><strong>${formatCompactNumber(eventCount)}</strong><small>${formatEventNumber(coverage)}% coverage</small></dd></div>
         <div><dt>Values</dt><dd><strong>${formatCompactNumber(observationCount)}</strong><small>${formatCompactNumber(totalValues)}${valuesTruncated ? "+" : ""} distinct</small></dd></div>
-        <div><dt>Average</dt><dd><strong>${formatEventNumber(selectedProperty.average)}</strong><small>Across every value</small></dd></div>
-        <div><dt>Range</dt><dd><strong>${formatEventNumber(selectedProperty.min)}–${formatEventNumber(selectedProperty.max)}</strong><small>Minimum to maximum</small></dd></div>
+        <div><dt>Average</dt><dd><strong>${formatEventNumber(property.average)}</strong><small>Across all values</small></dd></div>
+        <div><dt>Range</dt><dd><strong>${formatEventNumber(property.min)}–${formatEventNumber(property.max)}</strong><small>Minimum to maximum</small></dd></div>
       </dl>`
     : "";
-  const cappedValueNote = eventPropertyValuesExpanded && valuesTruncated
-    ? `<p class="eventPropertyLimitNote" role="note">Showing the top ${formatCompactNumber(values.length)} tracked values. At least ${formatCompactNumber(totalValues)} distinct values were observed.</p>`
-    : (eventPropertyValuesExpanded && totalValues > values.length
-      ? `<p class="eventPropertyLimitNote" role="note">Showing the top ${formatCompactNumber(values.length)} of ${formatCompactNumber(totalValues)} distinct values.</p>`
-      : "");
-  const categoryInsight = selectedProperty.type !== "number" && returnedValues.length
-    ? renderEventPropertyInsight(selectedCustomEventName, selectedProperty.name, returnedValues[0], selectedTotal)
+  const categoryInsight = property.type !== "number" && values.length
+    ? renderEventPropertyInsight(selectedCustomEventName, propertyName, values[0], selectedTotal)
     : "";
-  if (eventPropertySummary) eventPropertySummary.innerHTML = categoryInsight + numericSummary + cappedValueNote;
-
-  if (eventPropertyTableHeader) {
-    eventPropertyTableHeader.hidden = !values.length;
-    eventPropertyTableHeader.innerHTML = '<span role="columnheader">#</span><span role="columnheader">Value</span><span role="columnheader">Events</span><span role="columnheader">% of events</span>';
-    eventPropertyTableHeader.parentElement?.setAttribute("aria-label", `${formatEventPropertyName(selectedProperty.name)} value breakdown`);
-  }
-  const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
-  eventPropertyList.innerHTML = values.length
+  const valueRows = values.length
     ? values.map((entry, index) => {
       const count = Number(entry.count) || 0;
       const occurrences = Number(entry.occurrences) || count;
-      const percent = (count / selectedTotal) * 100;
-      const valueTypeLabel = selectedProperty.type === "mixed"
+      const percent = selectedTotal ? (count / selectedTotal) * 100 : 0;
+      const valueTypeLabel = property.type === "mixed"
         ? (entry.valueType === "number" ? "Number" : (entry.valueType === "boolean" ? "Boolean" : "Text"))
         : "";
       return `
@@ -3333,18 +3261,28 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
           </div>
           <b role="cell">${formatCompactNumber(count)}</b>
           <em role="cell">${formatEventNumber(percent)}%</em>
-        </div>
-      `;
+        </div>`;
     }).join("")
-    : '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">No usable values were sent for this property.</span></div>';
-  if (viewAllPropertyValuesButton) {
-    const canExpand = valuesTruncated || totalValues > values.length;
-    const canCollapse = eventPropertyValuesExpanded && values.length > EVENT_PROPERTY_VALUE_LIMIT;
-    viewAllPropertyValuesButton.hidden = !canExpand && !canCollapse;
-    viewAllPropertyValuesButton.innerHTML = eventPropertyValuesExpanded
-      ? 'Show fewer values <span aria-hidden="true">↑</span>'
-      : `${!valuesTruncated && totalValues <= EVENT_PROPERTY_VALUE_EXPANDED_LIMIT ? `View all ${formatCompactNumber(totalValues)} values` : `View top ${formatCompactNumber(EVENT_PROPERTY_VALUE_EXPANDED_LIMIT)}${valuesTruncated ? " tracked" : ""} values`} <span aria-hidden="true">→</span>`;
-  }
+    : '<p class="status eventPropertyEmptyRow">No usable values were sent for this property.</p>';
+  const remainingValueCount = Math.max(totalValues - values.length, 0);
+  const valueLimitNote = valuesTruncated || remainingValueCount
+    ? `<p class="eventPropertyCardNote">Showing top ${formatCompactNumber(values.length)}${remainingValueCount ? ` of ${formatCompactNumber(totalValues)}` : ""}${valuesTruncated ? "+" : ""} values</p>`
+    : "";
+
+  return `
+    <section class="eventPropertyBreakdown" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} breakdown">
+      <header class="eventPropertyBreakdownHeader">
+        <div><span>${propertyKind}</span><h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3></div>
+        <small>${formatCompactNumber(eventCount)} events · ${formatEventNumber(coverage)}% coverage</small>
+      </header>
+      ${categoryInsight}
+      ${numericSummary}
+      <div class="eventPropertyTable" role="table" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values">
+        <div class="eventPropertyTableHeader" role="row"><span role="columnheader">#</span><span role="columnheader">Value</span><span role="columnheader">Events</span><span role="columnheader">%</span></div>
+        <div class="eventPropertyRows" role="rowgroup">${valueRows}</div>
+      </div>
+      ${valueLimitNote}
+    </section>`;
 }
 
 function getEventPropertyPriority(property, eventName) {

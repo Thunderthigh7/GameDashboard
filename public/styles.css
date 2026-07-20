@@ -4662,49 +4662,64 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   flex: 1 1 160px;
 }
 
-.eventPropertySelectControl {
-  position: relative;
-  flex: 0 1 210px;
-  min-width: 150px;
-  margin-left: auto;
+.eventPropertyGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
 }
 
-.eventPropertySelectControl::after {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--nav-text);
-  border-bottom: 2px solid var(--nav-text);
-  content: "";
-  pointer-events: none;
-  transform: translateY(-68%) rotate(45deg);
+.eventPropertyBreakdown {
+  display: flex;
+  min-width: 0;
+  min-height: 370px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(80, 99, 150, 0.34);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(12, 21, 46, 0.92), rgba(7, 13, 31, 0.96));
+  padding: 14px;
 }
 
-.eventPropertySelectControl select {
-  width: 100%;
-  min-height: 38px;
-  appearance: none;
-  border: 1px solid rgba(93, 112, 169, 0.38);
-  border-radius: 9px;
-  outline: 0;
-  background: rgba(8, 16, 38, 0.82);
+.eventPropertyBreakdownHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: 10px;
+}
+
+.eventPropertyBreakdownHeader > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.eventPropertyBreakdownHeader span {
+  color: #a98bff;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eventPropertyBreakdownHeader h3 {
+  overflow: hidden;
+  margin: 0;
   color: var(--text);
-  padding: 0 34px 0 12px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 750;
+  font-size: 15px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.eventPropertySelectControl select:focus {
-  border-color: rgba(155, 101, 255, 0.82);
-  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.12);
-}
-
-.eventPropertySelectControl select:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
+.eventPropertyBreakdownHeader small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: right;
 }
 
 .eventLiveBadge {
@@ -4732,6 +4747,19 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   flex: 1 1 auto;
 }
 
+.eventPropertyBreakdown .eventPropertyTable {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-x: visible;
+}
+
+.eventPropertyRows {
+  display: grid;
+  gap: 0;
+}
+
 .eventPropertyTableHeader,
 .eventPropertyItem {
   grid-template-columns: 26px minmax(180px, 1fr) minmax(62px, 0.32fr) minmax(68px, 0.34fr);
@@ -4750,6 +4778,17 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
 .eventPropertyItem {
   min-height: 58px;
   padding: 5px 4px;
+}
+
+.eventPropertyBreakdown .eventPropertyTableHeader,
+.eventPropertyBreakdown .eventPropertyItem {
+  grid-template-columns: 22px minmax(100px, 1fr) minmax(42px, 0.28fr) minmax(48px, 0.32fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.eventPropertyBreakdown .eventPropertyItem {
+  min-height: 52px;
 }
 
 .eventPropertyRank {
@@ -4838,6 +4877,11 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   padding: 2px 0 8px;
 }
 
+.eventPropertyBreakdown .eventNumericSummaryGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .eventCategoryInsight {
   display: grid;
   gap: 4px;
@@ -4876,6 +4920,29 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   border-radius: 11px;
   background: linear-gradient(145deg, rgba(20, 30, 60, 0.72), rgba(9, 16, 38, 0.82));
   padding: 14px;
+}
+
+.eventPropertyBreakdown .eventNumericSummaryGrid > div {
+  min-height: 64px;
+  gap: 3px;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.eventPropertyBreakdown .eventNumericSummaryGrid dt,
+.eventPropertyBreakdown .eventNumericSummaryGrid small {
+  font-size: 8px;
+}
+
+.eventPropertyBreakdown .eventNumericSummaryGrid strong {
+  font-size: 15px;
+}
+
+.eventPropertyCardNote {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
 }
 
 .eventNumericSummaryGrid dt {
@@ -7431,9 +7498,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     flex-wrap: wrap;
   }
 
-  .eventPropertySelectControl {
-    flex: 1 1 100%;
-    margin-left: 48px;
+  .eventPropertyGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .eventPropertyTableHeader,
@@ -7441,6 +7507,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     grid-template-columns: 18px minmax(90px, 1fr) 44px 64px;
     gap: 6px;
     min-width: 0;
+  }
+
+  .eventPropertyBreakdown .eventNumericSummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .eventChartActions {
