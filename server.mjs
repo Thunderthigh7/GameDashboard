@@ -1901,10 +1901,11 @@ async function ensureDemoUniverseRuntime(project, options = {}) {
   const universeId = cleanInteger(project.universeId);
   const universeKey = String(universeId);
   const lastSeededAt = cleanInteger(demoRuntimeSeededAtByUniverseId.get(universeKey));
+  const seedNeedsUpgrade = cleanInteger(project.demoSeedVersion) < DEMO_SEED_VERSION;
   const runtimeReady = movementRollupsByUniverseId.has(universeKey)
     && customEventsByUniverseId.has(universeKey)
     && mapSnapshotsByUniverseId.has(universeKey);
-  if (!options.force && runtimeReady && Date.now() - lastSeededAt < DEMO_RUNTIME_REFRESH_MS) {
+  if (!options.force && !seedNeedsUpgrade && runtimeReady && Date.now() - lastSeededAt < DEMO_RUNTIME_REFRESH_MS) {
     return demoRuntimeCountsByUniverseId.get(universeKey) || null;
   }
   if (demoRuntimeSeedRequests.has(universeKey)) return demoRuntimeSeedRequests.get(universeKey);
@@ -1966,13 +1967,13 @@ async function ensureDemoUniverseRuntime(project, options = {}) {
     if (!normalizedMap.ok) throw new Error(`Demo map could not be normalized: ${normalizedMap.error}`);
     const snapshot = buildMapSnapshot(normalizedMap.value, normalizedMap.value.parts);
     mapSnapshotsByUniverseId.set(universeKey, snapshot);
-    if (options.persistMap) await persistMapSnapshot(snapshot, {});
+    if (options.persistMap || seedNeedsUpgrade) await persistMapSnapshot(snapshot, {});
 
     const existingFunnelIds = new Set((await readFunnelDefinitions(project.ownerUserId, universeId))
       .map((definition) => cleanString(definition?.id, 120))
       .filter(Boolean));
     for (const definition of fixture.funnels) {
-      if (!existingFunnelIds.has(definition.id)) {
+      if (seedNeedsUpgrade || !existingFunnelIds.has(definition.id)) {
         await saveFunnelDefinition({
           ...definition,
           ownerUserId: project.ownerUserId,
@@ -1998,7 +1999,15 @@ async function ensureDemoUniverseRuntime(project, options = {}) {
       aiAreas: fixture.aiReport.areaAnalysis.areas.length,
       aiQuestions: fixture.aiReport.chatInsights.questions.length,
     };
-    demoRuntimeSeededAtByUniverseId.set(universeKey, Date.now());
+    const seededAt = Date.now();
+    if (seedNeedsUpgrade) {
+      await updateDemoProjectSeedMetadata(project, {
+        demoSeedVersion: DEMO_SEED_VERSION,
+        demoSeededAt: seededAt,
+        demoReportGeneratedAt: fixture.aiReport.generatedAt,
+      });
+    }
+    demoRuntimeSeededAtByUniverseId.set(universeKey, seededAt);
     demoRuntimeCountsByUniverseId.set(universeKey, counts);
     invalidatePersistedMapUniverseIdsCache();
     invalidateAnalyticsResponses(universeId);
@@ -4980,7 +4989,7 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
           || String(left.value).localeCompare(String(right.value)))
         .slice(0, responseValueLimit),
     };
-  }).sort((left, right) => right.eventCount - left.eventCount || left.name.localeCompare(right.name));
+  }).sort((left, right) => right.eventCount - left.eventCount);
 }
 
 async function getFunnelsFromQuery(ownerUserId, searchParams) {
@@ -10714,6 +10723,40 @@ async function createProject(project) {
   projects.push(project);
   await writeProjects(projects);
   invalidateAccountUsageResponseCache(project.ownerUserId);
+  invalidateAdminResponseCache("users");
+}
+
+async function updateDemoProjectSeedMetadata(project, metadata) {
+  const projectId = cleanString(project?.id, 120);
+  const ownerUserId = cleanString(project?.ownerUserId, 120);
+  const fields = {
+    demoSeedVersion: cleanInteger(metadata?.demoSeedVersion),
+    demoSeededAt: cleanInteger(metadata?.demoSeededAt),
+    demoReportGeneratedAt: cleanInteger(metadata?.demoReportGeneratedAt),
+  };
+  if (!projectId || !ownerUserId || fields.demoSeedVersion <= 0) throw new Error("Demo project metadata is invalid");
+
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("projects").updateOne(
+      { id: projectId, ownerUserId, isDemo: true },
+      { $set: fields },
+    );
+    if (!result.matchedCount) throw new Error("Demo project not found");
+  } else {
+    const projects = await readProjects();
+    const storedProject = projects.find((entry) => (
+      entry.id === projectId
+      && entry.ownerUserId === ownerUserId
+      && entry.isDemo === true
+    ));
+    if (!storedProject) throw new Error("Demo project not found");
+    Object.assign(storedProject, fields);
+    await writeProjects(projects);
+  }
+
+  Object.assign(project, fields);
+  invalidateAccountUsageResponseCache(ownerUserId);
   invalidateAdminResponseCache("users");
 }
 

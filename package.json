@@ -10,6 +10,7 @@
     "rollups": "node scripts/process-rollups.mjs",
     "b2-maintenance": "node scripts/maintain-b2-analytics.mjs",
     "ai-report": "node scripts/run-ai-report.mjs",
+    "test:demo": "node scripts/test-demo-universe.mjs",
     "test:releases": "node scripts/test-release-comparisons.mjs"
   },
   "dependencies": {

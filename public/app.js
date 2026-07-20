@@ -209,7 +209,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260719-2";
+const DASHBOARD_ASSET_VERSION = "20260719-3";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -3215,8 +3215,7 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
   if (!eventPropertyList) return;
   const cleanProperties = (Array.isArray(properties) ? properties : [])
     .filter((property) => property?.name)
-    .sort((left, right) => (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0)
-      || String(left.name).localeCompare(String(right.name)));
+    .sort((left, right) => (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0));
 
   const requestedPropertyName = selectedEventPropertyName;
   const selectedProperty = cleanProperties.find((property) => property.name === requestedPropertyName) || cleanProperties[0] || null;
@@ -3390,6 +3389,7 @@ function formatEventPropertyName(value) {
     .split(".")
     .map((segment) => segment
       .replace(/\[\]/g, " items")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
       .replace(/[_-]+/g, " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase()))
     .join(" › ");
