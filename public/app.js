@@ -97,15 +97,8 @@ const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerBu
 const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const refreshEventsButton = document.querySelector("#refreshEventsButton");
 const eventsStatus = document.querySelector("#eventsStatus");
-const eventSelect = document.querySelector("#eventSelect");
+const eventCatalog = document.querySelector("#eventCatalog");
 const eventReceivingState = document.querySelector("#eventReceivingState");
-const eventTotalCount = document.querySelector("#eventTotalCount");
-const eventUniquePlayers = document.querySelector("#eventUniquePlayers");
-const eventUniqueSessions = document.querySelector("#eventUniqueSessions");
-const eventEventsPerPlayer = document.querySelector("#eventEventsPerPlayer");
-const eventHealthCard = document.querySelector("#eventHealthCard");
-const eventDataHealthStatus = document.querySelector("#eventDataHealthStatus");
-const eventDataHealthDetail = document.querySelector("#eventDataHealthDetail");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
@@ -119,6 +112,7 @@ const viewAllPropertyValuesButton = document.querySelector("#viewAllPropertyValu
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
 const viewAllRecentEventsButton = document.querySelector("#viewAllRecentEventsButton");
+const eventRecentDisclosure = document.querySelector(".eventRecentDisclosure");
 const newFunnelButton = document.querySelector("#newFunnelButton");
 const funnelTimelineButton = document.querySelector("#funnelTimelineButton");
 const refreshFunnelsButton = document.querySelector("#refreshFunnelsButton");
@@ -219,7 +213,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260716-4";
+const DASHBOARD_ASSET_VERSION = "20260719-1";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_VALUE_EXPANDED_LIMIT = 100;
 const RECENT_EVENT_LIMIT = 7;
@@ -369,18 +363,25 @@ function bindEvents() {
   document.addEventListener("pointerdown", handleReleaseVersionOutsidePointer);
   document.addEventListener("keydown", handleReleaseControlEscape);
   refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
-  eventSelect?.addEventListener("change", () => {
-    selectedCustomEventName = eventSelect.value || "";
-    selectedEventPropertyName = "";
-    eventPropertyValuesExpanded = false;
-    currentEventPropertySummaries = [];
-    currentSelectedEventCount = 0;
-    renderCustomEventProperties([], 0);
-    recentEventsExpanded = false;
-    window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
-      detail: { eventName: selectedCustomEventName, source: "events-page" },
-    }));
-    loadCustomEvents({ force: true });
+  eventCatalog?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-event-name]");
+    const eventName = button?.dataset.eventName || "";
+    if (!eventName) return;
+    const selectionChanged = eventName !== selectedCustomEventName;
+    selectedCustomEventName = eventName;
+    syncEventCatalogSelection(eventName);
+    if (selectionChanged) {
+      selectedEventPropertyName = "";
+      eventPropertyValuesExpanded = false;
+      currentEventPropertySummaries = [];
+      currentSelectedEventCount = 0;
+      recentEventsExpanded = false;
+      prepareCustomEventSelection(eventName);
+      window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
+        detail: { eventName: selectedCustomEventName, source: "events-page" },
+      }));
+    }
+    loadCustomEvents({ force: true, selectionChange: selectionChanged });
   });
   eventIntervalSelect?.addEventListener("change", () => {
     selectedEventInterval = eventIntervalSelect.value || "auto";
@@ -414,6 +415,11 @@ function bindEvents() {
   });
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
+    loadCustomEvents({ force: true });
+  });
+  eventRecentDisclosure?.addEventListener("toggle", () => {
+    if (eventRecentDisclosure.open || !recentEventsExpanded) return;
+    recentEventsExpanded = false;
     loadCustomEvents({ force: true });
   });
   newFunnelButton?.addEventListener("click", startNewFunnel);
@@ -540,8 +546,20 @@ function bindEvents() {
   window.addEventListener("dashboard:eventMapSelectionChanged", (event) => {
     const eventName = String(event.detail?.eventName || "");
     if (!eventName) return;
+    const selectionChanged = eventName !== selectedCustomEventName;
+    if (selectionChanged) {
+      selectedEventPropertyName = "";
+      eventPropertyValuesExpanded = false;
+      currentEventPropertySummaries = [];
+      currentSelectedEventCount = 0;
+      recentEventsExpanded = false;
+    }
     selectedCustomEventName = eventName;
-    if (activeView === "events" && event.detail?.source !== "events-page") loadCustomEvents();
+    syncEventCatalogSelection(eventName);
+    if (activeView === "events" && event.detail?.source !== "events-page") {
+      if (selectionChanged) prepareCustomEventSelection(eventName);
+      loadCustomEvents({ selectionChange: selectionChanged });
+    }
   });
 
   window.addEventListener("hashchange", () => {
@@ -2923,7 +2941,10 @@ async function loadCustomEvents(options = {}) {
   } catch (error) {
     if (requestSequence !== customEventsRequestSequence) return false;
     handleAuthError(error);
-    if (authenticated) eventsStatus.textContent = formatRequestError(error);
+    if (authenticated) {
+      eventsStatus.textContent = formatRequestError(error);
+      if (options.selectionChange) renderCustomEventSelectionError();
+    }
     return false;
   } finally {
     if (requestSequence === customEventsRequestSequence) {
@@ -2933,8 +2954,53 @@ async function loadCustomEvents(options = {}) {
   }
 }
 
+function syncEventCatalogSelection(eventName) {
+  if (!eventCatalog) return;
+  for (const button of eventCatalog.querySelectorAll("[data-event-name]")) {
+    const isActive = button.dataset.eventName === eventName;
+    button.classList.toggle("active", isActive);
+    if (isActive) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  }
+}
+
+function prepareCustomEventSelection(eventName) {
+  if (selectedEventTitle) selectedEventTitle.textContent = formatEventName(eventName);
+  if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Loading event details...";
+  if (eventChart) {
+    eventChart.setAttribute("aria-busy", "true");
+    eventChart.innerHTML = '<p class="status">Loading event activity...</p>';
+  }
+  renderCustomEventProperties([], 0);
+  if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Loading properties...";
+  if (eventPropertyList) {
+    eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Loading property values...</span></div>';
+  }
+  if (recentEventTableHeader) recentEventTableHeader.hidden = true;
+  if (recentEventList) {
+    recentEventList.setAttribute("aria-busy", "true");
+    recentEventList.innerHTML = '<p class="status">Loading recent records...</p>';
+  }
+  if (viewAllRecentEventsButton) viewAllRecentEventsButton.hidden = true;
+}
+
+function renderCustomEventSelectionError() {
+  if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Could not load this event. Select it again to retry.";
+  if (eventChart) {
+    eventChart.setAttribute("aria-busy", "false");
+    eventChart.innerHTML = '<p class="status">Could not load event activity.</p>';
+  }
+  if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Could not load properties for this event.";
+  if (eventPropertyList) {
+    eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Could not load property values.</span></div>';
+  }
+  if (recentEventList) {
+    recentEventList.setAttribute("aria-busy", "false");
+    recentEventList.innerHTML = '<p class="status">Could not load recent records.</p>';
+  }
+}
+
 function renderCustomEvents(payload = {}) {
-  const totals = payload.totals || {};
   const catalog = Array.isArray(payload.events) ? payload.events : [];
   const selected = payload.selectedEvent || null;
   const previousEventName = selectedCustomEventName;
@@ -2946,18 +3012,22 @@ function renderCustomEvents(payload = {}) {
   }
 
   const selectedCount = Number(selected?.count) || 0;
-  const selectedPlayers = Number(selected?.uniquePlayers) || 0;
-  if (eventTotalCount) eventTotalCount.textContent = formatCompactNumber(selectedCount);
-  if (eventUniquePlayers) eventUniquePlayers.textContent = formatCompactNumber(selectedPlayers);
-  if (eventUniqueSessions) eventUniqueSessions.textContent = formatCompactNumber(selected?.uniqueSessions);
-  if (eventEventsPerPlayer) eventEventsPerPlayer.textContent = selectedPlayers ? formatEventNumber(selectedCount / selectedPlayers) : "0";
-
-  if (eventSelect) {
-    eventSelect.disabled = !catalog.length;
-    eventSelect.innerHTML = catalog.length
-      ? renderEventCatalogOptions(catalog)
-      : '<option value="">No tracked events yet</option>';
-    if (selectedCustomEventName) eventSelect.value = selectedCustomEventName;
+  if (eventCatalog) {
+    const previousScrollTop = eventCatalog.scrollTop;
+    const focusedCatalogItem = document.activeElement?.closest?.("[data-event-name]");
+    const focusedEventName = focusedCatalogItem && eventCatalog.contains(focusedCatalogItem)
+      ? focusedCatalogItem.dataset.eventName || ""
+      : "";
+    eventCatalog.innerHTML = catalog.length
+      ? renderEventCatalog(catalog)
+      : '<p class="status">Logged event names will appear here automatically.</p>';
+    eventCatalog.scrollTop = previousScrollTop;
+    if (focusedEventName) {
+      const focusTarget = [...eventCatalog.querySelectorAll("[data-event-name]")]
+        .find((button) => button.dataset.eventName === focusedEventName);
+      focusTarget?.focus({ preventScroll: true });
+      eventCatalog.scrollTop = previousScrollTop;
+    }
   }
 
   if (eventReceivingState) {
@@ -2972,7 +3042,6 @@ function renderCustomEvents(payload = {}) {
       ? `${selected.sourceType === "system" ? "Automatic system event" : "Custom logged event"} · ${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
       : "The event timeline will appear here.";
   }
-  renderEventDataHealth(selected, totals);
   updateEventIntervalControl(selected);
   renderCustomEventChart(selected?.series || [], selected?.bucketMs);
   currentEventPropertySummaries = Array.isArray(selected?.properties) ? selected.properties : [];
@@ -2989,44 +3058,37 @@ function renderCustomEvents(payload = {}) {
   }
 }
 
-function renderEventCatalogOptions(catalog) {
-  const renderOption = (item) => (
-    `<option value="${escapeHtml(item.name)}" ${item.name === selectedCustomEventName ? "selected" : ""}>${escapeHtml(formatEventName(item.name))} · ${formatCompactNumber(item.count)}</option>`
-  );
+function renderEventCatalog(catalog) {
+  const renderItem = (item) => {
+    const isActive = item.name === selectedCustomEventName;
+    const activityLabel = Number(item.lastSeenAt) > 0 ? formatRelativeTime(item.lastSeenAt) : "No activity yet";
+    return `
+      <button class="eventCatalogItem ${isActive ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}" ${isActive ? 'aria-current="true"' : ""}>
+        <span>
+          <strong>${escapeHtml(formatEventName(item.name))}</strong>
+          <small>${escapeHtml(activityLabel)}</small>
+        </span>
+        <em>${formatCompactNumber(item.count)}</em>
+      </button>
+    `;
+  };
+  const renderGroup = (label, items) => items.length
+    ? `<section class="eventCatalogGroup" aria-label="${escapeHtml(label)}"><h3>${escapeHtml(label)}</h3>${items.map(renderItem).join("")}</section>`
+    : "";
   const systemOrder = new Map([["player_died", 0], ["player_left", 1], ["chat_message", 2]]);
   const systemEvents = catalog
     .filter((item) => item.sourceType === "system")
     .sort((left, right) => (systemOrder.get(left.name) ?? 99) - (systemOrder.get(right.name) ?? 99));
   const customEvents = catalog.filter((item) => item.sourceType !== "system");
   return [
-    systemEvents.length ? `<optgroup label="System events">${systemEvents.map(renderOption).join("")}</optgroup>` : "",
-    customEvents.length ? `<optgroup label="Custom events">${customEvents.map(renderOption).join("")}</optgroup>` : "",
+    renderGroup("System events", systemEvents),
+    renderGroup("Custom events", customEvents),
   ].join("");
-}
-
-function renderEventDataHealth(selected, totals = {}) {
-  if (!eventDataHealthStatus || !eventDataHealthDetail) return;
-  const universe = knownUniverses.find((entry) => String(entry.id || "") === selectedUniverseId);
-  const failedIngests = Number(universe?.integrationStatus?.failedIngests24h) || 0;
-  const truncatedPropertyEvents = Number(selected?.truncatedPropertyEvents) || 0;
-  const acceptedEvents = Number(selected?.count ?? totals.events) || 0;
-  const hasData = acceptedEvents > 0;
-  const needsReview = failedIngests > 0 || truncatedPropertyEvents > 0;
-  eventHealthCard?.classList.toggle("hasWarning", needsReview);
-  eventHealthCard?.classList.toggle("isHealthy", hasData && !needsReview);
-  eventDataHealthStatus.textContent = needsReview ? "Review" : (hasData ? "Healthy" : "Waiting");
-  const healthIssues = [];
-  if (failedIngests > 0) healthIssues.push(`${formatCompactNumber(failedIngests)} failed ingest${failedIngests === 1 ? "" : "s"} in 24h`);
-  if (truncatedPropertyEvents > 0) healthIssues.push(`${formatCompactNumber(truncatedPropertyEvents)} event${truncatedPropertyEvents === 1 ? "" : "s"} had properties omitted`);
-  eventDataHealthDetail.textContent = healthIssues.length
-    ? healthIssues.join(" · ")
-    : (hasData
-      ? `${formatCompactNumber(acceptedEvents)} accepted · no failed ingests in 24h`
-      : "No accepted events yet");
 }
 
 function renderCustomEventChart(series, selectedBucketMs) {
   if (!eventChart) return;
+  eventChart.setAttribute("aria-busy", "false");
   if (!series.length || !series.some((bucket) => Number(bucket.count) > 0)) {
     eventChart.innerHTML = '<p class="status">No events in this date range.</p>';
     return;
@@ -3253,6 +3315,8 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
 
 function renderRecentCustomEvents(events, properties = []) {
   if (!recentEventList || !recentEventTableHeader) return;
+  recentEventList.setAttribute("aria-busy", "false");
+  recentEventTableHeader.hidden = false;
   const hiddenPropertyNames = new Set(["platform", "server_version", "serverversion", "roblox_device_type", "robloxdevicetype"]);
   const isVisibleProperty = (name) => !hiddenPropertyNames.has(String(name || "").toLowerCase().replace(/[^a-z0-9_]/g, ""));
   const cleanProperties = (Array.isArray(properties) ? properties : []).filter((property) => isVisibleProperty(property.name));

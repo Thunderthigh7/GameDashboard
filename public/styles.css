@@ -3808,9 +3808,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .eventsLayout {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(220px, 255px) minmax(0, 1fr);
+  gap: 14px;
   align-items: start;
+  min-width: 0;
 }
 
 .eventCatalogPanel,
@@ -3823,17 +3824,59 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .eventCatalogPanel {
   position: sticky;
-  top: 116px;
-  max-height: calc(100vh - 140px);
+  top: 20px;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  max-height: calc(100vh - 40px);
   overflow: hidden;
+  padding: 16px;
+}
+
+.eventCatalogHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.eventCatalogHeader h2 {
+  margin-top: 3px;
+  font-size: 17px;
+}
+
+.eventCatalogHeader p {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.eventCatalogEyebrow,
+.eventCatalogGroup h3 {
+  color: #a889ff;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .eventCatalog {
   display: grid;
-  gap: 7px;
-  max-height: calc(100vh - 300px);
+  gap: 16px;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 60, 255, 0.42) transparent;
+}
+
+.eventCatalogGroup {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.eventCatalogGroup h3 {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted);
 }
 
 .eventCatalogItem {
@@ -3855,6 +3898,16 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .eventCatalogItem.active {
   border-color: rgba(124, 60, 255, 0.72);
   background: var(--purple-soft);
+}
+
+.eventCatalogItem:focus-visible {
+  border-color: #c8b5ff;
+  outline: 2px solid #d8cbff;
+  outline-offset: -3px;
+}
+
+.eventCatalogItem.active {
+  box-shadow: inset 3px 0 0 #9b65ff;
 }
 
 .eventCatalogItem span,
@@ -3879,78 +3932,9 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .eventCatalogItem em {
   color: #c4b5fd;
+  font-size: 12px;
   font-style: normal;
   font-weight: 800;
-}
-
-.eventOverview {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.eventMetricCard {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-  min-height: 116px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: linear-gradient(145deg, rgba(13, 20, 43, 0.94), rgba(9, 15, 31, 0.84));
-  padding: 16px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
-}
-
-.eventMetricCard > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.eventMetricIcon {
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 58px;
-  border: 1px solid rgba(124, 60, 255, 0.42);
-  border-radius: 999px;
-  background: radial-gradient(circle at 35% 30%, rgba(142, 75, 255, 0.32), rgba(72, 25, 159, 0.34));
-  color: #a56bff;
-  box-shadow: inset 0 0 20px rgba(124, 60, 255, 0.1);
-}
-
-.eventMetricIcon svg {
-  width: 31px;
-  height: 31px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.eventMetricCard > div > span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
-}
-
-.eventMetricCard > div > strong {
-  color: var(--text);
-  font-size: clamp(28px, 2vw, 36px);
-  line-height: 1;
-}
-
-.eventMetricCard small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .eventChartPanel {
@@ -4237,12 +4221,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
   background: linear-gradient(180deg, #a78bfa, #6d28d9);
 }
 
-.eventBreakdownGrid {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.85fr) minmax(480px, 1.35fr);
-  gap: 18px;
-}
-
 .eventBreakdownCard,
 .eventRecentCard {
   min-width: 0;
@@ -4470,31 +4448,6 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   gap: 12px;
 }
 
-.eventCommandBar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: linear-gradient(145deg, rgba(13, 22, 44, 0.96), rgba(8, 16, 33, 0.94));
-  padding: 10px;
-}
-
-.eventCommandIcon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(158, 96, 255, 0.5);
-  border-radius: 9px;
-  background: linear-gradient(145deg, #7e42df, #4d269e);
-  color: #fff;
-  box-shadow: 0 8px 22px rgba(83, 39, 170, 0.22);
-}
-
-.eventCommandIcon svg,
 .eventRefreshButton svg {
   width: 20px;
   height: 20px;
@@ -4503,44 +4456,6 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.eventSelectControl {
-  position: relative;
-  flex: 0 1 370px;
-  min-width: 240px;
-}
-
-.eventSelectControl::after {
-  content: "";
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--nav-text);
-  border-bottom: 2px solid var(--nav-text);
-  transform: translateY(-70%) rotate(45deg);
-  pointer-events: none;
-}
-
-.eventSelectControl select {
-  width: 100%;
-  min-height: 42px;
-  appearance: none;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(8, 16, 33, 0.88);
-  color: var(--text);
-  padding: 0 42px 0 13px;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.eventSelectControl select:focus {
-  border-color: rgba(124, 60, 255, 0.78);
-  outline: 3px solid rgba(124, 60, 255, 0.13);
 }
 
 .eventReceivingState {
@@ -4581,6 +4496,18 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   white-space: nowrap;
 }
 
+.eventCatalogPanel .eventReceivingState {
+  width: 100%;
+}
+
+.eventCatalogPanel .eventStatus {
+  overflow: visible;
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .eventRefreshButton {
   display: grid;
   place-items: center;
@@ -4605,57 +4532,6 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
 .eventRefreshButton:disabled {
   cursor: default;
   opacity: 0.45;
-}
-
-.eventOverview {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.eventMetricCard {
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 12px;
-  min-height: 104px;
-  border-radius: 11px;
-  padding: 14px;
-}
-
-.eventMetricIcon {
-  width: 48px;
-  height: 48px;
-}
-
-.eventMetricIcon svg {
-  width: 26px;
-  height: 26px;
-}
-
-.eventMetricCard > div > span {
-  font-size: 10px;
-}
-
-.eventMetricCard > div > strong {
-  font-size: clamp(23px, 1.8vw, 31px);
-}
-
-.eventMetricCard small {
-  font-size: 10px;
-}
-
-.eventHealthCard.isHealthy .eventMetricIcon {
-  border-color: rgba(53, 212, 122, 0.4);
-  background: radial-gradient(circle at 35% 30%, rgba(53, 212, 122, 0.28), rgba(21, 106, 67, 0.3));
-  color: #56dd91;
-}
-
-.eventHealthCard.hasWarning .eventMetricIcon {
-  border-color: rgba(245, 158, 11, 0.46);
-  background: radial-gradient(circle at 35% 30%, rgba(245, 158, 11, 0.25), rgba(120, 65, 9, 0.28));
-  color: #f6b84e;
-}
-
-.eventHealthCard.hasWarning > div > strong {
-  color: #f7c264;
 }
 
 .eventChartPanel {
@@ -4752,11 +4628,6 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   height: 3px;
   border-radius: 999px;
   background: #925cff;
-}
-
-.eventBreakdownGrid {
-  grid-template-columns: minmax(350px, 0.9fr) minmax(520px, 1.45fr);
-  gap: 12px;
 }
 
 .eventBreakdownCard,
@@ -5063,6 +4934,65 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
 .eventViewAllButton span {
   display: inline;
   margin-left: 5px;
+}
+
+.eventRecentDisclosure {
+  min-width: 0;
+}
+
+.eventRecentDisclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  max-width: 100%;
+  border-radius: 6px;
+  color: #a98aff;
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 800;
+  list-style: none;
+  cursor: pointer;
+}
+
+.eventRecentDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.eventRecentDisclosure > summary::after {
+  content: "→";
+  font-size: 13px;
+  transition: transform 160ms ease;
+}
+
+.eventRecentDisclosure > summary:hover,
+.eventRecentDisclosure > summary:focus-visible {
+  color: #fff;
+  outline: none;
+}
+
+.eventRecentDisclosure > summary:focus-visible {
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.16);
+}
+
+.eventRecentOpenLabel {
+  display: none;
+}
+
+.eventRecentDisclosure[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.eventRecentDisclosure[open] .eventRecentClosedLabel {
+  display: none;
+}
+
+.eventRecentDisclosure[open] .eventRecentOpenLabel {
+  display: inline;
+}
+
+.eventRecentDisclosure .eventRecentCard {
+  margin-top: 8px;
 }
 
 .funnelTopbarExtras {
@@ -6946,12 +6876,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   display: none;
 }
 
-@media (max-width: 1450px) {
-  .eventOverview {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 1180px) {
   .dashboardGrid,
   .chatAnalysisPage,
@@ -6993,14 +6917,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .eventsLayout {
     grid-template-columns: 1fr;
-  }
-
-  .eventOverview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .eventBreakdownGrid {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .eventCatalogPanel {
@@ -7102,6 +7018,13 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     grid-template-columns: 1fr;
   }
 
+  body[data-active-view="events"] .topbar > div:first-child,
+  body[data-active-view="events"] .topbarActions {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
   .topbarFilters {
     display: grid;
     grid-template-columns: 1fr;
@@ -7157,13 +7080,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     grid-template-columns: 1fr;
   }
 
-  .eventOverview,
   .funnelOverview {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .eventBreakdownGrid {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .eventChartHeader {
@@ -7173,24 +7091,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .eventChartActions {
     justify-content: flex-end;
-  }
-
-  .eventCommandBar {
-    align-items: stretch;
-    flex-wrap: wrap;
-  }
-
-  .eventSelectControl {
-    flex: 1 1 calc(100% - 160px);
-  }
-
-  .eventStatus {
-    order: 5;
-    width: 100%;
-  }
-
-  .eventRefreshButton {
-    margin-left: 0;
   }
 
   .funnelBuilderFields {
@@ -7504,10 +7404,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     width: 100%;
   }
 
-  .eventOverview {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .eventPropertyCardHeader {
     flex-wrap: wrap;
   }
@@ -7533,24 +7429,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     min-width: 0;
   }
 
-  .eventCommandBar {
-    display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) 42px;
-  }
-
-  .eventSelectControl {
-    min-width: 0;
-  }
-
-  .eventReceivingState,
-  .eventStatus {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
-
-  .eventRefreshButton {
-    grid-column: 3;
-    grid-row: 1;
+  .eventCatalog {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .funnelOverview {
