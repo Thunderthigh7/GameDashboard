@@ -1722,8 +1722,44 @@ body[data-active-view="connect"] .topbar > div:first-child {
   grid-template-columns: minmax(0, 1fr) minmax(300px, var(--chat-panel-width));
   gap: 12px;
   align-items: stretch;
-  height: calc(100vh - 154px);
+  height: 100%;
   min-height: 560px;
+}
+
+@media (min-width: 861px) {
+  body[data-active-view="overview"]:not(.isLocked) {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  body[data-active-view="overview"]:not(.isLocked) .appShell,
+  body[data-active-view="overview"]:not(.isLocked) .dashboardMain {
+    height: 100vh;
+    min-height: 0;
+  }
+
+  body[data-active-view="overview"]:not(.isLocked) .dashboardMain {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  body[data-active-view="overview"]:not(.isLocked) .topbar {
+    flex: 0 0 auto;
+  }
+
+  body[data-active-view="overview"]:not(.isLocked) .viewPage[data-view-panel="overview"] {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body[data-active-view="overview"]:not(.isLocked) .dashboardGrid,
+  body[data-active-view="overview"]:not(.isLocked) .dashboardContentColumn,
+  body[data-active-view="overview"]:not(.isLocked) .overviewHeroGrid {
+    height: 100%;
+    min-height: 0;
+  }
 }
 
 .aiCardRow {
@@ -7020,32 +7056,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 @media (max-width: 1180px) {
   .dashboardGrid,
-  .chatAnalysisPage,
-  .overviewHeroGrid {
+  .chatAnalysisPage {
     grid-template-columns: 1fr;
-  }
-
-  .overviewHeroGrid {
-    height: auto;
-    min-height: auto;
-  }
-
-  .mapPanel {
-    height: auto;
-    min-height: 620px;
-  }
-
-  .chatBotPanel {
-    height: auto;
-  }
-
-  .heatmapShell,
-  #movementHeatmapCanvas {
-    min-height: clamp(520px, 62vh, 700px);
-  }
-
-  .chatBotPanel {
-    min-height: 520px;
   }
 
   .heatmapToolbar {
@@ -7222,6 +7234,21 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .aiCardRow,
   .heatmapFilters {
     grid-template-columns: 1fr;
+  }
+
+  .overviewHeroGrid {
+    height: auto;
+    min-height: auto;
+  }
+
+  .mapPanel {
+    height: auto;
+    min-height: 520px;
+  }
+
+  .chatBotPanel {
+    height: auto;
+    min-height: 520px;
   }
 
   .eventChartHeader {

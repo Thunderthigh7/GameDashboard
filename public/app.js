@@ -883,6 +883,8 @@ function setActiveView(view, options = {}) {
 }
 
 function renderActiveView(options = {}) {
+  document.body.dataset.activeView = activeView;
+
   for (const panel of viewPanels) {
     panel.hidden = !authenticated || panel.dataset.viewPanel !== activeView;
   }
