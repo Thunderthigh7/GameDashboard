@@ -8665,22 +8665,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   stroke-linejoin: round;
 }
 
-.landingFeatureTag {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 12px;
-  border: 1px solid rgba(150, 82, 255, 0.55);
-  border-radius: 999px;
-  background: rgba(119, 58, 225, 0.14);
-  padding: 4px 10px;
-  color: #b989ff;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  vertical-align: middle;
-}
-
 .landingFeatureNote {
   display: flex;
   align-items: center;
@@ -8850,10 +8834,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .landingFeatureTable th,
   .landingFeatureTable td {
     padding-inline: 16px;
-  }
-
-  .landingFeatureTag {
-    display: none;
   }
 
   .landingFinalCta {
