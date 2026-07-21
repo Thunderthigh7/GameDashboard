@@ -7926,9 +7926,9 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .landingNav {
   position: relative;
   z-index: 2;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
@@ -7938,6 +7938,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingBrand {
+  justify-self: start;
   margin: 0;
   padding: 0;
 }
@@ -7945,6 +7946,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .landingNavLinks {
   display: flex;
   align-items: center;
+  justify-self: center;
   gap: 22px;
 }
 
@@ -7962,6 +7964,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingNavLogin {
+  justify-self: end;
   min-height: 36px;
   border: 1px solid rgba(145, 95, 255, 0.42);
   background: rgba(124, 60, 255, 0.16);
@@ -8307,18 +8310,22 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 .landingFinalCta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 800px);
+  justify-content: center;
+  justify-items: center;
   align-items: center;
-  gap: 40px;
+  gap: 26px;
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
   border-top: 1px solid rgba(80, 99, 150, 0.3);
   background: transparent;
   padding: 72px 0 0;
+  text-align: center;
 }
 
 .landingFinalCta > div {
   display: grid;
+  justify-items: center;
   gap: 10px;
   max-width: 700px;
 }
@@ -8403,7 +8410,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 560px) {
-  .landingBrand small,
   .landingBrand strong span {
     display: none;
   }
