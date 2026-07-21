@@ -261,25 +261,104 @@
               <h2>A better way to work with events and funnels.</h2>
               <p>Roblox provides built-in reports. RoAnalytics lets you explore event data, rebuild funnels, and compare exact releases without republishing for every new question.</p>
             </div>
-            <div class="landingQuickGrid">
-              <article>
-                <span class="landingQuickLabel">Roblox events &amp; funnels</span>
-                <h3>Defined in your game</h3>
-                <ul>
-                  <li>View aggregated event metrics and breakdowns</li>
-                  <li>Log funnel names, steps, and order from code</li>
-                  <li>Review changes using selected date ranges</li>
-                </ul>
-              </article>
-              <article>
-                <span class="landingQuickLabel">RoAnalytics</span>
-                <h3>Built in your dashboard</h3>
-                <ul>
-                  <li>Explore event properties and map locations</li>
-                  <li>Build and reorder funnels from saved events</li>
-                  <li>Compare events and funnels by exact PlaceVersion</li>
-                </ul>
-              </article>
+            <div class="landingComparisonMatrix" role="table" aria-label="Roblox and RoAnalytics event and funnel comparison">
+              <div class="landingComparisonHeader" role="row">
+                <span class="landingComparisonHeaderSpacer" role="columnheader">Compare</span>
+                <div class="landingComparisonPlan" role="columnheader">
+                  <small>Roblox events &amp; funnels</small>
+                  <strong>Built-in reporting</strong>
+                </div>
+                <div class="landingComparisonPlan featured" role="columnheader">
+                  <span class="landingComparisonBadge">Built for iteration</span>
+                  <small>RoAnalytics</small>
+                  <strong>Flexible analysis</strong>
+                </div>
+              </div>
+
+              <div class="landingComparisonRow" role="row">
+                <div class="landingComparisonFeature" role="rowheader">
+                  <span class="landingComparisonFeatureIcon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z"/><path d="m8 15 3-3 2 2 3-4"/></svg>
+                  </span>
+                  <strong>Event details</strong>
+                </div>
+                <div class="landingComparisonCell" role="cell" data-column="Roblox">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Aggregated event results</strong><small>Counts, averages, and breakdowns</small></div>
+                </div>
+                <div class="landingComparisonCell featured" role="cell" data-column="RoAnalytics">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Detailed event context</strong><small>Properties, sessions, versions, and positions</small></div>
+                </div>
+              </div>
+
+              <div class="landingComparisonRow" role="row">
+                <div class="landingComparisonFeature" role="rowheader">
+                  <span class="landingComparisonFeatureIcon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z"/></svg>
+                  </span>
+                  <strong>Funnel building</strong>
+                </div>
+                <div class="landingComparisonCell" role="cell" data-column="Roblox">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Defined by game code</strong><small>Names, step numbers, and order are logged</small></div>
+                </div>
+                <div class="landingComparisonCell featured" role="cell" data-column="RoAnalytics">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Built from saved events</strong><small>Combine events in any order from the dashboard</small></div>
+                </div>
+              </div>
+
+              <div class="landingComparisonRow" role="row">
+                <div class="landingComparisonFeature" role="rowheader">
+                  <span class="landingComparisonFeatureIcon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M7 7h10M14 4l3 3-3 3M17 17H7M10 14l-3 3 3 3"/></svg>
+                  </span>
+                  <strong>Funnel changes</strong>
+                </div>
+                <div class="landingComparisonCell" role="cell" data-column="Roblox">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Change the tracked flow</strong><small>Update the funnel implementation and publish</small></div>
+                </div>
+                <div class="landingComparisonCell featured" role="cell" data-column="RoAnalytics">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Edit funnels anytime</strong><small>Reorder steps without another Roblox publish</small></div>
+                </div>
+              </div>
+
+              <div class="landingComparisonRow" role="row">
+                <div class="landingComparisonFeature" role="rowheader">
+                  <span class="landingComparisonFeatureIcon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><circle cx="7" cy="6" r="2"/><circle cx="17" cy="18" r="2"/><path d="M7 8v5a5 5 0 0 0 5 5h3M12 6h5M15 4l2 2-2 2"/></svg>
+                  </span>
+                  <strong>Release analysis</strong>
+                </div>
+                <div class="landingComparisonCell" role="cell" data-column="Roblox">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Review selected dates</strong><small>Analyze funnel changes across time ranges</small></div>
+                </div>
+                <div class="landingComparisonCell featured" role="cell" data-column="RoAnalytics">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Compare exact releases</strong><small>Events and funnels grouped by PlaceVersion</small></div>
+                </div>
+              </div>
+
+              <div class="landingComparisonRow" role="row">
+                <div class="landingComparisonFeature" role="rowheader">
+                  <span class="landingComparisonFeatureIcon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg>
+                  </span>
+                  <strong>Map context</strong>
+                </div>
+                <div class="landingComparisonCell" role="cell" data-column="Roblox">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Charts and breakdowns</strong><small>Analyze totals and player segments</small></div>
+                </div>
+                <div class="landingComparisonCell featured" role="cell" data-column="RoAnalytics">
+                  <span class="landingComparisonCheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                  <div><strong>Events on your map</strong><small>See where gameplay events happened</small></div>
+                </div>
+              </div>
             </div>
           </section>
 
