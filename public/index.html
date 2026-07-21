@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260721-4">
+    <link rel="stylesheet" href="/styles.css?v=20260721-5">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -255,12 +255,84 @@
             </div>
           </section>
 
-          <section class="landingQuickSection" id="whyRoAnalytics">
-            <div class="landingSectionHeading">
-              <span class="landingEyebrow">Why use this?</span>
-              <h2>See what RoAnalytics adds to Roblox events.</h2>
-              <p>Roblox covers basic event and funnel reporting. RoAnalytics adds the tools to explore, rebuild, map, and compare them without changing your game every time.</p>
+          <section class="landingQuickSection landingWhySection" id="whyRoAnalytics">
+            <div class="landingSectionHeading landingWhyHeading">
+              <span class="landingEyebrow">Why RoAnalytics?</span>
+              <h2>Roblox tells you what happened.<br>RoAnalytics helps you <span>understand why.</span></h2>
+              <p>Roblox gives you the foundation for tracking events and funnels. RoAnalytics turns that data into something you can investigate, compare, map, and act on&mdash;without republishing your game every time you have a new question.</p>
             </div>
+
+            <div class="landingBenefitGrid">
+              <article class="landingBenefitCard">
+                <span class="landingBenefitIcon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4M8.5 10.5h4M10.5 8.5v4"/></svg>
+                </span>
+                <div>
+                  <h3>Find player problems</h3>
+                  <p>Discover where players struggle, stop progressing, or leave.</p>
+                </div>
+              </article>
+              <article class="landingBenefitCard">
+                <span class="landingBenefitIcon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M4 20V9M9 20V5M14 20v-8M19 20V3M2 20h20"/><path d="m5 7 4-4 5 6 5-7"/></svg>
+                </span>
+                <div>
+                  <h3>Measure update impact</h3>
+                  <p>Compare exact PlaceVersions and see what actually changed.</p>
+                </div>
+              </article>
+              <article class="landingBenefitCard">
+                <span class="landingBenefitIcon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h3M11 12h9M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg>
+                </span>
+                <div>
+                  <h3>Explore data freely</h3>
+                  <p>Build funnels and investigate event properties using data you already collected.</p>
+                </div>
+              </article>
+            </div>
+
+            <div class="landingVisualCompare">
+              <div class="landingVisualHeading">
+                <h3>Go beyond basic numbers.<br>See the <span>full picture.</span></h3>
+              </div>
+              <div class="landingVisualGrid">
+                <section class="landingVisualColumn">
+                  <header>
+                    <h4>In Roblox Analytics</h4>
+                    <p>You see the numbers.</p>
+                  </header>
+                  <div class="landingRobloxPreview" aria-label="Example basic event report">
+                    <div class="landingPreviewBreadcrumb">&lsaquo; Events <span>&rsaquo;</span> death</div>
+                    <div class="landingEventSummary">
+                      <span>death</span>
+                      <strong>4,281</strong>
+                      <small>Total Events</small>
+                    </div>
+                    <div class="landingChartCard">
+                      <span>Events over time</span>
+                      <svg viewBox="0 0 520 160" role="img" aria-label="Purple event count line chart">
+                        <path class="chartGrid" d="M40 22H510M40 72H510M40 122H510M40 8V136M197 8V136M354 8V136M510 8V136"/>
+                        <path class="chartLine" d="M40 95 52 82 63 103 75 65 87 78 98 38 110 58 122 26 134 65 145 45 157 72 169 51 181 84 193 70 204 88 216 62 228 78 240 69 251 96 263 81 275 101 287 72 299 90 310 77 322 103 334 89 346 97 357 63 369 79 381 56 393 89 404 78 416 105 428 85 440 98 451 72 463 89 475 67 487 106 499 82 510 96"/>
+                        <text x="40" y="154">Mon 12</text><text x="184" y="154">Mon 19</text><text x="341" y="154">Mon 26</text><text x="480" y="154">Mon 2</text>
+                      </svg>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="landingVisualColumn roAnalyticsVisualColumn">
+                  <header>
+                    <h4>In RoAnalytics</h4>
+                    <p>You see what&rsquo;s really happening.</p>
+                  </header>
+                  <div class="landingHeatmapPreview">
+                    <img src="/images/landing-event-heatmap.png" alt="RoAnalytics 3D heatmap showing where players left across a game map">
+                  </div>
+                </section>
+              </div>
+              <p class="landingVisualSummary">RoAnalytics shows you where events happen, which version caused changes, what players did before the event, and which player segments are affected.</p>
+            </div>
+
             <div class="landingFeatureTableBox">
               <table class="landingFeatureTable" aria-label="Roblox and RoAnalytics event and funnel feature comparison">
                 <colgroup>
@@ -270,23 +342,23 @@
                 </colgroup>
                 <thead>
                   <tr>
-                    <th scope="col">Event and funnel features</th>
-                    <th scope="col">Roblox</th>
+                    <th scope="col">What you can do</th>
+                    <th scope="col"><span class="landingTableHeaderFull">Roblox built-in analytics</span><span class="landingTableHeaderShort">Roblox</span></th>
                     <th scope="col">RoAnalytics</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><th scope="row">Custom event tracking</th><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
-                  <tr><th scope="row">Funnel reports</th><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
-                  <tr><th scope="row">Build funnels from saved events</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
-                  <tr><th scope="row">Edit funnel order without republishing</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
-                  <tr><th scope="row">Explore nested event properties</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
-                  <tr><th scope="row">Compare exact PlaceVersions</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
-                  <tr><th scope="row">See events on your game map</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 7 7-4 11 11-7 7L3 10V7Z"/><circle cx="8" cy="8" r="1"/></svg></span><span>Track custom gameplay events</span></th><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 4h18l-7 8v7l-4 2v-9L3 4Z"/></svg></span><span>View basic funnel reports</span></th><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/><circle cx="8" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></span><span>Build funnels from previously collected data</span></th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span><span class="landingFeatureTag">Key feature</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 15l7-7 2 2-7 7H8v-2Z"/></svg></span><span>Change funnel steps without updating your game</span></th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span><span class="landingFeatureTag">Key feature</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M11 15v6"/></svg></span><span>Filter events by detailed player and gameplay properties</span></th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8 4-8 4-8-4 8-4ZM4 12l8 4 8-4M4 17l8 4 8-4"/></svg></span><span>Compare player behavior between exact game versions</span></th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row"><span class="landingFeatureIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6ZM9 3v15M15 6v15"/></svg></span><span>See where events happened directly on your game map</span></th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
                 </tbody>
               </table>
             </div>
-            <p class="landingFeatureNote">Focused on events and funnels. RoAnalytics works alongside Roblox's retention, acquisition, and monetization analytics.</p>
+            <p class="landingFeatureNote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.8 2.8 8.2 7 10 4.2-1.8 7-5.2 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>RoAnalytics works alongside Roblox&rsquo;s retention, acquisition, and monetization analytics.</span></p>
           </section>
 
           <section class="howItWorksSection" id="howItWorks">

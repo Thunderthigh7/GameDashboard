@@ -8245,17 +8245,287 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingQuickSection {
-  background: transparent;
+  position: relative;
+  background:
+    radial-gradient(circle at 92% 42%, rgba(108, 51, 222, 0.09), transparent 31%),
+    radial-gradient(circle at 7% 30%, rgba(29, 114, 207, 0.07), transparent 28%);
+}
+
+.landingWhyHeading {
+  max-width: 1140px;
+  margin-bottom: 30px;
+}
+
+.landingWhyHeading h2 {
+  font-size: clamp(38px, 4.2vw, 52px);
+  line-height: 1.02;
+}
+
+.landingWhyHeading h2 span,
+.landingVisualHeading h3 span,
+.roAnalyticsVisualColumn h4 {
+  background: linear-gradient(105deg, #b46fff, #7044ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.landingWhyHeading p {
+  max-width: 790px;
+  margin: 4px auto 0;
+  font-size: 17px;
+}
+
+.landingBenefitGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 32px;
+}
+
+.landingBenefitCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 17px;
+  min-height: 158px;
+  overflow: hidden;
+  border: 1px solid rgba(75, 96, 150, 0.42);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(18, 28, 55, 0.88), rgba(8, 15, 31, 0.94));
+  padding: 25px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.landingBenefitCard::after {
+  position: absolute;
+  left: 80px;
+  bottom: 20px;
+  width: 46px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a54dff, #7548ff);
+  content: "";
+}
+
+.landingBenefitIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(157, 90, 255, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(145deg, rgba(100, 45, 213, 0.95), rgba(56, 25, 132, 0.98));
+  color: #e7d9ff;
+  box-shadow: 0 10px 28px rgba(90, 38, 195, 0.26);
+}
+
+.landingBenefitIcon svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.landingBenefitCard h3 {
+  margin: 5px 0 0;
+  color: #f4f2fb;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.landingBenefitCard p {
+  margin-top: 8px;
+  color: #b8c1d8;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.landingVisualCompare {
+  margin-top: 24px;
+  border: 1px solid rgba(75, 96, 150, 0.5);
+  border-radius: 17px;
+  background: linear-gradient(155deg, rgba(11, 21, 43, 0.92), rgba(6, 12, 27, 0.95));
+  padding: 28px 26px 22px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.22);
+}
+
+.landingVisualHeading {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.landingVisualHeading h3 {
+  margin: 0;
+  color: #e9edf8;
+  font-size: clamp(22px, 2.5vw, 30px);
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+}
+
+.landingVisualGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+  gap: 24px;
+}
+
+.landingVisualColumn {
+  min-width: 0;
+}
+
+.landingVisualColumn + .landingVisualColumn {
+  border-left: 1px solid rgba(78, 95, 139, 0.34);
+  padding-left: 24px;
+}
+
+.landingVisualColumn > header {
+  min-height: 57px;
+  text-align: center;
+}
+
+.landingVisualColumn h4 {
+  margin: 0;
+  color: #e9edf8;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.landingVisualColumn header p {
+  margin-top: 4px;
+  color: #aeb8d0;
+  font-size: 13px;
+}
+
+.landingRobloxPreview,
+.landingHeatmapPreview {
+  overflow: hidden;
+  border: 1px solid rgba(78, 96, 144, 0.44);
+  border-radius: 12px;
+  background: #080f1d;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22);
+}
+
+.landingRobloxPreview {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  aspect-ratio: 16 / 9;
+  padding: 15px;
+}
+
+.landingPreviewBreadcrumb {
+  color: #7986a5;
+  font-size: 10px;
+}
+
+.landingPreviewBreadcrumb span {
+  margin: 0 5px;
+  color: #4d5d7f;
+}
+
+.landingEventSummary,
+.landingChartCard {
+  border: 1px solid rgba(75, 91, 131, 0.36);
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgba(18, 26, 43, 0.96), rgba(10, 17, 30, 0.98));
+}
+
+.landingEventSummary {
+  display: grid;
+  gap: 1px;
+  margin-top: 8px;
+  padding: 10px 12px;
+}
+
+.landingEventSummary span {
+  color: #ced5e8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.landingEventSummary strong {
+  margin-top: 4px;
+  color: #f0f2f8;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.landingEventSummary small {
+  color: #7e8ba8;
+  font-size: 9px;
+}
+
+.landingChartCard {
+  min-height: 0;
+  margin-top: 9px;
+  padding: 9px 12px 5px;
+}
+
+.landingChartCard > span {
+  display: block;
+  color: #9ca8c1;
+  font-size: 9px;
+}
+
+.landingChartCard svg {
+  display: block;
+  width: 100%;
+  height: calc(100% - 12px);
+  min-height: 68px;
+  overflow: visible;
+}
+
+.landingChartCard .chartGrid {
+  fill: none;
+  stroke: rgba(84, 101, 141, 0.24);
+  stroke-width: 1;
+}
+
+.landingChartCard .chartLine {
+  fill: none;
+  stroke: #9656ee;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px rgba(150, 86, 238, 0.42));
+}
+
+.landingChartCard text {
+  fill: #6f7c99;
+  font-size: 8px;
+}
+
+.landingHeatmapPreview {
+  aspect-ratio: 16 / 9;
+}
+
+.landingHeatmapPreview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landingVisualSummary {
+  max-width: 840px;
+  margin: 18px auto 0;
+  color: #bec7dc;
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: center;
 }
 
 .landingFeatureTableBox {
-  width: min(920px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 24px auto 0;
   overflow: hidden;
   border: 1px solid rgba(80, 101, 158, 0.5);
-  border-radius: 15px;
-  background: rgba(7, 14, 30, 0.9);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  border-radius: 16px;
+  background: rgba(7, 14, 30, 0.94);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
 }
 
 .landingFeatureTable {
@@ -8265,17 +8535,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingFeatureTable .robloxFeatureColumn {
-  width: 150px;
+  width: 265px;
 }
 
 .landingFeatureTable .roAnalyticsFeatureColumn {
-  width: 180px;
+  width: 265px;
 }
 
 .landingFeatureTable th,
 .landingFeatureTable td {
   border-bottom: 1px solid rgba(72, 91, 143, 0.28);
-  padding: 16px 22px;
+  padding: 14px 22px;
 }
 
 .landingFeatureTable thead {
@@ -8283,10 +8553,13 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingFeatureTable thead th {
-  height: 76px;
+  height: 64px;
   color: #c4cce0;
-  font-size: 15px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
   text-align: center;
+  text-transform: uppercase;
 }
 
 .landingFeatureTable thead th:first-child {
@@ -8306,13 +8579,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .landingFeatureTable thead th:last-child {
   position: relative;
   background: rgba(127, 63, 245, 0.13);
-  color: #e5d9ff;
-  font-size: 16px;
-  box-shadow: inset 0 3px 0 #9853ff;
+  color: #bd8bff;
+  font-size: 13px;
+  box-shadow: inset 0 2px 0 #9853ff;
+}
+
+.landingTableHeaderShort {
+  display: none;
 }
 
 .landingFeatureTable tbody tr:nth-child(even) {
-  background: rgba(20, 31, 58, 0.5);
+  background: rgba(20, 31, 58, 0.36);
 }
 
 .landingFeatureTable tbody tr:last-child > * {
@@ -8320,6 +8597,9 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingFeatureTable tbody th {
+  display: flex;
+  align-items: center;
+  gap: 15px;
   color: #d7deef;
   font-size: 14px;
   font-weight: 800;
@@ -8328,7 +8608,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingFeatureTable tbody td {
-  height: 64px;
+  height: 58px;
   text-align: center;
   vertical-align: middle;
 }
@@ -8340,10 +8620,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .landingFeatureMark {
   display: inline-grid;
   place-items: center;
-  width: 29px;
-  height: 29px;
+  width: 25px;
+  height: 25px;
   border-radius: 999px;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 900;
   line-height: 1;
 }
@@ -8366,13 +8646,63 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   color: #b87686;
 }
 
+.landingFeatureIcon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: #a98aff;
+}
+
+.landingFeatureIcon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.landingFeatureTag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 12px;
+  border: 1px solid rgba(150, 82, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(119, 58, 225, 0.14);
+  padding: 4px 10px;
+  color: #b989ff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 .landingFeatureNote {
-  max-width: 760px;
-  margin: 18px auto 0;
-  color: #8491af;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: 820px;
+  margin: 24px auto 0;
+  color: #929eba;
+  font-size: 13px;
   line-height: 1.55;
   text-align: center;
+}
+
+.landingFeatureNote svg {
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: #9c5cff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .landingFinalCta {
@@ -8427,6 +8757,36 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .howItWorksStep {
     min-height: 320px;
   }
+
+  .landingBenefitCard {
+    gap: 13px;
+    padding: 21px;
+  }
+
+  .landingFeatureTable .robloxFeatureColumn,
+  .landingFeatureTable .roAnalyticsFeatureColumn {
+    width: 220px;
+  }
+}
+
+@media (max-width: 900px) {
+  .landingVisualGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landingVisualColumn + .landingVisualColumn {
+    margin-top: 5px;
+    border-top: 1px solid rgba(78, 95, 139, 0.34);
+    border-left: 0;
+    padding-top: 22px;
+    padding-left: 0;
+  }
+
+  .landingRobloxPreview,
+  .landingHeatmapPreview {
+    width: min(680px, 100%);
+    margin-inline: auto;
+  }
 }
 
 @media (max-width: 760px) {
@@ -8458,6 +8818,27 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     padding: 58px 0;
   }
 
+  .landingWhyHeading h2 {
+    font-size: clamp(34px, 7vw, 46px);
+  }
+
+  .landingBenefitGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landingBenefitCard {
+    min-height: 0;
+  }
+
+  .landingBenefitCard::after {
+    left: 77px;
+    bottom: 17px;
+  }
+
+  .landingVisualCompare {
+    padding: 24px 18px 20px;
+  }
+
   .landingFeatureTable .robloxFeatureColumn {
     width: 82px;
   }
@@ -8469,6 +8850,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   .landingFeatureTable th,
   .landingFeatureTable td {
     padding-inline: 16px;
+  }
+
+  .landingFeatureTag {
+    display: none;
   }
 
   .landingFinalCta {
@@ -8564,6 +8949,19 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     font-size: 31px;
   }
 
+  .landingWhyHeading p {
+    font-size: 15px;
+  }
+
+  .landingVisualCompare {
+    padding: 21px 10px 17px;
+  }
+
+  .landingVisualSummary {
+    padding-inline: 7px;
+    font-size: 13px;
+  }
+
   .landingFeatureTable .robloxFeatureColumn {
     width: 64px;
   }
@@ -8591,8 +8989,24 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     font-size: 11px;
   }
 
+  .landingTableHeaderFull {
+    display: none;
+  }
+
+  .landingTableHeaderShort {
+    display: inline;
+  }
+
   .landingFeatureTable tbody th {
     font-size: 12px;
+  }
+
+  .landingFeatureIcon {
+    display: none;
+  }
+
+  .landingFeatureTable tbody th {
+    gap: 0;
   }
 
   .landingFeatureMark {
