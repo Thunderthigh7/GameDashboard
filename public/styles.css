@@ -8246,221 +8246,66 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   background: transparent;
 }
 
-.landingComparisonMatrix {
-  width: min(1040px, 100%);
-  margin: 0 auto;
-  overflow: hidden;
-  border: 1px solid rgba(81, 103, 164, 0.5);
-  border-radius: 16px;
-  background: rgba(7, 14, 30, 0.9);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.2);
-}
-
-.landingComparisonHeader,
-.landingComparisonRow {
+.landingQuickGrid {
   display: grid;
-  grid-template-columns: minmax(190px, 0.72fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-.landingComparisonHeader {
-  min-height: 118px;
-  border-bottom: 1px solid rgba(81, 103, 164, 0.45);
-  background: linear-gradient(180deg, rgba(17, 28, 55, 0.96), rgba(10, 18, 38, 0.94));
+.landingQuickGrid article {
+  border: 1px solid rgba(77, 97, 149, 0.42);
+  border-radius: 13px;
+  background: rgba(10, 18, 38, 0.76);
+  padding: 24px;
 }
 
-.landingComparisonHeaderSpacer {
-  display: flex;
-  align-items: end;
-  padding: 24px 22px;
-  color: #73809f;
+.landingQuickLabel {
+  color: #bd9cff;
   font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.landingComparisonPlan {
+.landingQuickGrid h3 {
+  margin: 9px 0 0;
+  color: #edf0fb;
+  font-size: 24px;
+}
+
+.landingQuickGrid ul {
+  display: grid;
+  gap: 11px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landingQuickGrid li {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: end;
-  min-width: 0;
-  border-left: 1px solid rgba(81, 103, 164, 0.4);
-  padding: 24px 26px;
+  color: #bbc5dd;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
-.landingComparisonPlan.featured {
-  background: linear-gradient(180deg, rgba(133, 68, 255, 0.15), rgba(91, 52, 198, 0.06));
-}
-
-.landingComparisonPlan.featured::before {
+.landingQuickGrid li::before {
   position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, #a15aff, #668dff);
+  left: 0;
+  top: 5px;
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid #66dca4;
+  border-bottom: 2px solid #66dca4;
+  transform: rotate(-45deg);
   content: "";
 }
 
-.landingComparisonPlan small {
-  color: #aab5d0;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  line-height: 1.35;
-  text-transform: uppercase;
-}
-
-.landingComparisonPlan.featured small {
-  color: #c8adff;
-}
-
-.landingComparisonPlan strong {
-  margin-top: 8px;
-  color: #f1f4ff;
-  font-size: 22px;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-}
-
-.landingComparisonBadge {
-  position: absolute;
-  right: 18px;
-  top: 14px;
-  display: inline-flex;
-  align-items: center;
-  min-height: 23px;
-  border: 1px solid rgba(190, 152, 255, 0.45);
-  border-radius: 999px;
-  background: rgba(132, 66, 255, 0.2);
-  color: #d9c6ff;
-  padding: 4px 9px;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.landingComparisonRow {
-  min-height: 102px;
-  border-bottom: 1px solid rgba(75, 96, 150, 0.3);
-}
-
-.landingComparisonRow:nth-child(odd) {
-  background: rgba(20, 31, 58, 0.52);
-}
-
-.landingComparisonRow:last-child {
-  border-bottom: 0;
-}
-
-.landingComparisonFeature,
-.landingComparisonCell {
-  min-width: 0;
-  padding: 20px 22px;
-}
-
-.landingComparisonFeature {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #d9e0f3;
-}
-
-.landingComparisonFeatureIcon {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(119, 139, 198, 0.35);
-  border-radius: 10px;
-  background: rgba(50, 68, 116, 0.22);
-  color: #8da8f7;
-}
-
-.landingComparisonFeatureIcon svg {
-  width: 19px;
-  height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.landingComparisonFeature strong {
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.landingComparisonCell {
-  display: grid;
-  grid-template-columns: 25px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  border-left: 1px solid rgba(81, 103, 164, 0.34);
-}
-
-.landingComparisonCell.featured {
-  background: rgba(119, 60, 237, 0.055);
-}
-
-.landingComparisonCell::before {
-  display: none;
-  content: attr(data-column);
-}
-
-.landingComparisonCheck {
-  display: grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
-  border: 1px solid rgba(91, 224, 158, 0.34);
-  border-radius: 999px;
-  background: rgba(61, 204, 134, 0.1);
-  color: #66e3a7;
-}
-
-.landingComparisonCell.featured .landingComparisonCheck {
-  border-color: rgba(165, 111, 255, 0.5);
-  background: rgba(132, 65, 255, 0.17);
-  color: #c6a8ff;
-}
-
-.landingComparisonCheck svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.landingComparisonCell > div {
-  display: grid;
-  gap: 4px;
-}
-
-.landingComparisonCell strong {
-  color: #e6eaf7;
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.landingComparisonCell.featured strong {
-  color: #f1ebff;
-}
-
-.landingComparisonCell small {
-  color: #97a4c1;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.landingComparisonCell.featured small {
-  color: #b9acd8;
+.landingQuickGrid code {
+  color: #b8a4f4;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 .landingFinalCta {
@@ -8546,56 +8391,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     padding: 58px 0;
   }
 
-  .landingComparisonMatrix {
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .landingComparisonHeader {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-height: 108px;
-    overflow: hidden;
-    border: 1px solid rgba(81, 103, 164, 0.5);
-    border-radius: 13px;
-  }
-
-  .landingComparisonHeaderSpacer {
-    display: none;
-  }
-
-  .landingComparisonPlan:first-of-type {
-    border-left: 0;
-  }
-
-  .landingComparisonRow {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-top: 12px;
-    overflow: hidden;
-    border: 1px solid rgba(75, 96, 150, 0.38);
-    border-radius: 13px;
-    background: rgba(10, 18, 38, 0.88);
-  }
-
-  .landingComparisonRow:nth-child(odd) {
-    background: rgba(16, 27, 52, 0.88);
-  }
-
-  .landingComparisonFeature {
-    grid-column: 1 / -1;
-    border-bottom: 1px solid rgba(75, 96, 150, 0.34);
-    padding: 15px 18px;
-  }
-
-  .landingComparisonCell {
-    border-left: 0;
-    padding: 18px;
-  }
-
-  .landingComparisonCell.featured {
-    border-left: 1px solid rgba(81, 103, 164, 0.34);
+  .landingQuickGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .landingFinalCta {
@@ -8691,39 +8488,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     font-size: 31px;
   }
 
-  .landingComparisonHeader {
-    display: none;
-  }
-
-  .landingComparisonRow {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .landingComparisonFeature {
-    grid-column: auto;
-  }
-
-  .landingComparisonCell {
-    padding: 17px 18px;
-  }
-
-  .landingComparisonCell.featured {
-    border-top: 1px solid rgba(81, 103, 164, 0.34);
-    border-left: 0;
-  }
-
-  .landingComparisonCell::before {
-    display: block;
-    grid-column: 1 / -1;
-    color: #8794b3;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  .landingComparisonCell.featured::before {
-    color: #bea3fa;
+  .landingQuickGrid article {
+    padding: 20px;
   }
 
   .landingFinalCta {
