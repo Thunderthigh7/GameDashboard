@@ -1,6 +1,6 @@
 const accountBox = document.querySelector("#accountBox");
 const loginPanel = document.querySelector("#loginPanel");
-const robloxLoginButton = document.querySelector("#robloxLoginButton");
+const robloxLoginButtons = document.querySelectorAll("[data-roblox-login]");
 const loginStatus = document.querySelector("#loginStatus");
 const authFormTitle = document.querySelector("#authFormTitle");
 const authFormSubtitle = document.querySelector("#authFormSubtitle");
@@ -203,7 +203,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260720-4";
+const DASHBOARD_ASSET_VERSION = "20260720-6";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
@@ -303,9 +303,9 @@ function loadHeatmapModule() {
 }
 
 function bindEvents() {
-  robloxLoginButton?.addEventListener("click", () => {
+  for (const button of robloxLoginButtons) button.addEventListener("click", () => {
     if (loginStatus) loginStatus.textContent = "Opening Roblox...";
-    robloxLoginButton.disabled = true;
+    for (const loginButton of robloxLoginButtons) loginButton.disabled = true;
     window.location.href = "/api/auth/roblox/start";
   });
 
