@@ -8367,9 +8367,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   line-height: 1.18;
 }
 
+.landingVisualIntro {
+  max-width: 700px;
+  margin: 10px auto 0;
+  color: #aeb8d0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .landingVisualGrid {
   display: grid;
-  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
 }
 
@@ -8400,8 +8408,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   font-size: 13px;
 }
 
-.landingRobloxPreview,
-.landingHeatmapPreview {
+.landingComparisonPreview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   border: 1px solid rgba(78, 96, 144, 0.44);
   border-radius: 12px;
@@ -8409,104 +8419,11 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22);
 }
 
-.landingRobloxPreview {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  aspect-ratio: 16 / 9;
-  padding: 15px;
-}
-
-.landingPreviewBreadcrumb {
-  color: #7986a5;
-  font-size: 10px;
-}
-
-.landingPreviewBreadcrumb span {
-  margin: 0 5px;
-  color: #4d5d7f;
-}
-
-.landingEventSummary,
-.landingChartCard {
-  border: 1px solid rgba(75, 91, 131, 0.36);
-  border-radius: 9px;
-  background: linear-gradient(145deg, rgba(18, 26, 43, 0.96), rgba(10, 17, 30, 0.98));
-}
-
-.landingEventSummary {
-  display: grid;
-  gap: 1px;
-  margin-top: 8px;
-  padding: 10px 12px;
-}
-
-.landingEventSummary span {
-  color: #ced5e8;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.landingEventSummary strong {
-  margin-top: 4px;
-  color: #f0f2f8;
-  font-size: 19px;
-  line-height: 1;
-}
-
-.landingEventSummary small {
-  color: #7e8ba8;
-  font-size: 9px;
-}
-
-.landingChartCard {
-  min-height: 0;
-  margin-top: 9px;
-  padding: 9px 12px 5px;
-}
-
-.landingChartCard > span {
-  display: block;
-  color: #9ca8c1;
-  font-size: 9px;
-}
-
-.landingChartCard svg {
-  display: block;
-  width: 100%;
-  height: calc(100% - 12px);
-  min-height: 68px;
-  overflow: visible;
-}
-
-.landingChartCard .chartGrid {
-  fill: none;
-  stroke: rgba(84, 101, 141, 0.24);
-  stroke-width: 1;
-}
-
-.landingChartCard .chartLine {
-  fill: none;
-  stroke: #9656ee;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 5px rgba(150, 86, 238, 0.42));
-}
-
-.landingChartCard text {
-  fill: #6f7c99;
-  font-size: 8px;
-}
-
-.landingHeatmapPreview {
-  aspect-ratio: 16 / 9;
-}
-
-.landingHeatmapPreview img {
+.landingComparisonPreview img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .landingVisualSummary {
@@ -8516,6 +8433,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   font-size: 14px;
   line-height: 1.55;
   text-align: center;
+}
+
+.landingVisualSummary strong {
+  color: #e7ddfb;
 }
 
 .landingFeatureTableBox {
@@ -8766,8 +8687,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     padding-left: 0;
   }
 
-  .landingRobloxPreview,
-  .landingHeatmapPreview {
+  .landingComparisonPreview {
     width: min(680px, 100%);
     margin-inline: auto;
   }
