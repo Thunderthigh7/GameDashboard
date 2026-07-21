@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260721-1">
+    <link rel="stylesheet" href="/styles.css?v=20260721-2">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -217,7 +217,7 @@
 
         <section class="notice error" id="authError" hidden></section>
 
-        <section class="loginPanel landingPage panel" id="loginPanel" hidden>
+        <section class="loginPanel landingPage" id="loginPanel" hidden>
           <header class="landingNav">
             <div class="brand authBrand landingBrand">
               <div class="brandMark" aria-hidden="true"></div>
@@ -234,9 +234,9 @@
           </header>
 
           <section class="landingSimpleHero">
-            <span class="landingEyebrow">Roblox analytics, clearly explained</span>
+            <span class="landingEyebrow">Analytics for Roblox creators</span>
             <h1>Connect your game.<br>See what players do.</h1>
-            <p>Install one server-side service. RoAnalytics turns live player activity into heatmaps, events, funnels, release comparisons, chat insights, and AI reports.</p>
+            <p>Sign in with the account that owns your game. Install one server service. Start seeing live player behavior.</p>
             <div class="landingHeroActions">
               <button class="button landingPrimaryAction" type="button" data-roblox-login>
                 <span class="robloxButtonMark" aria-hidden="true"></span>
@@ -245,10 +245,15 @@
               <a class="button secondary" href="#howItWorks">View the 4 steps</a>
             </div>
             <p class="status landingLoginStatus" id="loginStatus"></p>
-            <div class="landingHeroNotes" aria-label="Setup requirements">
-              <span>Use the game owner account</span>
-              <span>No Roblox password shared</span>
-              <span>Server-side installation</span>
+            <div class="officialOAuthCallout" aria-label="Official Roblox OAuth sign-in">
+              <div class="officialOAuthIcon" aria-hidden="true">
+                <span class="robloxButtonMark"></span>
+              </div>
+              <div>
+                <strong>Official Roblox OAuth</strong>
+                <p>Roblox handles sign-in. RoAnalytics never asks for your Roblox password or private account details.</p>
+              </div>
+              <span class="officialOAuthPrivacy">We only confirm the account and that it owns the game.</span>
             </div>
           </section>
 
@@ -256,7 +261,6 @@
             <div class="landingSectionHeading">
               <span class="landingEyebrow">How it works</span>
               <h2>Set up RoAnalytics in four steps.</h2>
-              <p>Use the Roblox account that owns the game, then follow these steps in order.</p>
             </div>
 
             <div class="howItWorksSteps">
@@ -266,8 +270,8 @@
                   <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>
                 </div>
                 <h3>Log in through Roblox</h3>
-                <p>Click <strong>Continue with Roblox</strong>. Use the account that owns the public game or owns the group behind it.</p>
-                <span class="howStepMeta">Roblox OAuth. No RoAnalytics password.</span>
+                <p>Continue with Roblox using the account that owns the game or group.</p>
+                <span class="howStepMeta">Official Roblox OAuth</span>
               </article>
 
               <article class="howItWorksStep">
@@ -276,8 +280,8 @@
                   <svg viewBox="0 0 24 24"><path d="M5 7.5 12 4l7 3.5v9L12 20l-7-3.5v-9Z"/><path d="m5 7.5 7 3.5 7-3.5M12 11v9"/></svg>
                 </div>
                 <h3>Choose your experience</h3>
-                <p>Open <strong>Connect Universe</strong> and pick your game. RoAnalytics verifies ownership and creates a secret for that universe.</p>
-                <span class="howStepMeta">Public experiences only. Multiple games supported.</span>
+                <p>Pick your game. RoAnalytics verifies ownership and creates its secret.</p>
+                <span class="howStepMeta">Public games · Multiple games supported</span>
               </article>
 
               <article class="howItWorksStep">
@@ -286,8 +290,8 @@
                   <svg viewBox="0 0 24 24"><path d="m8 9-4 3 4 3M16 9l4 3-4 3M14 5l-4 14"/></svg>
                 </div>
                 <h3>Install the server service</h3>
-                <p>Add <strong>PresenceService</strong> under ServerScriptService. Paste the one-time secret into <strong>Config/Settings.lua</strong>.</p>
-                <span class="howStepMeta">Install with Studio or Rojo. Keep it server-side.</span>
+                <p>Add <strong>PresenceService</strong> to ServerScriptService. Paste the secret into <strong>Config/Settings.lua</strong>.</p>
+                <span class="howStepMeta">Studio or Rojo · Server-side only</span>
               </article>
 
               <article class="howItWorksStep">
@@ -296,8 +300,8 @@
                   <svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 14 0 7 7 0 0 0-14 0Z"/><path d="m10 8 6 4-6 4V8Z"/></svg>
                 </div>
                 <h3>Publish and play</h3>
-                <p>Join a published server. Player activity begins appearing in your dashboard automatically.</p>
-                <span class="howStepMeta">Live heartbeats are sent every 20 seconds.</span>
+                <p>Join the published game. Live analytics appear automatically.</p>
+                <span class="howStepMeta">Heartbeat every 20 seconds</span>
               </article>
             </div>
           </section>
@@ -313,34 +317,21 @@
                 <h3>Tracked automatically</h3>
                 <ul>
                   <li>Movement, deaths, leaves, and chat</li>
-                  <li>Sessions, servers, places, and PlaceVersions</li>
-                  <li>Custom events and properties with <code>Logger.Log</code></li>
-                  <li>Optional map snapshot from the Studio plugin</li>
+                  <li>Sessions and PlaceVersions</li>
+                  <li>Custom events with <code>Logger.Log</code></li>
+                  <li>Optional Studio map snapshot</li>
                 </ul>
               </article>
               <article>
                 <span class="landingQuickLabel">In RoAnalytics</span>
                 <h3>Ready to explore</h3>
                 <ul>
-                  <li>Map heatmaps and event locations</li>
-                  <li>Event timelines, properties, and funnels</li>
-                  <li>Before-and-after release comparisons</li>
-                  <li>Chat insights and saved AI reports</li>
+                  <li>Heatmaps and event locations</li>
+                  <li>Event breakdowns and funnels</li>
+                  <li>Release comparisons</li>
+                  <li>Chat and AI insights</li>
                 </ul>
               </article>
-            </div>
-          </section>
-
-          <section class="landingEssentials">
-            <div class="landingSectionHeading compact">
-              <span class="landingEyebrow">Before you connect</span>
-              <h2>Four things to know.</h2>
-            </div>
-            <div class="landingEssentialGrid">
-              <article><strong>Account</strong><p>Use the account that owns the game or owns its Roblox group.</p></article>
-              <article><strong>Installation</strong><p>OAuth does not add code. You install PresenceService through Studio or Rojo.</p></article>
-              <article><strong>Secret</strong><p>The game secret is shown once. You can regenerate it later.</p></article>
-              <article><strong>Map</strong><p>Upload a Studio map snapshot when you want activity placed on your world.</p></article>
             </div>
           </section>
 
@@ -348,7 +339,7 @@
             <div>
               <span class="landingEyebrow">Start here</span>
               <h2>Log in with the account that owns your game.</h2>
-              <p>RoAnalytics will show your public experiences and guide you through the connection.</p>
+              <p>We will verify ownership and guide you through setup.</p>
             </div>
             <button class="button landingFinalButton" type="button" data-roblox-login>
               <span class="robloxButtonMark" aria-hidden="true"></span>
@@ -1038,6 +1029,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260721-1"></script>
+    <script defer src="/app.js?v=20260721-2"></script>
   </body>
 </html>
