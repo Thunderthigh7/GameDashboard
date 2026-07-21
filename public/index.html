@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260721-3">
+    <link rel="stylesheet" href="/styles.css?v=20260721-4">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -261,60 +261,31 @@
               <h2>See what RoAnalytics adds to Roblox events.</h2>
               <p>Roblox covers basic event and funnel reporting. RoAnalytics adds the tools to explore, rebuild, map, and compare them without changing your game every time.</p>
             </div>
-            <div class="landingFeatureTable" role="table" aria-label="Roblox and RoAnalytics event and funnel feature comparison">
-              <div class="landingFeatureHeader" role="row">
-                <span role="columnheader">Event and funnel features</span>
-                <strong role="columnheader">Roblox</strong>
-                <strong class="roAnalyticsColumn" role="columnheader">RoAnalytics</strong>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Custom event tracking</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Funnel reports</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Live event updates</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark no" role="img" aria-label="Not included"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Build funnels from saved events</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark no" role="img" aria-label="Not included"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Edit funnel order without republishing</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark no" role="img" aria-label="Not included"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Explore nested event properties</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark no" role="img" aria-label="Not included"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">Compare exact PlaceVersions</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark no" role="img" aria-label="Not included"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
-
-              <div class="landingFeatureRow" role="row">
-                <strong role="rowheader">See events on your game map</strong>
-                <div class="landingFeatureCell" role="cell"><span class="landingFeatureMark no" role="img" aria-label="Not included"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></span></div>
-                <div class="landingFeatureCell roAnalyticsColumn" role="cell"><span class="landingFeatureMark yes" role="img" aria-label="Included"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div>
-              </div>
+            <div class="landingFeatureTableBox">
+              <table class="landingFeatureTable" aria-label="Roblox and RoAnalytics event and funnel feature comparison">
+                <colgroup>
+                  <col>
+                  <col class="robloxFeatureColumn">
+                  <col class="roAnalyticsFeatureColumn">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">Event and funnel features</th>
+                    <th scope="col">Roblox</th>
+                    <th scope="col">RoAnalytics</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">Custom event tracking</th><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">Funnel reports</th><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">Live event updates</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">Build funnels from saved events</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">Edit funnel order without republishing</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">Explore nested event properties</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">Compare exact PlaceVersions</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                  <tr><th scope="row">See events on your game map</th><td><span class="landingFeatureMark no" aria-label="Not included">&times;</span></td><td><span class="landingFeatureMark yes" aria-label="Included">&#10003;</span></td></tr>
+                </tbody>
+              </table>
             </div>
             <p class="landingFeatureNote">Focused on events and funnels. RoAnalytics works alongside Roblox's retention, acquisition, and monetization analytics.</p>
           </section>

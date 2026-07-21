@@ -8248,7 +8248,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   background: transparent;
 }
 
-.landingFeatureTable {
+.landingFeatureTableBox {
   width: min(920px, 100%);
   margin: 0 auto;
   overflow: hidden;
@@ -8258,104 +8258,94 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
 }
 
-.landingFeatureHeader,
-.landingFeatureRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px 180px;
+.landingFeatureTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.landingFeatureHeader {
-  min-height: 76px;
-  border-bottom: 1px solid rgba(80, 101, 158, 0.46);
+.landingFeatureTable .robloxFeatureColumn {
+  width: 150px;
+}
+
+.landingFeatureTable .roAnalyticsFeatureColumn {
+  width: 180px;
+}
+
+.landingFeatureTable th,
+.landingFeatureTable td {
+  border-bottom: 1px solid rgba(72, 91, 143, 0.28);
+  padding: 16px 22px;
+}
+
+.landingFeatureTable thead {
   background: linear-gradient(180deg, rgba(18, 29, 57, 0.96), rgba(11, 20, 41, 0.95));
 }
 
-.landingFeatureHeader > * {
-  display: flex;
-  align-items: center;
-  padding: 18px 22px;
+.landingFeatureTable thead th {
+  height: 76px;
+  color: #c4cce0;
+  font-size: 15px;
+  text-align: center;
 }
 
-.landingFeatureHeader > span {
+.landingFeatureTable thead th:first-child {
   color: #8996b5;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.13em;
+  text-align: left;
   text-transform: uppercase;
 }
 
-.landingFeatureHeader > strong {
-  justify-content: center;
+.landingFeatureTable thead th:nth-child(n + 2),
+.landingFeatureTable tbody td {
   border-left: 1px solid rgba(80, 101, 158, 0.4);
-  color: #c4cce0;
-  font-size: 15px;
 }
 
-.landingFeatureHeader > .roAnalyticsColumn {
+.landingFeatureTable thead th:last-child {
   position: relative;
   background: rgba(127, 63, 245, 0.13);
   color: #e5d9ff;
   font-size: 16px;
+  box-shadow: inset 0 3px 0 #9853ff;
 }
 
-.landingFeatureHeader > .roAnalyticsColumn::before {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, #a85cff, #668dff);
-  content: "";
-}
-
-.landingFeatureRow {
-  min-height: 64px;
-  border-bottom: 1px solid rgba(72, 91, 143, 0.28);
-}
-
-.landingFeatureRow:nth-child(odd) {
+.landingFeatureTable tbody tr:nth-child(even) {
   background: rgba(20, 31, 58, 0.5);
 }
 
-.landingFeatureRow:last-child {
+.landingFeatureTable tbody tr:last-child > * {
   border-bottom: 0;
 }
 
-.landingFeatureRow > strong {
-  display: flex;
-  align-items: center;
-  min-width: 0;
+.landingFeatureTable tbody th {
   color: #d7deef;
-  padding: 16px 22px;
   font-size: 14px;
+  font-weight: 800;
   line-height: 1.4;
+  text-align: left;
 }
 
-.landingFeatureCell {
-  display: grid;
-  place-items: center;
-  border-left: 1px solid rgba(80, 101, 158, 0.34);
-  padding: 12px;
+.landingFeatureTable tbody td {
+  height: 64px;
+  text-align: center;
+  vertical-align: middle;
 }
 
-.landingFeatureCell.roAnalyticsColumn {
+.landingFeatureTable tbody td:last-child {
   background: rgba(119, 59, 232, 0.05);
 }
 
 .landingFeatureMark {
-  display: grid;
+  display: inline-grid;
   place-items: center;
   width: 29px;
   height: 29px;
   border-radius: 999px;
-}
-
-.landingFeatureMark svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .landingFeatureMark.yes {
@@ -8364,7 +8354,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   color: #63e4a5;
 }
 
-.landingFeatureCell.roAnalyticsColumn .landingFeatureMark.yes {
+.landingFeatureTable td:last-child .landingFeatureMark.yes {
   border-color: rgba(169, 111, 255, 0.54);
   background: rgba(132, 65, 255, 0.2);
   color: #d0b5ff;
@@ -8468,13 +8458,16 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     padding: 58px 0;
   }
 
-  .landingFeatureHeader,
-  .landingFeatureRow {
-    grid-template-columns: minmax(0, 1fr) 82px 112px;
+  .landingFeatureTable .robloxFeatureColumn {
+    width: 82px;
   }
 
-  .landingFeatureHeader > *,
-  .landingFeatureRow > strong {
+  .landingFeatureTable .roAnalyticsFeatureColumn {
+    width: 112px;
+  }
+
+  .landingFeatureTable th,
+  .landingFeatureTable td {
     padding-inline: 16px;
   }
 
@@ -8571,31 +8564,34 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     font-size: 31px;
   }
 
-  .landingFeatureHeader,
-  .landingFeatureRow {
-    grid-template-columns: minmax(0, 1fr) 64px 92px;
+  .landingFeatureTable .robloxFeatureColumn {
+    width: 64px;
   }
 
-  .landingFeatureHeader {
-    min-height: 64px;
+  .landingFeatureTable .roAnalyticsFeatureColumn {
+    width: 92px;
   }
 
-  .landingFeatureHeader > *,
-  .landingFeatureRow > strong {
+  .landingFeatureTable th,
+  .landingFeatureTable td {
     padding-inline: 12px;
   }
 
-  .landingFeatureHeader > span {
+  .landingFeatureTable thead th {
+    height: 64px;
+    font-size: 11px;
+  }
+
+  .landingFeatureTable thead th:first-child {
     font-size: 9px;
     letter-spacing: 0.1em;
   }
 
-  .landingFeatureHeader > strong,
-  .landingFeatureHeader > .roAnalyticsColumn {
+  .landingFeatureTable thead th:last-child {
     font-size: 11px;
   }
 
-  .landingFeatureRow > strong {
+  .landingFeatureTable tbody th {
     font-size: 12px;
   }
 
