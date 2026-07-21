@@ -2,8 +2,6 @@ const accountBox = document.querySelector("#accountBox");
 const loginPanel = document.querySelector("#loginPanel");
 const robloxLoginButtons = document.querySelectorAll("[data-roblox-login]");
 const loginStatus = document.querySelector("#loginStatus");
-const authFormTitle = document.querySelector("#authFormTitle");
-const authFormSubtitle = document.querySelector("#authFormSubtitle");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const adminNavLink = document.querySelector("#adminNavLink");
@@ -203,7 +201,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260720-6";
+const DASHBOARD_ASSET_VERSION = "20260721-1";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;

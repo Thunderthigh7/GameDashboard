@@ -7893,7 +7893,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 /* Logged-out product landing page */
 .isLocked .dashboardMain {
   max-width: 1240px;
-  padding: 28px 24px 72px;
+  padding: 28px 24px 64px;
 }
 
 .loginPanel.landingPage {
@@ -7905,9 +7905,9 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   overflow: hidden;
   padding: 0;
   background:
-    radial-gradient(circle at 16% 8%, rgba(93, 63, 211, 0.2), transparent 30%),
-    radial-gradient(circle at 86% 15%, rgba(25, 164, 196, 0.12), transparent 26%),
-    linear-gradient(180deg, rgba(10, 16, 34, 0.96), rgba(5, 10, 23, 0.98));
+    radial-gradient(circle at 14% 4%, rgba(105, 66, 221, 0.18), transparent 28%),
+    radial-gradient(circle at 90% 6%, rgba(48, 120, 220, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(9, 15, 32, 0.98), rgba(5, 10, 22, 0.99));
 }
 
 .loginPanel.landingPage::before {
@@ -7915,10 +7915,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   z-index: -1;
   inset: 0;
   background-image:
-    linear-gradient(rgba(106, 123, 174, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(106, 123, 174, 0.035) 1px, transparent 1px);
+    linear-gradient(rgba(105, 123, 175, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(105, 123, 175, 0.035) 1px, transparent 1px);
   background-size: 54px 54px;
-  mask-image: linear-gradient(to bottom, black, transparent 42%);
+  mask-image: linear-gradient(to bottom, black, transparent 28%);
   pointer-events: none;
   content: "";
 }
@@ -7930,9 +7930,9 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  border-bottom: 1px solid rgba(80, 99, 150, 0.28);
+  border-bottom: 1px solid rgba(80, 99, 150, 0.3);
   padding: 18px 28px;
-  background: rgba(5, 10, 23, 0.58);
+  background: rgba(5, 10, 23, 0.64);
   backdrop-filter: blur(18px);
 }
 
@@ -7952,7 +7952,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   font-size: 13px;
   font-weight: 750;
   text-decoration: none;
-  transition: color 150ms ease;
 }
 
 .landingNavLinks > a:hover,
@@ -7968,13 +7967,11 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   color: #d9ccff;
 }
 
-.landingHero {
-  position: relative;
-  z-index: 1;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 390px);
-  gap: 56px;
-  min-height: 600px;
-  padding: 76px 52px 68px;
+.landingSimpleHero {
+  display: grid;
+  justify-items: center;
+  padding: 82px 52px 68px;
+  text-align: center;
 }
 
 .landingEyebrow {
@@ -8000,31 +7997,33 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   content: "";
 }
 
-.landingHero .authIntro {
-  gap: 20px;
-}
-
-.landingHero .authIntro h2 {
-  max-width: 690px;
-  font-size: clamp(48px, 5.2vw, 72px);
+.landingSimpleHero h1 {
+  max-width: 850px;
+  margin: 20px 0 0;
+  color: #f8f9ff;
+  font-size: clamp(48px, 6vw, 72px);
   letter-spacing: -0.055em;
-  line-height: 0.96;
+  line-height: 0.98;
 }
 
-.landingHero .authIntro > p {
-  max-width: 680px;
-  color: #a8b4d2;
-  font-size: 17px;
-  line-height: 1.68;
+.landingSimpleHero > p:not(.status) {
+  max-width: 720px;
+  margin-top: 20px;
+  color: #a5b1cf;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .landingHeroActions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
+  margin-top: 28px;
 }
 
 .landingHeroActions .button {
+  gap: 10px;
   min-height: 46px;
   border-radius: 9px;
   padding-inline: 20px;
@@ -8033,151 +8032,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .landingPrimaryAction {
   background: linear-gradient(135deg, #934eff, #6a32ec);
   box-shadow: 0 13px 34px rgba(105, 46, 231, 0.28);
-}
-
-.landingHero .authFeatureGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-  margin-top: 4px;
-}
-
-.landingHero .authFeatureGrid span {
-  position: relative;
-  border-color: rgba(90, 109, 160, 0.32);
-  background: rgba(8, 15, 32, 0.56);
-  padding: 11px 13px 11px 31px;
-  color: #c9d2e9;
-  font-size: 12px;
-}
-
-.landingHero .authFeatureGrid span::before {
-  position: absolute;
-  left: 13px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: linear-gradient(135deg, #a969ff, #568cff);
-  box-shadow: 0 0 10px rgba(145, 86, 255, 0.5);
-  transform: translateY(-50%) rotate(45deg);
-  content: "";
-}
-
-.landingAuthCard {
-  position: relative;
-  align-self: center;
-  overflow: hidden;
-  border: 1px solid rgba(107, 128, 185, 0.38);
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at 100% 0, rgba(114, 67, 235, 0.22), transparent 38%),
-    linear-gradient(155deg, rgba(17, 27, 53, 0.96), rgba(8, 15, 32, 0.98));
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  padding: 28px;
-}
-
-.landingAuthCard::after {
-  position: absolute;
-  right: -40px;
-  bottom: -52px;
-  width: 150px;
-  height: 150px;
-  border: 1px solid rgba(150, 105, 255, 0.14);
-  border-radius: 38px;
-  transform: rotate(24deg);
-  content: "";
-}
-
-.landingCardBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: max-content;
-  max-width: 100%;
-  border: 1px solid rgba(53, 208, 131, 0.25);
-  border-radius: 999px;
-  background: rgba(53, 208, 131, 0.08);
-  color: #83e9b6;
-  padding: 6px 9px;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.landingCardBadge i {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #35d083;
-  box-shadow: 0 0 0 4px rgba(53, 208, 131, 0.1);
-}
-
-.landingAuthCard h3 {
-  position: relative;
-  z-index: 1;
-  margin: 20px 0 0;
-  font-size: 26px;
-  letter-spacing: -0.025em;
-  line-height: 1.12;
-}
-
-.landingAuthCard > p {
-  position: relative;
-  z-index: 1;
-  margin-top: 10px;
-  line-height: 1.55;
-}
-
-.authTrustList {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 10px;
-  margin: 22px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.authTrustList li {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 9px;
-  color: #c2cbe2;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.authTrustList li > span {
-  position: relative;
-  width: 18px;
-  height: 18px;
-  border: 1px solid rgba(71, 211, 145, 0.34);
-  border-radius: 999px;
-  background: rgba(53, 208, 131, 0.1);
-}
-
-.authTrustList li > span::after {
-  position: absolute;
-  left: 5px;
-  top: 3px;
-  width: 5px;
-  height: 8px;
-  border-right: 2px solid #67dea3;
-  border-bottom: 2px solid #67dea3;
-  transform: rotate(45deg);
-  content: "";
-}
-
-.landingAuthCard .robloxLoginButton {
-  position: relative;
-  z-index: 1;
-  gap: 11px;
-  min-height: 48px;
-  margin-top: 24px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #984fff, #6930e8);
-  box-shadow: 0 15px 34px rgba(105, 48, 232, 0.28);
 }
 
 .robloxButtonMark {
@@ -8200,95 +8054,85 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   content: "";
 }
 
-.landingAuthFootnote {
+.landingLoginStatus {
+  min-height: 18px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.landingHeroNotes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.landingHeroNotes span {
   position: relative;
-  z-index: 1;
-  display: block;
-  margin-top: 13px;
-  color: #7f8aa9;
+  border: 1px solid rgba(75, 96, 149, 0.38);
+  border-radius: 999px;
+  background: rgba(8, 16, 34, 0.7);
+  color: #8f9dbd;
+  padding: 7px 11px 7px 26px;
   font-size: 10px;
-  line-height: 1.5;
-  text-align: center;
+  font-weight: 750;
 }
 
-.landingSignalStrip {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid rgba(80, 99, 150, 0.28);
-  border-bottom: 1px solid rgba(80, 99, 150, 0.28);
-  background: rgba(8, 14, 29, 0.78);
-  padding: 18px 52px;
-}
-
-.landingSignalStrip div {
-  display: grid;
-  gap: 3px;
-  text-align: center;
-}
-
-.landingSignalStrip strong {
-  color: #e8ecfb;
-  font-size: 12px;
-}
-
-.landingSignalStrip span {
-  color: #7885a5;
-  font-size: 10px;
-}
-
-.landingSignalStrip > i {
-  position: relative;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(112, 73, 226, 0.12), rgba(139, 91, 246, 0.8));
-}
-
-.landingSignalStrip > i::after {
+.landingHeroNotes span::before {
   position: absolute;
-  right: 0;
-  top: -3px;
+  left: 10px;
+  top: 50%;
   width: 7px;
   height: 7px;
-  border-top: 1px solid #9b70ff;
-  border-right: 1px solid #9b70ff;
-  transform: rotate(45deg);
+  border-radius: 999px;
+  background: #58d99f;
+  box-shadow: 0 0 0 3px rgba(53, 208, 131, 0.1);
+  transform: translateY(-50%);
   content: "";
 }
 
 .howItWorksSection,
-.landingCapabilities,
-.landingAnswers {
-  padding: 86px 52px;
+.landingQuickSection,
+.landingEssentials {
+  border-top: 1px solid rgba(80, 99, 150, 0.26);
+  padding: 76px 38px;
+}
+
+.howItWorksSection {
+  background: rgba(7, 13, 28, 0.45);
 }
 
 .landingSectionHeading {
   display: grid;
-  gap: 13px;
-  max-width: 760px;
-  margin-bottom: 38px;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto 34px;
+  text-align: center;
 }
 
 .landingSectionHeading.compact {
-  margin-bottom: 30px;
+  margin-bottom: 26px;
+}
+
+.landingSectionHeading .landingEyebrow {
+  justify-self: center;
 }
 
 .landingSectionHeading h2,
-.landingInstallCopy h2,
 .landingFinalCta h2 {
   margin: 0;
-  color: #f5f7ff;
-  font-size: clamp(32px, 4vw, 48px);
-  letter-spacing: -0.045em;
-  line-height: 1.05;
+  color: #f3f5ff;
+  font-size: clamp(30px, 3.7vw, 44px);
+  letter-spacing: -0.04em;
+  line-height: 1.08;
 }
 
-.landingSectionHeading > p,
-.landingInstallCopy > p,
+.landingSectionHeading p,
 .landingFinalCta p {
-  color: #96a3c3;
-  font-size: 15px;
-  line-height: 1.65;
+  color: #8f9cbc;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .howItWorksSteps {
@@ -8302,12 +8146,12 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 344px;
+  min-height: 360px;
   overflow: hidden;
-  border: 1px solid rgba(77, 96, 146, 0.4);
+  border: 1px solid rgba(77, 96, 146, 0.48);
   border-radius: 13px;
-  background: linear-gradient(160deg, rgba(16, 26, 51, 0.84), rgba(7, 14, 30, 0.88));
-  padding: 22px;
+  background: linear-gradient(160deg, rgba(15, 25, 50, 0.9), rgba(7, 14, 30, 0.94));
+  padding: 24px;
 }
 
 .howItWorksStep::before {
@@ -8323,27 +8167,25 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .howStepNumber {
   position: absolute;
   right: 18px;
-  top: 18px;
+  top: 17px;
   color: rgba(160, 172, 209, 0.2);
   font-size: 34px;
   font-weight: 900;
   letter-spacing: -0.06em;
 }
 
-.howStepIcon,
-.capabilityIcon {
+.howStepIcon {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(143, 88, 255, 0.32);
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(143, 88, 255, 0.4);
   border-radius: 11px;
-  background: linear-gradient(145deg, rgba(132, 72, 243, 0.22), rgba(64, 82, 174, 0.12));
-  color: #b697ff;
+  background: rgba(124, 60, 255, 0.14);
+  color: #ba9bff;
 }
 
-.howStepIcon svg,
-.capabilityIcon svg {
+.howStepIcon svg {
   width: 21px;
   height: 21px;
   fill: none;
@@ -8353,409 +8195,188 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   stroke-linejoin: round;
 }
 
-.howItWorksStep h3,
-.landingCapabilityGrid h3,
-.landingAnswerGrid h3 {
-  margin: 22px 0 0;
-  color: #eef1fd;
+.howItWorksStep h3 {
+  margin: 24px 0 0;
+  color: #f0f2fc;
   font-size: 16px;
   line-height: 1.25;
 }
 
 .howItWorksStep p {
-  margin-top: 10px;
-  color: #99a5c1;
+  margin-top: 11px;
+  color: #9ba7c4;
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 1.68;
 }
 
 .howItWorksStep p strong {
-  color: #dce3f7;
+  color: #dfe5f6;
 }
 
 .howStepMeta {
   margin-top: auto;
-  border-top: 1px solid rgba(80, 99, 150, 0.25);
-  padding-top: 15px;
-  color: #8675bb;
+  border-top: 1px solid rgba(80, 99, 150, 0.3);
+  padding-top: 16px;
+  color: #a285db;
   font-size: 10px;
   font-weight: 800;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
-.landingInstallSection {
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
-  gap: 54px;
-  align-items: center;
-  border-top: 1px solid rgba(80, 99, 150, 0.24);
-  border-bottom: 1px solid rgba(80, 99, 150, 0.24);
+.landingQuickSection {
   background:
-    radial-gradient(circle at 90% 30%, rgba(58, 99, 206, 0.12), transparent 34%),
-    rgba(5, 11, 25, 0.78);
-  padding: 82px 52px;
+    radial-gradient(circle at 50% 0, rgba(77, 58, 181, 0.08), transparent 32%),
+    rgba(5, 11, 24, 0.6);
 }
 
-.landingInstallCopy {
+.landingQuickGrid {
   display: grid;
-  gap: 15px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-.landingInstallPath {
-  display: grid;
-  gap: 7px;
-  margin-top: 8px;
-  border: 1px solid rgba(79, 100, 154, 0.4);
-  border-radius: 10px;
-  background: rgba(4, 10, 23, 0.72);
-  padding: 14px 16px;
+.landingQuickGrid article {
+  border: 1px solid rgba(77, 97, 149, 0.42);
+  border-radius: 13px;
+  background: rgba(10, 18, 38, 0.76);
+  padding: 24px;
 }
 
-.landingInstallPath > span {
-  color: #7785a5;
+.landingQuickLabel {
+  color: #9d7fe4;
   font-size: 9px;
-  font-weight: 850;
+  font-weight: 900;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.landingInstallPath code,
-.landingInstallChecklist code,
-.landingAnswerGrid code {
-  color: #b9a4fb;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  overflow-wrap: anywhere;
+.landingQuickGrid h3 {
+  margin: 9px 0 0;
+  color: #edf0fb;
+  font-size: 20px;
 }
 
-.landingInstallPath code {
-  font-size: 12px;
-}
-
-.landingInstallChecklist {
+.landingQuickGrid ul {
   display: grid;
-  gap: 13px;
-  margin: 8px 0 0;
+  gap: 11px;
+  margin: 20px 0 0;
   padding: 0;
   list-style: none;
 }
 
-.landingInstallChecklist li {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 11px;
-  align-items: start;
+.landingQuickGrid li {
+  position: relative;
+  color: #9ba7c3;
+  padding-left: 22px;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
-.landingInstallChecklist li > span {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(140, 88, 243, 0.38);
-  border-radius: 9px;
-  background: rgba(124, 60, 255, 0.12);
-  color: #b49bfa;
-  font-size: 11px;
-  font-weight: 900;
+.landingQuickGrid li::before {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid #66dca4;
+  border-bottom: 2px solid #66dca4;
+  transform: rotate(-45deg);
+  content: "";
 }
 
-.landingInstallChecklist strong {
+.landingQuickGrid code {
+  color: #b8a4f4;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.landingEssentials {
+  padding-top: 68px;
+  padding-bottom: 68px;
+}
+
+.landingEssentialGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.landingEssentialGrid article {
+  border: 1px solid rgba(75, 95, 146, 0.36);
+  border-radius: 11px;
+  background: rgba(9, 17, 35, 0.62);
+  padding: 18px;
+}
+
+.landingEssentialGrid strong {
   display: block;
   color: #dfe4f5;
   font-size: 12px;
 }
 
-.landingInstallChecklist p {
-  margin-top: 3px;
-  color: #7f8ca9;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.landingFlowCard {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(90, 111, 166, 0.42);
-  border-radius: 16px;
-  background: linear-gradient(160deg, rgba(15, 25, 50, 0.96), rgba(5, 12, 27, 0.98));
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.32);
-  padding: 22px;
-}
-
-.landingFlowHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-  color: #8f9ab5;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.landingFlowHeader strong {
-  color: #53daa0;
-}
-
-.landingFlowNode {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  border: 1px solid rgba(79, 101, 156, 0.38);
-  border-radius: 11px;
-  background: rgba(8, 17, 36, 0.72);
-  padding: 14px;
-}
-
-.flowNodeIcon {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #8251f4, #466fe8);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 950;
-}
-
-.flowNodeIcon.robloxButtonMark {
-  display: block;
-  width: 27px;
-  height: 27px;
-  margin-left: 5px;
-  border-radius: 4px;
-}
-
-.flowNodeIcon.robloxButtonMark::after {
-  inset: 8px;
-  background: #111c38;
-}
-
-.landingFlowNode strong,
-.landingFlowNode small {
-  display: block;
-}
-
-.landingFlowNode strong {
-  color: #e7ebf8;
-  font-size: 12px;
-}
-
-.landingFlowNode small {
-  margin-top: 4px;
-  color: #7886a6;
-  font-size: 10px;
-}
-
-.landingFlowLine {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  height: 66px;
-}
-
-.landingFlowLine > span {
-  width: 1px;
-  height: 100%;
-  background: linear-gradient(#8d57fa, #4e82e8);
-}
-
-.landingFlowLine > em {
-  position: absolute;
-  top: 50%;
-  border: 1px solid rgba(96, 120, 181, 0.38);
-  border-radius: 999px;
-  background: #0b1530;
-  color: #8f9dbd;
-  padding: 5px 9px;
-  font-size: 8px;
-  font-style: normal;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  transform: translateY(-50%);
-}
-
-.landingFlowSignals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 14px;
-}
-
-.landingFlowSignals span {
-  border: 1px solid rgba(75, 96, 149, 0.34);
-  border-radius: 999px;
-  background: rgba(33, 52, 96, 0.28);
-  color: #8e9cbd;
-  padding: 5px 8px;
-  font-size: 8px;
-  font-weight: 750;
-}
-
-.landingFlowCard > p {
-  margin-top: 16px;
-  border-top: 1px solid rgba(78, 98, 149, 0.28);
-  padding-top: 14px;
-  color: #7d8aa8;
+.landingEssentialGrid p {
+  margin-top: 7px;
+  color: #8592b0;
   font-size: 10px;
   line-height: 1.55;
-}
-
-.landingCapabilities {
-  background: linear-gradient(180deg, rgba(8, 14, 30, 0.35), transparent);
-}
-
-.landingCapabilityGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.landingCapabilityGrid article {
-  min-height: 198px;
-  border: 1px solid rgba(76, 95, 145, 0.36);
-  border-radius: 12px;
-  background: rgba(10, 18, 37, 0.62);
-  padding: 20px;
-  transition: border-color 160ms ease, transform 160ms ease;
-}
-
-.landingCapabilityGrid article:hover {
-  border-color: rgba(139, 91, 246, 0.42);
-  transform: translateY(-2px);
-}
-
-.capabilityIcon {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-}
-
-.capabilityIcon svg {
-  width: 19px;
-  height: 19px;
-}
-
-.landingCapabilityGrid h3 {
-  margin-top: 17px;
-}
-
-.landingCapabilityGrid p {
-  margin-top: 8px;
-  color: #8c99b8;
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.landingAnswers {
-  border-top: 1px solid rgba(80, 99, 150, 0.24);
-  background: rgba(5, 11, 24, 0.5);
-}
-
-.landingAnswerGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.landingAnswerGrid article {
-  border: 1px solid rgba(78, 98, 149, 0.34);
-  border-radius: 11px;
-  background: rgba(11, 19, 39, 0.58);
-  padding: 19px;
-}
-
-.landingAnswerGrid h3 {
-  margin-top: 0;
-  font-size: 13px;
-}
-
-.landingAnswerGrid p {
-  margin-top: 8px;
-  color: #8996b5;
-  font-size: 11px;
-  line-height: 1.6;
 }
 
 .landingFinalCta {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 44px;
+  gap: 40px;
   margin: 0 28px 28px;
   overflow: hidden;
-  border: 1px solid rgba(139, 91, 246, 0.38);
-  border-radius: 16px;
+  border: 1px solid rgba(139, 91, 246, 0.4);
+  border-radius: 15px;
   background:
-    radial-gradient(circle at 88% 10%, rgba(79, 130, 235, 0.18), transparent 35%),
-    linear-gradient(135deg, rgba(84, 42, 178, 0.28), rgba(10, 18, 40, 0.94));
-  padding: 42px;
+    radial-gradient(circle at 88% 10%, rgba(79, 130, 235, 0.16), transparent 35%),
+    linear-gradient(135deg, rgba(84, 42, 178, 0.26), rgba(10, 18, 40, 0.94));
+  padding: 38px;
 }
 
 .landingFinalCta > div {
   display: grid;
-  gap: 12px;
-  max-width: 730px;
+  gap: 10px;
+  max-width: 700px;
+}
+
+.landingFinalCta .landingEyebrow {
+  margin-bottom: 2px;
 }
 
 .landingFinalCta h2 {
-  font-size: clamp(28px, 3.5vw, 42px);
+  font-size: clamp(27px, 3vw, 38px);
 }
 
 .landingFinalCta p {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .landingFinalButton {
-  gap: 11px;
-  min-height: 50px;
-  border-radius: 10px;
+  gap: 10px;
+  min-height: 48px;
+  border-radius: 9px;
   background: linear-gradient(135deg, #984fff, #6730e5);
-  padding-inline: 22px;
+  padding-inline: 20px;
   white-space: nowrap;
   box-shadow: 0 16px 34px rgba(106, 49, 230, 0.28);
 }
 
 @media (max-width: 1050px) {
-  .landingHero {
-    gap: 34px;
-    padding-inline: 38px;
-  }
-
-  .howItWorksSection,
-  .landingCapabilities,
-  .landingAnswers {
-    padding-inline: 38px;
-  }
-
-  .landingSignalStrip,
-  .landingInstallSection {
-    padding-inline: 38px;
-  }
-
-  .howItWorksSteps {
+  .howItWorksSteps,
+  .landingEssentialGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .howItWorksStep {
-    min-height: 310px;
-  }
-
-  .landingInstallSection {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .landingFlowCard {
-    width: 100%;
-    max-width: 620px;
+    min-height: 320px;
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 760px) {
   .isLocked .dashboardMain {
     padding: 14px 12px 40px;
   }
@@ -8772,42 +8393,29 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     display: none;
   }
 
-  .landingHero {
-    grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
-    padding: 58px 28px 52px;
+  .landingSimpleHero {
+    padding: 60px 24px 52px;
   }
 
-  .landingHero .authIntro h2 {
-    font-size: clamp(42px, 10vw, 62px);
-  }
-
-  .landingAuthCard {
-    width: 100%;
-    max-width: 560px;
-    justify-self: center;
-  }
-
-  .landingSignalStrip {
-    padding-inline: 24px;
+  .landingSimpleHero h1 {
+    font-size: clamp(42px, 12vw, 58px);
   }
 
   .howItWorksSection,
-  .landingCapabilities,
-  .landingAnswers,
-  .landingInstallSection {
-    padding: 64px 28px;
+  .landingQuickSection,
+  .landingEssentials {
+    padding: 58px 22px;
   }
 
-  .landingCapabilityGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .landingQuickGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .landingFinalCta {
     grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
-    margin: 0 18px 18px;
-    padding: 32px;
+    gap: 22px;
+    margin: 0 16px 16px;
+    padding: 30px;
   }
 
   .landingFinalButton {
@@ -8817,6 +8425,11 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 560px) {
+  .landingBrand small,
+  .landingBrand strong span {
+    display: none;
+  }
+
   .landingNavLinks {
     gap: 8px;
   }
@@ -8826,20 +8439,15 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     font-size: 11px;
   }
 
-  .landingBrand small,
-  .landingBrand strong span {
-    display: none;
+  .landingSimpleHero {
+    padding: 50px 18px 44px;
   }
 
-  .landingHero {
-    padding: 48px 18px 42px;
-  }
-
-  .landingHero .authIntro h2 {
+  .landingSimpleHero h1 {
     font-size: 40px;
   }
 
-  .landingHero .authIntro > p {
+  .landingSimpleHero > p:not(.status) {
     font-size: 14px;
   }
 
@@ -8848,80 +8456,47 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     width: 100%;
   }
 
-  .landingHero .authFeatureGrid,
-  .howItWorksSteps,
-  .landingCapabilityGrid,
-  .landingAnswerGrid {
+  .landingHeroNotes {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
+    width: 100%;
   }
 
-  .landingAuthCard {
-    padding: 22px;
-  }
-
-  .landingAuthCard h3 {
-    font-size: 23px;
-  }
-
-  .landingSignalStrip {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-    padding: 24px 18px;
-  }
-
-  .landingSignalStrip > i {
-    width: 1px;
-    height: 18px;
-    justify-self: center;
-    background: linear-gradient(rgba(112, 73, 226, 0.12), rgba(139, 91, 246, 0.8));
-  }
-
-  .landingSignalStrip > i::after {
-    right: -3px;
-    top: auto;
-    bottom: 0;
-    transform: rotate(135deg);
+  .landingHeroNotes span {
+    text-align: left;
   }
 
   .howItWorksSection,
-  .landingCapabilities,
-  .landingAnswers,
-  .landingInstallSection {
-    padding: 54px 18px;
+  .landingQuickSection,
+  .landingEssentials {
+    padding: 52px 16px;
   }
 
-  .landingSectionHeading h2,
-  .landingInstallCopy h2 {
-    font-size: 32px;
+  .howItWorksSteps,
+  .landingEssentialGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .howItWorksStep {
     min-height: 0;
+    padding: 22px;
   }
 
   .howStepMeta {
-    margin-top: 24px;
+    margin-top: 26px;
   }
 
-  .landingInstallSection {
-    gap: 36px;
+  .landingSectionHeading h2 {
+    font-size: 31px;
   }
 
-  .landingInstallPath code {
-    font-size: 10px;
-  }
-
-  .landingFlowCard {
-    padding: 16px;
-  }
-
-  .landingCapabilityGrid article {
-    min-height: 0;
+  .landingQuickGrid article {
+    padding: 20px;
   }
 
   .landingFinalCta {
-    margin: 0 12px 12px;
-    padding: 26px 20px;
+    margin: 0 10px 10px;
+    padding: 25px 20px;
   }
 
   .landingFinalButton {
