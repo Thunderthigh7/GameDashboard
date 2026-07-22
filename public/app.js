@@ -147,6 +147,8 @@ const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
 const movementFromDisplay = document.querySelector("#movementFromDisplay");
 const movementToDisplay = document.querySelector("#movementToDisplay");
+const allDataFilter = document.querySelector("#allDataFilter");
+const dateRangeControl = document.querySelector("#dateRangeControl");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
@@ -473,30 +475,14 @@ function bindEvents() {
     const planButton = event.target.closest("[data-admin-save-plan-user]");
     if (planButton) saveAdminUserPlan(planButton);
   });
-  movementFromFilter?.addEventListener("change", () => {
-    syncDateFilterDisplays();
-    if (activeView === "events") {
-      currentEventPropertySummaries = [];
-      currentSelectedEventCount = 0;
-      renderCustomEventProperties([], 0);
-      loadCustomEvents({ force: true });
-    }
-    if (activeView === "funnels") loadFunnels({ force: true });
-    if (activeView === "chat") loadChatLogs({ includeInsights: true });
-  });
-  movementToFilter?.addEventListener("change", () => {
-    syncDateFilterDisplays();
-    if (activeView === "events") {
-      currentEventPropertySummaries = [];
-      currentSelectedEventCount = 0;
-      renderCustomEventProperties([], 0);
-      loadCustomEvents({ force: true });
-    }
-    if (activeView === "funnels") loadFunnels({ force: true });
-    if (activeView === "chat") loadChatLogs({ includeInsights: true });
-  });
+  movementFromFilter?.addEventListener("change", handleDateFilterChange);
+  movementToFilter?.addEventListener("change", handleDateFilterChange);
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
+  allDataFilter?.addEventListener("change", () => {
+    syncDateFilterAvailability();
+    handleDateFilterChange();
+  });
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -2899,8 +2885,8 @@ async function loadCustomEvents(options = {}) {
   eventPropertyList?.setAttribute("aria-busy", "true");
   const params = new URLSearchParams();
   params.set("universeId", universeId);
-  const from = getDateTimeMs(movementFromFilter?.value);
-  const to = getDateTimeMs(movementToFilter?.value);
+  const from = getDashboardDateFilterMs(movementFromFilter);
+  const to = getDashboardDateFilterMs(movementToFilter);
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
   if (selectedCustomEventName) params.set("eventName", selectedCustomEventName);
@@ -3402,8 +3388,8 @@ async function loadFunnels(options = {}) {
 
   if (!options.background) funnelsStatus.textContent = "Loading funnels...";
   const params = new URLSearchParams({ universeId });
-  const from = getDateTimeMs(movementFromFilter?.value);
-  const to = getDateTimeMs(movementToFilter?.value);
+  const from = getDashboardDateFilterMs(movementFromFilter);
+  const to = getDashboardDateFilterMs(movementToFilter);
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
 
@@ -3893,8 +3879,8 @@ function buildChatLogsQuery(universeId) {
     universeId: String(universeId || ""),
     limit: String(RECENT_CHAT_LIMIT),
   });
-  const from = getDateTimeMs(movementFromFilter?.value);
-  const to = getDateTimeMs(movementToFilter?.value);
+  const from = getDashboardDateFilterMs(movementFromFilter);
+  const to = getDashboardDateFilterMs(movementToFilter);
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
   return `?${params.toString()}`;
@@ -4267,10 +4253,10 @@ function buildAiInsightsQuery() {
   const params = new URLSearchParams();
   params.set("universeId", selectedUniverseId);
 
-  const from = getDateTimeMs(movementFromFilter?.value);
+  const from = getDashboardDateFilterMs(movementFromFilter);
   if (from) params.set("from", String(from));
 
-  const to = getDateTimeMs(movementToFilter?.value);
+  const to = getDashboardDateFilterMs(movementToFilter);
   if (to) params.set("to", String(to));
 
   const query = params.toString();
@@ -4527,12 +4513,35 @@ function getDateTimeMs(value) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function getDashboardDateFilterMs(input) {
+  return allDataFilter?.checked ? 0 : getDateTimeMs(input?.value);
+}
+
+function handleDateFilterChange() {
+  syncDateFilterDisplays();
+  if (activeView === "events") {
+    currentEventPropertySummaries = [];
+    currentSelectedEventCount = 0;
+    renderCustomEventProperties([], 0);
+    loadCustomEvents({ force: true });
+  }
+  if (activeView === "funnels") loadFunnels({ force: true });
+  if (activeView === "chat") loadChatLogs({ includeInsights: true });
+}
+
 function initializeDateFilterDefaults() {
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 0, 0);
+  if (movementFromFilter && !movementFromFilter.value) {
+    const startOfRange = new Date(endOfToday);
+    startOfRange.setDate(startOfRange.getDate() - 29);
+    startOfRange.setHours(0, 0, 0, 0);
+    movementFromFilter.value = toDateTimeLocalValue(startOfRange);
+  }
   if (movementToFilter && !movementToFilter.value) {
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 0, 0);
     movementToFilter.value = toDateTimeLocalValue(endOfToday);
   }
+  syncDateFilterAvailability();
 }
 
 function toDateTimeLocalValue(date) {
@@ -4541,13 +4550,31 @@ function toDateTimeLocalValue(date) {
 }
 
 function syncDateFilterDisplays() {
+  const useAllData = Boolean(allDataFilter?.checked);
   if (movementFromDisplay) {
-    movementFromDisplay.textContent = formatDateFilterDisplay(movementFromFilter?.value, "All data");
+    movementFromDisplay.textContent = useAllData
+      ? "Beginning"
+      : formatDateFilterDisplay(movementFromFilter?.value, "Choose date");
   }
 
   if (movementToDisplay) {
-    movementToDisplay.textContent = formatDateFilterDisplay(movementToFilter?.value, "No end date");
+    movementToDisplay.textContent = useAllData
+      ? "Today"
+      : formatDateFilterDisplay(movementToFilter?.value, "Choose date");
   }
+
+  if (movementFromFilter && movementToFilter) {
+    movementFromFilter.max = movementToFilter.value;
+    movementToFilter.min = movementFromFilter.value;
+  }
+}
+
+function syncDateFilterAvailability() {
+  const useAllData = Boolean(allDataFilter?.checked);
+  if (movementFromFilter) movementFromFilter.disabled = useAllData;
+  if (movementToFilter) movementToFilter.disabled = useAllData;
+  dateRangeControl?.classList.toggle("isAllData", useAllData);
+  dateRangeControl?.setAttribute("aria-disabled", String(useAllData));
 }
 
 function formatDateFilterDisplay(value, fallback) {

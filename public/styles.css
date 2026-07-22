@@ -537,10 +537,8 @@ body.isResizingLayout {
   gap: 14px;
 }
 
-.topbarFilters .dateDisplayField {
-  flex: 1 1 240px;
-  width: clamp(220px, 18vw, 320px);
-  max-width: 320px;
+.topbarFilters .dateFilterCluster {
+  flex: 1 1 620px;
 }
 
 .topbarButtonGroup {
@@ -1617,48 +1615,92 @@ body[data-active-view="connect"] .topbar > div:first-child {
   padding: 0 10px;
 }
 
-.dateDisplayField {
-  width: clamp(300px, 24vw, 380px);
-}
-
-.dateDisplayControl {
-  position: relative;
+.dateFilterCluster {
   display: flex;
   align-items: center;
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--field-bg);
-  color: var(--text);
-  padding: 0 42px 0 12px;
-  white-space: nowrap;
+  gap: 10px;
+  min-width: 0;
 }
 
-.dateDisplayControl span {
-  display: block;
+.dateRangeControl {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 1 1 520px;
+  width: clamp(380px, 28vw, 560px);
+  min-width: 380px;
+  max-width: 640px;
+}
+
+.dateRangeField {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 3px;
   min-width: 0;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  background: linear-gradient(145deg, rgba(13, 23, 48, 0.98), rgba(8, 15, 34, 0.98));
+  padding: 8px 44px 8px 14px;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, opacity 150ms ease;
+}
+
+.dateRangeFrom {
+  border-radius: 10px 0 0 10px;
+}
+
+.dateRangeTo {
+  margin-left: -1px;
+  border-radius: 0 10px 10px 0;
+}
+
+.dateRangeField:hover {
+  z-index: 1;
+  border-color: rgba(151, 105, 255, 0.72);
+  background: linear-gradient(145deg, rgba(18, 31, 64, 0.98), rgba(11, 20, 43, 0.98));
+}
+
+.dateRangeField:focus-within {
+  z-index: 2;
+  border-color: #9c6bff;
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.14);
+}
+
+.dateRangeLabel {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.dateRangeField strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dateDisplayControl::after {
-  content: "";
+.dateRangeCalendarIcon {
   position: absolute;
-  right: 14px;
   top: 50%;
-  width: 15px;
-  height: 15px;
-  border: 2px solid var(--nav-text);
-  border-radius: 3px;
+  right: 14px;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: #a99acb;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   transform: translateY(-50%);
   pointer-events: none;
 }
 
-.dateDisplayControl input {
+.dateRangeField input {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1669,6 +1711,104 @@ body[data-active-view="connect"] .topbar > div:first-child {
   color: transparent;
   cursor: pointer;
   opacity: 0;
+}
+
+.dateRangeConnector {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(108, 125, 179, 0.58);
+  border-radius: 50%;
+  background: #0b1327;
+  color: #a98bff;
+  box-shadow: 0 5px 16px rgba(2, 6, 18, 0.5);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.dateRangeConnector svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dateRangeControl.isAllData .dateRangeField {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.allDataToggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 9px;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(10, 18, 39, 0.92);
+  color: var(--nav-text);
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.allDataToggle:hover {
+  border-color: rgba(151, 105, 255, 0.7);
+  color: #fff;
+}
+
+.allDataToggle:focus-within {
+  outline: 2px solid rgba(169, 139, 255, 0.82);
+  outline-offset: 2px;
+}
+
+.allDataToggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.allDataCheckbox {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(121, 138, 190, 0.68);
+  border-radius: 5px;
+  background: rgba(5, 11, 27, 0.82);
+  color: transparent;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.allDataCheckbox svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.allDataToggle input:checked + .allDataCheckbox {
+  border-color: #9b6aff;
+  background: linear-gradient(135deg, #965cf4, #6330cf);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(124, 60, 255, 0.28);
 }
 
 .fieldGroup select {
@@ -4458,10 +4598,9 @@ body[data-active-view="events"] .topbarFilters {
   flex-wrap: wrap;
 }
 
-body[data-active-view="events"] .topbarFilters .dateDisplayField {
-  flex: 1 1 205px;
-  width: clamp(195px, 15vw, 245px);
-  max-width: 250px;
+body[data-active-view="events"] .topbarFilters .dateFilterCluster {
+  flex: 1 1 620px;
+  max-width: 760px;
 }
 
 body[data-active-view="events"] #pageSubtitle {
@@ -5057,7 +5196,7 @@ body[data-active-view="releases"] .topbarActions {
   flex: 1 1 1040px;
 }
 
-body[data-active-view="releases"] .topbarFilters .dateDisplayField {
+body[data-active-view="releases"] .topbarFilters .dateFilterCluster {
   display: none;
 }
 
@@ -7149,14 +7288,17 @@ body[data-active-view="funnels"] #pageSubtitle {
     width: 100%;
   }
 
-  .topbarFilters .dateDisplayField {
+  .topbarFilters .dateFilterCluster {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     width: 100%;
     min-width: 0;
     max-width: none;
   }
 
-  body[data-active-view="funnels"] .topbarFilters .dateDisplayField,
-  body[data-active-view="events"] .topbarFilters .dateDisplayField {
+  .dateRangeControl,
+  body[data-active-view="funnels"] .topbarFilters .dateFilterCluster,
+  body[data-active-view="events"] .topbarFilters .dateFilterCluster {
     width: 100%;
     min-width: 0;
     max-width: none;
@@ -7384,6 +7526,33 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 @media (max-width: 560px) {
+  .topbarFilters .dateFilterCluster {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dateRangeField {
+    min-height: 54px;
+    padding-right: 38px;
+    padding-left: 11px;
+  }
+
+  .dateRangeCalendarIcon {
+    right: 11px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .dateRangeConnector {
+    width: 25px;
+    height: 25px;
+  }
+
+  .allDataToggle {
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 46px;
+  }
+
   .heatmapToolbar {
     padding: 12px;
   }
