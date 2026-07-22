@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-33">
+    <link rel="stylesheet" href="/styles.css?v=20260722-34">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -159,6 +159,10 @@
             <p id="pageSubtitle">Roblox game analytics powered by live heartbeat data.</p>
           </div>
           <div class="topbarActions">
+            <div class="eventTopbarSelection">
+              <h2 id="selectedEventTitle">Select an event</h2>
+              <p id="selectedEventSubtitle">The event timeline will appear here.</p>
+            </div>
             <div class="topbarFilters" aria-label="Dashboard filters">
               <div class="fieldGroup compactField dateDisplayField">
                 <label for="movementFromFilter">From</label>
@@ -548,8 +552,7 @@
               <section class="panel eventActivitySection">
                 <div class="eventChartHeader">
                   <div>
-                    <h2>Event activity <span class="selectedEventName" id="selectedEventTitle">Select an event</span></h2>
-                    <p id="selectedEventSubtitle">The event timeline will appear here.</p>
+                    <h2>Event activity</h2>
                   </div>
                   <div class="eventChartActions">
                     <label class="srOnly" for="eventIntervalSelect">Event chart interval</label>

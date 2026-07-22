@@ -4000,26 +4000,29 @@ body[data-active-view="connect"] .topbar > div:first-child {
   font-size: 18px;
 }
 
-.eventChartHeader p {
-  margin-top: 8px;
+.eventTopbarSelection {
+  display: none;
+  gap: 4px;
+  min-width: 0;
 }
 
-.selectedEventName {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #b9a5ff;
-  font-size: 13px;
-  font-weight: 750;
+body[data-active-view="events"] .eventTopbarSelection {
+  display: grid;
 }
 
-.selectedEventName::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #8b5cf6;
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.65);
+.eventTopbarSelection h2 {
+  overflow: hidden;
+  font-size: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventTopbarSelection p {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eventChartActions {
@@ -6234,9 +6237,14 @@ body[data-active-view="funnels"] #pageSubtitle {
   body[data-active-view="events"] .topbarActions {
     grid-area: event-topbar;
     align-self: start;
-    justify-content: flex-end;
+    justify-content: space-between;
     min-width: 0;
     padding-bottom: 12px;
+  }
+
+  body[data-active-view="events"] .eventTopbarSelection {
+    align-self: center;
+    flex: 1 1 300px;
   }
 
   body[data-active-view="events"] .topbarFilters {
