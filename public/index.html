@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-44">
+    <link rel="stylesheet" href="/styles.css?v=20260722-45">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -155,7 +155,10 @@
       <main class="dashboardMain">
         <header class="topbar" id="overview" hidden>
           <div>
-            <h1 id="pageTitle">Overview</h1>
+            <div class="pageTitleRow">
+              <h1 id="pageTitle">Overview</h1>
+              <div class="releaseTitleVersionSlot" data-release-version-pair-slot></div>
+            </div>
             <p id="pageSubtitle">Roblox game analytics powered by live heartbeat data.</p>
           </div>
           <div class="topbarActions">
@@ -1063,6 +1066,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260722-19"></script>
+    <script defer src="/app.js?v=20260722-20"></script>
   </body>
 </html>

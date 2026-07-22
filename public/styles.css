@@ -505,6 +505,23 @@ body.isResizingLayout {
   min-width: 220px;
 }
 
+.pageTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+
+.releaseTitleVersionSlot {
+  display: none;
+  flex: 1 1 520px;
+  min-width: 0;
+}
+
+body[data-active-view="releases"] .releaseTitleVersionSlot {
+  display: block;
+}
+
 .topbar h1 {
   font-size: 26px;
   letter-spacing: 0;
@@ -5188,11 +5205,12 @@ body[data-active-view="events"] #pageSubtitle {
 }
 
 body[data-active-view="releases"] .topbar > div:first-child {
-  flex: 0 1 250px;
+  flex: 1 1 760px;
+  min-width: 0;
 }
 
 body[data-active-view="releases"] .topbarActions {
-  flex: 1 1 1040px;
+  flex: 0 1 auto;
 }
 
 body[data-active-view="releases"] .topbarFilters .dateFilterCluster {
@@ -5201,14 +5219,14 @@ body[data-active-view="releases"] .topbarFilters .dateFilterCluster {
 
 body[data-active-view="releases"] .topbarFilters {
   align-items: flex-end;
-  width: 100%;
+  width: auto;
   gap: 12px;
 }
 
 body[data-active-view="releases"] .releaseTopbarControls {
   display: flex;
   align-items: flex-end;
-  flex: 2 1 690px;
+  flex: 0 1 auto;
   gap: 10px;
   min-width: 0;
 }
@@ -5285,14 +5303,14 @@ body[data-active-view="releases"] .releaseTopbarControls {
   display: grid;
   position: relative;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 54px;
-  width: 100%;
-  min-width: 0;
-  border: 1px solid rgba(83, 104, 157, 0.36);
-  border-radius: 20px;
-  background: linear-gradient(145deg, rgba(12, 21, 41, 0.9), rgba(7, 14, 29, 0.94));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 20px 50px rgba(1, 5, 14, 0.18);
-  padding: 32px 36px;
+  gap: 26px;
+  width: min(560px, 100%);
+  min-width: 380px;
+  border: 1px solid rgba(83, 104, 157, 0.32);
+  border-radius: 12px;
+  background: rgba(8, 15, 30, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  padding: 6px;
   overflow: visible;
 }
 
@@ -5307,18 +5325,18 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseVersionSide {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-columns: 38px minmax(0, 1fr);
   align-items: center;
-  gap: 24px;
+  gap: 10px;
   width: 100%;
-  min-height: 168px;
+  min-height: 66px;
   min-width: 0;
   border: 1px solid rgba(84, 105, 157, 0.38);
-  border-radius: 20px;
+  border-radius: 9px;
   background: linear-gradient(140deg, rgba(28, 41, 68, 0.86), rgba(16, 27, 49, 0.9));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 16px 32px rgba(1, 5, 14, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   color: inherit;
-  padding: 28px 30px;
+  padding: 8px 10px;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -5328,7 +5346,7 @@ body[data-active-view="releases"] .releaseTopbarControls {
 .releaseVersionDropdown:last-child .releaseVersionSide {
   border-color: rgba(79, 145, 255, 0.78);
   background: linear-gradient(140deg, rgba(26, 46, 76, 0.9), rgba(15, 30, 54, 0.94));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 0 0 1px rgba(79, 145, 255, 0.14), 0 18px 34px rgba(8, 29, 63, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(79, 145, 255, 0.1);
 }
 
 .releaseVersionSide:hover:not(:disabled),
@@ -5336,7 +5354,7 @@ body[data-active-view="releases"] .releaseTopbarControls {
 .releaseVersionSide[aria-expanded="true"] {
   border-color: rgba(120, 161, 255, 0.86);
   background: linear-gradient(140deg, rgba(34, 52, 86, 0.94), rgba(19, 34, 59, 0.96));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 3px rgba(79, 145, 255, 0.1), 0 18px 36px rgba(1, 5, 14, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(79, 145, 255, 0.1);
   outline: none;
 }
 
@@ -5348,9 +5366,9 @@ body[data-active-view="releases"] .releaseTopbarControls {
 .releaseVersionArtwork {
   display: grid;
   place-items: center;
-  width: 82px;
-  height: 82px;
-  border-radius: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
   background: linear-gradient(145deg, rgba(63, 116, 208, 0.22), rgba(42, 78, 145, 0.14));
   color: #69a8ff;
 }
@@ -5361,8 +5379,8 @@ body[data-active-view="releases"] .releaseTopbarControls {
 }
 
 .releaseVersionArtwork svg {
-  width: 46px;
-  height: 46px;
+  width: 23px;
+  height: 23px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -5372,21 +5390,21 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseVersionCopy {
   display: grid;
-  gap: 16px;
+  gap: 4px;
   min-width: 0;
 }
 
 .releaseVersionHeading {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   min-width: 0;
 }
 
 .releaseVersionHeading strong {
   overflow: hidden;
   color: var(--text);
-  font-size: clamp(23px, 2.3vw, 32px);
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: -0.035em;
   text-overflow: ellipsis;
@@ -5394,11 +5412,11 @@ body[data-active-view="releases"] .releaseTopbarControls {
 }
 
 .releaseVersionHeading b {
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(78, 126, 211, 0.16);
   color: #a9c8ff;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 3px 5px;
+  font-size: 8px;
   font-weight: 800;
 }
 
@@ -5410,8 +5428,8 @@ body[data-active-view="releases"] .releaseTopbarControls {
 .releaseVersionChevron {
   flex: 0 0 auto;
   margin-left: auto;
-  width: 18px;
-  height: 18px;
+  width: 13px;
+  height: 13px;
   fill: none;
   stroke: #8f9bb5;
   stroke-width: 1.8;
@@ -5428,19 +5446,19 @@ body[data-active-view="releases"] .releaseTopbarControls {
 .releaseVersionDate {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
   color: #a3b0c9;
-  font-size: 13px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .releaseVersionDate svg {
   flex: 0 0 auto;
-  width: 19px;
-  height: 19px;
+  width: 13px;
+  height: 13px;
   fill: none;
   stroke: #91a0bd;
   stroke-width: 1.7;
@@ -5460,14 +5478,14 @@ body[data-active-view="releases"] .releaseTopbarControls {
   z-index: 2;
   top: 50%;
   left: 50%;
-  width: 64px;
-  height: 64px;
-  border: 2px solid rgba(105, 128, 180, 0.55);
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(105, 128, 180, 0.55);
   border-radius: 999px;
   background: linear-gradient(145deg, #17233a, #101a2d);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--text);
-  font-size: 18px;
+  font-size: 8px;
   font-weight: 900;
   text-transform: uppercase;
   transform: translate(-50%, -50%);
@@ -5693,7 +5711,6 @@ body[data-active-view="releases"] .releaseTopbarControls {
   min-width: 0;
 }
 
-.releaseComparisonWorkspace[aria-busy="true"] .releaseVersionPair,
 .releaseComparisonWorkspace[aria-busy="true"] .releaseAnalysis,
 .releaseComparisonWorkspace[aria-busy="true"] .releaseComparisonNotice {
   opacity: 0.58;
@@ -7650,14 +7667,24 @@ body[data-active-view="funnels"] #pageSubtitle {
     grid-column: 1;
   }
 
+  .pageTitleRow {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .releaseTitleVersionSlot {
+    flex-basis: 100%;
+  }
+
   .releaseVersionPair {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 44px;
-    padding: 22px;
+    gap: 26px;
+    width: 100%;
+    min-width: 0;
+    padding: 6px;
   }
 
   .releaseVersionSide {
-    min-height: 140px;
+    min-height: 66px;
   }
 
   .releaseAnalysisSection > header {
@@ -7690,60 +7717,60 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .releaseVersionPair {
     min-width: 0;
-    gap: 36px;
-    padding: 14px;
+    gap: 24px;
+    padding: 5px;
   }
 
   .releaseVersionSide {
-    grid-template-columns: 58px minmax(0, 1fr);
-    gap: 14px;
-    min-height: 120px;
-    border-radius: 15px;
-    padding: 18px 16px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 60px;
+    border-radius: 8px;
+    padding: 7px 8px;
   }
 
   .releaseVersionArtwork {
-    width: 58px;
-    height: 58px;
-    border-radius: 14px;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
   }
 
   .releaseVersionArtwork svg {
-    width: 34px;
-    height: 34px;
+    width: 20px;
+    height: 20px;
   }
 
   .releaseVersionCopy {
-    gap: 11px;
+    gap: 3px;
   }
 
   .releaseVersionHeading {
-    gap: 7px;
+    gap: 4px;
   }
 
   .releaseVersionHeading strong {
-    font-size: 21px;
+    font-size: 14px;
   }
 
   .releaseVersionHeading b {
-    padding: 4px 7px;
-    font-size: 9px;
+    padding: 2px 4px;
+    font-size: 7px;
   }
 
   .releaseVersionDate {
-    gap: 6px;
-    font-size: 10px;
+    gap: 4px;
+    font-size: 8px;
   }
 
   .releaseVersionDate svg {
-    width: 16px;
-    height: 16px;
+    width: 11px;
+    height: 11px;
   }
 
   .releaseVersionVs {
-    width: 50px;
-    height: 50px;
-    font-size: 14px;
+    width: 27px;
+    height: 27px;
+    font-size: 7px;
   }
 
   .releaseAnalysisBody {

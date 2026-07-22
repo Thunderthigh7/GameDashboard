@@ -2376,7 +2376,7 @@ function renderReleases(payload = {}) {
         <p>Install the current Roblox analytics script and join a published server. Studio observations stay separate and will not create a release.</p>
       </article>
     `;
-    placeReleaseVersionPair();
+    placeReleaseVersionPair(false);
     placeReleaseFunnelPicker();
     return;
   }
@@ -2388,7 +2388,7 @@ function renderReleases(payload = {}) {
         <p>Keep the Roblox analytics script installed through another published update. Once both PlaceVersions have sessions, you can compare them here.</p>
       </article>
     `;
-    placeReleaseVersionPair();
+    placeReleaseVersionPair(false);
     placeReleaseFunnelPicker();
     return;
   }
@@ -2396,15 +2396,15 @@ function renderReleases(payload = {}) {
   releaseComparisonContent.innerHTML = renderReleaseComparison(payload.selectedComparison, {
     hasAvailableFunnels: Array.isArray(payload.availableFunnels) && payload.availableFunnels.length > 0,
   });
-  placeReleaseVersionPair();
+  placeReleaseVersionPair(true);
   placeReleaseFunnelPicker();
 }
 
-function placeReleaseVersionPair() {
-  if (!releaseVersionPair || !releaseComparisonContent) return;
-  const slot = releaseComparisonContent.querySelector("[data-release-version-pair-slot]");
-  releaseVersionPair.hidden = !slot;
-  if (slot) slot.replaceWith(releaseVersionPair);
+function placeReleaseVersionPair(visible) {
+  if (!releaseVersionPair) return;
+  const slot = document.querySelector("[data-release-version-pair-slot]");
+  releaseVersionPair.hidden = !visible || !slot;
+  if (visible && slot && releaseVersionPair.parentElement !== slot) slot.append(releaseVersionPair);
 }
 
 function placeReleaseFunnelPicker() {
@@ -2614,7 +2614,6 @@ function renderReleaseComparison(release = {}, options = {}) {
   const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
 
   return `
-    <div class="releaseVersionPairSlot" data-release-version-pair-slot></div>
     ${renderReleaseAnalysis(release.comparison, options)}
     ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
   `;
