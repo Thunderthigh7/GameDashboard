@@ -3974,12 +3974,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
   min-width: 0;
 }
 
-.eventChartPanel {
+.eventActivitySection {
   min-width: 0;
   min-height: 400px;
   overflow: visible;
-  border-color: rgba(124, 60, 255, 0.72);
-  box-shadow: inset 2px 0 0 rgba(124, 60, 255, 0.64), var(--shadow);
 }
 
 .eventChartHeader {
@@ -4497,11 +4495,13 @@ body[data-active-view="events"] #pageSubtitle {
   white-space: normal;
 }
 
-.eventChartPanel {
+.eventActivitySection {
   min-height: 390px;
   overflow: hidden;
-  border-color: var(--line);
-  box-shadow: var(--shadow);
+}
+
+.eventActivitySection + .eventBreakdownSection {
+  margin-top: 48px;
 }
 
 .eventChartHeader {
