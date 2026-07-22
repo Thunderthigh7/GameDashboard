@@ -8082,14 +8082,14 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 .officialOAuthCallout {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
   gap: 4px 16px;
-  width: min(900px, 100%);
-  margin-top: 36px;
+  width: min(820px, 100%);
+  margin-top: 32px;
   border-top: 1px solid rgba(113, 92, 190, 0.55);
   border-bottom: 1px solid rgba(75, 99, 154, 0.42);
-  padding: 22px 4px;
+  padding: 18px 4px;
   text-align: left;
 }
 
@@ -8097,8 +8097,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   display: grid;
   grid-row: 1 / span 2;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(150, 100, 255, 0.48);
   border-radius: 12px;
   background: rgba(122, 61, 247, 0.16);
@@ -8106,20 +8106,20 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 .officialOAuthCallout strong {
   color: #f5f1ff;
-  font-size: 19px;
+  font-size: 17px;
 }
 
 .officialOAuthCallout p {
   margin-top: 5px;
   color: #c2cade;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.55;
 }
 
 .officialOAuthPrivacy {
   grid-column: 2;
   color: #79e3ad;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.45;
 }
