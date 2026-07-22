@@ -108,7 +108,6 @@ const recentEventList = document.querySelector("#recentEventList");
 const viewAllRecentEventsButton = document.querySelector("#viewAllRecentEventsButton");
 const eventRecentDisclosure = document.querySelector(".eventRecentDisclosure");
 const newFunnelButton = document.querySelector("#newFunnelButton");
-const refreshFunnelsButton = document.querySelector("#refreshFunnelsButton");
 const funnelsStatus = document.querySelector("#funnelsStatus");
 const funnelCatalog = document.querySelector("#funnelCatalog");
 const funnelAnalyticsView = document.querySelector("#funnelAnalyticsView");
@@ -201,7 +200,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260721-4";
+const DASHBOARD_ASSET_VERSION = "20260722-5";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
@@ -413,7 +412,6 @@ function bindEvents() {
     loadCustomEvents({ force: true });
   });
   newFunnelButton?.addEventListener("click", startNewFunnel);
-  refreshFunnelsButton?.addEventListener("click", () => loadFunnels({ force: true }));
   editFunnelButton?.addEventListener("click", editSelectedFunnel);
   funnelCatalog?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-funnel-id]");
@@ -3449,7 +3447,6 @@ async function loadFunnels(options = {}) {
   }
 
   if (!options.background) funnelsStatus.textContent = "Loading funnels...";
-  if (refreshFunnelsButton) refreshFunnelsButton.disabled = true;
   const params = new URLSearchParams({ universeId });
   const from = getDateTimeMs(movementFromFilter?.value);
   const to = getDateTimeMs(movementToFilter?.value);
@@ -3482,8 +3479,6 @@ async function loadFunnels(options = {}) {
     if (requestSequence !== funnelRequestSequence) return;
     handleAuthError(error);
     if (authenticated) funnelsStatus.textContent = formatRequestError(error);
-  } finally {
-    if (requestSequence === funnelRequestSequence && refreshFunnelsButton) refreshFunnelsButton.disabled = false;
   }
 }
 
@@ -3502,20 +3497,9 @@ function renderFunnelCatalog() {
     funnelCatalog.innerHTML = currentFunnels.length
       ? currentFunnels.map((funnel) => {
         const isActive = funnel.id === selectedFunnelId;
-        const completedSessions = Number(funnel.analytics?.completedSessions);
-        const conversionLabel = Number(funnel.analytics?.entrySessions) > 0
-          ? formatFunnelPercentage(funnel.analytics?.overallConversion)
-          : "--";
-        const completedLabel = Number.isFinite(completedSessions)
-          ? `${formatCompactNumber(completedSessions)} completed`
-          : "No data yet";
         return `
           <button class="funnelCatalogItem ${isActive ? "active" : ""}" type="button" data-funnel-id="${escapeHtml(funnel.id)}" title="${escapeHtml(funnel.name)}" ${isActive ? 'aria-current="true"' : ""} ${builderVisible ? "disabled" : ""}>
-            <span>
-              <strong>${escapeHtml(funnel.name)}</strong>
-              <small>${formatCompactNumber((funnel.steps || []).length)} steps · ${escapeHtml(formatFunnelWindow(funnel.conversionWindowMinutes))}</small>
-            </span>
-            <em><strong>${conversionLabel}</strong><small>${escapeHtml(completedLabel)}</small></em>
+            ${escapeHtml(funnel.name)}
           </button>
         `;
       }).join("")
@@ -3792,8 +3776,7 @@ function renderFunnelResults(funnel) {
     ? `
       <div class="funnelResultsColumnHeader" aria-hidden="true">
         <span>Funnel step</span>
-        <span>Players</span>
-        <span>Conversion from previous</span>
+        <span class="funnelBarColumnHeader"><span>Players</span><span>Total conversion</span></span>
         <span>Median time</span>
         <span>Drop-off</span>
       </div>
@@ -3810,11 +3793,10 @@ function renderFunnelResults(funnel) {
               <div><strong>${escapeHtml(step.eventName)}</strong><small>Step ${step.index} of ${steps.length}</small></div>
             </div>
             <div class="funnelStepBarCell">
-              <div class="funnelStepBar" style="width: ${barWidth}%"><span>${formatCompactNumber(sessions)} (${formatEventNumber(step.conversionFromStart)}%)</span></div>
-            </div>
-            <div class="funnelConversionCell">
-              <strong>${step.index > 1 ? `${formatEventNumber(step.conversionFromPrevious)}%` : "--"}</strong>
-              <small>${step.index > 1 ? "from previous" : "entry step"}</small>
+              <div class="funnelStepBarTrack">
+                <div class="funnelStepBar" style="width: ${barWidth}%"><span>${formatCompactNumber(sessions)}</span></div>
+              </div>
+              <strong class="funnelStepTotalConversion">${formatFunnelPercentage(step.conversionFromStart)}</strong>
             </div>
             <div class="funnelTimeCell">
               <strong>${step.index > 1 && stepTimeMs ? formatFunnelDuration(stepTimeMs) : "--"}</strong>

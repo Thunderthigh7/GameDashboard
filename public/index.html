@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260721-19">
+    <link rel="stylesheet" href="/styles.css?v=20260722-20">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -616,22 +616,11 @@
 
         <section class="viewPage funnelsPage" data-view-panel="funnels" hidden>
           <div class="funnelWorkspace">
-              <aside class="panel funnelCatalogPanel" aria-label="Saved funnels">
+              <aside class="funnelCatalogPanel" aria-label="Saved funnels">
                 <header class="funnelCatalogHeader">
-                  <div>
-                    <span class="funnelCatalogEyebrow">Funnel explorer</span>
-                    <h2>Saved funnels</h2>
-                    <p>Choose a path to inspect.</p>
-                  </div>
-                  <button class="funnelIconButton" id="refreshFunnelsButton" type="button" aria-label="Refresh funnel data" title="Refresh">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8a7 7 0 1 0 1 6M19 4v4h-4" /></svg>
-                  </button>
+                  <h2>Saved funnels</h2>
                 </header>
-                <div class="funnelLiveState" title="Funnel data refreshes automatically">
-                  <span aria-hidden="true"></span>
-                  <strong>Live</strong>
-                </div>
-                <p class="status funnelStatus" id="funnelsStatus" aria-live="polite">Loading funnels...</p>
+                <p class="srOnly" id="funnelsStatus" aria-live="polite">Loading funnels...</p>
                 <nav class="funnelCatalog" id="funnelCatalog" aria-label="Available saved funnels"></nav>
               </aside>
 
@@ -1053,6 +1042,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260721-4"></script>
+    <script defer src="/app.js?v=20260722-5"></script>
   </body>
 </html>
