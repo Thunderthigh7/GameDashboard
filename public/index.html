@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-25">
+    <link rel="stylesheet" href="/styles.css?v=20260722-26">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -15,7 +15,6 @@
           <div class="brandMark" aria-hidden="true"></div>
           <div>
             <strong>RoAnalytics <span>BETA</span></strong>
-            <small>Game Analytics for Roblox</small>
           </div>
         </div>
 
@@ -615,13 +614,13 @@
                 <header class="funnelCatalogHeader">
                   <h2>Saved funnels</h2>
                 </header>
+                <nav class="funnelCatalog" id="funnelCatalog" aria-label="Available saved funnels"></nav>
                 <div class="funnelCatalogAction">
                   <button class="button funnelNewButton" id="newFunnelButton" type="button">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                     <span>New funnel</span>
                   </button>
                 </div>
-                <nav class="funnelCatalog" id="funnelCatalog" aria-label="Available saved funnels"></nav>
                 <p class="srOnly" id="funnelsStatus" aria-live="polite">Loading funnels...</p>
               </aside>
 
@@ -1043,6 +1042,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260722-5"></script>
+    <script defer src="/app.js?v=20260722-6"></script>
   </body>
 </html>

@@ -3488,6 +3488,7 @@ function getSelectedFunnel() {
 
 function renderFunnelCatalog() {
   const builderVisible = Boolean(funnelForm && !funnelForm.hidden);
+  funnelCatalog?.closest(".funnelCatalogPanel")?.classList.toggle("hasManyFunnels", currentFunnels.length > 10);
   if (funnelCatalog) {
     const previousScrollTop = funnelCatalog.scrollTop;
     const focusedCatalogItem = document.activeElement?.closest?.("[data-funnel-id]");
