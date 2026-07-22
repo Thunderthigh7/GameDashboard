@@ -54,7 +54,6 @@ let heatmapMesh;
 let selectedMarker;
 let aiAreaGroup;
 let mapGroup;
-let grid;
 let animationFrame;
 let yaw = DEFAULT_3D_YAW;
 let pitch = DEFAULT_3D_PITCH;
@@ -347,9 +346,6 @@ function initScene() {
   const directional = new THREE.DirectionalLight(0xffffff, 0.65);
   directional.position.set(1, 2, 1);
   scene.add(directional);
-
-  grid = new THREE.GridHelper(500, 20, 0x335179, 0x1d2a3d);
-  scene.add(grid);
 
   canvas.addEventListener("pointerdown", (event) => {
     canvas.focus();
@@ -1980,10 +1976,6 @@ function renderScene(samples, mapSnapshot, options = {}) {
   }
 
   restoreAiAreaCardAfterRefresh(previousSelectedAiAreaId, entries);
-
-  if (latestBounds) {
-    grid.scale.setScalar(clamp(Math.max(latestBounds.width, latestBounds.depth) / 500, 0.5, 8));
-  }
 
   if (shouldResetView) {
     fitViewToBounds();
