@@ -7897,6 +7897,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .loginPanel.landingPage {
+  --landing-nav-height: 69px;
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -7905,7 +7906,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   overflow: visible;
   border: 0;
   border-radius: 0;
-  padding: 0;
+  padding: var(--landing-nav-height) 0 0;
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
@@ -7924,9 +7925,11 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .landingNav {
-  position: sticky;
+  position: fixed;
   z-index: 30;
   top: 0;
+  right: 0;
+  left: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
@@ -8575,6 +8578,10 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 560px) {
+  .loginPanel.landingPage {
+    --landing-nav-height: 65px;
+  }
+
   .landingBrand strong span {
     display: none;
   }
