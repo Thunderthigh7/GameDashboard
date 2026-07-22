@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-23">
+    <link rel="stylesheet" href="/styles.css?v=20260722-25">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -621,13 +621,13 @@
                     <span>New funnel</span>
                   </button>
                 </div>
-                <p class="srOnly" id="funnelsStatus" aria-live="polite">Loading funnels...</p>
                 <nav class="funnelCatalog" id="funnelCatalog" aria-label="Available saved funnels"></nav>
+                <p class="srOnly" id="funnelsStatus" aria-live="polite">Loading funnels...</p>
               </aside>
 
               <section class="funnelDetailColumn">
                 <section class="funnelAnalyticsView" id="funnelAnalyticsView">
-                <article class="panel funnelResultsPanel" id="funnelResultsPanel" aria-labelledby="funnelResultsTitle">
+                <section class="funnelResultsPanel" id="funnelResultsPanel" aria-labelledby="funnelResultsTitle">
                   <header class="funnelResultsHeader">
                     <div>
                       <h2 id="funnelResultsTitle">Funnel steps</h2>
@@ -660,7 +660,7 @@
                   <div class="funnelResultSteps" id="funnelResultSteps">
                     <p class="status">No funnel selected.</p>
                   </div>
-                </article>
+                </section>
                 </section>
 
                 <form class="panel funnelBuilder" id="funnelForm" hidden>

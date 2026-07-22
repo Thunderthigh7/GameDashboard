@@ -6364,6 +6364,15 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelCatalogAction {
+  display: grid;
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+  padding-right: 3px;
+}
+
+.funnelCatalogAction .funnelNewButton {
+  width: 100%;
   min-width: 0;
 }
 
@@ -6517,8 +6526,10 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelResultsPanel {
+  display: grid;
+  gap: 18px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   container-type: inline-size;
 }
@@ -6528,8 +6539,7 @@ body[data-active-view="funnels"] #pageSubtitle {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border-bottom: 1px solid var(--line);
-  padding: 18px 20px;
+  padding: 4px 0 0;
 }
 
 .funnelResultsHeader > div:first-child {
@@ -6546,7 +6556,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelResultsHeader h2 {
-  font-size: 18px;
+  font-size: 24px;
 }
 
 .funnelResultsHeader p {
@@ -6557,16 +6567,19 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelInlineMetrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
+  gap: 16px;
   margin: 0;
-  border-bottom: 1px solid var(--line);
-  background: var(--line);
+  background: transparent;
 }
 
 .funnelInlineMetrics > div {
   min-width: 0;
-  background: rgba(9, 18, 38, 0.94);
-  padding: 14px 18px;
+  min-height: 104px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(9, 18, 38, 0.9);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+  padding: 14px 16px;
 }
 
 .funnelInlineMetrics dt {
@@ -6593,7 +6606,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelInlineMetrics strong {
   color: var(--text);
-  font-size: 21px;
+  font-size: 28px;
   line-height: 1.1;
 }
 
@@ -6605,7 +6618,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelResultSteps {
   gap: 0;
   overflow-x: auto;
-  padding: 6px 20px 0;
+  padding: 0;
 }
 
 .funnelResultsColumnHeader,
@@ -6619,6 +6632,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelResultsColumnHeader {
   min-height: 42px;
+  border-bottom: 1px solid rgba(47, 61, 96, 0.72);
   color: var(--muted);
   font-size: 10px;
   font-weight: 800;
@@ -6644,7 +6658,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelResultStep {
   min-height: 76px;
-  border-top: 1px solid rgba(47, 61, 96, 0.56);
+  border-bottom: 1px solid rgba(47, 61, 96, 0.56);
 }
 
 .funnelStepIdentity {
