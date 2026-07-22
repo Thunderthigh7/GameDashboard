@@ -2622,22 +2622,10 @@ function renderReleaseAnalysis(comparison = null) {
 
   return `
     <section class="releaseAnalysis">
-      <header class="releaseAnalysisSummary">
-        <div>
-          <span class="releaseAnalysisIcon" aria-hidden="true">&#8597;</span>
-          <span><strong>Comparison summary</strong><small>${ready ? "Thresholded funnel and event differences" : "Waiting for enough sessions to compare"}</small></span>
-        </div>
-        <div class="releaseFindingCounts">
-          <span class="increase">${escapeHtml(formatCompactNumber(findingDirections.increase))} increase${findingDirections.increase === 1 ? "" : "s"}</span>
-          <span class="decrease">${escapeHtml(formatCompactNumber(findingDirections.decrease))} decrease${findingDirections.decrease === 1 ? "" : "s"}</span>
-          ${partialData ? '<span class="partial">Partial data</span>' : ""}
-        </div>
-      </header>
       <div class="releaseAnalysisBody">
         ${renderReleaseOutcomeSummary({ findingItems, findingDirections, ready, partialData, evidenceSessions, beforeVersion, afterVersion, matched: trafficReady })}
         ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
         ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics, beforeVersion, afterVersion) : ""}
-        ${renderReleaseFindingsSection(findingItems, { ready, partialData })}
         <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
       </div>
     </section>
@@ -2670,19 +2658,6 @@ function renderReleaseOutcomeSummary({ findingItems = [], findingDirections = {}
         <p>${escapeHtml(summary)}</p>
       </div>
       <div class="releaseOutcomeEvidence"><strong>${escapeHtml(formatCompactNumber(evidenceSessions))}</strong><span>${matched ? "matched" : "usable"} sessions / side</span></div>
-    </section>
-  `;
-}
-
-function renderReleaseFindingsSection(findingItems, options = {}) {
-  return `
-    <section class="releaseAnalysisSection releaseFindingsSection">
-      <header><div><strong>Key findings</strong><span>Only changes that crossed the evidence thresholds</span></div></header>
-      <div class="releaseFindingList">
-        ${findingItems.length
-          ? findingItems.map(renderReleaseFinding).join("")
-          : `<article class="releaseNoFinding"><strong>${options.ready ? (options.partialData ? "No supported conclusion from the incomplete metrics." : "No significant change found.") : "Findings are still collecting."}</strong><p>${options.ready ? "Visible rates stayed inside the practical and statistical thresholds." : "At least 20 usable sessions are required on both versions."}</p></article>`}
-      </div>
     </section>
   `;
 }
@@ -2738,19 +2713,6 @@ function getReleaseFindingDirection(finding = {}) {
   if (title.includes(" increased")) return "increase";
   if (title.includes(" decreased")) return "decrease";
   return "unchanged";
-}
-
-function renderReleaseFinding(finding = {}) {
-  const direction = getReleaseFindingDirection(finding);
-  return `
-    <article class="releaseFinding ${direction}">
-      <span class="releaseFindingMark" aria-hidden="true">${direction === "increase" ? "&#8593;" : direction === "decrease" ? "&#8595;" : "="}</span>
-      <div>
-        <header><strong>${escapeHtml(finding.title || "Release finding")}</strong><span>${escapeHtml(formatReleaseConfidence(finding.confidence))}</span></header>
-        <p>${escapeHtml(finding.summary || "")}</p>
-      </div>
-    </article>
-  `;
 }
 
 function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
@@ -2854,13 +2816,6 @@ function getReleaseMetricTone(metric = {}) {
   const delta = Number(metric.delta);
   if (!metric.available || !Number.isFinite(delta) || Math.abs(delta) < 0.0001) return "unchanged";
   return delta > 0 ? "increase" : "decrease";
-}
-
-function formatReleaseConfidence(value) {
-  if (value === "high") return "High confidence";
-  if (value === "medium") return "Medium confidence";
-  if (value === "provisional") return "Provisional confidence";
-  return "Directional evidence";
 }
 
 function formatReleaseVersion(value) {

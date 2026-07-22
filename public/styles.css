@@ -5641,93 +5641,25 @@ body[data-active-view="releases"] .releaseTopbarControls {
   background: rgba(5, 10, 22, 0.38);
 }
 
-.releaseAnalysisSummary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 17px 20px;
-}
-
-.releaseAnalysisSummary > div,
-.releaseAnalysisSummary > div:first-child > span:last-child,
 .releaseAnalysisSection > header > div {
   display: grid;
   gap: 2px;
 }
 
-.releaseAnalysisSummary > div:first-child {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.releaseAnalysisSummary strong,
 .releaseAnalysisSection > header strong {
   color: var(--text);
   font-size: 14px;
 }
 
-.releaseAnalysisSummary small,
 .releaseAnalysisSection > header span,
 .releaseAnalysisSection > header small {
   color: var(--muted);
   font-size: 11px;
 }
 
-.releaseAnalysisIcon {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid rgba(124, 60, 255, 0.4);
-  border-radius: 8px;
-  background: rgba(124, 60, 255, 0.12);
-  color: #c9b2ff;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.releaseFindingCounts {
-  display: flex !important;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 6px !important;
-  margin-left: auto;
-}
-
-.releaseFindingCounts span {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 8px;
-  font-size: 9px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.releaseFindingCounts .increase {
-  border-color: rgba(84, 150, 255, 0.4);
-  background: rgba(84, 150, 255, 0.1);
-  color: #a8caff;
-}
-
-.releaseFindingCounts .decrease {
-  border-color: rgba(151, 102, 255, 0.42);
-  background: rgba(151, 102, 255, 0.1);
-  color: #cab8ff;
-}
-
-.releaseFindingCounts .partial {
-  border-color: rgba(245, 184, 70, 0.38);
-  background: rgba(245, 184, 70, 0.1);
-  color: #f8cf78;
-}
-
 .releaseAnalysisBody {
   display: grid;
   gap: 14px;
-  border-top: 1px solid var(--line);
   padding: 20px;
 }
 
@@ -5963,119 +5895,6 @@ body[data-active-view="releases"] .releaseTopbarControls {
   color: #a7b0c7;
 }
 
-.releaseFindingList {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.releaseFinding {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 9px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: rgba(7, 13, 27, 0.62);
-  padding: 10px;
-}
-
-.releaseFinding.increase {
-  border-color: rgba(84, 150, 255, 0.34);
-}
-
-.releaseFinding.decrease {
-  border-color: rgba(151, 102, 255, 0.34);
-}
-
-.releaseFinding.unchanged {
-  border-color: rgba(105, 120, 164, 0.3);
-}
-
-.releaseFindingMark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgba(120, 134, 177, 0.12);
-  color: var(--nav-text);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.releaseFinding.increase .releaseFindingMark {
-  background: rgba(84, 150, 255, 0.13);
-  color: #a8caff;
-}
-
-.releaseFinding.decrease .releaseFindingMark {
-  background: rgba(151, 102, 255, 0.13);
-  color: #cab8ff;
-}
-
-.releaseFinding.unchanged .releaseFindingMark {
-  background: rgba(105, 120, 164, 0.12);
-  color: #a7b0c7;
-}
-
-.releaseFinding > div,
-.releaseFinding header {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.releaseFinding header {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-}
-
-.releaseFinding header strong {
-  color: var(--text);
-  font-size: 11px;
-}
-
-.releaseFinding header span {
-  border-radius: 999px;
-  background: rgba(105, 120, 164, 0.12);
-  color: var(--muted);
-  padding: 3px 6px;
-  font-size: 8px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.releaseFinding p {
-  color: var(--nav-text);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.releaseFinding > div > small {
-  color: var(--muted);
-  font-size: 8px;
-  line-height: 1.4;
-}
-
-.releaseNoFinding {
-  grid-column: 1 / -1;
-  border: 1px dashed var(--line);
-  border-radius: 9px;
-  padding: 16px;
-  text-align: center;
-}
-
-.releaseNoFinding strong {
-  color: var(--text);
-  font-size: 11px;
-}
-
-.releaseNoFinding p {
-  margin-top: 4px;
-  font-size: 10px;
-}
-
 .releaseComparisonTable {
   display: grid;
   min-width: 0;
@@ -6157,12 +5976,10 @@ body[data-active-view="releases"] .releaseTopbarControls {
   padding: 22px;
 }
 
-.releaseDataWorkspace .releaseAnalysisSummary strong,
 .releaseDataWorkspace .releaseAnalysisSection > header strong {
   font-size: 16px;
 }
 
-.releaseDataWorkspace .releaseAnalysisSummary small,
 .releaseDataWorkspace .releaseAnalysisSection > header span,
 .releaseDataWorkspace .releaseAnalysisSection > header small {
   font-size: 12px;
@@ -7935,19 +7752,9 @@ body[data-active-view="funnels"] #pageSubtitle {
     grid-column: 1;
   }
 
-  .releaseAnalysisSummary,
   .releaseAnalysisSection > header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .releaseFindingCounts {
-    justify-content: flex-start;
-    margin-left: 0;
-  }
-
-  .releaseFindingList {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .releaseOutcomeSummary {
@@ -8015,9 +7822,6 @@ body[data-active-view="funnels"] #pageSubtitle {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .releaseFinding header {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* Logged-out product landing page */
