@@ -148,7 +148,6 @@ const movementToFilter = document.querySelector("#movementToFilter");
 const movementFromDisplay = document.querySelector("#movementFromDisplay");
 const movementToDisplay = document.querySelector("#movementToDisplay");
 const allDataFilter = document.querySelector("#allDataFilter");
-const dateRangeControl = document.querySelector("#dateRangeControl");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
@@ -475,14 +474,13 @@ function bindEvents() {
     const planButton = event.target.closest("[data-admin-save-plan-user]");
     if (planButton) saveAdminUserPlan(planButton);
   });
-  movementFromFilter?.addEventListener("change", handleDateFilterChange);
-  movementToFilter?.addEventListener("change", handleDateFilterChange);
+  movementFromFilter?.addEventListener("click", () => showDateFilterPicker(movementFromFilter));
+  movementToFilter?.addEventListener("click", () => showDateFilterPicker(movementToFilter));
+  movementFromFilter?.addEventListener("change", handleExplicitDateFilterChange);
+  movementToFilter?.addEventListener("change", handleExplicitDateFilterChange);
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
-  allDataFilter?.addEventListener("change", () => {
-    syncDateFilterAvailability();
-    handleDateFilterChange();
-  });
+  allDataFilter?.addEventListener("change", handleDateFilterChange);
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -4529,6 +4527,20 @@ function handleDateFilterChange() {
   if (activeView === "chat") loadChatLogs({ includeInsights: true });
 }
 
+function handleExplicitDateFilterChange() {
+  if (allDataFilter) allDataFilter.checked = false;
+  handleDateFilterChange();
+}
+
+function showDateFilterPicker(input) {
+  if (!input || typeof input.showPicker !== "function") return;
+  try {
+    input.showPicker();
+  } catch {
+    input.focus();
+  }
+}
+
 function initializeDateFilterDefaults() {
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 0, 0);
@@ -4541,7 +4553,6 @@ function initializeDateFilterDefaults() {
   if (movementToFilter && !movementToFilter.value) {
     movementToFilter.value = toDateTimeLocalValue(endOfToday);
   }
-  syncDateFilterAvailability();
 }
 
 function toDateTimeLocalValue(date) {
@@ -4550,31 +4561,18 @@ function toDateTimeLocalValue(date) {
 }
 
 function syncDateFilterDisplays() {
-  const useAllData = Boolean(allDataFilter?.checked);
   if (movementFromDisplay) {
-    movementFromDisplay.textContent = useAllData
-      ? "Beginning"
-      : formatDateFilterDisplay(movementFromFilter?.value, "Choose date");
+    movementFromDisplay.textContent = formatDateFilterDisplay(movementFromFilter?.value, "Choose date");
   }
 
   if (movementToDisplay) {
-    movementToDisplay.textContent = useAllData
-      ? "Today"
-      : formatDateFilterDisplay(movementToFilter?.value, "Choose date");
+    movementToDisplay.textContent = formatDateFilterDisplay(movementToFilter?.value, "Choose date");
   }
 
   if (movementFromFilter && movementToFilter) {
     movementFromFilter.max = movementToFilter.value;
     movementToFilter.min = movementFromFilter.value;
   }
-}
-
-function syncDateFilterAvailability() {
-  const useAllData = Boolean(allDataFilter?.checked);
-  if (movementFromFilter) movementFromFilter.disabled = useAllData;
-  if (movementToFilter) movementToFilter.disabled = useAllData;
-  dateRangeControl?.classList.toggle("isAllData", useAllData);
-  dateRangeControl?.setAttribute("aria-disabled", String(useAllData));
 }
 
 function formatDateFilterDisplay(value, fallback) {

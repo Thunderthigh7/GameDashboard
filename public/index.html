@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-36">
+    <link rel="stylesheet" href="/styles.css?v=20260722-38">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -167,24 +167,28 @@
               <div class="dateFilterCluster">
                 <div class="dateRangeControl" id="dateRangeControl" aria-label="Dashboard date range">
                   <label class="dateRangeField dateRangeFrom" for="movementFromFilter">
-                    <span class="dateRangeLabel">From</span>
-                    <strong id="movementFromDisplay">Beginning</strong>
                     <svg class="dateRangeCalendarIcon" viewBox="0 0 24 24" aria-hidden="true">
                       <rect x="3" y="5" width="18" height="16" rx="2"></rect>
                       <path d="M8 3v4M16 3v4M3 10h18"></path>
                     </svg>
+                    <span class="dateRangeCopy">
+                      <span class="dateRangeLabel">Start</span>
+                      <strong id="movementFromDisplay">Beginning</strong>
+                    </span>
                     <input id="movementFromFilter" type="datetime-local" aria-label="From date">
                   </label>
-                  <span class="dateRangeConnector" aria-hidden="true">
-                    <svg viewBox="0 0 24 24"><path d="M7 12h10M13 8l4 4-4 4"></path></svg>
+                  <span class="dateRangeTransition" aria-hidden="true">
+                    <span><svg viewBox="0 0 24 24"><path d="M6 12h12M14 8l4 4-4 4"></path></svg></span>
                   </span>
                   <label class="dateRangeField dateRangeTo" for="movementToFilter">
-                    <span class="dateRangeLabel">To</span>
-                    <strong id="movementToDisplay">Today</strong>
                     <svg class="dateRangeCalendarIcon" viewBox="0 0 24 24" aria-hidden="true">
                       <rect x="3" y="5" width="18" height="16" rx="2"></rect>
                       <path d="M8 3v4M16 3v4M3 10h18"></path>
                     </svg>
+                    <span class="dateRangeCopy">
+                      <span class="dateRangeLabel">End</span>
+                      <strong id="movementToDisplay">Today</strong>
+                    </span>
                     <input id="movementToFilter" type="datetime-local" aria-label="To date">
                   </label>
                 </div>
@@ -1053,6 +1057,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260722-11"></script>
+    <script defer src="/app.js?v=20260722-12"></script>
   </body>
 </html>
