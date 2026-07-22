@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-27">
+    <link rel="stylesheet" href="/styles.css?v=20260722-28">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -535,23 +535,13 @@
 
         <section class="viewPage eventsPage" data-view-panel="events" hidden>
           <div class="eventsLayout">
-            <aside class="panel eventCatalogPanel" aria-label="Tracked events">
+            <aside class="eventCatalogPanel" aria-label="Tracked events">
+              <h1 class="eventCatalogTitle">Events</h1>
               <header class="eventCatalogHeader">
-                <div>
-                  <span class="eventCatalogEyebrow">Event explorer</span>
-                  <h2>Tracked events</h2>
-                  <p>Choose an event to inspect.</p>
-                </div>
-                <button class="eventRefreshButton" id="refreshEventsButton" type="button" aria-label="Refresh events" title="Refresh events">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8a7 7 0 1 0 1 6M19 4v4h-4" /></svg>
-                </button>
+                <h2>Tracked events</h2>
               </header>
-              <div class="eventReceivingState" id="eventReceivingState">
-                <span aria-hidden="true"></span>
-                <strong>Waiting for data</strong>
-              </div>
-              <p class="status eventStatus" id="eventsStatus" aria-live="polite">Waiting for events...</p>
               <nav class="eventCatalog" id="eventCatalog" aria-label="Available tracked events"></nav>
+              <p class="srOnly eventStatus" id="eventsStatus" aria-live="polite">Waiting for events...</p>
             </aside>
 
             <section class="eventDetailColumn">
@@ -1042,6 +1032,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260722-7"></script>
+    <script defer src="/app.js?v=20260722-8"></script>
   </body>
 </html>

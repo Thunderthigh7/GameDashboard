@@ -93,10 +93,8 @@ const releaseBeforeDateRange = document.querySelector("#releaseBeforeDateRange")
 const releaseAfterDateRange = document.querySelector("#releaseAfterDateRange");
 const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
 const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
-const refreshEventsButton = document.querySelector("#refreshEventsButton");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
-const eventReceivingState = document.querySelector("#eventReceivingState");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
@@ -379,7 +377,6 @@ function bindEvents() {
   document.addEventListener("pointerdown", handleReleaseFunnelOutsidePointer);
   document.addEventListener("pointerdown", handleReleaseVersionOutsidePointer);
   document.addEventListener("keydown", handleReleaseControlEscape);
-  refreshEventsButton?.addEventListener("click", () => loadCustomEvents({ force: true }));
   eventCatalog?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-event-name]");
     const eventName = button?.dataset.eventName || "";
@@ -2901,7 +2898,6 @@ async function loadCustomEvents(options = {}) {
 
   eventsStatus.textContent = "Loading events...";
   eventPropertyList?.setAttribute("aria-busy", "true");
-  if (refreshEventsButton) refreshEventsButton.disabled = true;
   const params = new URLSearchParams();
   params.set("universeId", universeId);
   const from = getDateTimeMs(movementFromFilter?.value);
@@ -2932,7 +2928,6 @@ async function loadCustomEvents(options = {}) {
     return false;
   } finally {
     if (requestSequence === customEventsRequestSequence) {
-      if (refreshEventsButton) refreshEventsButton.disabled = false;
       eventPropertyList?.setAttribute("aria-busy", "false");
     }
   }
@@ -3012,12 +3007,6 @@ function renderCustomEvents(payload = {}) {
     }
   }
 
-  if (eventReceivingState) {
-    eventReceivingState.classList.toggle("isLive", Boolean(selectedCount));
-    const label = eventReceivingState.querySelector("strong");
-    if (label) label.textContent = selectedCount ? "Receiving data" : "Waiting for data";
-  }
-
   if (selectedEventTitle) selectedEventTitle.textContent = selected ? formatEventName(selected.name) : "Select an event";
   if (selectedEventSubtitle) {
     selectedEventSubtitle.textContent = selected
@@ -3043,29 +3032,16 @@ function renderCustomEvents(payload = {}) {
 function renderEventCatalog(catalog) {
   const renderItem = (item) => {
     const isActive = item.name === selectedCustomEventName;
-    const activityLabel = Number(item.lastSeenAt) > 0 ? formatRelativeTime(item.lastSeenAt) : "No activity yet";
     return `
-      <button class="eventCatalogItem ${isActive ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}" ${isActive ? 'aria-current="true"' : ""}>
-        <span>
-          <strong>${escapeHtml(formatEventName(item.name))}</strong>
-          <small>${escapeHtml(activityLabel)}</small>
-        </span>
-        <em>${formatCompactNumber(item.count)}</em>
-      </button>
+      <button class="eventCatalogItem ${isActive ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}" title="${escapeHtml(formatEventName(item.name))}" ${isActive ? 'aria-current="true"' : ""}>${escapeHtml(formatEventName(item.name))}</button>
     `;
   };
-  const renderGroup = (label, items) => items.length
-    ? `<section class="eventCatalogGroup" aria-label="${escapeHtml(label)}"><h3>${escapeHtml(label)}</h3>${items.map(renderItem).join("")}</section>`
-    : "";
   const systemOrder = new Map([["player_died", 0], ["player_left", 1], ["chat_message", 2]]);
   const systemEvents = catalog
     .filter((item) => item.sourceType === "system")
     .sort((left, right) => (systemOrder.get(left.name) ?? 99) - (systemOrder.get(right.name) ?? 99));
   const customEvents = catalog.filter((item) => item.sourceType !== "system");
-  return [
-    renderGroup("System events", systemEvents),
-    renderGroup("Custom events", customEvents),
-  ].join("");
+  return [...systemEvents, ...customEvents].map(renderItem).join("");
 }
 
 function renderCustomEventChart(series, selectedBucketMs) {

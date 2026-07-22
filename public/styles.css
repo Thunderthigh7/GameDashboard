@@ -3856,8 +3856,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .eventsLayout {
   display: grid;
-  grid-template-columns: minmax(220px, 255px) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
   min-width: 0;
 }
@@ -3867,47 +3867,66 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .eventPropertyList,
 .recentEventList {
   display: grid;
+}
+
+.eventDetailColumn,
+.eventPropertyList,
+.recentEventList {
   gap: 12px;
 }
 
 .eventCatalogPanel {
   position: sticky;
-  top: 20px;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  max-height: calc(100vh - 40px);
+  top: 8px;
+  align-self: start;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: calc(100vh - 44px);
+  max-height: calc(100vh - 44px);
   overflow: hidden;
-  padding: 16px;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+  box-shadow: inset -1px 0 0 rgba(88, 103, 159, 0.12);
+  padding: 0 12px 18px;
+}
+
+.eventCatalogTitle {
+  display: none;
+  margin: 0;
+  padding: 0 10px 5px;
+  font-size: 26px;
 }
 
 .eventCatalogHeader {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
+  min-width: 0;
 }
 
 .eventCatalogHeader h2 {
-  margin-top: 3px;
-  font-size: 17px;
-}
-
-.eventCatalogHeader p {
-  margin-top: 5px;
-  font-size: 11px;
-}
-
-.eventCatalogEyebrow,
-.eventCatalogGroup h3 {
-  color: #a889ff;
-  font-size: 9px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0 10px 2px;
+  color: var(--placeholder);
+  font-size: 10px;
   font-weight: 850;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.13em;
+  line-height: 1;
   text-transform: uppercase;
+}
+
+.eventCatalogHeader h2::after {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  opacity: 0.7;
+  content: "";
 }
 
 .eventCatalog {
   display: grid;
-  gap: 16px;
+  align-content: start;
+  gap: 6px;
   min-height: 0;
   overflow-y: auto;
   padding-right: 3px;
@@ -3915,35 +3934,26 @@ body[data-active-view="connect"] .topbar > div:first-child {
   scrollbar-color: rgba(124, 60, 255, 0.42) transparent;
 }
 
-.eventCatalogGroup {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}
-
-.eventCatalogGroup h3 {
-  margin: 0;
-  padding: 0 4px;
-  color: var(--muted);
-}
-
 .eventCatalogItem {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: block;
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-bg);
-  color: var(--text);
-  padding: 11px 12px;
+  min-width: 0;
+  min-height: 44px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--nav-text);
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 700;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.eventCatalogItem:hover,
-.eventCatalogItem.active {
+.eventCatalogItem:hover:not(:disabled) {
   border-color: rgba(124, 60, 255, 0.72);
   background: var(--purple-soft);
 }
@@ -3955,34 +3965,22 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .eventCatalogItem.active {
-  box-shadow: inset 3px 0 0 #9b65ff;
+  border-color: rgba(124, 60, 255, 0.5);
+  background: linear-gradient(135deg, rgba(124, 60, 255, 0.72), rgba(31, 38, 121, 0.48));
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(71, 37, 181, 0.2);
 }
 
-.eventCatalogItem span,
-.recentEventItem span {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.eventCatalogItem strong,
-.eventCatalogItem small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.eventCatalogItem small,
 .recentEventItem small,
 .eventPropertyItem span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.eventCatalogItem em {
-  color: #c4b5fd;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 800;
+.recentEventItem span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 .eventChartPanel {
@@ -4474,6 +4472,10 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   max-width: 250px;
 }
 
+body[data-active-view="events"] #pageSubtitle {
+  display: none;
+}
+
 .eventsPage,
 .eventDetailColumn {
   display: grid;
@@ -4488,46 +4490,6 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   gap: 12px;
 }
 
-.eventRefreshButton svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.eventReceivingState {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(8, 16, 33, 0.7);
-  color: var(--muted);
-  padding: 0 12px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.eventReceivingState > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #6b789e;
-}
-
-.eventReceivingState.isLive {
-  color: #6fe1a0;
-}
-
-.eventReceivingState.isLive > span {
-  background: #35d47a;
-  box-shadow: 0 0 10px rgba(53, 212, 122, 0.58);
-}
-
 .eventStatus {
   min-width: 0;
   margin: 0;
@@ -4536,42 +4498,12 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   white-space: nowrap;
 }
 
-.eventCatalogPanel .eventReceivingState {
-  width: 100%;
-}
-
 .eventCatalogPanel .eventStatus {
   overflow: visible;
   font-size: 11px;
   line-height: 1.45;
   text-overflow: clip;
   white-space: normal;
-}
-
-.eventRefreshButton {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-bg);
-  color: var(--nav-text);
-  margin-left: auto;
-  cursor: pointer;
-}
-
-.eventRefreshButton:hover:not(:disabled),
-.eventRefreshButton:focus-visible {
-  border-color: rgba(124, 60, 255, 0.72);
-  color: #fff;
-  outline: none;
-}
-
-.eventRefreshButton:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 
 .eventChartPanel {
@@ -6311,6 +6243,61 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 @media (min-width: 1181px) {
+  body[data-active-view="events"] .dashboardMain {
+    display: grid;
+    grid-template-areas:
+      "event-catalog event-topbar"
+      "event-catalog event-content";
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: 18px;
+    row-gap: 0;
+    padding-top: 22px;
+  }
+
+  body[data-active-view="events"] .topbar {
+    display: contents;
+  }
+
+  body[data-active-view="events"] .topbar > div:first-child {
+    display: none;
+  }
+
+  body[data-active-view="events"] .topbarActions {
+    grid-area: event-topbar;
+    align-self: start;
+    justify-content: flex-end;
+    min-width: 0;
+    padding-bottom: 12px;
+  }
+
+  body[data-active-view="events"] .topbarFilters {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+  }
+
+  body[data-active-view="events"] .eventsPage,
+  body[data-active-view="events"] .eventsLayout {
+    display: contents;
+  }
+
+  body[data-active-view="events"] .eventCatalogPanel {
+    grid-area: event-catalog;
+  }
+
+  body[data-active-view="events"] .eventCatalogTitle {
+    display: block;
+  }
+
+  body[data-active-view="events"] .eventDetailColumn {
+    grid-area: event-content;
+  }
+
+  body[data-active-view="events"] #authError:not([hidden]) {
+    grid-column: 1 / -1;
+  }
+
   body[data-active-view="funnels"] .dashboardMain {
     display: grid;
     grid-template-areas:
@@ -7085,7 +7072,11 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .eventCatalogPanel {
     position: static;
+    min-height: 0;
     max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 12px 18px;
   }
 
   .eventCatalog {
