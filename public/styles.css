@@ -519,7 +519,8 @@ body.isResizingLayout {
 }
 
 body[data-active-view="releases"] .releaseTitleVersionSlot {
-  display: block;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .topbar h1 {
@@ -5303,14 +5304,14 @@ body[data-active-view="releases"] .releaseTopbarControls {
   display: grid;
   position: relative;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 26px;
-  width: min(560px, 100%);
+  gap: 24px;
+  width: min(540px, 100%);
   min-width: 380px;
-  border: 1px solid rgba(83, 104, 157, 0.32);
-  border-radius: 12px;
-  background: rgba(8, 15, 30, 0.72);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-  padding: 6px;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
   overflow: visible;
 }
 
@@ -5331,9 +5332,9 @@ body[data-active-view="releases"] .releaseTopbarControls {
   width: 100%;
   min-height: 66px;
   min-width: 0;
-  border: 1px solid rgba(84, 105, 157, 0.38);
+  border: 1px solid rgba(80, 99, 150, 0.38);
   border-radius: 9px;
-  background: linear-gradient(140deg, rgba(28, 41, 68, 0.86), rgba(16, 27, 49, 0.9));
+  background: linear-gradient(145deg, rgba(17, 25, 49, 0.96), rgba(9, 15, 32, 0.98));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   color: inherit;
   padding: 8px 10px;
@@ -5344,17 +5345,17 @@ body[data-active-view="releases"] .releaseTopbarControls {
 }
 
 .releaseVersionDropdown:last-child .releaseVersionSide {
-  border-color: rgba(79, 145, 255, 0.78);
-  background: linear-gradient(140deg, rgba(26, 46, 76, 0.9), rgba(15, 30, 54, 0.94));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(79, 145, 255, 0.1);
+  border-color: rgba(151, 102, 255, 0.7);
+  background: linear-gradient(145deg, rgba(35, 24, 66, 0.96), rgba(15, 18, 42, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(124, 60, 255, 0.1);
 }
 
 .releaseVersionSide:hover:not(:disabled),
 .releaseVersionSide:focus-visible,
 .releaseVersionSide[aria-expanded="true"] {
-  border-color: rgba(120, 161, 255, 0.86);
-  background: linear-gradient(140deg, rgba(34, 52, 86, 0.94), rgba(19, 34, 59, 0.96));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(79, 145, 255, 0.1);
+  border-color: rgba(174, 132, 255, 0.88);
+  background: linear-gradient(145deg, rgba(43, 30, 78, 0.98), rgba(18, 20, 47, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(124, 60, 255, 0.12);
   outline: none;
 }
 
@@ -5369,13 +5370,13 @@ body[data-active-view="releases"] .releaseTopbarControls {
   width: 38px;
   height: 38px;
   border-radius: 9px;
-  background: linear-gradient(145deg, rgba(63, 116, 208, 0.22), rgba(42, 78, 145, 0.14));
-  color: #69a8ff;
+  background: linear-gradient(145deg, rgba(124, 60, 255, 0.18), rgba(81, 48, 153, 0.12));
+  color: #ad91ff;
 }
 
 .releaseVersionDropdown:last-child .releaseVersionArtwork {
-  background: linear-gradient(145deg, rgba(38, 191, 169, 0.25), rgba(25, 119, 119, 0.16));
-  color: #32e2bd;
+  background: linear-gradient(145deg, rgba(151, 102, 255, 0.24), rgba(101, 59, 194, 0.16));
+  color: #c5adff;
 }
 
 .releaseVersionArtwork svg {
@@ -5413,16 +5414,16 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseVersionHeading b {
   border-radius: 6px;
-  background: rgba(78, 126, 211, 0.16);
-  color: #a9c8ff;
+  background: rgba(124, 60, 255, 0.14);
+  color: #bca7f7;
   padding: 3px 5px;
   font-size: 8px;
   font-weight: 800;
 }
 
 .releaseVersionDropdown:last-child .releaseVersionHeading b {
-  background: rgba(38, 191, 169, 0.14);
-  color: #47ddbd;
+  background: rgba(151, 102, 255, 0.2);
+  color: #d0bdff;
 }
 
 .releaseVersionChevron {
@@ -5480,9 +5481,9 @@ body[data-active-view="releases"] .releaseTopbarControls {
   left: 50%;
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(105, 128, 180, 0.55);
+  border: 1px solid rgba(151, 102, 255, 0.5);
   border-radius: 999px;
-  background: linear-gradient(145deg, #17233a, #101a2d);
+  background: linear-gradient(145deg, #1b1433, #100f24);
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--text);
   font-size: 8px;
@@ -7677,10 +7678,10 @@ body[data-active-view="funnels"] #pageSubtitle {
   }
 
   .releaseVersionPair {
-    gap: 26px;
+    gap: 24px;
     width: 100%;
     min-width: 0;
-    padding: 6px;
+    padding: 0;
   }
 
   .releaseVersionSide {
@@ -7718,7 +7719,7 @@ body[data-active-view="funnels"] #pageSubtitle {
   .releaseVersionPair {
     min-width: 0;
     gap: 24px;
-    padding: 5px;
+    padding: 0;
   }
 
   .releaseVersionSide {
