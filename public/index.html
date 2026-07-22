@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260722-22">
+    <link rel="stylesheet" href="/styles.css?v=20260722-23">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -17,6 +17,22 @@
             <strong>RoAnalytics <span>BETA</span></strong>
             <small>Game Analytics for Roblox</small>
           </div>
+        </div>
+
+        <div class="universeSelector sidebarUniverseSelector">
+          <button class="universeSelectorButton" id="universeSelectorButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="universeDropdownMenu" disabled>
+            <span class="gameThumb" aria-hidden="true"></span>
+            <span class="universeSelectorText">
+              <strong>Selected Universe</strong>
+              <small id="selectedUniverseLabel">No universe selected</small>
+            </span>
+            <span class="universeSelectorChevron" aria-hidden="true"></span>
+          </button>
+          <div class="universeDropdownMenu" id="universeDropdownMenu" role="listbox" aria-label="Universe" hidden></div>
+          <label class="srOnly" for="universeSelect">Universe</label>
+          <select id="universeSelect" hidden tabindex="-1" aria-hidden="true" disabled>
+            <option value="">Loading universes...</option>
+          </select>
         </div>
 
         <nav class="sideNav" aria-label="Dashboard sections">
@@ -159,21 +175,6 @@
                   <input id="movementToFilter" type="datetime-local">
                 </div>
               </div>
-              <div class="universeSelector topbarUniverseSelector">
-                <button class="universeSelectorButton" id="universeSelectorButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="universeDropdownMenu" disabled>
-                  <span class="gameThumb" aria-hidden="true"></span>
-                  <span class="universeSelectorText">
-                    <strong>Selected Universe</strong>
-                    <small id="selectedUniverseLabel">No universe selected</small>
-                  </span>
-                  <span class="universeSelectorChevron" aria-hidden="true"></span>
-                </button>
-                <div class="universeDropdownMenu" id="universeDropdownMenu" role="listbox" aria-label="Universe" hidden></div>
-                <label class="srOnly" for="universeSelect">Universe</label>
-                <select id="universeSelect" hidden tabindex="-1" aria-hidden="true" disabled>
-                  <option value="">Loading universes...</option>
-                </select>
-              </div>
               <div class="releaseTopbarControls" aria-label="Release comparison controls">
                 <label class="releaseSelectField releasePlaceField" for="releasePlaceSelect">
                   <span>Place</span>
@@ -204,12 +205,6 @@
                   </button>
                   <div class="releaseFunnelMenu" id="releaseFunnelMenu" hidden></div>
                 </div>
-              </div>
-              <div class="funnelTopbarExtras" aria-label="Funnel actions">
-                <button class="button funnelNewButton" id="newFunnelButton" type="button">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-                  <span>New funnel</span>
-                </button>
               </div>
             </div>
           </div>
@@ -620,6 +615,12 @@
                 <header class="funnelCatalogHeader">
                   <h2>Saved funnels</h2>
                 </header>
+                <div class="funnelCatalogAction">
+                  <button class="button funnelNewButton" id="newFunnelButton" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                    <span>New funnel</span>
+                  </button>
+                </div>
                 <p class="srOnly" id="funnelsStatus" aria-live="polite">Loading funnels...</p>
                 <nav class="funnelCatalog" id="funnelCatalog" aria-label="Available saved funnels"></nav>
               </aside>

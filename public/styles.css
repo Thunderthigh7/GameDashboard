@@ -338,6 +338,23 @@ body.isResizingLayout {
   position: relative;
 }
 
+.sidebarUniverseSelector {
+  flex: 0 0 auto;
+  margin: -6px 0 16px;
+}
+
+.sidebarUniverseSelector .universeSelectorButton {
+  grid-template-columns: 38px minmax(0, 1fr) 14px;
+  min-height: 60px;
+  gap: 8px;
+  padding: 7px 8px;
+}
+
+.sidebarUniverseSelector .gameThumb {
+  width: 38px;
+  height: 38px;
+}
+
 .universeSelectorButton {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) 18px;
@@ -531,13 +548,6 @@ body.isResizingLayout {
   flex: 1 1 240px;
   width: clamp(220px, 18vw, 320px);
   max-width: 320px;
-}
-
-.topbarUniverseSelector {
-  flex: 1.4 1 340px;
-  width: clamp(300px, 27vw, 480px);
-  min-width: 280px;
-  max-width: 480px;
 }
 
 .topbarButtonGroup {
@@ -4456,14 +4466,6 @@ body[data-active-view="events"] .topbarFilters {
   flex-wrap: wrap;
 }
 
-body[data-active-view="events"] .topbarUniverseSelector {
-  flex: 1 1 250px;
-  order: -3;
-  width: clamp(235px, 19vw, 310px);
-  min-width: 225px;
-  max-width: 320px;
-}
-
 body[data-active-view="events"] .topbarFilters .dateDisplayField {
   flex: 1 1 205px;
   width: clamp(195px, 15vw, 245px);
@@ -5157,13 +5159,6 @@ body[data-active-view="events"] .topbarFilters .dateDisplayField {
   margin-top: 8px;
 }
 
-.funnelTopbarExtras {
-  display: none;
-  align-items: flex-end;
-  gap: 10px;
-  order: 4;
-}
-
 .releaseTopbarControls {
   display: none;
 }
@@ -5184,13 +5179,6 @@ body[data-active-view="releases"] .topbarFilters {
   align-items: flex-end;
   width: 100%;
   gap: 12px;
-}
-
-body[data-active-view="releases"] .topbarUniverseSelector {
-  flex: 0.8 1 270px;
-  width: min(100%, 340px);
-  min-width: 250px;
-  max-width: 340px;
 }
 
 body[data-active-view="releases"] .releaseTopbarControls {
@@ -6221,35 +6209,12 @@ body[data-active-view="releases"] .releaseTopbarControls {
   font-size: 10px;
 }
 
-body[data-active-view="funnels"] .topbar > div:first-child {
-  flex: 0 0 auto;
-}
-
 body[data-active-view="funnels"] .topbarActions {
-  flex: 0 1 auto;
-}
-
-body[data-active-view="funnels"] .topbarFilters {
-  align-items: flex-end;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-body[data-active-view="funnels"] #pageSubtitle,
-body[data-active-view="funnels"] .topbarFilters .dateDisplayField {
   display: none;
 }
 
-body[data-active-view="funnels"] .topbarUniverseSelector {
-  flex: 0 1 260px;
-  order: -3;
-  width: 260px;
-  min-width: 220px;
-  max-width: 260px;
-}
-
-body[data-active-view="funnels"] .funnelTopbarExtras {
-  display: flex;
+body[data-active-view="funnels"] #pageSubtitle {
+  display: none;
 }
 
 .funnelNewButton,
@@ -6278,7 +6243,9 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 .funnelNewButton {
+  width: 100%;
   gap: 8px;
+  justify-content: center;
   min-height: 44px;
   border: 1px solid rgba(159, 104, 255, 0.55);
   border-radius: 9px;
@@ -6321,29 +6288,31 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 .funnelCatalogPanel {
   position: sticky;
-  top: 20px;
+  top: 8px;
   align-self: start;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
-  min-height: calc(100vh - 40px);
-  max-height: calc(100vh - 40px);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: calc(100vh - 16px);
+  max-height: calc(100vh - 16px);
   overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--sidebar);
   box-shadow: inset -1px 0 0 rgba(88, 103, 159, 0.12);
-  padding: 20px 12px;
+  padding: 8px 12px 18px;
 }
 
 @media (min-width: 1181px) {
   body[data-active-view="funnels"] .dashboardMain {
     display: grid;
     grid-template-areas:
-      "funnel-title funnel-topbar"
+      "funnel-title funnel-content"
       "saved-funnels funnel-content";
     grid-template-columns: 220px minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     align-items: start;
     column-gap: 18px;
+    row-gap: 0;
+    padding-top: 10px;
   }
 
   body[data-active-view="funnels"] .topbar {
@@ -6352,24 +6321,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   body[data-active-view="funnels"] .topbar > div:first-child {
     grid-area: funnel-title;
-    align-self: center;
-    padding: 0 22px 12px;
-  }
-
-  body[data-active-view="funnels"] .topbarActions {
-    grid-area: funnel-topbar;
-    align-self: center;
-    justify-content: flex-start;
-    padding-bottom: 12px;
-    min-width: 0;
-  }
-
-  body[data-active-view="funnels"] .topbarFilters {
-    flex: 0 1 auto;
-  }
-
-  body[data-active-view="funnels"] .funnelTopbarExtras {
-    order: -2;
+    align-self: start;
+    padding: 0 12px 5px;
   }
 
   body[data-active-view="funnels"] .funnelsPage,
@@ -6379,6 +6332,8 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   body[data-active-view="funnels"] .funnelCatalogPanel {
     grid-area: saved-funnels;
+    min-height: calc(100vh - 56px);
+    max-height: calc(100vh - 56px);
   }
 
   body[data-active-view="funnels"] .funnelDetailColumn {
@@ -6399,13 +6354,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   align-items: center;
   gap: 10px;
   margin: 0;
-  padding: 0 10px 5px;
+  padding: 0 10px 2px;
   color: var(--placeholder);
   font-size: 10px;
   font-weight: 850;
   letter-spacing: 0.13em;
   line-height: 1;
   text-transform: uppercase;
+}
+
+.funnelCatalogAction {
+  min-width: 0;
 }
 
 .funnelCatalogHeader h2::after {
@@ -7208,26 +7167,17 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     width: 100%;
   }
 
-  .topbarFilters .dateDisplayField,
-  .topbarUniverseSelector {
+  .topbarFilters .dateDisplayField {
     width: 100%;
     min-width: 0;
     max-width: none;
   }
 
-  body[data-active-view="funnels"] .topbarUniverseSelector,
   body[data-active-view="funnels"] .topbarFilters .dateDisplayField,
-  body[data-active-view="events"] .topbarUniverseSelector,
   body[data-active-view="events"] .topbarFilters .dateDisplayField {
     width: 100%;
     min-width: 0;
     max-width: none;
-  }
-
-  body[data-active-view="funnels"] .funnelTopbarExtras {
-    display: grid;
-    grid-template-columns: 1fr;
-    width: 100%;
   }
 
   .funnelNewButton {
@@ -7795,10 +7745,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     flex-wrap: wrap;
   }
 
-  body[data-active-view="releases"] .topbarUniverseSelector {
-    flex: 0.8 1 260px;
-  }
-
   body[data-active-view="releases"] .releaseTopbarControls {
     flex: 2 1 620px;
   }
@@ -7806,12 +7752,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 }
 
 @media (max-width: 760px) {
-  body[data-active-view="releases"] .topbarUniverseSelector {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
-
   body[data-active-view="releases"] .releaseTopbarControls {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
