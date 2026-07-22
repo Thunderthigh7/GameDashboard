@@ -4686,7 +4686,6 @@ body[data-active-view="events"] #pageSubtitle {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  min-height: 44px;
   margin-bottom: 10px;
 }
 
@@ -4694,14 +4693,6 @@ body[data-active-view="events"] #pageSubtitle {
   display: grid;
   gap: 3px;
   min-width: 0;
-}
-
-.eventPropertyBreakdownHeader span {
-  color: #a98bff;
-  font-size: 8px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .eventPropertyBreakdownHeader h3 {
@@ -4712,15 +4703,6 @@ body[data-active-view="events"] #pageSubtitle {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.eventPropertyBreakdownHeader small {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: right;
 }
 
 .eventLiveBadge {

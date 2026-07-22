@@ -99,7 +99,6 @@ const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventChart = document.querySelector("#eventChart");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
-const eventPropertySubtitle = document.querySelector("#eventPropertySubtitle");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
@@ -2951,7 +2950,6 @@ function prepareCustomEventSelection(eventName) {
     eventChart.innerHTML = '<p class="status">Loading event activity...</p>';
   }
   renderCustomEventProperties([], 0);
-  if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Loading properties...";
   if (eventPropertyList) {
     eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Loading property values...</span></div>';
   }
@@ -2969,7 +2967,6 @@ function renderCustomEventSelectionError() {
     eventChart.setAttribute("aria-busy", "false");
     eventChart.innerHTML = '<p class="status">Could not load event activity.</p>';
   }
-  if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Could not load properties for this event.";
   if (eventPropertyList) {
     eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Could not load property values.</span></div>';
   }
@@ -3009,8 +3006,17 @@ function renderCustomEvents(payload = {}) {
 
   if (selectedEventTitle) selectedEventTitle.textContent = selected ? formatEventName(selected.name) : "Select an event";
   if (selectedEventSubtitle) {
+    const totalVisits = (selected?.series || []).reduce((sum, bucket) => sum + (Number(bucket.visits) || 0), 0);
+    const sessionCoverage = totalVisits > 0
+      ? Math.min((Number(selected?.uniqueSessions) || 0) / totalVisits, 1) * 100
+      : null;
     selectedEventSubtitle.textContent = selected
-      ? `${selected.sourceType === "system" ? "Automatic system event" : "Custom logged event"} · ${formatCompactNumber(selected.count)} events from ${formatCompactNumber(selected.uniquePlayers)} players and ${formatCompactNumber(selected.uniqueSessions)} sessions.`
+      ? [
+          `${formatCompactNumber(selected.count)} events`,
+          `${formatCompactNumber(selected.uniquePlayers)} players`,
+          `${formatCompactNumber(selected.uniqueSessions)} sessions`,
+          ...(sessionCoverage === null ? [] : [`${formatEventNumber(sessionCoverage)}% session coverage`]),
+        ].join(" · ")
       : "The event timeline will appear here.";
   }
   updateEventIntervalControl(selected);
@@ -3198,14 +3204,10 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
 
   if (!cleanProperties.length) {
     eventPropertyList.innerHTML = '<p class="status eventPropertyEmptyRow">No properties were sent with this event.</p>';
-    if (eventPropertySubtitle) eventPropertySubtitle.textContent = "Values sent with the selected event.";
     return;
   }
 
   const selectedTotal = Math.max(Number(totalEventCount) || 0, ...cleanProperties.map((property) => Number(property.eventCount ?? property.count) || 0), 1);
-  if (eventPropertySubtitle) {
-    eventPropertySubtitle.textContent = `${formatCompactNumber(cleanProperties.length)} ${cleanProperties.length === 1 ? "property" : "properties"} · percentages based on ${formatCompactNumber(selectedTotal)} selected events.`;
-  }
   eventPropertyList.innerHTML = cleanProperties
     .map((property) => renderCustomEventPropertyCard(property, selectedTotal))
     .join("");
@@ -3221,8 +3223,6 @@ function renderCustomEventPropertyCard(property, selectedTotal) {
   const valuesTruncated = Boolean(property.valuesTruncated);
   const coverage = selectedTotal ? (eventCount / selectedTotal) * 100 : 0;
   const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
-  const normalizedName = propertyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const propertyKind = GENERIC_EVENT_PROPERTY_NAMES.has(normalizedName) ? "Context property" : "Gameplay property";
   const numericSummary = property.type === "number"
     ? `<dl class="eventNumericSummaryGrid">
         <div><dt>Events</dt><dd><strong>${formatCompactNumber(eventCount)}</strong><small>${formatEventNumber(coverage)}% coverage</small></dd></div>
@@ -3261,8 +3261,7 @@ function renderCustomEventPropertyCard(property, selectedTotal) {
   return `
     <section class="eventPropertyBreakdown" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} breakdown">
       <header class="eventPropertyBreakdownHeader">
-        <div><span>${propertyKind}</span><h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3></div>
-        <small>${formatCompactNumber(eventCount)} events · ${formatEventNumber(coverage)}% coverage</small>
+        <div><h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3></div>
       </header>
       ${numericSummary}
       <div class="eventPropertyTable" role="table" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values">
