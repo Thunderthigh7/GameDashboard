@@ -7958,16 +7958,11 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   gap: 22px;
 }
 
-.landingNavLinks > a,
-.landingNavPlaceholder {
+.landingNavLinks > a {
   color: #c0c8dc;
   font-size: 14px;
   font-weight: 750;
   text-decoration: none;
-}
-
-.landingNavPlaceholder {
-  cursor: default;
 }
 
 .landingNavLinks > a:hover,
@@ -8128,6 +8123,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 .howItWorksSection {
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
+  scroll-margin-top: calc(var(--landing-nav-height) + 20px);
   border-top: 1px solid rgba(80, 99, 150, 0.26);
   padding: 76px 0;
 }
@@ -8441,6 +8437,89 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   text-align: center;
 }
 
+.landingPricingSection {
+  display: grid;
+  justify-items: center;
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+  scroll-margin-top: calc(var(--landing-nav-height) + 20px);
+  border-top: 1px solid rgba(80, 99, 150, 0.3);
+  padding: 76px 0;
+}
+
+.landingPricingCard {
+  display: grid;
+  justify-items: center;
+  width: min(440px, 100%);
+  border: 1px solid rgba(137, 91, 237, 0.48);
+  border-radius: 16px;
+  background: linear-gradient(155deg, rgba(18, 28, 55, 0.96), rgba(8, 15, 32, 0.98));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  padding: 30px;
+  text-align: center;
+}
+
+.landingPricingLabel {
+  color: #bea2ff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landingPricingPlaceholder {
+  margin-top: 22px;
+  color: #818da9;
+  font-size: 18px;
+  font-weight: 800;
+  text-decoration-color: #b768ff;
+  text-decoration-thickness: 2px;
+}
+
+.landingPricingPrice {
+  margin-top: 6px;
+  color: #f7f4ff;
+  font-size: 52px;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.landingPricingTerm {
+  margin-top: 10px;
+  color: #b9c2d8;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.landingPricingCard ul {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin: 26px 0 0;
+  border-top: 1px solid rgba(80, 99, 150, 0.32);
+  padding: 22px 0 0;
+  color: #d7deef;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  list-style: none;
+}
+
+.landingPricingCard li::before {
+  margin-right: 9px;
+  color: #72e2aa;
+  content: "\2713";
+}
+
+.landingPricingButton {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 26px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #934eff, #6a32ec);
+  box-shadow: 0 13px 34px rgba(105, 46, 231, 0.24);
+}
+
 .landingFinalCta {
   display: grid;
   grid-template-columns: minmax(0, 800px);
@@ -8514,8 +8593,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     gap: 12px;
   }
 
-  .landingNavLinks > a,
-  .landingNavPlaceholder {
+  .landingNavLinks > a {
     font-size: 12px;
   }
 
@@ -8529,6 +8607,11 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 
   .howItWorksSection {
+    width: calc(100% - 28px);
+    padding: 58px 0;
+  }
+
+  .landingPricingSection {
     width: calc(100% - 28px);
     padding: 58px 0;
   }
@@ -8590,8 +8673,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
     gap: 8px;
   }
 
-  .landingNavLinks > a,
-  .landingNavPlaceholder {
+  .landingNavLinks > a {
     font-size: 11px;
   }
 
