@@ -3231,9 +3231,6 @@ function renderCustomEventPropertyCard(property, selectedTotal) {
         <div><dt>Range</dt><dd><strong>${formatEventNumber(property.min)}–${formatEventNumber(property.max)}</strong><small>Minimum to maximum</small></dd></div>
       </dl>`
     : "";
-  const categoryInsight = property.type !== "number" && values.length
-    ? renderEventPropertyInsight(selectedCustomEventName, propertyName, values[0], selectedTotal)
-    : "";
   const valueRows = values.length
     ? values.map((entry, index) => {
       const count = Number(entry.count) || 0;
@@ -3267,7 +3264,6 @@ function renderCustomEventPropertyCard(property, selectedTotal) {
         <div><span>${propertyKind}</span><h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3></div>
         <small>${formatCompactNumber(eventCount)} events · ${formatEventNumber(coverage)}% coverage</small>
       </header>
-      ${categoryInsight}
       ${numericSummary}
       <div class="eventPropertyTable" role="table" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values">
         <div class="eventPropertyTableHeader" role="row"><span role="columnheader">#</span><span role="columnheader">Value</span><span role="columnheader">Events</span><span role="columnheader">%</span></div>
@@ -3285,23 +3281,6 @@ function getEventPropertyPriority(property, eventName) {
   if (GENERIC_EVENT_PROPERTY_NAMES.has(normalizedName)) return 30;
   if (property?.type !== "number") return 10;
   return 20;
-}
-
-function renderEventPropertyInsight(eventName, propertyName, leader, totalEventCount) {
-  const count = Number(leader?.count) || 0;
-  const percent = totalEventCount ? (count / totalEventCount) * 100 : 0;
-  const value = formatEventPropertyValue(leader?.value);
-  const normalizedPropertyName = String(propertyName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  let finding;
-  if (eventName === "obby_failed" && normalizedPropertyName === "obstacle") finding = `${value} causes the most obby failures`;
-  else if (eventName === "weapon_selected" && normalizedPropertyName === "weapon") finding = `${value} is the most selected weapon`;
-  else if (eventName === "combat_death" && normalizedPropertyName === "killedbyweapon") finding = `${value} causes the most combat deaths`;
-  else if (eventName === "sword_selected" && normalizedPropertyName === "sword") finding = `${value} is the most selected sword`;
-  else if (eventName === "sword_duel_defeat" && normalizedPropertyName === "defeatedbysword") finding = `${value} causes the most duel defeats`;
-  else if (eventName === "simulator_session_ended" && normalizedPropertyName === "reason") finding = `${value} is the top simulator exit reason`;
-  else if (eventName === "purchase_prompt_closed" && normalizedPropertyName === "reason") finding = `${value} is the top reason players close the shop`;
-  else finding = `${value} is the most common ${formatEventPropertyName(propertyName).toLowerCase()}`;
-  return `<div class="eventCategoryInsight"><span>Top finding</span><strong>${escapeHtml(finding)}</strong><small>${formatCompactNumber(count)} events · ${formatEventNumber(percent)}% of this event</small></div>`;
 }
 
 function renderRecentCustomEvents(events, properties = []) {

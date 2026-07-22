@@ -4880,34 +4880,6 @@ body[data-active-view="events"] #pageSubtitle {
   gap: 6px;
 }
 
-.eventCategoryInsight {
-  display: grid;
-  gap: 4px;
-  margin: 0 0 10px;
-  border: 1px solid rgba(155, 101, 255, 0.24);
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(124, 60, 255, 0.12), rgba(42, 25, 88, 0.05));
-  padding: 11px 13px;
-}
-
-.eventCategoryInsight > span {
-  color: #a98bff;
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.eventCategoryInsight > strong {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.eventCategoryInsight > small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
 .eventNumericSummaryGrid > div {
   display: grid;
   gap: 5px;
