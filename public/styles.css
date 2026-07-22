@@ -8261,9 +8261,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   line-height: 1.02;
 }
 
-.landingWhyHeading h2 span,
-.landingVisualHeading h3 span,
-.roAnalyticsVisualColumn h4 {
+.landingWhyHeading h2 span {
   background: linear-gradient(105deg, #b46fff, #7044ff);
   -webkit-background-clip: text;
   background-clip: text;
@@ -8274,100 +8272,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   max-width: 790px;
   margin: 4px auto 0;
   font-size: 17px;
-}
-
-.landingVisualCompare {
-  margin-top: 24px;
-  border: 1px solid rgba(75, 96, 150, 0.5);
-  border-radius: 17px;
-  background: linear-gradient(155deg, rgba(11, 21, 43, 0.92), rgba(6, 12, 27, 0.95));
-  padding: 28px 26px 22px;
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.22);
-}
-
-.landingVisualHeading {
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.landingVisualHeading h3 {
-  margin: 0;
-  color: #e9edf8;
-  font-size: clamp(22px, 2.5vw, 30px);
-  letter-spacing: -0.025em;
-  line-height: 1.18;
-}
-
-.landingVisualIntro {
-  max-width: 700px;
-  margin: 10px auto 0;
-  color: #aeb8d0;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.landingVisualGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.landingVisualColumn {
-  min-width: 0;
-}
-
-.landingVisualColumn + .landingVisualColumn {
-  border-left: 1px solid rgba(78, 95, 139, 0.34);
-  padding-left: 24px;
-}
-
-.landingVisualColumn > header {
-  min-height: 57px;
-  text-align: center;
-}
-
-.landingVisualColumn h4 {
-  margin: 0;
-  color: #e9edf8;
-  font-size: 18px;
-  line-height: 1.25;
-}
-
-.landingVisualColumn header p {
-  margin-top: 4px;
-  color: #aeb8d0;
-  font-size: 13px;
-}
-
-.landingComparisonPreview {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  border: 1px solid rgba(78, 96, 144, 0.44);
-  border-radius: 12px;
-  background: #080f1d;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22);
-}
-
-.landingComparisonPreview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.landingVisualSummary {
-  max-width: 840px;
-  margin: 18px auto 0;
-  color: #bec7dc;
-  font-size: 14px;
-  line-height: 1.55;
-  text-align: center;
-}
-
-.landingVisualSummary strong {
-  color: #e7ddfb;
 }
 
 .landingFeatureTableBox {
@@ -8600,25 +8504,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 }
 
-@media (max-width: 900px) {
-  .landingVisualGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .landingVisualColumn + .landingVisualColumn {
-    margin-top: 5px;
-    border-top: 1px solid rgba(78, 95, 139, 0.34);
-    border-left: 0;
-    padding-top: 22px;
-    padding-left: 0;
-  }
-
-  .landingComparisonPreview {
-    width: min(680px, 100%);
-    margin-inline: auto;
-  }
-}
-
 @media (max-width: 760px) {
   .isLocked .dashboardMain {
     padding: 0 0 48px;
@@ -8650,10 +8535,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .landingWhyHeading h2 {
     font-size: clamp(34px, 7vw, 46px);
-  }
-
-  .landingVisualCompare {
-    padding: 24px 18px 20px;
   }
 
   .landingFeatureTable .robloxFeatureColumn {
@@ -8764,15 +8645,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
   .landingWhyHeading p {
     font-size: 15px;
-  }
-
-  .landingVisualCompare {
-    padding: 21px 10px 17px;
-  }
-
-  .landingVisualSummary {
-    padding-inline: 7px;
-    font-size: 13px;
   }
 
   .landingFeatureTable .robloxFeatureColumn {
