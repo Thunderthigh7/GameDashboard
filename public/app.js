@@ -91,6 +91,7 @@ const releaseBeforeVersionMenu = document.querySelector("#releaseBeforeVersionMe
 const releaseAfterVersionMenu = document.querySelector("#releaseAfterVersionMenu");
 const releaseBeforeDateRange = document.querySelector("#releaseBeforeDateRange");
 const releaseAfterDateRange = document.querySelector("#releaseAfterDateRange");
+const releaseFunnelPicker = document.querySelector(".releaseFunnelPicker");
 const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
 const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const eventsStatus = document.querySelector("#eventsStatus");
@@ -2374,6 +2375,7 @@ function renderReleases(payload = {}) {
         <p>Install the current Roblox analytics script and join a published server. Studio observations stay separate and will not create a release.</p>
       </article>
     `;
+    placeReleaseFunnelPicker();
     return;
   }
 
@@ -2384,10 +2386,21 @@ function renderReleases(payload = {}) {
         <p>Keep the Roblox analytics script installed through another published update. Once both PlaceVersions have sessions, you can compare them here.</p>
       </article>
     `;
+    placeReleaseFunnelPicker();
     return;
   }
 
-  releaseComparisonContent.innerHTML = renderReleaseComparison(payload.selectedComparison);
+  releaseComparisonContent.innerHTML = renderReleaseComparison(payload.selectedComparison, {
+    hasAvailableFunnels: Array.isArray(payload.availableFunnels) && payload.availableFunnels.length > 0,
+  });
+  placeReleaseFunnelPicker();
+}
+
+function placeReleaseFunnelPicker() {
+  if (!releaseFunnelPicker || !releaseComparisonContent) return;
+  const slot = releaseComparisonContent.querySelector("[data-release-funnel-picker-slot]");
+  releaseFunnelPicker.hidden = !slot;
+  if (slot) slot.replaceWith(releaseFunnelPicker);
 }
 
 function renderReleaseComparisonControls(payload = {}) {
@@ -2584,20 +2597,18 @@ function handleReleaseControlEscape(event) {
   closeReleaseFunnelMenu();
 }
 
-function renderReleaseComparison(release = {}) {
+function renderReleaseComparison(release = {}, options = {}) {
   const allowedReadiness = new Set(["ready", "no_baseline", "collecting_both", "collecting_baseline", "collecting_release", "collecting_matched"]);
   const readiness = allowedReadiness.has(release.readiness) ? release.readiness : "collecting_both";
   const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
 
   return `
-    <article class="releaseComparisonCard releaseDataWorkspace">
-      ${renderReleaseAnalysis(release.comparison)}
-      ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
-    </article>
+    ${renderReleaseAnalysis(release.comparison, options)}
+    ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
   `;
 }
 
-function renderReleaseAnalysis(comparison = null) {
+function renderReleaseAnalysis(comparison = null, options = {}) {
   if (!comparison) return "";
   const trafficAdjustment = comparison.trafficAdjustment || {};
   const trafficReady = trafficAdjustment.status === "ready";
@@ -2617,7 +2628,7 @@ function renderReleaseAnalysis(comparison = null) {
   return `
     <section class="releaseAnalysis">
       <div class="releaseAnalysisBody">
-        ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
+        ${options.hasAvailableFunnels ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
         ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics) : ""}
         <p class="releaseMethodNote">Only rates and conversion are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
       </div>
@@ -2660,10 +2671,8 @@ function getReleaseEventOutcomeMetrics(coreMetrics, events) {
 function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseFunnelImpactSection">
-      <header><div><strong>Funnel conversion</strong><span>Conversion rate changes for the selected funnels</span></div></header>
-      <div class="releaseFunnelImpactList">
-        ${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}
-      </div>
+      <header><div><strong>Funnel conversion</strong><span>Conversion rate changes for the selected funnels</span></div><div class="releaseFunnelPickerSlot" data-release-funnel-picker-slot></div></header>
+      ${funnels.length ? `<div class="releaseFunnelImpactList">${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}</div>` : ""}
     </section>
   `;
 }

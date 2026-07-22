@@ -5478,6 +5478,10 @@ body[data-active-view="releases"] .releaseTopbarControls {
   flex: 1.1 1 230px;
 }
 
+.releaseFunnelPicker[hidden] {
+  display: none;
+}
+
 .releaseFunnelPicker > button {
   display: flex;
   align-items: center;
@@ -5509,6 +5513,20 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseFunnelMenu[hidden] {
   display: none;
+}
+
+.releaseFunnelImpactSection > header .releaseFunnelPicker {
+  flex: 0 1 360px;
+  width: min(360px, 100%);
+  gap: 0;
+}
+
+.releaseFunnelImpactSection > header .releaseFunnelPicker > span {
+  display: none;
+}
+
+.releaseFunnelImpactSection > header .releaseFunnelPicker > button {
+  height: 40px;
 }
 
 .releaseFunnelMenu > header {
@@ -5593,25 +5611,20 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseComparisonWorkspace {
   display: grid;
+  gap: 14px;
   min-width: 0;
 }
 
-.releaseComparisonWorkspace[aria-busy="true"] .releaseComparisonCard {
+.releaseComparisonWorkspace[aria-busy="true"] .releaseAnalysis,
+.releaseComparisonWorkspace[aria-busy="true"] .releaseComparisonNotice {
   opacity: 0.58;
   pointer-events: none;
 }
 
-.releaseComparisonCard {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: linear-gradient(145deg, rgba(12, 20, 39, 0.92), rgba(6, 12, 25, 0.94));
-  box-shadow: 0 18px 50px rgba(1, 5, 14, 0.18);
-  overflow: hidden;
-}
-
 .releaseComparisonNotice {
-  border-top: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(10, 17, 34, 0.6);
   padding: 10px 15px;
   color: var(--muted);
   font-size: 10px;
@@ -5637,8 +5650,7 @@ body[data-active-view="releases"] .releaseTopbarControls {
 }
 
 .releaseAnalysis {
-  border-top: 1px solid var(--line);
-  background: rgba(5, 10, 22, 0.38);
+  min-width: 0;
 }
 
 .releaseAnalysisSection > header > div {
@@ -5648,28 +5660,27 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseAnalysisSection > header strong {
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .releaseAnalysisSection > header span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .releaseAnalysisBody {
   display: grid;
-  gap: 14px;
-  padding: 20px;
+  gap: 20px;
 }
 
 .releaseAnalysisSection {
   display: grid;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
   border: 1px solid rgba(80, 99, 150, 0.28);
-  border-radius: 10px;
+  border-radius: 12px;
   background: rgba(10, 17, 34, 0.6);
-  padding: 16px;
+  padding: 22px;
 }
 
 .releaseAnalysisSection > header {
@@ -5685,16 +5696,17 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseFunnelImpactList {
   display: grid;
-  gap: 11px;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 14px;
 }
 
 .releaseFunnelImpact {
   display: grid;
-  gap: 9px;
+  gap: 13px;
   border: 1px solid rgba(80, 99, 150, 0.28);
-  border-radius: 9px;
+  border-radius: 11px;
   background: rgba(7, 13, 27, 0.62);
-  padding: 14px;
+  padding: 18px;
 }
 
 .releaseFunnelImpact.increase {
@@ -5719,20 +5731,20 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseFunnelImpact > header strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .releaseFunnelImpact > header span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .releaseFunnelImpact > header b {
   border-radius: 999px;
   background: rgba(105, 120, 164, 0.12);
   color: var(--nav-text);
-  padding: 4px 7px;
-  font-size: 9px;
+  padding: 5px 8px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -5748,15 +5760,15 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseFunnelBarRow {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 46px;
+  grid-template-columns: 54px minmax(0, 1fr) 62px;
   align-items: center;
-  gap: 8px;
+  gap: 11px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .releaseFunnelBarRow > div {
-  height: 9px;
+  height: 13px;
   border-radius: 999px;
   background: rgba(89, 101, 143, 0.2);
   overflow: hidden;
@@ -5775,7 +5787,7 @@ body[data-active-view="releases"] .releaseTopbarControls {
 
 .releaseFunnelBarRow strong {
   color: var(--nav-text);
-  font-size: 10px;
+  font-size: 12px;
   text-align: right;
 }
 
@@ -5801,7 +5813,7 @@ body[data-active-view="releases"] .releaseTopbarControls {
   min-width: 0;
   overflow: hidden;
   border: 1px solid rgba(80, 99, 150, 0.25);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .releaseComparisonTableHeader,
@@ -5809,38 +5821,39 @@ body[data-active-view="releases"] .releaseTopbarControls {
   display: grid;
   grid-template-columns: minmax(180px, 1.6fr) repeat(3, minmax(72px, 0.6fr)) minmax(90px, 0.7fr);
   align-items: center;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 13px 16px;
 }
 
 .releaseComparisonTableHeader {
   background: rgba(19, 29, 54, 0.66);
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .releaseComparisonTableRow {
+  min-height: 54px;
   border-top: 1px solid rgba(80, 99, 150, 0.2);
   color: var(--nav-text);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .releaseComparisonTableRow > strong {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .releaseComparisonTableRow > small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .releaseCodeLabel {
@@ -5854,100 +5867,6 @@ body[data-active-view="releases"] .releaseTopbarControls {
   font-size: 9px;
   line-height: 1.45;
   text-align: center;
-}
-
-.releaseDataWorkspace {
-  border-color: rgba(80, 99, 150, 0.34);
-  border-radius: 14px;
-  box-shadow: 0 20px 54px rgba(1, 5, 14, 0.22);
-}
-
-.releaseDataWorkspace .releaseAnalysis {
-  border-top: 0;
-}
-
-.releaseDataWorkspace .releaseAnalysisBody {
-  gap: 20px;
-  padding: 25px;
-}
-
-.releaseDataWorkspace .releaseAnalysisSection {
-  gap: 16px;
-  border-radius: 12px;
-  padding: 22px;
-}
-
-.releaseDataWorkspace .releaseAnalysisSection > header strong {
-  font-size: 16px;
-}
-
-.releaseDataWorkspace .releaseAnalysisSection > header span {
-  font-size: 12px;
-}
-
-.releaseDataWorkspace .releaseFunnelImpactList {
-  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
-  gap: 14px;
-}
-
-.releaseDataWorkspace .releaseFunnelImpact {
-  gap: 13px;
-  border-radius: 11px;
-  padding: 18px;
-}
-
-.releaseDataWorkspace .releaseFunnelImpact > header strong {
-  font-size: 15px;
-}
-
-.releaseDataWorkspace .releaseFunnelImpact > header span,
-.releaseDataWorkspace .releaseFunnelImpact > header b {
-  font-size: 10px;
-}
-
-.releaseDataWorkspace .releaseFunnelImpact > header b {
-  padding: 5px 8px;
-}
-
-.releaseDataWorkspace .releaseFunnelBarRow {
-  grid-template-columns: 54px minmax(0, 1fr) 62px;
-  gap: 11px;
-  font-size: 10px;
-}
-
-.releaseDataWorkspace .releaseFunnelBarRow > div {
-  height: 13px;
-}
-
-.releaseDataWorkspace .releaseFunnelBarRow strong {
-  font-size: 12px;
-}
-
-.releaseDataWorkspace .releaseComparisonTable {
-  border-radius: 10px;
-}
-
-.releaseDataWorkspace .releaseComparisonTableHeader,
-.releaseDataWorkspace .releaseComparisonTableRow {
-  gap: 16px;
-  padding: 13px 16px;
-}
-
-.releaseDataWorkspace .releaseComparisonTableHeader {
-  font-size: 9px;
-}
-
-.releaseDataWorkspace .releaseComparisonTableRow {
-  min-height: 54px;
-  font-size: 12px;
-}
-
-.releaseDataWorkspace .releaseComparisonTableRow > strong {
-  font-size: 12px;
-}
-
-.releaseDataWorkspace .releaseComparisonTableRow > small {
-  font-size: 10px;
 }
 
 body[data-active-view="funnels"] .topbarActions {
@@ -7689,15 +7608,10 @@ body[data-active-view="funnels"] #pageSubtitle {
   }
 
   .releaseAnalysisBody {
-    padding: 12px;
-  }
-
-  .releaseDataWorkspace .releaseAnalysisBody {
     gap: 12px;
-    padding: 12px;
   }
 
-  .releaseDataWorkspace .releaseAnalysisSection {
+  .releaseAnalysisSection {
     padding: 15px;
   }
 
