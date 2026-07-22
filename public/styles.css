@@ -6222,31 +6222,30 @@ body[data-active-view="releases"] .releaseTopbarControls {
 }
 
 body[data-active-view="funnels"] .topbar > div:first-child {
-  flex: 1 1 310px;
+  flex: 0 0 auto;
 }
 
 body[data-active-view="funnels"] .topbarActions {
-  flex: 1 1 900px;
+  flex: 0 1 auto;
 }
 
 body[data-active-view="funnels"] .topbarFilters {
   align-items: flex-end;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
 }
 
-body[data-active-view="funnels"] .topbarUniverseSelector {
-  flex: 1 1 240px;
-  order: -3;
-  width: clamp(230px, 18vw, 290px);
-  min-width: 220px;
-  max-width: 300px;
+body[data-active-view="funnels"] #pageSubtitle,
+body[data-active-view="funnels"] .topbarFilters .dateDisplayField {
+  display: none;
 }
 
-body[data-active-view="funnels"] .topbarFilters .dateDisplayField {
-  flex: 1 1 190px;
-  width: clamp(185px, 14vw, 230px);
-  max-width: 240px;
+body[data-active-view="funnels"] .topbarUniverseSelector {
+  flex: 0 1 260px;
+  order: -3;
+  width: 260px;
+  min-width: 220px;
+  max-width: 260px;
 }
 
 body[data-active-view="funnels"] .funnelTopbarExtras {
@@ -6339,7 +6338,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   body[data-active-view="funnels"] .dashboardMain {
     display: grid;
     grid-template-areas:
-      "saved-funnels funnel-topbar"
+      "funnel-title funnel-topbar"
       "saved-funnels funnel-content";
     grid-template-columns: 220px minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -6348,8 +6347,29 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   }
 
   body[data-active-view="funnels"] .topbar {
+    display: contents;
+  }
+
+  body[data-active-view="funnels"] .topbar > div:first-child {
+    grid-area: funnel-title;
+    align-self: center;
+    padding: 0 22px 12px;
+  }
+
+  body[data-active-view="funnels"] .topbarActions {
     grid-area: funnel-topbar;
+    align-self: center;
+    justify-content: flex-start;
+    padding-bottom: 12px;
     min-width: 0;
+  }
+
+  body[data-active-view="funnels"] .topbarFilters {
+    flex: 0 1 auto;
+  }
+
+  body[data-active-view="funnels"] .funnelTopbarExtras {
+    order: -2;
   }
 
   body[data-active-view="funnels"] .funnelsPage,
