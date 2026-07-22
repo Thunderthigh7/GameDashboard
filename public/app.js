@@ -889,7 +889,7 @@ function renderActiveView(options = {}) {
     },
     releases: {
       title: "Releases",
-      subtitle: "Compare exact Roblox PlaceVersions without mixing old and new servers.",
+      subtitle: "",
     },
     "ai-runs": {
       title: "AI Runs",
@@ -912,8 +912,10 @@ function renderActiveView(options = {}) {
       subtitle: "Monitor RoAnalytics accounts and connected universes.",
     },
   };
-  pageTitle.textContent = viewCopy[activeView]?.title || viewCopy.overview.title;
-  pageSubtitle.textContent = viewCopy[activeView]?.subtitle || viewCopy.overview.subtitle;
+  const activeViewCopy = viewCopy[activeView] || viewCopy.overview;
+  pageTitle.textContent = activeViewCopy.title;
+  pageSubtitle.textContent = activeViewCopy.subtitle || "";
+  pageSubtitle.hidden = !activeViewCopy.subtitle;
   updateViewRefreshTimers();
   window.dispatchEvent(new CustomEvent("dashboard:viewChanged", {
     detail: { view: activeView, universeId: selectedUniverseId },
@@ -2597,12 +2599,8 @@ function renderReleaseComparison(release = {}) {
 
 function renderReleaseAnalysis(comparison = null) {
   if (!comparison) return "";
-  const findings = comparison.findings || {};
-  const findingItems = Array.isArray(findings.items) ? findings.items : [];
-  const partialData = Boolean(comparison.dataQuality?.partial);
   const trafficAdjustment = comparison.trafficAdjustment || {};
   const trafficReady = trafficAdjustment.status === "ready";
-  const ready = comparison.status === "ready" && trafficReady;
   const coreMetrics = trafficReady && Array.isArray(trafficAdjustment.coreMetrics)
     ? trafficAdjustment.coreMetrics
     : (Array.isArray(comparison.coreMetrics) ? comparison.coreMetrics : []);
@@ -2613,51 +2611,16 @@ function renderReleaseAnalysis(comparison = null) {
     ? trafficAdjustment.events
     : (Array.isArray(comparison.events) ? comparison.events : []);
   const eventMetrics = getReleaseEventOutcomeMetrics(coreMetrics, events);
-  const findingDirections = summarizeReleaseFindingDirections(findingItems);
-  const evidenceSessions = trafficReady
-    ? Math.min(Number(trafficAdjustment.samples?.before?.sessions) || 0, Number(trafficAdjustment.samples?.after?.sessions) || 0)
-    : Math.min(Number(comparison.samples?.before?.sessions) || 0, Number(comparison.samples?.after?.sessions) || 0);
   const beforeVersion = comparison.samples?.before?.placeVersion;
   const afterVersion = comparison.samples?.after?.placeVersion;
 
   return `
     <section class="releaseAnalysis">
       <div class="releaseAnalysisBody">
-        ${renderReleaseOutcomeSummary({ findingItems, findingDirections, ready, partialData, evidenceSessions, beforeVersion, afterVersion, matched: trafficReady })}
         ${funnels.length ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
-        ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics, beforeVersion, afterVersion) : ""}
-        <p class="releaseMethodNote">Only rates, conversion, and thresholded findings are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
+        ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics) : ""}
+        <p class="releaseMethodNote">Only rates and conversion are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
       </div>
-    </section>
-  `;
-}
-
-function renderReleaseOutcomeSummary({ findingItems = [], findingDirections = {}, ready = false, partialData = false, evidenceSessions = 0, beforeVersion, afterVersion, matched = false } = {}) {
-  const increases = Number(findingDirections.increase) || 0;
-  const decreases = Number(findingDirections.decrease) || 0;
-  const meaningfulChanges = findingItems.length;
-  const headline = !ready
-    ? "Waiting for enough evidence"
-    : partialData
-      ? "Some conclusions are suppressed"
-      : meaningfulChanges
-        ? `${formatCompactNumber(meaningfulChanges)} meaningful change${meaningfulChanges === 1 ? "" : "s"} detected`
-        : "No meaningful change detected";
-  const summary = !ready
-    ? "The comparison will unlock after both versions have enough usable sessions."
-    : meaningfulChanges
-      ? `${formatCompactNumber(increases)} increase${increases === 1 ? "" : "s"} and ${formatCompactNumber(decreases)} decrease${decreases === 1 ? "" : "s"} crossed the evidence thresholds.`
-      : "Funnels and event rates stayed inside the practical and statistical thresholds.";
-  const direction = increases && decreases ? "mixed" : increases ? "increase" : decreases ? "decrease" : "unchanged";
-  return `
-    <section class="releaseOutcomeSummary ${direction}">
-      <div class="releaseOutcomeMark" aria-hidden="true">${!ready ? "&hellip;" : direction === "mixed" ? "&#8597;" : direction === "increase" ? "&#8593;" : direction === "decrease" ? "&#8595;" : "="}</div>
-      <div>
-        <span>v${escapeHtml(formatReleaseVersion(beforeVersion))} &rarr; v${escapeHtml(formatReleaseVersion(afterVersion))}</span>
-        <strong>${escapeHtml(headline)}</strong>
-        <p>${escapeHtml(summary)}</p>
-      </div>
-      <div class="releaseOutcomeEvidence"><strong>${escapeHtml(formatCompactNumber(evidenceSessions))}</strong><span>${matched ? "matched" : "usable"} sessions / side</span></div>
     </section>
   `;
 }
@@ -2694,31 +2657,10 @@ function getReleaseEventOutcomeMetrics(coreMetrics, events) {
   return [...coreOutcomes, ...customOutcomes];
 }
 
-function summarizeReleaseFindingDirections(findingItems) {
-  return findingItems.reduce((counts, finding) => {
-    const direction = getReleaseFindingDirection(finding);
-    counts[direction] += 1;
-    return counts;
-  }, { increase: 0, decrease: 0, unchanged: 0 });
-}
-
-function getReleaseFindingDirection(finding = {}) {
-  const beforeValue = Number(finding.evidence?.before?.value);
-  const afterValue = Number(finding.evidence?.after?.value);
-  if (Number.isFinite(beforeValue) && Number.isFinite(afterValue)) {
-    if (Math.abs(afterValue - beforeValue) < 0.0001) return "unchanged";
-    return afterValue > beforeValue ? "increase" : "decrease";
-  }
-  const title = String(finding.title || "").toLowerCase();
-  if (title.includes(" increased")) return "increase";
-  if (title.includes(" decreased")) return "decrease";
-  return "unchanged";
-}
-
 function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
   return `
     <section class="releaseAnalysisSection releaseFunnelImpactSection">
-      <header><div><strong>Funnel conversion</strong><span>Conversion rate changes for the selected funnels</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <header><div><strong>Funnel conversion</strong><span>Conversion rate changes for the selected funnels</span></div></header>
       <div class="releaseFunnelImpactList">
         ${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}
       </div>
@@ -2757,10 +2699,10 @@ function getReleaseBarWidth(value) {
   return Math.max(2, Math.min(100, number));
 }
 
-function renderReleaseEventComparisons(events, beforeVersion, afterVersion) {
+function renderReleaseEventComparisons(events) {
   return `
     <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>Event rate changes</strong><span>Player and session rates; raw event volume is excluded</span></div><small>v${escapeHtml(formatReleaseVersion(beforeVersion))} vs v${escapeHtml(formatReleaseVersion(afterVersion))}</small></header>
+      <header><div><strong>Event rate changes</strong><span>Player and session rates; raw event volume is excluded</span></div></header>
       <div class="releaseComparisonTable" role="table" aria-label="Event rate release comparisons">
         <div class="releaseComparisonTableHeader" role="row"><span>Event outcome</span><span>Before</span><span>After</span><span>Difference</span><span>Evidence</span></div>
         ${events.map((event) => renderReleaseComparisonRow(
