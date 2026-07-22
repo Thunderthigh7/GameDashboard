@@ -6335,6 +6335,41 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   padding: 20px 12px;
 }
 
+@media (min-width: 1181px) {
+  body[data-active-view="funnels"] .dashboardMain {
+    display: grid;
+    grid-template-areas:
+      "saved-funnels funnel-topbar"
+      "saved-funnels funnel-content";
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: 18px;
+  }
+
+  body[data-active-view="funnels"] .topbar {
+    grid-area: funnel-topbar;
+    min-width: 0;
+  }
+
+  body[data-active-view="funnels"] .funnelsPage,
+  body[data-active-view="funnels"] .funnelWorkspace {
+    display: contents;
+  }
+
+  body[data-active-view="funnels"] .funnelCatalogPanel {
+    grid-area: saved-funnels;
+  }
+
+  body[data-active-view="funnels"] .funnelDetailColumn {
+    grid-area: funnel-content;
+  }
+
+  body[data-active-view="funnels"] #authError:not([hidden]) {
+    grid-column: 1 / -1;
+  }
+}
+
 .funnelCatalogHeader {
   min-width: 0;
 }
