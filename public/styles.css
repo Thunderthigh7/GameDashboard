@@ -8420,18 +8420,19 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  max-width: 820px;
+  max-width: 940px;
   margin: 24px auto 76px;
-  color: #929eba;
-  font-size: 13px;
+  color: #aeb8d0;
+  font-size: 15px;
+  font-weight: 650;
   line-height: 1.55;
   text-align: center;
 }
 
 .landingFeatureNote svg {
   flex: 0 0 auto;
-  width: 21px;
-  height: 21px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: #9c5cff;
   stroke-width: 1.8;
