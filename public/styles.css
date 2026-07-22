@@ -204,15 +204,6 @@ body.isResizingLayout {
   white-space: nowrap;
 }
 
-.brand span {
-  margin-left: 4px;
-  border-radius: 999px;
-  background: var(--purple-soft);
-  color: var(--purple);
-  padding: 1px 4px;
-  font-size: inherit;
-}
-
 .brand small {
   display: block;
   margin-top: 4px;
@@ -4267,7 +4258,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
   background: linear-gradient(180deg, #a78bfa, #6d28d9);
 }
 
-.eventBreakdownCard,
+.eventBreakdownSection,
 .eventRecentCard {
   min-width: 0;
 }
@@ -4633,12 +4624,16 @@ body[data-active-view="events"] #pageSubtitle {
   background: #2dd4bf;
 }
 
-.eventBreakdownCard,
 .eventRecentCard {
   display: flex;
   flex-direction: column;
   min-height: 390px;
   padding: 16px;
+}
+
+.eventBreakdownSection {
+  display: flex;
+  flex-direction: column;
 }
 
 .eventDataCardHeader {
@@ -8582,15 +8577,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   font-size: 18px;
 }
 
-.docsBrand strong span {
-  margin-left: 6px;
-  border-radius: 999px;
-  background: rgba(124, 60, 255, 0.2);
-  color: #9e72ff;
-  padding: 2px 7px;
-  font-size: 10px;
-}
-
 .docsBackButton {
   min-height: 36px;
   border: 1px solid rgba(145, 95, 255, 0.42);
@@ -8773,10 +8759,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .docsBrand strong {
     font-size: 15px;
-  }
-
-  .docsBrand strong span {
-    display: none;
   }
 
   .docsPlaceholder {
