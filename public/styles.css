@@ -8419,7 +8419,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   max-width: 940px;
   margin: 24px auto 76px;
   color: #aeb8d0;
@@ -8427,17 +8426,6 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
   font-weight: 650;
   line-height: 1.55;
   text-align: center;
-}
-
-.landingFeatureNote svg {
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: #9c5cff;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .landingFinalCta {
