@@ -8017,7 +8017,7 @@ body[data-active-view="funnels"] .funnelTopbarExtras {
 
 .landingSimpleHero h1 {
   width: 100%;
-  max-width: 850px;
+  max-width: 980px;
   margin: 20px 0 0;
   color: #f8f9ff;
   font-size: clamp(48px, 6vw, 72px);
