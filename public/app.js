@@ -3795,8 +3795,9 @@ function renderFunnelResults(funnel) {
             </div>
             <div class="funnelStepBarCell">
               <div class="funnelStepBarTrack">
-                <div class="funnelStepBar" style="width: ${barWidth}%"><span>${formatCompactNumber(sessions)}</span></div>
+                <div class="funnelStepBar" style="width: ${barWidth}%"></div>
               </div>
+              <strong class="funnelStepPlayerCount">${formatCompactNumber(sessions)}</strong>
               <strong class="funnelStepTotalConversion">${formatFunnelPercentage(step.conversionFromStart)}</strong>
             </div>
             <div class="funnelTimeCell">

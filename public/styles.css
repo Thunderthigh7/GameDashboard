@@ -6766,18 +6766,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   pointer-events: none;
 }
 
-.funnelStepBar span {
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-  color: #fff;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .funnelTimeCell,
 .funnelDropCell {
   display: grid;
@@ -6787,6 +6775,7 @@ body[data-active-view="funnels"] #pageSubtitle {
   text-align: center;
 }
 
+.funnelStepPlayerCount,
 .funnelStepTotalConversion,
 .funnelTimeCell strong,
 .funnelDropCell strong {
@@ -6804,15 +6793,24 @@ body[data-active-view="funnels"] #pageSubtitle {
   color: #ff7f8b;
 }
 
+.funnelStepPlayerCount,
 .funnelStepTotalConversion {
   position: absolute;
   z-index: 2;
   top: 50%;
-  right: 10px;
-  text-align: right;
   text-shadow: 0 1px 4px rgba(2, 5, 16, 0.8);
   transform: translateY(-50%);
   white-space: nowrap;
+}
+
+.funnelStepPlayerCount {
+  left: 10px;
+  text-align: left;
+}
+
+.funnelStepTotalConversion {
+  right: 10px;
+  text-align: right;
 }
 
 .funnelBuilder {
