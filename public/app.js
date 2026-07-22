@@ -91,6 +91,7 @@ const releaseBeforeVersionMenu = document.querySelector("#releaseBeforeVersionMe
 const releaseAfterVersionMenu = document.querySelector("#releaseAfterVersionMenu");
 const releaseBeforeDateRange = document.querySelector("#releaseBeforeDateRange");
 const releaseAfterDateRange = document.querySelector("#releaseAfterDateRange");
+const releaseVersionPair = document.querySelector(".releaseVersionPair");
 const releaseFunnelPicker = document.querySelector(".releaseFunnelPicker");
 const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
 const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
@@ -2375,6 +2376,7 @@ function renderReleases(payload = {}) {
         <p>Install the current Roblox analytics script and join a published server. Studio observations stay separate and will not create a release.</p>
       </article>
     `;
+    placeReleaseVersionPair();
     placeReleaseFunnelPicker();
     return;
   }
@@ -2386,6 +2388,7 @@ function renderReleases(payload = {}) {
         <p>Keep the Roblox analytics script installed through another published update. Once both PlaceVersions have sessions, you can compare them here.</p>
       </article>
     `;
+    placeReleaseVersionPair();
     placeReleaseFunnelPicker();
     return;
   }
@@ -2393,7 +2396,15 @@ function renderReleases(payload = {}) {
   releaseComparisonContent.innerHTML = renderReleaseComparison(payload.selectedComparison, {
     hasAvailableFunnels: Array.isArray(payload.availableFunnels) && payload.availableFunnels.length > 0,
   });
+  placeReleaseVersionPair();
   placeReleaseFunnelPicker();
+}
+
+function placeReleaseVersionPair() {
+  if (!releaseVersionPair || !releaseComparisonContent) return;
+  const slot = releaseComparisonContent.querySelector("[data-release-version-pair-slot]");
+  releaseVersionPair.hidden = !slot;
+  if (slot) slot.replaceWith(releaseVersionPair);
 }
 
 function placeReleaseFunnelPicker() {
@@ -2603,6 +2614,7 @@ function renderReleaseComparison(release = {}, options = {}) {
   const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
 
   return `
+    <div class="releaseVersionPairSlot" data-release-version-pair-slot></div>
     ${renderReleaseAnalysis(release.comparison, options)}
     ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
   `;
