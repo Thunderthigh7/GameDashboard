@@ -74,6 +74,7 @@ const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_HEATMAP_RESPONSE = 5000;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
+const EVENT_PROPERTY_TIMELINE_SERIES_LIMIT = 4;
 const RELEASE_COHORT_MIN_SESSIONS = 20;
 const SYSTEM_ANALYTICS_EVENT_DEFINITIONS = Object.freeze([
   { name: "player_died", type: "death", timestampField: "diedAt" },
@@ -4930,7 +4931,10 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     availableIntervals: eventSeries.availableIntervals,
     selectedInterval: eventSeries.selectedInterval,
     series: eventSeries.buckets,
-    properties: summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName),
+    properties: summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName, {
+      bucketMs: eventSeries.bucketMs,
+      bucketStarts: eventSeries.buckets.map((bucket) => bucket.start),
+    }),
     truncatedPropertyEvents,
     recentEvents: events.slice(0, recentLimit),
     recentEventsTotal: events.length,
@@ -5009,7 +5013,7 @@ function normalizeCustomEventInterval(value) {
   return CUSTOM_EVENT_INTERVALS_MS.has(interval) ? interval : "auto";
 }
 
-function summarizeCustomEventProperties(events, valueLimit = 4, selectedPropertyName = "") {
+function summarizeCustomEventProperties(events, valueLimit = 4, selectedPropertyName = "", timelineOptions = {}) {
   const cleanValueLimit = Math.min(Math.max(cleanInteger(valueLimit), 1), MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   const summaries = new Map();
   for (const event of events) {
@@ -5047,7 +5051,7 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
         }
         const valueType = typeof observation;
         const displayValue = valueType === "string" ? cleanString(observation, 240) : observation;
-        const valueKey = `${valueType}:${String(displayValue)}`;
+        const valueKey = getCustomEventPropertyValueKey(displayValue);
         if (summary.values.has(valueKey) || summary.values.size < MAX_CUSTOM_EVENT_PROPERTY_VALUES_TRACKED) {
           const trackedValue = summary.values.get(valueKey) || { value: displayValue, valueType, occurrences: 0 };
           trackedValue.occurrences += 1;
@@ -5068,7 +5072,7 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
     const type = summary.numericCount === summary.observationCount
       ? "number"
       : (summary.numericCount > 0 ? "mixed" : "category");
-    return {
+    const property = {
       name: summary.name,
       count: summary.eventCount,
       eventCount: summary.eventCount,
@@ -5092,7 +5096,163 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
           || String(left.value).localeCompare(String(right.value)))
         .slice(0, responseValueLimit),
     };
+    property.timeline = buildCustomEventPropertyTimeline(events, property, timelineOptions);
+    return property;
   }).sort((left, right) => right.eventCount - left.eventCount);
+}
+
+function getCustomEventPropertyValueKey(value) {
+  const valueType = typeof value;
+  const displayValue = valueType === "string" ? cleanString(value, 240) : value;
+  return `${valueType}:${String(displayValue)}`;
+}
+
+function getCustomEventPropertyObservations(event, propertyName) {
+  const value = event?.properties?.[propertyName];
+  return (Array.isArray(value) ? value : [value])
+    .slice(0, MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS)
+    .filter((entry) => (
+      typeof entry === "string"
+      || typeof entry === "boolean"
+      || (typeof entry === "number" && Number.isFinite(entry))
+    ))
+    .map((entry) => (typeof entry === "string" ? cleanString(entry, 240) : entry));
+}
+
+function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
+  const bucketMs = cleanFiniteInteger(options.bucketMs);
+  const bucketStarts = Array.isArray(options.bucketStarts)
+    ? options.bucketStarts.map(cleanFiniteInteger).filter((start) => start > 0)
+    : [];
+  const topValues = Array.isArray(property.topValues) ? property.topValues : [];
+  if (!bucketMs || !bucketStarts.length || !topValues.length) {
+    return {
+      bucketMs: bucketMs || null,
+      start: bucketStarts[0] || null,
+      end: bucketStarts.length && bucketMs ? bucketStarts.at(-1) + bucketMs : null,
+      axisMaxPercent: 100,
+      series: [],
+    };
+  }
+
+  const numericSeries = buildNumericCustomEventPropertySeries(property);
+  const trackedSeries = numericSeries.length
+    ? numericSeries
+    : topValues.map((entry) => ({
+      id: getCustomEventPropertyValueKey(entry.value),
+      value: entry.value,
+      valueType: entry.valueType || typeof entry.value,
+      isOther: false,
+    }));
+  const trackedSeriesIds = new Set(trackedSeries.map((entry) => entry.id));
+  const includeOther = !numericSeries.length && (
+    Boolean(property.valuesTruncated)
+    || Number(property.totalValues) > trackedSeries.length
+  );
+  if (includeOther) {
+    trackedSeries.push({
+      id: "__other__",
+      value: "Other",
+      valueType: "other",
+      isOther: true,
+    });
+  }
+
+  const buckets = bucketStarts.map((start) => ({
+    start,
+    observationCount: 0,
+    counts: new Map(),
+  }));
+  const bucketsByStart = new Map(buckets.map((bucket) => [bucket.start, bucket]));
+  for (const event of events) {
+    const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
+    if (!occurredAt) continue;
+    const bucket = bucketsByStart.get(Math.floor(occurredAt / bucketMs) * bucketMs);
+    if (!bucket) continue;
+    const observations = getCustomEventPropertyObservations(event, property.name);
+    for (const observation of observations) {
+      const valueKey = getCustomEventPropertyValueKey(observation);
+      const numericBucket = numericSeries.length && typeof observation === "number"
+        ? numericSeries.find((series) => (
+          observation >= series.min
+          && (series.includeMax ? observation <= series.max : observation < series.max)
+        ))
+        : null;
+      const seriesId = numericBucket?.id
+        || (trackedSeriesIds.has(valueKey) ? valueKey : (includeOther ? "__other__" : ""));
+      if (!seriesId) continue;
+      bucket.observationCount += 1;
+      bucket.counts.set(seriesId, (bucket.counts.get(seriesId) || 0) + 1);
+    }
+  }
+
+  const totalObservations = buckets.reduce((total, bucket) => total + bucket.observationCount, 0);
+  return {
+    bucketMs,
+    start: bucketStarts[0],
+    end: bucketStarts.at(-1) + bucketMs,
+    axisMaxPercent: 100,
+    observationCount: totalObservations,
+    series: trackedSeries.map((series) => {
+      const count = buckets.reduce((total, bucket) => total + (bucket.counts.get(series.id) || 0), 0);
+      return {
+        value: series.value,
+        valueType: series.valueType,
+        isOther: series.isOther,
+        count,
+        percent: totalObservations ? (count / totalObservations) * 100 : 0,
+        points: buckets.map((bucket) => {
+          const pointCount = bucket.counts.get(series.id) || 0;
+          return {
+            start: bucket.start,
+            count: pointCount,
+            percent: bucket.observationCount
+              ? (pointCount / bucket.observationCount) * 100
+              : null,
+          };
+        }),
+      };
+    }),
+  };
+}
+
+function buildNumericCustomEventPropertySeries(property = {}) {
+  const totalValues = cleanFiniteInteger(property.totalValues);
+  const min = cleanFiniteNumber(property.min);
+  const max = cleanFiniteNumber(property.max);
+  if (
+    property.type !== "number"
+    || totalValues <= EVENT_PROPERTY_TIMELINE_SERIES_LIMIT
+    || !Number.isFinite(min)
+    || !Number.isFinite(max)
+    || max <= min
+  ) {
+    return [];
+  }
+
+  const interval = (max - min) / EVENT_PROPERTY_TIMELINE_SERIES_LIMIT;
+  return Array.from({ length: EVENT_PROPERTY_TIMELINE_SERIES_LIMIT }, (_, index) => {
+    const rangeMin = min + (interval * index);
+    const rangeMax = index === EVENT_PROPERTY_TIMELINE_SERIES_LIMIT - 1
+      ? max
+      : min + (interval * (index + 1));
+    return {
+      id: `__range_${index}__`,
+      value: `${formatCustomEventPropertyRangeValue(rangeMin)}–${formatCustomEventPropertyRangeValue(rangeMax)}`,
+      valueType: "range",
+      isOther: false,
+      min: rangeMin,
+      max: rangeMax,
+      includeMax: index === EVENT_PROPERTY_TIMELINE_SERIES_LIMIT - 1,
+    };
+  });
+}
+
+function formatCustomEventPropertyRangeValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  if (Math.abs(number) >= 100 || Number.isInteger(number)) return String(Math.round(number));
+  return number.toFixed(2).replace(/\.?0+$/, "");
 }
 
 async function getFunnelsFromQuery(ownerUserId, searchParams) {

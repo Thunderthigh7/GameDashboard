@@ -4820,7 +4820,7 @@ body[data-active-view="events"] #pageSubtitle {
 }
 
 .eventPropertyGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   gap: 14px;
 }
@@ -4859,6 +4859,112 @@ body[data-active-view="events"] #pageSubtitle {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.eventPropertyBreakdownHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.eventPropertyTimeline {
+  display: grid;
+  min-width: 0;
+  min-height: 316px;
+  align-content: start;
+}
+
+.eventPropertyTimeline > .status {
+  align-self: center;
+  justify-self: center;
+  margin: auto;
+}
+
+.eventPropertyChartScroller {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 60, 255, 0.45) transparent;
+}
+
+.eventPropertyChartSvg {
+  display: block;
+  min-width: 100%;
+  overflow: visible;
+}
+
+.eventPropertyChartGrid line {
+  stroke: rgba(84, 101, 149, 0.28);
+  stroke-dasharray: 3 4;
+}
+
+.eventPropertyChartGrid text,
+.eventPropertyChartXLabel,
+.eventPropertyChartYAxisTitle {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.eventPropertyChartYAxisTitle {
+  fill: var(--nav-text);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.eventPropertyChartSeries path {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 3px 7px rgba(124, 60, 255, 0.18));
+}
+
+.eventPropertyChartSeries circle {
+  stroke-width: 1.5;
+  filter: drop-shadow(0 2px 4px rgba(3, 8, 22, 0.5));
+}
+
+.eventPropertyChartLegend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 9px 18px;
+  min-width: 0;
+  padding: 2px 8px 0;
+}
+
+.eventPropertyChartLegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--nav-text);
+  font-size: 10px;
+}
+
+.eventPropertyChartLegend i {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.eventPropertyChartLegend strong {
+  max-width: min(180px, 24vw);
+  overflow: hidden;
+  color: var(--text);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventPropertyChartLegend small {
+  color: var(--muted);
+  font-size: 9px;
 }
 
 .eventLiveBadge {
