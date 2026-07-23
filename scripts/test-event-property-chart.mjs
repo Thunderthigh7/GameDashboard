@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+assert.doesNotMatch(appSource, /data-event-property-view/, "property cards should not include Timeline/Average tabs");
+assert.match(appSource, /class="eventPropertyAverageLegend"/, "property cards should render the average legend in the header");
+assert.match(appSource, /<small>Average share<\/small>/, "the legend should identify its values as averages");
+assert.match(appSource, /<b>\$\{formatEventNumber\(entry\.percent\)\}%<\/b>/, "each legend key should show its average share");
+assert.doesNotMatch(appSource, /class="eventPropertyChartLegend"/, "property charts should not repeat the legend below the graph");
 const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
 const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);
 assert.ok(timelineHelperStart >= 0 && timelineHelperEnd > timelineHelperStart, "event timeline formatting helpers should remain available");
@@ -50,6 +55,7 @@ for (const [period, bucketCount] of periodBucketCounts) {
   const path = buildRoundedEventPropertyPath(points);
   assert.ok(path.startsWith("M"), `${period} should produce a visible path`);
   assert.ok(!/NaN|Infinity/.test(path), `${period} should not produce invalid coordinates`);
+  assert.equal((path.match(/M/g) || []).length, 1, `${period} should keep one continuous trend across empty buckets`);
   assertPathCoordinatesStayBounded(path, 18, 240, period);
 
   const intervalMs = periodIntervals.get(period);
@@ -110,8 +116,8 @@ assert.equal(
     { x: 90, y: null },
     { x: 108, y: 120 },
   ]).match(/M/g) || []).length,
-  2,
-  "empty buckets should split the path instead of being bridged",
+  1,
+  "empty buckets should preserve a continuous property trend instead of breaking the line",
 );
 
 console.log("Event property chart period tests passed.", {
