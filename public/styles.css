@@ -4845,7 +4845,7 @@ body[data-active-view="events"] #pageSubtitle {
   margin-bottom: 10px;
 }
 
-.eventPropertyBreakdownHeader > div {
+.eventPropertyBreakdownTitle {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -4865,6 +4865,47 @@ body[data-active-view="events"] #pageSubtitle {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
+}
+
+.eventPropertyViewToggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 0 auto;
+  gap: 3px;
+  min-width: 146px;
+  border: 1px solid rgba(80, 99, 150, 0.42);
+  border-radius: 8px;
+  background: rgba(5, 11, 27, 0.72);
+  padding: 3px;
+}
+
+.eventPropertyViewToggle button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventPropertyViewToggle button:hover,
+.eventPropertyViewToggle button:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.eventPropertyViewToggle button:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(155, 109, 255, 0.48);
+}
+
+.eventPropertyViewToggle button.active {
+  background: rgba(124, 60, 255, 0.24);
+  color: #d8c8ff;
+  box-shadow: inset 0 0 0 1px rgba(155, 109, 255, 0.3);
 }
 
 .eventPropertyTimeline {
@@ -4960,11 +5001,6 @@ body[data-active-view="events"] #pageSubtitle {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.eventPropertyChartLegend small {
-  color: var(--muted);
-  font-size: 9px;
 }
 
 .eventLiveBadge {

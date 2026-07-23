@@ -190,6 +190,7 @@ let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
 let currentEventPropertySummaries = [];
 let currentSelectedEventCount = 0;
+const eventPropertyViewModes = new Map();
 let recentEventsExpanded = false;
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
@@ -200,7 +201,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260723-2";
+const DASHBOARD_ASSET_VERSION = "20260723-3";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -402,6 +403,7 @@ function bindEvents() {
     selectedEventInterval = eventIntervalSelect.value || "auto";
     loadCustomEvents({ force: true });
   });
+  eventPropertyList?.addEventListener("click", handleEventPropertyViewChange);
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
     loadCustomEvents({ force: true });
@@ -2845,6 +2847,7 @@ function syncEventCatalogSelection(eventName) {
 }
 
 function prepareCustomEventSelection(eventName) {
+  eventPropertyViewModes.clear();
   if (selectedEventTitle) selectedEventTitle.textContent = formatEventName(eventName);
   if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Loading event details...";
   if (eventChart) {
@@ -2884,6 +2887,7 @@ function renderCustomEvents(payload = {}) {
   const previousEventName = selectedCustomEventName;
   selectedCustomEventName = selected?.name || "";
   if (previousEventName && previousEventName !== selectedCustomEventName) {
+    eventPropertyViewModes.clear();
     recentEventsExpanded = false;
   }
 
@@ -3124,17 +3128,97 @@ function renderCustomEventPropertyCard(property, selectedTotal, propertyIndex) {
   const eventCount = Number(property.eventCount ?? property.count) || 0;
   const observationCount = Number(property.observationCount) || eventCount;
   const coverage = selectedTotal ? (eventCount / selectedTotal) * 100 : 0;
+  const viewMode = getEventPropertyViewMode(propertyName);
+  const timelineActive = viewMode === "timeline";
 
   return `
     <section class="eventPropertyBreakdown" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} breakdown">
       <header class="eventPropertyBreakdownHeader">
-        <div>
+        <div class="eventPropertyBreakdownTitle">
           <h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3>
-          <p>${formatCompactNumber(observationCount)} recorded values · ${formatEventNumber(coverage)}% event coverage</p>
+          ${timelineActive ? `<p>${formatCompactNumber(observationCount)} recorded values · ${formatEventNumber(coverage)}% event coverage</p>` : ""}
+        </div>
+        <div class="eventPropertyViewToggle" role="group" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} view">
+          <button class="${timelineActive ? "active" : ""}" type="button" data-event-property-view="timeline" data-event-property-name="${escapeHtml(propertyName)}" aria-pressed="${timelineActive}">Timeline</button>
+          <button class="${timelineActive ? "" : "active"}" type="button" data-event-property-view="average" data-event-property-name="${escapeHtml(propertyName)}" aria-pressed="${!timelineActive}">Average</button>
         </div>
       </header>
-      <div class="eventPropertyTimeline" data-event-property-chart-index="${propertyIndex}" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values over time"></div>
+      ${timelineActive
+        ? `<div class="eventPropertyTimeline" data-event-property-chart-index="${propertyIndex}" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values over time"></div>`
+        : renderCustomEventPropertyAverage(property, selectedTotal)}
     </section>`;
+}
+
+function getEventPropertyViewMode(propertyName) {
+  return eventPropertyViewModes.get(`${selectedCustomEventName}\u0000${propertyName}`) || "timeline";
+}
+
+function handleEventPropertyViewChange(event) {
+  const button = event.target.closest("[data-event-property-view]");
+  if (!button || !eventPropertyList?.contains(button)) return;
+  const propertyName = button.dataset.eventPropertyName || "";
+  const viewMode = button.dataset.eventPropertyView === "average" ? "average" : "timeline";
+  if (!propertyName || getEventPropertyViewMode(propertyName) === viewMode) return;
+
+  eventPropertyViewModes.set(`${selectedCustomEventName}\u0000${propertyName}`, viewMode);
+  renderCustomEventProperties(currentEventPropertySummaries, currentSelectedEventCount);
+  const nextButton = [...eventPropertyList.querySelectorAll(`[data-event-property-view="${viewMode}"]`)]
+    .find((candidate) => candidate.dataset.eventPropertyName === propertyName);
+  nextButton?.focus({ preventScroll: true });
+}
+
+function renderCustomEventPropertyAverage(property, selectedTotal) {
+  const propertyName = String(property.name || "Property");
+  const eventCount = Number(property.eventCount ?? property.count) || 0;
+  const observationCount = Number(property.observationCount) || eventCount;
+  const returnedValues = Array.isArray(property.topValues) ? property.topValues : [];
+  const values = returnedValues.slice(0, EVENT_PROPERTY_VALUE_LIMIT);
+  const totalValues = Number(property.totalValues) || returnedValues.length;
+  const valuesTruncated = Boolean(property.valuesTruncated);
+  const coverage = selectedTotal ? (eventCount / selectedTotal) * 100 : 0;
+  const maxCount = Math.max(...values.map((entry) => Number(entry.count) || 0), 1);
+  const numericSummary = property.type === "number"
+    ? `<dl class="eventNumericSummaryGrid">
+        <div><dt>Events</dt><dd><strong>${formatCompactNumber(eventCount)}</strong><small>${formatEventNumber(coverage)}% coverage</small></dd></div>
+        <div><dt>Values</dt><dd><strong>${formatCompactNumber(observationCount)}</strong><small>${formatCompactNumber(totalValues)}${valuesTruncated ? "+" : ""} distinct</small></dd></div>
+        <div><dt>Average</dt><dd><strong>${formatEventNumber(property.average)}</strong><small>Across all values</small></dd></div>
+        <div><dt>Range</dt><dd><strong>${formatEventNumber(property.min)}–${formatEventNumber(property.max)}</strong><small>Minimum to maximum</small></dd></div>
+      </dl>`
+    : "";
+  const valueRows = values.length
+    ? values.map((entry, index) => {
+      const count = Number(entry.count) || 0;
+      const occurrences = Number(entry.occurrences) || count;
+      const percent = selectedTotal ? (count / selectedTotal) * 100 : 0;
+      const valueTypeLabel = property.type === "mixed"
+        ? (entry.valueType === "number" ? "Number" : (entry.valueType === "boolean" ? "Boolean" : "Text"))
+        : "";
+      return `
+        <div class="eventPropertyItem" role="row">
+          <span class="eventPropertyRank" role="cell">${index + 1}</span>
+          <div class="eventPropertyValue" role="cell">
+            <strong>${escapeHtml(formatEventPropertyValue(entry.value))}</strong>
+            ${valueTypeLabel ? `<small class="eventPropertyTypeBadge">${escapeHtml(valueTypeLabel)}</small>` : ""}
+            ${occurrences > count ? `<small>${formatCompactNumber(occurrences)} total occurrences</small>` : ""}
+            <span><i style="width:${Math.max((count / maxCount) * 100, count ? 4 : 0).toFixed(2)}%"></i></span>
+          </div>
+          <b role="cell">${formatCompactNumber(count)}</b>
+          <em role="cell">${formatEventNumber(percent)}%</em>
+        </div>`;
+    }).join("")
+    : '<p class="status eventPropertyEmptyRow">No usable values were sent for this property.</p>';
+  const remainingValueCount = Math.max(totalValues - values.length, 0);
+  const valueLimitNote = valuesTruncated || remainingValueCount
+    ? `<p class="eventPropertyCardNote">Showing top ${formatCompactNumber(values.length)}${remainingValueCount ? ` of ${formatCompactNumber(totalValues)}` : ""}${valuesTruncated ? "+" : ""} values</p>`
+    : "";
+
+  return `
+    ${numericSummary}
+    <div class="eventPropertyTable" role="table" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} average values">
+      <div class="eventPropertyTableHeader" role="row"><span role="columnheader">#</span><span role="columnheader">Value</span><span role="columnheader">Events</span><span role="columnheader">% of events</span></div>
+      <div class="eventPropertyRows" role="rowgroup">${valueRows}</div>
+    </div>
+    ${valueLimitNote}`;
 }
 
 function renderCustomEventPropertyChart(container, property = {}) {
@@ -3223,7 +3307,6 @@ function renderCustomEventPropertyChart(container, property = {}) {
       <span title="${escapeHtml(formatEventPropertyValue(entry.value))}">
         <i style="background:${color}" aria-hidden="true"></i>
         <strong>${escapeHtml(formatEventPropertyValue(entry.value))}</strong>
-        <small>${formatEventNumber(entry.percent)}%</small>
       </span>
     `;
   }).join("");
