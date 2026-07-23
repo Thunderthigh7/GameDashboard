@@ -201,7 +201,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260723-3";
+const DASHBOARD_ASSET_VERSION = "20260723-4";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -2971,8 +2971,8 @@ function renderCustomEventChart(series, selectedBucketMs) {
   const tickCount = 4;
   const bucketMs = Number(selectedBucketMs) || getSeriesBucketMs(series);
   const bucketCount = series.length;
-  const pointSpacing = bucketCount > 120 ? 18 : bucketCount > 72 ? 28 : bucketCount > 36 ? 40 : 78;
-  const chartWidth = Math.max(Math.floor(eventChart.clientWidth || 760), ((bucketCount - 1) * pointSpacing) + 140);
+  const chartSpanMs = getEventChartSpanMs(series.map((bucket) => Number(bucket?.start)), bucketMs);
+  const chartWidth = getEventChartWidth(eventChart.clientWidth, bucketCount, 140, 14);
   const chartHeight = 286;
   const left = 62;
   const right = 62;
@@ -2988,7 +2988,16 @@ function renderCustomEventChart(series, selectedBucketMs) {
     const x = bucketCount === 1 ? left + (plotWidth / 2) : left + ((index / (bucketCount - 1)) * plotWidth);
     const y = top + (plotHeight - ((count / axisMax) * plotHeight));
     const visitY = top + (plotHeight - ((visits / visitAxisMax) * plotHeight));
-    return { bucket, count, visits, x, y, visitY, label: formatEventChartLabel(bucket.start, bucketMs) };
+    return {
+      bucket,
+      count,
+      visits,
+      x,
+      y,
+      visitY,
+      label: formatEventChartLabel(bucket.start, bucketMs, chartSpanMs),
+      tooltipLabel: formatEventChartLabel(bucket.start, bucketMs, chartSpanMs, { detailed: true }),
+    };
   });
   const linePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
   const visitLinePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.visitY.toFixed(2)}`).join(" ");
@@ -3010,13 +3019,13 @@ function renderCustomEventChart(series, selectedBucketMs) {
   )).join("");
   const dots = points.map((point) => `
     <g class="eventChartPoint">
-      <circle cx="${point.x}" cy="${point.y}" r="4.5"><title>${escapeHtml(point.label)}: ${formatCompactNumber(point.count)} events, ${formatCompactNumber(point.visits)} visits, ${formatCompactNumber(point.bucket.uniquePlayers)} players</title></circle>
+      <circle cx="${point.x}" cy="${point.y}" r="4.5"><title>${escapeHtml(point.tooltipLabel)}: ${formatCompactNumber(point.count)} events, ${formatCompactNumber(point.visits)} visits, ${formatCompactNumber(point.bucket.uniquePlayers)} players</title></circle>
       <text x="${point.x}" y="${Math.max(point.y - 11, 12)}" text-anchor="middle">${point.count ? formatCompactNumber(point.count) : ""}</text>
     </g>
   `).join("");
   const visitDots = points.map((point) => `
     <g class="eventChartVisitPoint">
-      <circle cx="${point.x}" cy="${point.visitY}" r="3.5"><title>${escapeHtml(point.label)}: ${formatCompactNumber(point.visits)} visits</title></circle>
+      <circle cx="${point.x}" cy="${point.visitY}" r="3.5"><title>${escapeHtml(point.tooltipLabel)}: ${formatCompactNumber(point.visits)} visits</title></circle>
     </g>
   `).join("");
 
@@ -3060,13 +3069,49 @@ function getSeriesBucketMs(series) {
   return Math.max(Number(series[1]?.start) - Number(series[0]?.start), 60 * 1000);
 }
 
-function formatEventChartLabel(value, bucketMs) {
+function getEventChartSpanMs(bucketStarts, bucketMs) {
+  const starts = (Array.isArray(bucketStarts) ? bucketStarts : [])
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+  const intervalMs = Math.max(Number(bucketMs) || 0, 0);
+  if (!starts.length) return intervalMs;
+  return Math.max((starts.at(-1) - starts[0]) + intervalMs, intervalMs);
+}
+
+function getEventChartWidth(containerWidth, bucketCount, horizontalPadding, minimumPointSpacing) {
+  const availableWidth = Math.max(Math.floor(Number(containerWidth) || 760), 320);
+  const pointGaps = Math.max(Math.trunc(Number(bucketCount) || 0) - 1, 0);
+  const padding = Math.max(Number(horizontalPadding) || 0, 0);
+  const spacing = Math.max(Number(minimumPointSpacing) || 0, 1);
+  return Math.max(availableWidth, (pointGaps * spacing) + padding);
+}
+
+function formatEventChartLabel(value, bucketMs, spanMs = 0, options = {}) {
   const date = new Date(Number(value));
   if (!Number.isFinite(date.getTime())) return "--";
-  if (bucketMs < 24 * 60 * 60 * 1000) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const intervalMs = Math.max(Number(bucketMs) || 0, 0);
+  const timelineSpanMs = Math.max(Number(spanMs) || 0, intervalMs);
+  const includeDate = Boolean(options.detailed) || timelineSpanMs >= dayMs;
+  const includeYear = timelineSpanMs >= 365 * dayMs;
+  if (intervalMs < dayMs && includeDate) {
+    return date.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      ...(includeYear ? { year: "numeric" } : {}),
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  if (intervalMs < dayMs) {
     return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    ...(includeYear ? { year: "numeric" } : {}),
+  });
 }
 
 function updateEventIntervalControl(selectedEvent) {
@@ -3241,8 +3286,8 @@ function renderCustomEventPropertyChart(container, property = {}) {
   }
   const bucketCount = bucketStarts.length;
   const bucketMs = Number(timeline.bucketMs) || getSeriesBucketMs(bucketStarts.map((start) => ({ start })));
-  const pointSpacing = bucketCount > 120 ? 18 : bucketCount > 72 ? 26 : bucketCount > 36 ? 38 : 72;
-  const chartWidth = Math.max(Math.floor(container.clientWidth || 760), ((bucketCount - 1) * pointSpacing) + 116);
+  const chartSpanMs = getEventChartSpanMs(bucketStarts, bucketMs);
+  const chartWidth = getEventChartWidth(container.clientWidth, bucketCount, 116, 10);
   const chartHeight = 286;
   const left = 54;
   const right = 24;
@@ -3269,7 +3314,7 @@ function renderCustomEventPropertyChart(container, property = {}) {
   }).join("");
   const xLabels = bucketStarts.map((start, index) => (
     index === 0 || index === bucketCount - 1 || index % labelStep === 0
-      ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="middle">${escapeHtml(formatEventChartLabel(start, bucketMs))}</text>`
+      ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="middle">${escapeHtml(formatEventChartLabel(start, bucketMs, chartSpanMs))}</text>`
       : ""
   )).join("");
   const lines = series.map((entry, seriesIndex) => {
@@ -3291,7 +3336,7 @@ function renderCustomEventPropertyChart(container, property = {}) {
     const dots = chartPoints.map((point) => {
       if (point.y === null) return "";
       const label = formatEventPropertyValue(entry.value);
-      const dateLabel = formatEventChartLabel(point.start, bucketMs);
+      const dateLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
       return `<circle cx="${point.x}" cy="${point.y}" r="3.5" style="fill:${color};stroke:${color}"><title>${escapeHtml(label)} · ${escapeHtml(dateLabel)}: ${formatEventNumber(point.percent)}% (${formatCompactNumber(point.count)} values)</title></circle>`;
     }).join("");
     return `

@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
+const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);
+assert.ok(timelineHelperStart >= 0 && timelineHelperEnd > timelineHelperStart, "event timeline formatting helpers should remain available");
+
+const timelineHelperSource = appSource.slice(timelineHelperStart, timelineHelperEnd);
+const { formatEventChartLabel, getEventChartSpanMs, getEventChartWidth } = Function(
+  `"use strict";\n${timelineHelperSource}\nreturn { formatEventChartLabel, getEventChartSpanMs, getEventChartWidth };`,
+)();
 const helperStart = appSource.indexOf("function buildRoundedEventPropertyPath(");
 const helperEnd = appSource.indexOf("\nfunction getEventPropertyPriority(", helperStart);
 assert.ok(helperStart >= 0 && helperEnd > helperStart, "event property chart path helpers should remain available");
@@ -21,6 +29,16 @@ const periodBucketCounts = new Map([
   ["1d", 30],
   ["7d", 12],
 ]);
+const periodIntervals = new Map([
+  ["1m", 60 * 1000],
+  ["5m", 5 * 60 * 1000],
+  ["15m", 15 * 60 * 1000],
+  ["1h", 60 * 60 * 1000],
+  ["6h", 6 * 60 * 60 * 1000],
+  ["12h", 12 * 60 * 60 * 1000],
+  ["1d", 24 * 60 * 60 * 1000],
+  ["7d", 7 * 24 * 60 * 60 * 1000],
+]);
 
 for (const [period, bucketCount] of periodBucketCounts) {
   const points = Array.from({ length: bucketCount }, (_, index) => ({
@@ -33,7 +51,42 @@ for (const [period, bucketCount] of periodBucketCounts) {
   assert.ok(path.startsWith("M"), `${period} should produce a visible path`);
   assert.ok(!/NaN|Infinity/.test(path), `${period} should not produce invalid coordinates`);
   assertPathCoordinatesStayBounded(path, 18, 240, period);
+
+  const intervalMs = periodIntervals.get(period);
+  const bucketStarts = Array.from({ length: bucketCount }, (_, index) => Date.UTC(2026, 5, 1, 18) + (index * intervalMs));
+  const spanMs = getEventChartSpanMs(bucketStarts, intervalMs);
+  const label = formatEventChartLabel(bucketStarts[0], intervalMs, spanMs);
+  assert.notEqual(label, "--", `${period} should produce a valid axis label`);
+  if (intervalMs < 24 * 60 * 60 * 1000 && spanMs >= 24 * 60 * 60 * 1000) {
+    assert.notEqual(
+      label,
+      new Date(bucketStarts[0]).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+      `${period} should include the date when its buckets span multiple days`,
+    );
+  }
 }
+
+const sixHourMs = periodIntervals.get("6h");
+const sixHourStarts = Array.from({ length: 120 }, (_, index) => Date.UTC(2026, 5, 1, 18) + (index * sixHourMs));
+const sixHourSpanMs = getEventChartSpanMs(sixHourStarts, sixHourMs);
+const sampledSixHourLabels = sixHourStarts
+  .filter((_, index) => index === 0 || index === sixHourStarts.length - 1 || index % 12 === 0)
+  .map((start) => formatEventChartLabel(start, sixHourMs, sixHourSpanMs));
+assert.equal(
+  new Set(sampledSixHourLabels).size,
+  sampledSixHourLabels.length,
+  "6h labels spanning 30 days should not repeat the same time-only label",
+);
+assert.equal(
+  getEventChartWidth(1960, 120, 116, 10),
+  1960,
+  "a 6h property timeline should fit a wide card without an unnecessary scrollbar",
+);
+assert.ok(
+  getEventChartWidth(760, 240, 116, 10) > 760,
+  "dense timelines should retain horizontal scrolling when points would overlap",
+);
+assert.equal(formatEventChartLabel("invalid", sixHourMs, sixHourSpanMs), "--", "invalid timestamps should be safe");
 
 assert.equal(buildRoundedEventPropertyPath([]), "", "an empty range should produce no path");
 assert.equal(
