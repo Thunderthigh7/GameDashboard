@@ -200,7 +200,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260723-1";
+const DASHBOARD_ASSET_VERSION = "20260723-2";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -3146,9 +3146,17 @@ function renderCustomEventPropertyChart(container, property = {}) {
     return;
   }
 
-  const referencePoints = series[0].points;
-  const bucketCount = referencePoints.length;
-  const bucketMs = Number(timeline.bucketMs) || getSeriesBucketMs(referencePoints);
+  const bucketStarts = [...new Set(series.flatMap((entry) => (
+    entry.points
+      .map((point) => Number(point?.start))
+      .filter((start) => Number.isFinite(start) && start > 0)
+  )))].sort((leftValue, rightValue) => leftValue - rightValue);
+  if (!bucketStarts.length) {
+    container.innerHTML = '<p class="status">No usable property values in this date range.</p>';
+    return;
+  }
+  const bucketCount = bucketStarts.length;
+  const bucketMs = Number(timeline.bucketMs) || getSeriesBucketMs(bucketStarts.map((start) => ({ start })));
   const pointSpacing = bucketCount > 120 ? 18 : bucketCount > 72 ? 26 : bucketCount > 36 ? 38 : 72;
   const chartWidth = Math.max(Math.floor(container.clientWidth || 760), ((bucketCount - 1) * pointSpacing) + 116);
   const chartHeight = 286;
@@ -3175,28 +3183,32 @@ function renderCustomEventPropertyChart(container, property = {}) {
       <text x="${left - 10}" y="${y + 4}" text-anchor="end">${percent}%</text>
     `;
   }).join("");
-  const xLabels = referencePoints.map((point, index) => (
+  const xLabels = bucketStarts.map((start, index) => (
     index === 0 || index === bucketCount - 1 || index % labelStep === 0
-      ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="middle">${escapeHtml(formatEventChartLabel(point.start, bucketMs))}</text>`
+      ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="middle">${escapeHtml(formatEventChartLabel(start, bucketMs))}</text>`
       : ""
   )).join("");
   const lines = series.map((entry, seriesIndex) => {
     const color = EVENT_PROPERTY_SERIES_COLORS[seriesIndex % EVENT_PROPERTY_SERIES_COLORS.length];
-    let pathOpen = false;
-    const path = entry.points.map((point, index) => {
-      if (point.percent === null || point.percent === undefined || !Number.isFinite(Number(point.percent))) {
-        pathOpen = false;
-        return "";
-      }
-      const command = pathOpen ? "L" : "M";
-      pathOpen = true;
-      return `${command}${xForIndex(index).toFixed(2)} ${yForPercent(point.percent).toFixed(2)}`;
-    }).join(" ");
-    const dots = entry.points.map((point, index) => {
-      if (point.percent === null || point.percent === undefined || !Number.isFinite(Number(point.percent))) return "";
+    const pointsByStart = new Map(entry.points.map((point) => [Number(point?.start), point]));
+    const chartPoints = bucketStarts.map((start, index) => {
+      const point = pointsByStart.get(start);
+      const percent = point?.percent;
+      const hasValue = percent !== null && percent !== undefined && Number.isFinite(Number(percent));
+      return {
+        start,
+        count: Number(point?.count) || 0,
+        percent: hasValue ? Math.max(0, Math.min(Number(percent), 100)) : null,
+        x: xForIndex(index),
+        y: hasValue ? yForPercent(percent) : null,
+      };
+    });
+    const path = buildRoundedEventPropertyPath(chartPoints);
+    const dots = chartPoints.map((point) => {
+      if (point.y === null) return "";
       const label = formatEventPropertyValue(entry.value);
       const dateLabel = formatEventChartLabel(point.start, bucketMs);
-      return `<circle cx="${xForIndex(index)}" cy="${yForPercent(point.percent)}" r="3.5" style="fill:${color};stroke:${color}"><title>${escapeHtml(label)} · ${escapeHtml(dateLabel)}: ${formatEventNumber(point.percent)}% (${formatCompactNumber(point.count)} values)</title></circle>`;
+      return `<circle cx="${point.x}" cy="${point.y}" r="3.5" style="fill:${color};stroke:${color}"><title>${escapeHtml(label)} · ${escapeHtml(dateLabel)}: ${formatEventNumber(point.percent)}% (${formatCompactNumber(point.count)} values)</title></circle>`;
     }).join("");
     return `
       <g class="eventPropertyChartSeries">
@@ -3227,6 +3239,81 @@ function renderCustomEventPropertyChart(container, property = {}) {
     </div>
     <div class="eventPropertyChartLegend">${legend}</div>
   `;
+}
+
+function buildRoundedEventPropertyPath(points = []) {
+  const segments = [];
+  let segment = [];
+  const flushSegment = () => {
+    if (segment.length) segments.push(segment);
+    segment = [];
+  };
+  for (const point of points) {
+    if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) {
+      flushSegment();
+      continue;
+    }
+    segment.push(point);
+  }
+  flushSegment();
+  return segments.map(buildRoundedEventPropertyPathSegment).join(" ");
+}
+
+function buildRoundedEventPropertyPathSegment(points) {
+  if (!points.length) return "";
+  const first = points[0];
+  if (points.length === 1) return `M${first.x.toFixed(2)} ${first.y.toFixed(2)}`;
+  if (points.length === 2) {
+    const last = points[1];
+    return `M${first.x.toFixed(2)} ${first.y.toFixed(2)} L${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
+  }
+
+  const slopes = points.slice(0, -1).map((point, index) => {
+    const next = points[index + 1];
+    const width = next.x - point.x;
+    return width > 0 ? (next.y - point.y) / width : 0;
+  });
+  const tangents = points.map((point, index) => {
+    if (index === 0) return slopes[0];
+    if (index === points.length - 1) return slopes.at(-1);
+    const before = slopes[index - 1];
+    const after = slopes[index];
+    if (!before || !after || Math.sign(before) !== Math.sign(after)) return 0;
+    return (2 * before * after) / (before + after);
+  });
+
+  for (let index = 0; index < slopes.length; index += 1) {
+    const slope = slopes[index];
+    if (!slope) {
+      tangents[index] = 0;
+      tangents[index + 1] = 0;
+      continue;
+    }
+    const startRatio = tangents[index] / slope;
+    const endRatio = tangents[index + 1] / slope;
+    const magnitude = Math.hypot(startRatio, endRatio);
+    if (magnitude <= 3) continue;
+    const scale = 3 / magnitude;
+    tangents[index] = scale * startRatio * slope;
+    tangents[index + 1] = scale * endRatio * slope;
+  }
+
+  const commands = [`M${first.x.toFixed(2)} ${first.y.toFixed(2)}`];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    const width = end.x - start.x;
+    const minY = Math.min(start.y, end.y);
+    const maxY = Math.max(start.y, end.y);
+    const firstControlY = Math.max(minY, Math.min(maxY, start.y + ((tangents[index] * width) / 3)));
+    const secondControlY = Math.max(minY, Math.min(maxY, end.y - ((tangents[index + 1] * width) / 3)));
+    commands.push(
+      `C${(start.x + (width / 3)).toFixed(2)} ${firstControlY.toFixed(2)} `
+      + `${(end.x - (width / 3)).toFixed(2)} ${secondControlY.toFixed(2)} `
+      + `${end.x.toFixed(2)} ${end.y.toFixed(2)}`,
+    );
+  }
+  return commands.join(" ");
 }
 
 function getEventPropertyPriority(property, eventName) {
