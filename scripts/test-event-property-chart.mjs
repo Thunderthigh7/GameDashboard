@@ -3,9 +3,17 @@ import { readFileSync } from "node:fs";
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 assert.doesNotMatch(appSource, /data-event-property-view/, "property cards should not include Timeline/Average tabs");
-assert.match(appSource, /class="eventPropertyAverageLegend"/, "property cards should render the average legend in the header");
-assert.match(appSource, /<small>Average share<\/small>/, "the legend should identify its values as averages");
-assert.match(appSource, /<b>\$\{formatEventNumber\(entry\.percent\)\}%<\/b>/, "each legend key should show its average share");
+assert.match(
+  appSource,
+  /<\/header>\s*\$\{renderEventPropertyAverageLegend\(property\)\}\s*<div class="eventPropertyTimeline"/,
+  "property cards should render the legend above the timeline",
+);
+assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend should retain the original colored key layout");
+assert.match(
+  appSource,
+  /<small><b>AVG<\/b>\$\{formatEventNumber\(entry\.percent\)\}%<\/small>/,
+  "each legend key should show its average below an AVG badge",
+);
 assert.doesNotMatch(appSource, /class="eventPropertyChartLegend"/, "property charts should not repeat the legend below the graph");
 const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
 const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);

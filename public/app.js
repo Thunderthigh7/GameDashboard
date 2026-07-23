@@ -198,7 +198,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260723-5";
+const DASHBOARD_ASSET_VERSION = "20260723-6";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -3167,8 +3167,8 @@ function renderCustomEventPropertyCard(property, selectedTotal, propertyIndex) {
           <h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3>
           <p>${formatCompactNumber(observationCount)} recorded values · ${formatEventNumber(coverage)}% event coverage</p>
         </div>
-        ${renderEventPropertyAverageLegend(property)}
       </header>
+      ${renderEventPropertyAverageLegend(property)}
       <div class="eventPropertyTimeline" data-event-property-chart-index="${propertyIndex}" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values over time"></div>
     </section>`;
 }
@@ -3185,15 +3185,16 @@ function renderEventPropertyAverageLegend(property = {}) {
     const color = EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length];
     const value = formatEventPropertyValue(entry.value);
     return `
-      <span title="${escapeHtml(value)}: ${formatEventNumber(entry.percent)}% average share">
-        <i style="background:${color}" aria-hidden="true"></i>
-        <strong>${escapeHtml(value)}</strong>
-        <b>${formatEventNumber(entry.percent)}%</b>
+      <span class="eventPropertyAverageItem" title="${escapeHtml(value)}: ${formatEventNumber(entry.percent)}% average share" aria-label="${escapeHtml(value)}, average ${formatEventNumber(entry.percent)}%">
+        <span class="eventPropertyAverageKey">
+          <i style="background:${color}" aria-hidden="true"></i>
+          <strong>${escapeHtml(value)}</strong>
+        </span>
+        <small><b>AVG</b>${formatEventNumber(entry.percent)}%</small>
       </span>`;
   }).join("");
   return `
     <div class="eventPropertyAverageLegend" aria-label="Average share by value">
-      <small>Average share</small>
       ${items}
     </div>`;
 }
