@@ -4823,40 +4823,41 @@ body[data-active-view="events"] #pageSubtitle {
   align-items: flex-start;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 9px 18px;
+  gap: 12px 26px;
   min-width: 0;
-  margin-top: -31px;
-  padding: 0 8px 8px;
+  margin-top: -39px;
+  padding: 0 10px 10px;
 }
 
 .eventPropertyAverageItem {
   display: grid;
   justify-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   color: var(--nav-text);
-  font-size: 10px;
+  font-size: 14px;
 }
 
 .eventPropertyAverageKey {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   min-width: 0;
 }
 
 .eventPropertyAverageKey i {
   flex: 0 0 auto;
-  width: 16px;
-  height: 3px;
+  width: 22px;
+  height: 4px;
   border-radius: 999px;
 }
 
 .eventPropertyAverageKey strong {
-  max-width: min(180px, 24vw);
+  max-width: min(220px, 24vw);
   overflow: hidden;
   color: var(--text);
-  font-size: 10px;
+  font-size: 14px;
+  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4864,19 +4865,19 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyAverageItem > small {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   color: #f2f5ff;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 800;
 }
 
 .eventPropertyAverageItem > small b {
   border: 1px solid rgba(155, 109, 255, 0.3);
-  border-radius: 4px;
+  border-radius: 5px;
   background: rgba(124, 60, 255, 0.12);
   color: #bca6ff;
-  padding: 1px 4px;
-  font-size: 8px;
+  padding: 2px 6px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.05em;
 }

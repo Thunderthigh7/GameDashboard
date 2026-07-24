@@ -41,6 +41,16 @@ assert.match(
   /<small><b>AVG<\/b>\$\{formatEventNumber\(entry\.percent\)\}%<\/small>/,
   "each legend key should show its average below an AVG badge",
 );
+assert.match(
+  styleSource,
+  /\.eventPropertyAverageKey strong\s*\{[^}]*font-size:\s*14px;/,
+  "property legend names should remain large enough to scan",
+);
+assert.match(
+  styleSource,
+  /\.eventPropertyAverageItem > small\s*\{[^}]*font-size:\s*14px;/,
+  "property legend average percentages should remain large enough to scan",
+);
 assert.doesNotMatch(appSource, /class="eventPropertyChartLegend"/, "property charts should not repeat the legend below the graph");
 const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
 const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);
