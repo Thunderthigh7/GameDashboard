@@ -103,6 +103,9 @@ const eventIntervalButton = document.querySelector("#eventIntervalButton");
 const eventIntervalButtonLabel = document.querySelector("#eventIntervalButtonLabel");
 const eventIntervalMenu = document.querySelector("#eventIntervalMenu");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
+const eventPropertyHeaderMetrics = document.querySelector("#eventPropertyHeaderMetrics");
+const eventPropertyHeaderEventCount = document.querySelector("#eventPropertyHeaderEventCount");
+const eventPropertyHeaderPlayerCount = document.querySelector("#eventPropertyHeaderPlayerCount");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
@@ -224,7 +227,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-16";
+const DASHBOARD_ASSET_VERSION = "20260724-17";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -313,7 +316,7 @@ async function init() {
 
 function loadHeatmapModule() {
   if (heatmapModulePromise) return heatmapModulePromise;
-  heatmapModulePromise = import(`/heatmap.js?v=${DASHBOARD_ASSET_VERSION}`)
+  heatmapModulePromise = import(`/assets/${DASHBOARD_ASSET_VERSION}/heatmap.js`)
     .then(() => {
       if (authenticated) notifyAnalyticsReady();
     })
@@ -2955,6 +2958,7 @@ function syncEventCatalogSelection(eventName) {
 function prepareCustomEventSelection(eventName) {
   if (selectedEventTitle) selectedEventTitle.textContent = formatEventName(eventName);
   if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Loading event details...";
+  updateEventPropertyHeaderMetrics({ name: eventName }, { loading: true });
   renderCustomEventProperties([]);
   if (eventPropertyList) {
     eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Loading property values...</span></div>';
@@ -3013,13 +3017,12 @@ function renderCustomEvents(payload = {}) {
       : null;
     selectedEventSubtitle.textContent = selected
       ? [
-          `${formatCompactNumber(selected.count)} events`,
-          `${formatCompactNumber(selected.uniquePlayers)} players`,
           `${formatCompactNumber(selected.uniqueSessions)} sessions`,
           ...(sessionCoverage === null ? [] : [`${formatEventNumber(sessionCoverage)}% session coverage`]),
         ].join(" · ")
       : "Property timelines will appear here.";
   }
+  updateEventPropertyHeaderMetrics(selected);
   updateEventIntervalControl(selected);
   renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || []);
   renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
@@ -3030,6 +3033,25 @@ function renderCustomEvents(payload = {}) {
     viewAllRecentEventsButton.innerHTML = recentEventsExpanded
       ? 'Show fewer events <span aria-hidden="true">↑</span>'
       : `View all events <span aria-hidden="true">→</span>`;
+  }
+}
+
+function updateEventPropertyHeaderMetrics(selectedEvent, options = {}) {
+  if (!eventPropertyHeaderMetrics) return;
+  const hasSelection = Boolean(selectedEvent?.name);
+  eventPropertyHeaderMetrics.hidden = !hasSelection;
+  if (!hasSelection) return;
+
+  const loading = Boolean(options.loading);
+  if (eventPropertyHeaderEventCount) {
+    eventPropertyHeaderEventCount.textContent = loading
+      ? "--"
+      : formatCompactNumber(Math.max(0, Number(selectedEvent?.count) || 0));
+  }
+  if (eventPropertyHeaderPlayerCount) {
+    eventPropertyHeaderPlayerCount.textContent = loading
+      ? "--"
+      : formatCompactNumber(Math.max(0, Number(selectedEvent?.uniquePlayers) || 0));
   }
 }
 
@@ -3302,6 +3324,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
 
   const rows = rankedSeries.map((entry, index) => {
     const value = formatEventPropertyValue(entry.value);
+    const eventCount = Math.max(0, Math.round(Number(entry.count) || 0));
     const percent = Math.max(0, Math.min(Number(entry.percent) || 0, 100));
     const change = Number(entry.change) || 0;
     const direction = change > 0.049 ? "positive" : change < -0.049 ? "negative" : "neutral";
@@ -3314,6 +3337,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <i style="background:${entry.color}" aria-hidden="true"></i>
           <strong>${escapeHtml(value)}</strong>
         </span>
+        <b class="eventPropertyRankedEvents" role="cell" title="${formatEventNumber(eventCount)} events">${formatCompactNumber(eventCount)}</b>
         <b role="cell">${formatEventNumber(percent)}%</b>
         <em class="eventPropertyChange eventPropertyChange-${direction}" role="cell" aria-label="Change ${changeText}">
           <span aria-hidden="true">${arrow}</span>${changeText}
@@ -3330,6 +3354,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
         <div class="eventPropertyRankedTableHeader" role="row">
           <span role="columnheader">#</span>
           <span role="columnheader">Value</span>
+          <span role="columnheader">Events</span>
           <span role="columnheader">% of Events</span>
           <span role="columnheader">Change</span>
         </div>

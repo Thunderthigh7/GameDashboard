@@ -841,6 +841,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 405, { error: "Method not allowed" });
     }
 
+    const dashboardAssetMatch = url.pathname.match(/^\/assets\/[A-Za-z0-9._-]+\/(app\.js|styles\.css|heatmap\.js)$/);
+    if (dashboardAssetMatch) {
+      return serveStatic(req, res, dashboardAssetMatch[1]);
+    }
+
     return serveStatic(req, res, url.pathname === "/" ? "index.html" : url.pathname.slice(1));
   } catch (error) {
     if (res.headersSent) {

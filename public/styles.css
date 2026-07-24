@@ -4955,8 +4955,88 @@ body[data-active-view="events"] #pageSubtitle {
   font-weight: 800;
 }
 
-.eventPropertyCardHeader > div {
+.eventPropertyCardHeader > .eventPropertyHeaderTitle {
   flex: 1 1 160px;
+}
+
+.eventPropertyHeaderMetrics {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.eventPropertyHeaderMetrics[hidden] {
+  display: none;
+}
+
+.eventPropertyHeaderMetric {
+  display: grid;
+  grid-template-columns: 38px minmax(64px, auto);
+  align-items: center;
+  gap: 9px;
+  min-width: 124px;
+  min-height: 54px;
+  border: 1px solid rgba(90, 108, 160, 0.34);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(16, 26, 53, 0.84), rgba(8, 15, 33, 0.9));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  padding: 7px 11px 7px 8px;
+}
+
+.eventPropertyHeaderMetricIcon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+}
+
+.eventPropertyHeaderMetricIconEvents {
+  background: rgba(151, 102, 255, 0.16);
+  color: #a985ff;
+}
+
+.eventPropertyHeaderMetricIconPlayers {
+  background: rgba(45, 212, 191, 0.12);
+  color: #45d6ca;
+}
+
+.eventPropertyHeaderMetricIcon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventPropertyHeaderMetric > span:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.eventPropertyHeaderMetric small {
+  color: #929fba;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.eventPropertyHeaderMetric strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eventPropertyGrid {
@@ -5186,9 +5266,9 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyRankedTableHeader,
 .eventPropertyRankedRow {
   display: grid;
-  grid-template-columns: 22px minmax(110px, 1fr) 88px 82px;
+  grid-template-columns: 22px minmax(92px, 1fr) 58px 76px 76px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 360px;
   padding-inline: 3px;
 }
@@ -7879,6 +7959,17 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .eventPropertyCardHeader {
     flex-wrap: wrap;
+  }
+
+  .eventPropertyHeaderMetrics {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .eventPropertyHeaderMetric {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .eventPropertyAverageKey strong {

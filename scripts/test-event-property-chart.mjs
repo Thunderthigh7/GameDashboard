@@ -6,8 +6,8 @@ const indexSource = readFileSync(new URL("../public/index.html", import.meta.url
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
 const intervalControlMatches = indexSource.match(/id="eventIntervalSelect"/g) || [];
-const stylesheetAssetVersion = indexSource.match(/styles\.css\?v=([^"]+)/)?.[1] || "";
-const appAssetVersion = indexSource.match(/app\.js\?v=([^"]+)/)?.[1] || "";
+const stylesheetAssetVersion = indexSource.match(/\/assets\/([^/"]+)\/styles\.css/)?.[1] || "";
+const appAssetVersion = indexSource.match(/\/assets\/([^/"]+)\/app\.js/)?.[1] || "";
 const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters"');
 const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarControl"');
 const dateControlIndex = indexSource.indexOf('class="dateFilterCluster"');
@@ -104,9 +104,24 @@ assert.match(
 assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend should retain the original colored key layout");
 assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should not render average badges");
 assert.match(appSource, /class="eventPropertyRanked"/, "each property graph should include a ranked breakdown panel");
+assert.match(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should show raw event counts");
 assert.match(appSource, /<span role="columnheader">% of Events<\/span>/, "ranked breakdowns should show event percentage");
 assert.match(appSource, /<span role="columnheader">Change<\/span>/, "ranked breakdowns should label trend movement as Change");
-assert.doesNotMatch(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should not show raw event counts");
+assert.match(
+  appSource,
+  /const eventCount = Math\.max\(0, Math\.round\(Number\(entry\.count\) \|\| 0\)\);[\s\S]*class="eventPropertyRankedEvents"/,
+  "ranked breakdown event totals should use the real series count",
+);
+assert.match(
+  styleSource,
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*22px minmax\(92px, 1fr\) 58px 76px 76px;/,
+  "ranked breakdowns should reserve a readable five-column layout",
+);
+assert.match(
+  serverSource,
+  /\^\\\/assets\\\/\[A-Za-z0-9\._-\]\+\\\/\(app\\\.js\|styles\\\.css\|heatmap\\\.js\)\$/,
+  "versioned dashboard asset paths should resolve only the approved static assets",
+);
 assert.match(
   styleSource,
   /\.eventPropertyBreakdown\s*\{[^}]*grid-template-columns:\s*minmax\(0, 3fr\) minmax\(320px, 2fr\);/,
@@ -123,6 +138,25 @@ assert.match(
   /\.eventPropertyCardHeader h2\s*\{[^}]*font-size:\s*21px;/,
   "the Property breakdowns heading should remain prominent",
 );
+assert.match(indexSource, /id="eventPropertyHeaderEventCount"/, "the Property breakdowns header should show an Events metric");
+assert.match(indexSource, /id="eventPropertyHeaderPlayerCount"/, "the Property breakdowns header should show a Players metric");
+assert.match(
+  appSource,
+  /eventPropertyHeaderEventCount\.textContent = loading[\s\S]*selectedEvent\?\.count/,
+  "the Events header metric should use the selected event total",
+);
+assert.match(
+  appSource,
+  /eventPropertyHeaderPlayerCount\.textContent = loading[\s\S]*selectedEvent\?\.uniquePlayers/,
+  "the Players header metric should use the selected event player total",
+);
+const selectedEventSubtitleStart = appSource.indexOf("if (selectedEventSubtitle) {");
+const selectedEventSubtitleEnd = appSource.indexOf("\n  updateEventPropertyHeaderMetrics(selected);", selectedEventSubtitleStart);
+assert.ok(selectedEventSubtitleStart >= 0 && selectedEventSubtitleEnd > selectedEventSubtitleStart, "selected event subtitle renderer should remain available");
+const selectedEventSubtitleSource = appSource.slice(selectedEventSubtitleStart, selectedEventSubtitleEnd);
+assert.doesNotMatch(selectedEventSubtitleSource, /selected\.count|selected\.uniquePlayers/, "event and player totals should not remain in the event subtitle");
+assert.match(selectedEventSubtitleSource, /selected\.uniqueSessions/, "the event subtitle should keep session totals");
+assert.match(selectedEventSubtitleSource, /session coverage/, "the event subtitle should keep session coverage");
 assert.match(
   styleSource,
   /\.eventPropertyBreakdownHeader h3\s*\{[^}]*font-size:\s*21px;/,
