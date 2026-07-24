@@ -6,11 +6,20 @@ const indexSource = readFileSync(new URL("../public/index.html", import.meta.url
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
 const intervalControlMatches = indexSource.match(/id="eventIntervalSelect"/g) || [];
+const stylesheetAssetVersion = indexSource.match(/styles\.css\?v=([^"]+)/)?.[1] || "";
+const appAssetVersion = indexSource.match(/app\.js\?v=([^"]+)/)?.[1] || "";
 const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters"');
 const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarControl"');
 const dateControlIndex = indexSource.indexOf('class="dateFilterCluster"');
 const releaseControlsIndex = indexSource.indexOf('class="releaseTopbarControls"');
 assert.equal(intervalControlMatches.length, 1, "the global event interval selector should exist exactly once");
+assert.ok(stylesheetAssetVersion, "the dashboard stylesheet should have an explicit cache version");
+assert.equal(appAssetVersion, stylesheetAssetVersion, "the interval markup, styles, and click behavior should deploy with one asset version");
+assert.match(
+  appSource,
+  new RegExp(`const DASHBOARD_ASSET_VERSION = "${appAssetVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}";`),
+  "the runtime asset version should match the HTML asset version",
+);
 assert.match(
   indexSource,
   /class="eventIntervalSelect eventIntervalButton"[^>]*id="eventIntervalButton"[^>]*aria-haspopup="listbox"/,
@@ -23,6 +32,11 @@ assert.match(
 );
 assert.match(indexSource, /id="eventIntervalMenu"[^>]*role="listbox"/, "the interval control should include a themed options menu");
 assert.match(indexSource, /id="eventIntervalSelect"[^>]*hidden/, "the native interval select should remain only as the hidden data source");
+assert.match(
+  appSource,
+  /eventIntervalButton\?\.addEventListener\("click", toggleEventIntervalMenu\);/,
+  "clicking the interval trigger should open its custom dropdown",
+);
 assert.ok(
   topbarFiltersIndex >= 0
     && intervalControlIndex > topbarFiltersIndex
