@@ -140,6 +140,9 @@ assert.match(
 );
 assert.match(indexSource, /id="eventPropertyHeaderEventCount"/, "the Property breakdowns header should show an Events metric");
 assert.match(indexSource, /id="eventPropertyHeaderPlayerCount"/, "the Property breakdowns header should show a Players metric");
+assert.match(indexSource, /id="eventPropertyHeaderSessionCount"/, "the Property breakdowns header should show a Sessions metric");
+assert.match(indexSource, /id="eventPropertyHeaderSessionCoverage"/, "the Property breakdowns header should show Session coverage");
+assert.doesNotMatch(indexSource, /id="selectedEventSubtitle"/, "the selected event should not retain a subtitle");
 assert.match(
   appSource,
   /eventPropertyHeaderEventCount\.textContent = loading[\s\S]*selectedEvent\?\.count/,
@@ -150,13 +153,17 @@ assert.match(
   /eventPropertyHeaderPlayerCount\.textContent = loading[\s\S]*selectedEvent\?\.uniquePlayers/,
   "the Players header metric should use the selected event player total",
 );
-const selectedEventSubtitleStart = appSource.indexOf("if (selectedEventSubtitle) {");
-const selectedEventSubtitleEnd = appSource.indexOf("\n  updateEventPropertyHeaderMetrics(selected);", selectedEventSubtitleStart);
-assert.ok(selectedEventSubtitleStart >= 0 && selectedEventSubtitleEnd > selectedEventSubtitleStart, "selected event subtitle renderer should remain available");
-const selectedEventSubtitleSource = appSource.slice(selectedEventSubtitleStart, selectedEventSubtitleEnd);
-assert.doesNotMatch(selectedEventSubtitleSource, /selected\.count|selected\.uniquePlayers/, "event and player totals should not remain in the event subtitle");
-assert.match(selectedEventSubtitleSource, /selected\.uniqueSessions/, "the event subtitle should keep session totals");
-assert.match(selectedEventSubtitleSource, /session coverage/, "the event subtitle should keep session coverage");
+assert.match(
+  appSource,
+  /eventPropertyHeaderSessionCount\.textContent = loading[\s\S]*selectedEvent\?\.uniqueSessions/,
+  "the Sessions header metric should use the selected event session total",
+);
+assert.match(
+  appSource,
+  /eventPropertyHeaderSessionCoverage\.textContent = loading \|\| sessionCoverage === null[\s\S]*formatEventNumber\(sessionCoverage\)/,
+  "Session coverage should move into the Property breakdowns header",
+);
+assert.doesNotMatch(appSource, /selectedEventSubtitle/, "event subtitle rendering should be removed");
 assert.match(
   styleSource,
   /\.eventPropertyBreakdownHeader h3\s*\{[^}]*font-size:\s*21px;/,

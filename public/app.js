@@ -98,7 +98,6 @@ const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
-const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
 const eventIntervalButton = document.querySelector("#eventIntervalButton");
 const eventIntervalButtonLabel = document.querySelector("#eventIntervalButtonLabel");
 const eventIntervalMenu = document.querySelector("#eventIntervalMenu");
@@ -106,6 +105,8 @@ const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
 const eventPropertyHeaderMetrics = document.querySelector("#eventPropertyHeaderMetrics");
 const eventPropertyHeaderEventCount = document.querySelector("#eventPropertyHeaderEventCount");
 const eventPropertyHeaderPlayerCount = document.querySelector("#eventPropertyHeaderPlayerCount");
+const eventPropertyHeaderSessionCount = document.querySelector("#eventPropertyHeaderSessionCount");
+const eventPropertyHeaderSessionCoverage = document.querySelector("#eventPropertyHeaderSessionCoverage");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
@@ -2957,7 +2958,6 @@ function syncEventCatalogSelection(eventName) {
 
 function prepareCustomEventSelection(eventName) {
   if (selectedEventTitle) selectedEventTitle.textContent = formatEventName(eventName);
-  if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Loading event details...";
   updateEventPropertyHeaderMetrics({ name: eventName }, { loading: true });
   renderCustomEventProperties([]);
   if (eventPropertyList) {
@@ -2972,7 +2972,6 @@ function prepareCustomEventSelection(eventName) {
 }
 
 function renderCustomEventSelectionError() {
-  if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Could not load this event. Select it again to retry.";
   if (eventPropertyList) {
     eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Could not load property values.</span></div>';
   }
@@ -3010,18 +3009,6 @@ function renderCustomEvents(payload = {}) {
   }
 
   if (selectedEventTitle) selectedEventTitle.textContent = selected ? formatEventName(selected.name) : "Select an event";
-  if (selectedEventSubtitle) {
-    const totalVisits = (selected?.series || []).reduce((sum, bucket) => sum + (Number(bucket.visits) || 0), 0);
-    const sessionCoverage = totalVisits > 0
-      ? Math.min((Number(selected?.uniqueSessions) || 0) / totalVisits, 1) * 100
-      : null;
-    selectedEventSubtitle.textContent = selected
-      ? [
-          `${formatCompactNumber(selected.uniqueSessions)} sessions`,
-          ...(sessionCoverage === null ? [] : [`${formatEventNumber(sessionCoverage)}% session coverage`]),
-        ].join(" · ")
-      : "Property timelines will appear here.";
-  }
   updateEventPropertyHeaderMetrics(selected);
   updateEventIntervalControl(selected);
   renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || []);
@@ -3052,6 +3039,20 @@ function updateEventPropertyHeaderMetrics(selectedEvent, options = {}) {
     eventPropertyHeaderPlayerCount.textContent = loading
       ? "--"
       : formatCompactNumber(Math.max(0, Number(selectedEvent?.uniquePlayers) || 0));
+  }
+  if (eventPropertyHeaderSessionCount) {
+    eventPropertyHeaderSessionCount.textContent = loading
+      ? "--"
+      : formatCompactNumber(Math.max(0, Number(selectedEvent?.uniqueSessions) || 0));
+  }
+  if (eventPropertyHeaderSessionCoverage) {
+    const totalVisits = (selectedEvent?.series || []).reduce((sum, bucket) => sum + (Number(bucket?.visits) || 0), 0);
+    const sessionCoverage = totalVisits > 0
+      ? Math.min((Number(selectedEvent?.uniqueSessions) || 0) / totalVisits, 1) * 100
+      : null;
+    eventPropertyHeaderSessionCoverage.textContent = loading || sessionCoverage === null
+      ? "--"
+      : `${formatEventNumber(sessionCoverage)}%`;
   }
 }
 

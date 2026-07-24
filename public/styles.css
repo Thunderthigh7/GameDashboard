@@ -4426,7 +4426,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .eventTopbarSelection {
   display: none;
-  gap: 4px;
   min-width: 0;
 }
 
@@ -4574,14 +4573,6 @@ body[data-active-view="events"] .eventIntervalButton:focus-visible {
 .eventTopbarSelection h2 {
   overflow: hidden;
   font-size: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.eventTopbarSelection p {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4962,9 +4953,11 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyHeaderMetrics {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
-  flex: 0 0 auto;
+  flex: 1 1 520px;
+  max-width: 556px;
   margin-left: auto;
 }
 
@@ -4977,6 +4970,7 @@ body[data-active-view="events"] #pageSubtitle {
   grid-template-columns: 38px minmax(64px, auto);
   align-items: center;
   gap: 9px;
+  flex: 1 1 124px;
   min-width: 124px;
   min-height: 54px;
   border: 1px solid rgba(90, 108, 160, 0.34);
@@ -5002,6 +4996,21 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyHeaderMetricIconPlayers {
   background: rgba(45, 212, 191, 0.12);
   color: #45d6ca;
+}
+
+.eventPropertyHeaderMetricIconSessions {
+  background: rgba(251, 191, 36, 0.12);
+  color: #f2b94b;
+}
+
+.eventPropertyHeaderMetricIconCoverage {
+  background: rgba(96, 165, 250, 0.13);
+  color: #70aefb;
+}
+
+.eventPropertyHeaderMetricCoverage {
+  flex-basis: 154px;
+  min-width: 154px;
 }
 
 .eventPropertyHeaderMetricIcon svg {
@@ -7962,13 +7971,16 @@ body[data-active-view="funnels"] #pageSubtitle {
   }
 
   .eventPropertyHeaderMetrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     flex: 1 1 100%;
     width: 100%;
+    max-width: none;
     margin-left: 0;
   }
 
-  .eventPropertyHeaderMetric {
-    flex: 1 1 0;
+  .eventPropertyHeaderMetric,
+  .eventPropertyHeaderMetricCoverage {
     min-width: 0;
   }
 
