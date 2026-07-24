@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
 const intervalControlMatches = indexSource.match(/id="eventIntervalSelect"/g) || [];
 const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters"');
 const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarControl"');
@@ -92,6 +93,45 @@ assert.equal(
   "Change should retain negative movement",
 );
 assert.equal(getEventPropertySeriesChange([{ percent: 35 }]), 0, "a single observed share should have neutral change");
+const releaseMarkerHelperStart = appSource.indexOf("function buildEventPropertyReleaseMarkers(");
+const releaseMarkerHelperEnd = appSource.indexOf("\nfunction buildRoundedEventPropertyPath(", releaseMarkerHelperStart);
+assert.ok(
+  releaseMarkerHelperStart >= 0 && releaseMarkerHelperEnd > releaseMarkerHelperStart,
+  "property release marker renderer should remain available",
+);
+const { buildEventPropertyReleaseMarkers } = Function(
+  `"use strict";
+  const formatReleaseVersion = (value) => String(value);
+  const escapeHtml = (value) => String(value);
+  ${appSource.slice(releaseMarkerHelperStart, releaseMarkerHelperEnd)}
+  return { buildEventPropertyReleaseMarkers };`,
+)();
+const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
+  releaseMarkers: [
+    { placeId: 1, placeVersion: 17, publishedAt: 2_000 },
+    { placeId: 1, placeVersion: 18, publishedAt: 4_000 },
+  ],
+  bucketStarts: [1_000, 2_000],
+  bucketMs: 1_000,
+  chartWidth: 500,
+  left: 50,
+  right: 20,
+  top: 58,
+  plotBottom: 280,
+});
+assert.match(releaseMarkerMarkup, /Update v17/, "in-range release versions should render on property timelines");
+assert.match(releaseMarkerMarkup, /eventPropertyReleaseMarkerLine/, "release markers should include a vertical timeline line");
+assert.doesNotMatch(releaseMarkerMarkup, /Update v18/, "out-of-range releases should not render on a timeline");
+assert.match(
+  serverSource,
+  /releaseMarkers:\s*\(Array\.isArray\(filters\.releaseMarkers\)\s*\?\s*filters\.releaseMarkers\s*:\s*\[\]\)\s*\.filter\(/,
+  "selected event payloads should expose production release markers filtered to relevant places",
+);
+assert.match(
+  serverSource,
+  /getVersionHealthFromQuery\(searchParams,\s*\{\s*includeMapSnapshot:\s*false\s*\}\)/,
+  "Events should load release timestamps without fetching an unused map snapshot",
+);
 const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
 const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);
 assert.ok(timelineHelperStart >= 0 && timelineHelperEnd > timelineHelperStart, "event timeline formatting helpers should remain available");

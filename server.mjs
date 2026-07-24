@@ -4583,7 +4583,11 @@ async function getCustomEventsFromQuery(searchParams) {
   const interval = normalizeCustomEventInterval(searchParams.get("interval"));
   const recentLimit = Math.min(cleanInteger(searchParams.get("recentLimit")) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
   const propertyValueLimit = Math.min(cleanInteger(searchParams.get("propertyValueLimit")) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
-  const { events, visits, hasRollup } = await getAnalyticsEventRecords({ universeId, fromMs, toMs });
+  const [{ events, visits, hasRollup }, versionHealth] = await Promise.all([
+    getAnalyticsEventRecords({ universeId, fromMs, toMs }),
+    getVersionHealthFromQuery(searchParams, { includeMapSnapshot: false }),
+  ]);
+  const releaseMarkers = buildReleasePublishMarkers(versionHealth.versions, { fromMs, toMs });
 
   const catalogByName = new Map(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => [event.name, {
     name: event.name,
@@ -4661,6 +4665,7 @@ async function getCustomEventsFromQuery(searchParams) {
       propertyValueLimit,
       selectedPropertyName,
       visitEvents,
+      releaseMarkers,
       sourceType: catalogByName.get(selectedEventName)?.sourceType,
       systemEventType: SYSTEM_ANALYTICS_EVENT_DEFINITIONS.find((event) => event.name === selectedEventName)?.type,
     }) : null,
@@ -4903,12 +4908,14 @@ function getSystemEventCoordinate(value) {
 function buildCustomEventDetail(eventName, events, filters = {}) {
   const playerIds = new Set();
   const sessionIds = new Set();
+  const placeIds = new Set();
   let numericValueCount = 0;
   let numericValueTotal = 0;
   let truncatedPropertyEvents = 0;
   for (const event of events) {
     if (cleanInteger(event.userId) > 0) playerIds.add(cleanInteger(event.userId));
     if (event.sessionId) sessionIds.add(cleanString(event.sessionId, 180));
+    if (cleanInteger(event.placeId) > 0) placeIds.add(cleanInteger(event.placeId));
     if (typeof event.value === "number" && Number.isFinite(event.value)) {
       numericValueCount += 1;
       numericValueTotal += event.value;
@@ -4939,6 +4946,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     recentEvents: events.slice(0, recentLimit),
     recentEventsTotal: events.length,
     recentEventsLimit: recentLimit,
+    releaseMarkers: (Array.isArray(filters.releaseMarkers) ? filters.releaseMarkers : [])
+      .filter((marker) => !placeIds.size || placeIds.has(cleanInteger(marker?.placeId))),
   };
 }
 
@@ -5915,11 +5924,13 @@ function mergeAnalyticsSamples(storedSamples, liveSamples) {
   return [...merged.values()];
 }
 
-async function getVersionHealthFromQuery(searchParams) {
+async function getVersionHealthFromQuery(searchParams, options = {}) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   const [rollup, mapResult] = await Promise.all([
     getObjectStorageRollup(universeId),
-    getMapSnapshot({ universeId, maxParts: 1 }),
+    options.includeMapSnapshot === false
+      ? Promise.resolve(null)
+      : getMapSnapshot({ universeId, maxParts: 1 }),
   ]);
   const versionRollups = Array.isArray(rollup?.versions) ? rollup.versions : [];
   const runtimeVersions = buildRuntimeVersionHealth(universeId);
@@ -6015,6 +6026,37 @@ async function getVersionHealthFromQuery(searchParams) {
     } : null,
     versions,
   };
+}
+
+function buildReleasePublishMarkers(versions = [], filters = {}) {
+  const fromMs = cleanInteger(filters.fromMs);
+  const toMs = cleanInteger(filters.toMs);
+  const markersByVersion = new Map();
+  for (const version of Array.isArray(versions) ? versions : []) {
+    const placeId = cleanInteger(version?.placeId);
+    const placeVersion = normalizePlaceVersion(version?.placeVersion);
+    const publishedAt = cleanInteger(version?.firstSeenAt);
+    if (
+      version?.environment !== "production"
+      || placeId <= 0
+      || placeVersion <= 0
+      || publishedAt <= 0
+      || (fromMs > 0 && publishedAt < fromMs)
+      || (toMs > 0 && publishedAt > toMs)
+    ) {
+      continue;
+    }
+    markersByVersion.set(`${placeId}:${placeVersion}`, {
+      placeId,
+      placeVersion,
+      publishedAt,
+    });
+  }
+  return [...markersByVersion.values()].sort((left, right) => (
+    left.publishedAt - right.publishedAt
+    || left.placeId - right.placeId
+    || left.placeVersion - right.placeVersion
+  ));
 }
 
 async function getReleaseCohortsFromQuery(ownerUserId, searchParams) {

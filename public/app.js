@@ -196,7 +196,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-7";
+const DASHBOARD_ASSET_VERSION = "20260724-8";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -2902,7 +2902,7 @@ function renderCustomEvents(payload = {}) {
       : "Property timelines will appear here.";
   }
   updateEventIntervalControl(selected);
-  renderCustomEventProperties(selected?.properties || []);
+  renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || []);
   renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
 
   const recentTotal = Number(selected?.recentEventsTotal) || 0;
@@ -3010,7 +3010,7 @@ function formatEventInterval(value) {
   return `${Math.max(1, Math.round(milliseconds / minute))}m`;
 }
 
-function renderCustomEventProperties(properties) {
+function renderCustomEventProperties(properties, releaseMarkers = []) {
   if (!eventPropertyList) return;
   const cleanProperties = (Array.isArray(properties) ? properties : [])
     .filter((property) => property?.name)
@@ -3028,7 +3028,7 @@ function renderCustomEventProperties(properties) {
     .join("");
   for (const chart of eventPropertyList.querySelectorAll("[data-event-property-chart-index]")) {
     const property = cleanProperties[Number(chart.dataset.eventPropertyChartIndex)];
-    if (property) renderCustomEventPropertyChart(chart, property);
+    if (property) renderCustomEventPropertyChart(chart, property, releaseMarkers);
   }
 }
 
@@ -3132,7 +3132,7 @@ function getEventPropertySeriesChange(points = []) {
   return observedPercents.at(-1) - observedPercents[0];
 }
 
-function renderCustomEventPropertyChart(container, property = {}) {
+function renderCustomEventPropertyChart(container, property = {}, releaseMarkers = []) {
   const timeline = property.timeline || {};
   const series = getEventPropertyChartSeries(property);
   if (!series.length) {
@@ -3153,10 +3153,10 @@ function renderCustomEventPropertyChart(container, property = {}) {
   const bucketMs = Number(timeline.bucketMs) || getSeriesBucketMs(bucketStarts.map((start) => ({ start })));
   const chartSpanMs = getEventChartSpanMs(bucketStarts, bucketMs);
   const chartWidth = getEventChartWidth(container.clientWidth, bucketCount, 116, 10);
-  const chartHeight = 286;
+  const chartHeight = 326;
   const left = 54;
   const right = 24;
-  const top = 18;
+  const top = 58;
   const bottom = 46;
   const plotWidth = chartWidth - left - right;
   const plotBottom = chartHeight - bottom;
@@ -3182,6 +3182,16 @@ function renderCustomEventPropertyChart(container, property = {}) {
       ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="middle">${escapeHtml(formatEventChartLabel(start, bucketMs, chartSpanMs))}</text>`
       : ""
   )).join("");
+  const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
+    releaseMarkers,
+    bucketStarts,
+    bucketMs,
+    chartWidth,
+    left,
+    right,
+    top,
+    plotBottom,
+  });
   const lines = series.map((entry, seriesIndex) => {
     const color = EVENT_PROPERTY_SERIES_COLORS[seriesIndex % EVENT_PROPERTY_SERIES_COLORS.length];
     const pointsByStart = new Map(entry.points.map((point) => [Number(point?.start), point]));
@@ -3215,12 +3225,54 @@ function renderCustomEventPropertyChart(container, property = {}) {
     <div class="eventPropertyChartScroller">
       <svg class="eventPropertyChartSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="${escapeHtml(formatEventPropertyName(property.name))} percentage by value over time">
         <g class="eventPropertyChartGrid">${grid}</g>
+        ${releaseMarkerMarkup}
         <text class="eventPropertyChartYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Share of values</text>
         ${lines}
         ${xLabels}
       </svg>
     </div>
   `;
+}
+
+function buildEventPropertyReleaseMarkers({
+  releaseMarkers = [],
+  bucketStarts = [],
+  bucketMs = 0,
+  chartWidth = 0,
+  left = 0,
+  right = 0,
+  top = 0,
+  plotBottom = 0,
+} = {}) {
+  if (!bucketStarts.length || !releaseMarkers.length) return "";
+  const timelineStart = Number(bucketStarts[0]) || 0;
+  const timelineEnd = (Number(bucketStarts.at(-1)) || timelineStart) + (Number(bucketMs) || 0);
+  const timelineDuration = timelineEnd - timelineStart;
+  const plotWidth = chartWidth - left - right;
+  if (timelineStart <= 0 || timelineDuration <= 0 || plotWidth <= 0) return "";
+
+  return releaseMarkers
+    .filter((marker) => {
+      const publishedAt = Number(marker?.publishedAt) || 0;
+      return publishedAt >= timelineStart && publishedAt <= timelineEnd;
+    })
+    .map((marker) => {
+      const publishedAt = Number(marker.publishedAt);
+      const x = left + (((publishedAt - timelineStart) / timelineDuration) * plotWidth);
+      const labelHalfWidth = 58;
+      const labelX = Math.max(left + labelHalfWidth, Math.min(x, chartWidth - right - labelHalfWidth));
+      const version = formatReleaseVersion(marker.placeVersion);
+      const publishedLabel = new Date(publishedAt).toLocaleDateString([], { month: "short", day: "numeric" });
+      return `
+        <g class="eventPropertyReleaseMarker">
+          <line class="eventPropertyReleaseMarkerLine" x1="${x.toFixed(2)}" y1="${top - 6}" x2="${x.toFixed(2)}" y2="${plotBottom}" />
+          <rect x="${(labelX - labelHalfWidth).toFixed(2)}" y="5" width="${labelHalfWidth * 2}" height="40" rx="6" />
+          <line class="eventPropertyReleaseMarkerAccent" x1="${(labelX - labelHalfWidth + 1).toFixed(2)}" y1="11" x2="${(labelX - labelHalfWidth + 1).toFixed(2)}" y2="39" />
+          <text class="eventPropertyReleaseMarkerTitle" x="${labelX.toFixed(2)}" y="20" text-anchor="middle">Update v${escapeHtml(version)}</text>
+          <text class="eventPropertyReleaseMarkerDate" x="${labelX.toFixed(2)}" y="35" text-anchor="middle">Published ${escapeHtml(publishedLabel)}</text>
+        </g>`;
+    })
+    .join("");
 }
 
 function buildRoundedEventPropertyPath(points = []) {
