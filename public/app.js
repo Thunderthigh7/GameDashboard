@@ -97,7 +97,43 @@ const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerBu
 const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
+const newEventButton = document.querySelector("#newEventButton");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
+const eventDefinitionModeBadge = document.querySelector("#eventDefinitionModeBadge");
+const eventSelectionActions = document.querySelector("#eventSelectionActions");
+const viewEventJsonButton = document.querySelector("#viewEventJsonButton");
+const editEventButton = document.querySelector("#editEventButton");
+const eventMoreButton = document.querySelector("#eventMoreButton");
+const eventMorePopover = document.querySelector("#eventMorePopover");
+const deleteSelectedEventButton = document.querySelector("#deleteSelectedEventButton");
+const eventAnalyticsView = document.querySelector("#eventAnalyticsView");
+const eventDefinitionForm = document.querySelector("#eventDefinitionForm");
+const eventDefinitionId = document.querySelector("#eventDefinitionId");
+const eventDefinitionName = document.querySelector("#eventDefinitionName");
+const eventKeyModeAuto = document.querySelector("#eventKeyModeAuto");
+const eventKeyModeManual = document.querySelector("#eventKeyModeManual");
+const eventDefinitionPropertyEditor = document.querySelector("#eventDefinitionPropertyEditor");
+const eventDefinitionPropertyCount = document.querySelector("#eventDefinitionPropertyCount");
+const eventDefinitionPropertiesHint = document.querySelector("#eventDefinitionPropertiesHint");
+const addEventDefinitionPropertyButton = document.querySelector("#addEventDefinitionPropertyButton");
+const eventDefinitionBuilderTitle = document.querySelector("#eventDefinitionBuilderTitle");
+const cancelEventDefinitionEditButton = document.querySelector("#cancelEventDefinitionEditButton");
+const cancelEventDefinitionButton = document.querySelector("#cancelEventDefinitionButton");
+const saveEventDefinitionButton = document.querySelector("#saveEventDefinitionButton");
+const eventDefinitionStatus = document.querySelector("#eventDefinitionStatus");
+const eventJsonTab = document.querySelector("#eventJsonTab");
+const eventLuauTab = document.querySelector("#eventLuauTab");
+const eventJsonPreview = document.querySelector("#eventJsonPreview");
+const eventLuauPreview = document.querySelector("#eventLuauPreview");
+const copyEventCodeButton = document.querySelector("#copyEventCodeButton");
+const downloadEventJsonButton = document.querySelector("#downloadEventJsonButton");
+const eventCodeStatus = document.querySelector("#eventCodeStatus");
+const eventConfirmDialog = document.querySelector("#eventConfirmDialog");
+const eventConfirmIcon = document.querySelector("#eventConfirmIcon");
+const eventConfirmTitle = document.querySelector("#eventConfirmTitle");
+const eventConfirmDescription = document.querySelector("#eventConfirmDescription");
+const eventConfirmCancelButton = document.querySelector("#eventConfirmCancelButton");
+const eventConfirmActionButton = document.querySelector("#eventConfirmActionButton");
 const eventIntervalButton = document.querySelector("#eventIntervalButton");
 const eventIntervalButtonLabel = document.querySelector("#eventIntervalButtonLabel");
 const eventIntervalMenu = document.querySelector("#eventIntervalMenu");
@@ -209,8 +245,20 @@ let currentReleasePayload = null;
 let releaseSelection = createEmptyReleaseSelection();
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
+let currentEventCatalog = [];
+let currentSelectedEvent = null;
 let selectedEventInterval = "auto";
 let recentEventsExpanded = false;
+let isEditingEventDefinition = false;
+let eventDefinitionProperties = [];
+let eventDefinitionPreviewMode = "json";
+let eventDefinitionReturnFocus = null;
+let eventDefinitionIsDirty = false;
+let eventDefinitionNameLocked = false;
+let eventConfirmResolver = null;
+let eventConfirmReturnFocus = null;
+let ignoreNextEventHashChange = false;
+let eventRefreshTimer;
 let currentEventReleaseVersions = [];
 let currentEventReleaseVersionsUniverseId = "";
 let eventReleaseVersionRequestSequence = 0;
@@ -228,8 +276,9 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-17";
+const DASHBOARD_ASSET_VERSION = "20260724-19";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
+const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
@@ -278,6 +327,7 @@ window.getDashboardCacheScope = resolveDashboardCacheScope;
 
 const CHAT_REFRESH_MS = 5000;
 const RECENT_CHAT_LIMIT = 100;
+const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "releases", "ai-runs", "chat"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
@@ -411,6 +461,7 @@ function bindEvents() {
   eventCatalog?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-event-name]");
     const eventName = button?.dataset.eventName || "";
+    if (button?.disabled) return;
     if (!eventName) return;
     const selectionChanged = eventName !== selectedCustomEventName;
     selectedCustomEventName = eventName;
@@ -424,6 +475,53 @@ function bindEvents() {
     }
     loadCustomEvents({ force: true, selectionChange: selectionChanged });
   });
+  newEventButton?.addEventListener("click", startNewEventDefinition);
+  editEventButton?.addEventListener("click", () => editSelectedEventDefinition());
+  viewEventJsonButton?.addEventListener("click", () => editSelectedEventDefinition({ focusPreview: true }));
+  eventMoreButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleEventMoreMenu();
+  });
+  eventMorePopover?.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("pointerdown", handleEventMoreOutsidePointer);
+  document.addEventListener("keydown", handleEventMoreEscape);
+  deleteSelectedEventButton?.addEventListener("click", deleteSelectedCustomEvent);
+  eventDefinitionForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveEventDefinition();
+  });
+  cancelEventDefinitionEditButton?.addEventListener("click", cancelEventDefinitionEdit);
+  cancelEventDefinitionButton?.addEventListener("click", cancelEventDefinitionEdit);
+  eventDefinitionName?.addEventListener("input", () => {
+    eventDefinitionIsDirty = true;
+    renderEventDefinitionCodePreviews();
+  });
+  eventDefinitionName?.addEventListener("blur", () => {
+    const normalizedName = String(eventDefinitionName.value || "").trim().toLowerCase();
+    if (eventDefinitionName.value !== normalizedName) {
+      eventDefinitionName.value = normalizedName;
+      eventDefinitionIsDirty = true;
+      renderEventDefinitionCodePreviews();
+    }
+  });
+  eventKeyModeAuto?.addEventListener("change", handleEventDefinitionModeChange);
+  eventKeyModeManual?.addEventListener("change", handleEventDefinitionModeChange);
+  addEventDefinitionPropertyButton?.addEventListener("click", () => addEventDefinitionProperty());
+  eventDefinitionPropertyEditor?.addEventListener("input", handleEventDefinitionPropertyInput);
+  eventDefinitionPropertyEditor?.addEventListener("change", handleEventDefinitionPropertyInput);
+  eventDefinitionPropertyEditor?.addEventListener("click", handleEventDefinitionPropertyAction);
+  eventJsonTab?.addEventListener("click", () => setEventDefinitionPreviewMode("json"));
+  eventLuauTab?.addEventListener("click", () => setEventDefinitionPreviewMode("luau"));
+  eventJsonTab?.addEventListener("keydown", handleEventDefinitionTabKeydown);
+  eventLuauTab?.addEventListener("keydown", handleEventDefinitionTabKeydown);
+  copyEventCodeButton?.addEventListener("click", copyEventDefinitionCode);
+  downloadEventJsonButton?.addEventListener("click", downloadEventDefinitionJson);
+  eventConfirmCancelButton?.addEventListener("click", () => resolveEventConfirmation(false));
+  eventConfirmActionButton?.addEventListener("click", () => resolveEventConfirmation(true));
+  eventConfirmDialog?.addEventListener("pointerdown", (event) => {
+    if (event.target === eventConfirmDialog) resolveEventConfirmation(false);
+  });
+  document.addEventListener("keydown", handleEventConfirmationKeydown);
   eventIntervalSelect?.addEventListener("change", () => {
     selectedEventInterval = eventIntervalSelect.value || "auto";
     syncEventIntervalDropdown();
@@ -528,9 +626,12 @@ function bindEvents() {
   document.addEventListener("keydown", handleDateRangePickerEscape);
 
   for (const link of viewNavLinks) {
-    link.addEventListener("click", (event) => {
+    link.addEventListener("click", async (event) => {
       event.preventDefault();
-      setActiveView(link.dataset.dashboardView || "overview", { updateHash: true });
+      const nextView = link.dataset.dashboardView || "overview";
+      if (!await confirmEventDefinitionDiscard(nextView)) return;
+      eventDefinitionIsDirty = false;
+      setActiveView(nextView, { updateHash: true });
     });
   }
 
@@ -570,9 +671,8 @@ function bindEvents() {
     }
   });
 
-  window.addEventListener("hashchange", () => {
-    setActiveView(getViewFromHash(), { updateHash: false });
-  });
+  window.addEventListener("hashchange", handleDashboardHashChange);
+  window.addEventListener("beforeunload", handleEventDefinitionBeforeUnload);
   document.addEventListener("visibilitychange", handleDashboardVisibilityChange);
 }
 
@@ -580,6 +680,7 @@ function handleDashboardVisibilityChange() {
   if (document.hidden) {
     closeUniverseDropdown();
     stopChatRefresh();
+    stopEventRefresh();
     stopFunnelRefresh();
   } else {
     updateViewRefreshTimers();
@@ -787,6 +888,8 @@ function setAuthenticated(value, user = null) {
     abortActiveDashboardRequests();
     clearDashboardSessionCache(previousCacheScope);
     stopChatRefresh();
+    stopEventRefresh();
+    stopFunnelRefresh();
     renderChatSummary();
     setChatLiveState("waiting");
     renderRecentChatEmpty("Sign in to view recent chat.");
@@ -884,6 +987,8 @@ function setActiveView(view, options = {}) {
   if (activeView !== "events") {
     closeDateRangePicker();
     closeEventIntervalMenu();
+    closeEventMoreMenu();
+    setEventDefinitionBuilderVisible(false);
   }
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
@@ -987,12 +1092,16 @@ function renderActiveView(options = {}) {
 function updateViewRefreshTimers() {
   if (!authenticated || document.hidden) {
     stopChatRefresh();
+    stopEventRefresh();
     stopFunnelRefresh();
     return;
   }
 
   if (activeView === "chat" && selectedUniverseId) startChatRefresh();
   else stopChatRefresh();
+
+  if (activeView === "events" && selectedUniverseId) startEventRefresh();
+  else stopEventRefresh();
 
   if (activeView === "funnels" && selectedUniverseId) startFunnelRefresh();
   else stopFunnelRefresh();
@@ -1048,6 +1157,20 @@ function stopChatRefresh() {
   if (chatRefreshTimer) {
     window.clearInterval(chatRefreshTimer);
     chatRefreshTimer = null;
+  }
+}
+
+function startEventRefresh() {
+  if (eventRefreshTimer || document.hidden) return;
+  eventRefreshTimer = window.setInterval(() => {
+    if (!isEditingEventDefinition) loadCustomEvents({ background: true });
+  }, EVENT_REFRESH_MS);
+}
+
+function stopEventRefresh() {
+  if (eventRefreshTimer) {
+    window.clearInterval(eventRefreshTimer);
+    eventRefreshTimer = null;
   }
 }
 
@@ -2306,18 +2429,31 @@ function renderIntegrationSignal(label, active, count = null) {
   return `<span class="${active ? "active" : ""}">${escapeHtml(label)}${escapeHtml(countText)}</span>`;
 }
 
-function selectUniverse(value) {
+async function selectUniverse(value) {
   closeUniverseDropdown();
   const cleanValue = String(value || "").trim();
   const knownIds = new Set(knownUniverses.map((universe) => String(universe.id || "")));
   const previousUniverseId = selectedUniverseId;
-  selectedUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
-  if (selectedUniverseId === previousUniverseId) return;
+  const nextUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
+  if (nextUniverseId === previousUniverseId) return true;
+  if (isEditingEventDefinition && eventDefinitionIsDirty && !await confirmUnsavedEventDefinition()) {
+    if (universeSelect) universeSelect.value = previousUniverseId;
+    updateSelectedUniverse();
+    return false;
+  }
+  eventDefinitionIsDirty = false;
+  selectedUniverseId = nextUniverseId;
 
   selectedChatLogId = "";
   currentChatLogs = [];
   selectedCustomEventName = "";
+  currentEventCatalog = [];
+  currentSelectedEvent = null;
   recentEventsExpanded = false;
+  isEditingEventDefinition = false;
+  eventDefinitionProperties = [];
+  eventDefinitionNameLocked = false;
+  setEventDefinitionBuilderVisible(false);
   currentEventReleaseVersions = [];
   currentEventReleaseVersionsUniverseId = "";
   eventReleaseVersionRequestSequence += 1;
@@ -2345,6 +2481,7 @@ function selectUniverse(value) {
   window.dispatchEvent(new CustomEvent("dashboard:universeChanged", {
     detail: { universeId: selectedUniverseId },
   }));
+  return true;
 }
 
 function createEmptyReleaseSelection() {
@@ -2858,8 +2995,10 @@ async function loadCustomEvents(options = {}) {
   if (currentEventReleaseVersionsUniverseId !== universeId) {
     loadEventReleaseVersions(universeId);
   }
-  eventsStatus.textContent = "Loading events...";
-  eventPropertyList?.setAttribute("aria-busy", "true");
+  if (!options.background) {
+    eventsStatus.textContent = "Loading events...";
+    eventPropertyList?.setAttribute("aria-busy", "true");
+  }
   const params = new URLSearchParams();
   params.set("universeId", universeId);
   const from = getDashboardDateFilterMs(movementFromFilter);
@@ -2889,7 +3028,7 @@ async function loadCustomEvents(options = {}) {
     }
     return false;
   } finally {
-    if (requestSequence === customEventsRequestSequence) {
+    if (requestSequence === customEventsRequestSequence && !options.background) {
       eventPropertyList?.setAttribute("aria-busy", "false");
     }
   }
@@ -2984,6 +3123,8 @@ function renderCustomEventSelectionError() {
 function renderCustomEvents(payload = {}) {
   const catalog = Array.isArray(payload.events) ? payload.events : [];
   const selected = payload.selectedEvent || null;
+  currentEventCatalog = catalog;
+  currentSelectedEvent = selected;
   const previousEventName = selectedCustomEventName;
   selectedCustomEventName = selected?.name || "";
   if (previousEventName && previousEventName !== selectedCustomEventName) {
@@ -3009,6 +3150,7 @@ function renderCustomEvents(payload = {}) {
   }
 
   if (selectedEventTitle) selectedEventTitle.textContent = selected ? formatEventName(selected.name) : "Select an event";
+  updateSelectedEventDefinitionActions(selected);
   updateEventPropertyHeaderMetrics(selected);
   updateEventIntervalControl(selected);
   renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || []);
@@ -3059,8 +3201,20 @@ function updateEventPropertyHeaderMetrics(selectedEvent, options = {}) {
 function renderEventCatalog(catalog) {
   const renderItem = (item) => {
     const isActive = item.name === selectedCustomEventName;
+    const definition = item.definition || null;
+    const propertyCount = definition?.effectiveProperties?.length || 0;
+    const meta = item.sourceType === "system"
+      ? "Automatic"
+      : !definition
+        ? "Not configured"
+        : definition.keyMode === "manual"
+          ? `${formatCompactNumber(propertyCount)} manual ${propertyCount === 1 ? "key" : "keys"}`
+          : `${formatCompactNumber(propertyCount)} auto ${propertyCount === 1 ? "key" : "keys"}`;
     return `
-      <button class="eventCatalogItem ${isActive ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}" title="${escapeHtml(formatEventName(item.name))}" ${isActive ? 'aria-current="true"' : ""}>${escapeHtml(formatEventName(item.name))}</button>
+      <button class="eventCatalogItem ${isActive ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}" title="${escapeHtml(formatEventName(item.name))}" ${isActive ? 'aria-current="true"' : ""} ${isEditingEventDefinition ? "disabled" : ""}>
+        <span>${escapeHtml(formatEventName(item.name))}</span>
+        <small>${escapeHtml(meta)}</small>
+      </button>
     `;
   };
   const systemOrder = new Map([["player_died", 0], ["player_left", 1], ["chat_message", 2]]);
@@ -3069,6 +3223,702 @@ function renderEventCatalog(catalog) {
     .sort((left, right) => (systemOrder.get(left.name) ?? 99) - (systemOrder.get(right.name) ?? 99));
   const customEvents = catalog.filter((item) => item.sourceType !== "system");
   return [...systemEvents, ...customEvents].map(renderItem).join("");
+}
+
+function getSelectedEventCatalogItem() {
+  return currentEventCatalog.find((item) => item.name === selectedCustomEventName) || null;
+}
+
+function updateSelectedEventDefinitionActions(selectedEvent) {
+  const catalogItem = getSelectedEventCatalogItem();
+  const hasSelection = Boolean(selectedEvent?.name && catalogItem);
+  const isCustomEvent = hasSelection && catalogItem.sourceType !== "system";
+  const definition = selectedEvent?.definition || catalogItem?.definition || null;
+
+  if (eventSelectionActions) eventSelectionActions.hidden = !isCustomEvent || isEditingEventDefinition;
+  if (eventDefinitionModeBadge) {
+    eventDefinitionModeBadge.hidden = !isCustomEvent || isEditingEventDefinition;
+    eventDefinitionModeBadge.textContent = !definition
+      ? "Not configured"
+      : (definition.keyMode === "manual" ? "Manual keys" : "Auto keys");
+    eventDefinitionModeBadge.classList.toggle("manual", definition?.keyMode === "manual");
+    eventDefinitionModeBadge.classList.toggle("unconfigured", !definition);
+  }
+  if (editEventButton) editEventButton.disabled = !isCustomEvent;
+  if (viewEventJsonButton) viewEventJsonButton.disabled = !isCustomEvent;
+  if (eventMoreButton) eventMoreButton.disabled = !isCustomEvent;
+}
+
+function startNewEventDefinition() {
+  if (!selectedUniverseId || !eventDefinitionForm) return;
+  closeEventMoreMenu();
+  eventDefinitionReturnFocus = document.activeElement;
+  eventDefinitionIsDirty = false;
+  eventDefinitionProperties = [];
+  eventDefinitionNameLocked = false;
+  if (eventDefinitionId) eventDefinitionId.value = "";
+  if (eventDefinitionName) {
+    eventDefinitionName.value = "";
+    eventDefinitionName.disabled = false;
+  }
+  if (eventKeyModeAuto) eventKeyModeAuto.checked = true;
+  if (eventKeyModeManual) eventKeyModeManual.checked = false;
+  if (eventDefinitionBuilderTitle) eventDefinitionBuilderTitle.textContent = "Create event";
+  if (selectedEventTitle) selectedEventTitle.textContent = "New event";
+  if (saveEventDefinitionButton) saveEventDefinitionButton.textContent = "Create event";
+  if (eventDefinitionStatus) eventDefinitionStatus.textContent = "";
+  if (eventCodeStatus) eventCodeStatus.textContent = "";
+  setEventDefinitionPreviewMode("json");
+  renderEventDefinitionPropertyEditor();
+  renderEventDefinitionCodePreviews();
+  setEventDefinitionBuilderVisible(true);
+  window.requestAnimationFrame(() => eventDefinitionName?.focus());
+}
+
+function getObservedEventDefinitionPropertyType(property = {}) {
+  if (property.type === "number") return "number";
+  const observedTypes = new Set(
+    (Array.isArray(property.topValues) ? property.topValues : [])
+      .map((entry) => String(entry?.valueType || "").toLowerCase())
+      .filter(Boolean),
+  );
+  if (observedTypes.size === 1 && observedTypes.has("boolean")) return "boolean";
+  return "string";
+}
+
+function editSelectedEventDefinition(options = {}) {
+  const selected = currentSelectedEvent;
+  const catalogItem = getSelectedEventCatalogItem();
+  if (!selected?.name || !catalogItem || catalogItem.sourceType === "system" || !eventDefinitionForm) return;
+
+  closeEventMoreMenu();
+  eventDefinitionReturnFocus = document.activeElement;
+  eventDefinitionIsDirty = false;
+  eventDefinitionNameLocked = true;
+  const definition = selected.definition || catalogItem.definition || null;
+  const propertyTypesByName = new Map(
+    (selected.properties || []).map((property) => [
+      property.name,
+      getObservedEventDefinitionPropertyType(property),
+    ]),
+  );
+  const discoveredPropertyNames = new Set(definition?.discoveredPropertyNames || []);
+  const sourceProperties = definition?.keyMode === "manual"
+    ? definition.properties || []
+    : [
+      ...(definition?.effectiveProperties || definition?.properties || []).map((property) => ({
+        ...property,
+        discovered: Boolean(property.discovered || discoveredPropertyNames.has(property.name)),
+      })),
+      ...(selected.properties || []).map((property) => ({
+        name: property.name,
+        type: getObservedEventDefinitionPropertyType(property),
+        discovered: true,
+      })),
+      ...(selected.observedPropertyNames || []).map((name) => ({ name, discovered: true })),
+    ];
+  eventDefinitionProperties = normalizeEventDefinitionEditorProperties(sourceProperties, propertyTypesByName);
+
+  if (eventDefinitionId) eventDefinitionId.value = definition?.id || "";
+  if (eventDefinitionName) {
+    eventDefinitionName.value = selected.name;
+    eventDefinitionName.disabled = true;
+  }
+  const keyMode = definition?.keyMode === "manual" ? "manual" : "auto";
+  if (eventKeyModeAuto) eventKeyModeAuto.checked = keyMode === "auto";
+  if (eventKeyModeManual) eventKeyModeManual.checked = keyMode === "manual";
+  if (eventDefinitionBuilderTitle) eventDefinitionBuilderTitle.textContent = `Edit ${formatEventName(selected.name)}`;
+  if (selectedEventTitle) selectedEventTitle.textContent = `Edit ${formatEventName(selected.name)}`;
+  if (saveEventDefinitionButton) saveEventDefinitionButton.textContent = "Save changes";
+  if (eventDefinitionStatus) {
+    const unexpectedCount = Number(selected.unexpectedPropertyNames?.length) || 0;
+    eventDefinitionStatus.textContent = unexpectedCount
+      ? `${formatCompactNumber(unexpectedCount)} unlisted ${unexpectedCount === 1 ? "key has" : "keys have"} arrived and remain available in raw records.`
+      : "";
+  }
+  if (eventCodeStatus) eventCodeStatus.textContent = "";
+  setEventDefinitionPreviewMode("json");
+  renderEventDefinitionPropertyEditor();
+  renderEventDefinitionCodePreviews();
+  setEventDefinitionBuilderVisible(true);
+  window.requestAnimationFrame(() => {
+    if (options.focusPreview) {
+      eventJsonTab?.focus();
+      document.querySelector("#eventCodePreview")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      eventDefinitionPropertyEditor?.querySelector("input")?.focus()
+        || cancelEventDefinitionEditButton?.focus();
+    }
+  });
+}
+
+function normalizeEventDefinitionEditorProperties(properties, inferredTypes = new Map()) {
+  const normalized = [];
+  const names = new Set();
+  for (const property of Array.isArray(properties) ? properties : []) {
+    const name = String(property?.name || property?.key || property?.path || "").trim();
+    if (!name || names.has(name)) continue;
+    names.add(name);
+    const inferredType = inferredTypes.get(name);
+    const requestedType = String(
+      property?.discovered && inferredType
+        ? inferredType
+        : property?.type || inferredType || "string",
+    ).toLowerCase();
+    normalized.push({
+      name,
+      type: ["string", "number", "boolean"].includes(requestedType) ? requestedType : "string",
+      discovered: Boolean(property?.discovered),
+    });
+    if (normalized.length >= MAX_EVENT_DEFINITION_PROPERTIES) break;
+  }
+  return normalized;
+}
+
+function setEventDefinitionBuilderVisible(visible) {
+  isEditingEventDefinition = Boolean(visible);
+  document.body.classList.toggle("isEditingEventDefinition", isEditingEventDefinition);
+  if (eventDefinitionForm) eventDefinitionForm.hidden = !isEditingEventDefinition;
+  if (eventAnalyticsView) eventAnalyticsView.hidden = isEditingEventDefinition;
+  if (!isEditingEventDefinition && selectedEventTitle) {
+    selectedEventTitle.textContent = currentSelectedEvent?.name
+      ? formatEventName(currentSelectedEvent.name)
+      : "Select an event";
+  }
+  if (newEventButton) newEventButton.disabled = isEditingEventDefinition || !selectedUniverseId;
+  if (eventCatalog) eventCatalog.innerHTML = currentEventCatalog.length
+    ? renderEventCatalog(currentEventCatalog)
+    : '<p class="status">Logged event names will appear here automatically.</p>';
+  updateSelectedEventDefinitionActions(currentSelectedEvent);
+}
+
+async function confirmEventDefinitionDiscard(nextView) {
+  if (
+    activeView !== "events"
+    || nextView === "events"
+    || !isEditingEventDefinition
+    || !eventDefinitionIsDirty
+  ) {
+    return true;
+  }
+  return confirmUnsavedEventDefinition();
+}
+
+function confirmUnsavedEventDefinition() {
+  if (!eventDefinitionIsDirty) return Promise.resolve(true);
+  return showEventConfirmation({
+    title: "Discard unsaved changes?",
+    description: "Your event name, key mode, and property edits have not been saved.",
+    confirmLabel: "Discard changes",
+    danger: true,
+  });
+}
+
+function showEventConfirmation(options = {}) {
+  if (!eventConfirmDialog) return Promise.resolve(false);
+  if (eventConfirmResolver) resolveEventConfirmation(false);
+  eventConfirmReturnFocus = options.returnFocus || document.activeElement;
+  if (eventConfirmTitle) eventConfirmTitle.textContent = options.title || "Confirm action";
+  if (eventConfirmDescription) eventConfirmDescription.textContent = options.description || "";
+  if (eventConfirmActionButton) {
+    eventConfirmActionButton.textContent = options.confirmLabel || "Confirm";
+    eventConfirmActionButton.classList.toggle("danger", Boolean(options.danger));
+  }
+  eventConfirmIcon?.classList.toggle("danger", Boolean(options.danger));
+  eventConfirmDialog.hidden = false;
+  document.body.classList.add("hasEventConfirmDialog");
+  window.requestAnimationFrame(() => eventConfirmCancelButton?.focus());
+  return new Promise((resolve) => {
+    eventConfirmResolver = resolve;
+  });
+}
+
+function resolveEventConfirmation(confirmed) {
+  if (!eventConfirmResolver) return;
+  const resolve = eventConfirmResolver;
+  const returnFocus = eventConfirmReturnFocus;
+  eventConfirmResolver = null;
+  eventConfirmReturnFocus = null;
+  if (eventConfirmDialog) eventConfirmDialog.hidden = true;
+  document.body.classList.remove("hasEventConfirmDialog");
+  resolve(Boolean(confirmed));
+  if (!confirmed) {
+    window.requestAnimationFrame(() => returnFocus?.isConnected && returnFocus.focus());
+  }
+}
+
+function handleEventConfirmationKeydown(event) {
+  if (eventConfirmDialog?.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    resolveEventConfirmation(false);
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const controls = [eventConfirmCancelButton, eventConfirmActionButton].filter((control) => !control?.disabled);
+  if (!controls.length) return;
+  const currentIndex = controls.indexOf(document.activeElement);
+  const direction = event.shiftKey ? -1 : 1;
+  const nextIndex = currentIndex < 0
+    ? 0
+    : (currentIndex + direction + controls.length) % controls.length;
+  event.preventDefault();
+  controls[nextIndex].focus();
+}
+
+async function handleDashboardHashChange() {
+  if (ignoreNextEventHashChange) {
+    ignoreNextEventHashChange = false;
+    return;
+  }
+  const nextView = getViewFromHash();
+  if (!await confirmEventDefinitionDiscard(nextView)) {
+    ignoreNextEventHashChange = true;
+    window.location.hash = "#events";
+    return;
+  }
+  eventDefinitionIsDirty = false;
+  setActiveView(nextView, { updateHash: false });
+}
+
+function handleEventDefinitionBeforeUnload(event) {
+  if (!isEditingEventDefinition || !eventDefinitionIsDirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+async function cancelEventDefinitionEdit() {
+  if (!isEditingEventDefinition) return;
+  if (!await confirmUnsavedEventDefinition()) return;
+  eventDefinitionIsDirty = false;
+  setEventDefinitionBuilderVisible(false);
+  restoreEventDefinitionViewFocus();
+}
+
+function restoreEventDefinitionViewFocus() {
+  const target = eventDefinitionReturnFocus?.isConnected
+    ? eventDefinitionReturnFocus
+    : (selectedCustomEventName ? editEventButton : newEventButton);
+  eventDefinitionReturnFocus = null;
+  window.requestAnimationFrame(() => target?.focus());
+}
+
+function getSelectedEventDefinitionKeyMode() {
+  return eventKeyModeManual?.checked ? "manual" : "auto";
+}
+
+function handleEventDefinitionModeChange() {
+  if (!isEditingEventDefinition) return;
+  eventDefinitionIsDirty = true;
+  const mode = getSelectedEventDefinitionKeyMode();
+  if (mode === "manual" && !eventDefinitionProperties.length) {
+    eventDefinitionProperties = normalizeEventDefinitionEditorProperties(
+      (currentSelectedEvent?.properties || []).map((property) => ({
+        name: property.name,
+        type: getObservedEventDefinitionPropertyType(property),
+        discovered: true,
+      })),
+    );
+  } else if (mode === "auto" && currentSelectedEvent?.name) {
+    const definition = currentSelectedEvent.definition || getSelectedEventCatalogItem()?.definition || null;
+    const inferredTypes = new Map(
+      (currentSelectedEvent.properties || []).map((property) => [
+        property.name,
+        getObservedEventDefinitionPropertyType(property),
+      ]),
+    );
+    const discoveredNames = new Set([
+      ...(definition?.discoveredPropertyNames || []),
+      ...(currentSelectedEvent.observedPropertyNames || []),
+      ...(currentSelectedEvent.properties || []).map((property) => property.name),
+    ]);
+    eventDefinitionProperties = normalizeEventDefinitionEditorProperties([
+      ...eventDefinitionProperties.map((property) => ({
+        ...property,
+        discovered: Boolean(property.discovered || discoveredNames.has(property.name)),
+      })),
+      ...(definition?.effectiveProperties || []).map((property) => ({
+        ...property,
+        discovered: Boolean(property.discovered || discoveredNames.has(property.name)),
+      })),
+      ...(currentSelectedEvent.properties || []).map((property) => ({
+        name: property.name,
+        type: getObservedEventDefinitionPropertyType(property),
+        discovered: true,
+      })),
+      ...[...discoveredNames].map((name) => ({
+        name,
+        type: inferredTypes.get(name) || "string",
+        discovered: true,
+      })),
+    ], inferredTypes);
+  }
+  renderEventDefinitionPropertyEditor();
+  renderEventDefinitionCodePreviews();
+}
+
+function renderEventDefinitionPropertyEditor(options = {}) {
+  if (!eventDefinitionPropertyEditor) return;
+  const mode = getSelectedEventDefinitionKeyMode();
+  if (eventDefinitionPropertiesHint) {
+    eventDefinitionPropertiesHint.textContent = mode === "manual"
+      ? "Only these keys appear as expected property breakdowns. Raw unlisted keys are still retained."
+      : "Optional starting keys. New keys are added automatically when Roblox sends them.";
+  }
+  if (eventDefinitionPropertyCount) {
+    eventDefinitionPropertyCount.textContent = `${eventDefinitionProperties.length} / ${MAX_EVENT_DEFINITION_PROPERTIES}`;
+  }
+  if (addEventDefinitionPropertyButton) {
+    addEventDefinitionPropertyButton.disabled = eventDefinitionProperties.length >= MAX_EVENT_DEFINITION_PROPERTIES;
+  }
+
+  eventDefinitionPropertyEditor.innerHTML = eventDefinitionProperties.length
+    ? eventDefinitionProperties.map((property, index) => {
+      const autoDiscovered = mode === "auto" && property.discovered;
+      return `
+      <div class="eventDefinitionPropertyRow ${autoDiscovered ? "autoDiscovered" : ""}" data-event-definition-property-index="${index}" data-event-definition-property-discovered="${property.discovered ? "true" : "false"}">
+        <span class="eventDefinitionPropertyIndex" aria-hidden="true">${index + 1}</span>
+        <label>
+          <span>Property name</span>
+          <input type="text" value="${escapeHtml(property.name)}" maxlength="96" placeholder="weapon.name" spellcheck="false" data-event-definition-property-name="${index}" aria-label="Property ${index + 1} name" ${autoDiscovered ? 'readonly title="Auto-discovered keys remain while Auto discover is selected"' : ""}>
+        </label>
+        <label>
+          <span>Example type</span>
+          <select data-event-definition-property-type="${index}" aria-label="Property ${index + 1} example type">
+            <option value="string" ${property.type === "string" ? "selected" : ""}>String</option>
+            <option value="number" ${property.type === "number" ? "selected" : ""}>Number</option>
+            <option value="boolean" ${property.type === "boolean" ? "selected" : ""}>True / false</option>
+          </select>
+        </label>
+        ${autoDiscovered
+          ? '<span class="eventDefinitionPropertySource" title="Switch to Manual keys to exclude this property">Auto</span>'
+          : `<button class="eventDefinitionRemovePropertyButton" type="button" data-event-definition-property-action="remove" data-event-definition-property-index="${index}" aria-label="Remove ${escapeHtml(property.name || `property ${index + 1}`)}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>`}
+      </div>
+    `;
+    }).join("")
+    : `
+      <div class="eventDefinitionPropertiesEmpty">
+        <strong>No properties yet</strong>
+        <span>${mode === "auto" ? "That is okay—keys can be discovered from the first incoming event." : "This will be a count-only event with no property breakdowns."}</span>
+      </div>
+    `;
+
+  if (Number.isInteger(options.focusIndex)) {
+    window.requestAnimationFrame(() => {
+      eventDefinitionPropertyEditor
+        ?.querySelector(`[data-event-definition-property-name="${options.focusIndex}"]`)
+        ?.focus();
+    });
+  }
+}
+
+function syncEventDefinitionPropertiesFromEditor() {
+  const properties = [];
+  for (const row of eventDefinitionPropertyEditor?.querySelectorAll("[data-event-definition-property-index]") || []) {
+    properties.push({
+      name: String(row.querySelector("[data-event-definition-property-name]")?.value || "").trim(),
+      type: String(row.querySelector("[data-event-definition-property-type]")?.value || "string"),
+      discovered: row.dataset.eventDefinitionPropertyDiscovered === "true",
+    });
+  }
+  eventDefinitionProperties = properties.slice(0, MAX_EVENT_DEFINITION_PROPERTIES);
+}
+
+function handleEventDefinitionPropertyInput() {
+  syncEventDefinitionPropertiesFromEditor();
+  eventDefinitionIsDirty = true;
+  if (eventDefinitionPropertyCount) {
+    eventDefinitionPropertyCount.textContent = `${eventDefinitionProperties.length} / ${MAX_EVENT_DEFINITION_PROPERTIES}`;
+  }
+  renderEventDefinitionCodePreviews();
+}
+
+function handleEventDefinitionPropertyAction(event) {
+  const button = event.target.closest("[data-event-definition-property-action]");
+  if (!button) return;
+  syncEventDefinitionPropertiesFromEditor();
+  const index = Number(button.dataset.eventDefinitionPropertyIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= eventDefinitionProperties.length) return;
+  eventDefinitionProperties.splice(index, 1);
+  eventDefinitionIsDirty = true;
+  renderEventDefinitionPropertyEditor({
+    focusIndex: eventDefinitionProperties.length ? Math.min(index, eventDefinitionProperties.length - 1) : undefined,
+  });
+  renderEventDefinitionCodePreviews();
+}
+
+function addEventDefinitionProperty() {
+  syncEventDefinitionPropertiesFromEditor();
+  if (eventDefinitionProperties.length >= MAX_EVENT_DEFINITION_PROPERTIES) return;
+  eventDefinitionProperties.push({ name: "", type: "string" });
+  eventDefinitionIsDirty = true;
+  const newIndex = eventDefinitionProperties.length - 1;
+  renderEventDefinitionPropertyEditor({ focusIndex: newIndex });
+  renderEventDefinitionCodePreviews();
+}
+
+function getEventDefinitionPreviewName() {
+  const rawName = String(eventDefinitionName?.value || "").trim().toLowerCase();
+  return rawName || "event_name";
+}
+
+function getEventDefinitionPreviewProperties() {
+  syncEventDefinitionPropertiesFromEditor();
+  const properties = [];
+  const names = new Set();
+  for (const property of eventDefinitionProperties) {
+    const name = String(property.name || "").trim();
+    if (!name || names.has(name)) continue;
+    names.add(name);
+    properties.push({
+      name,
+      type: ["string", "number", "boolean"].includes(property.type) ? property.type : "string",
+    });
+  }
+  return properties;
+}
+
+function getEventDefinitionExampleValue(type) {
+  if (type === "number") return 0;
+  if (type === "boolean") return false;
+  return "Example";
+}
+
+function buildEventDefinitionJsonTemplate() {
+  return {
+    eventName: getEventDefinitionPreviewName(),
+    properties: Object.fromEntries(
+      getEventDefinitionPreviewProperties().map((property) => [
+        property.name,
+        getEventDefinitionExampleValue(property.type),
+      ]),
+    ),
+  };
+}
+
+function formatLuauString(value) {
+  return JSON.stringify(String(value));
+}
+
+function formatLuauPropertyKey(name) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
+    ? name
+    : `[${formatLuauString(name)}]`;
+}
+
+function formatLuauExampleValue(type) {
+  if (type === "number") return "0";
+  if (type === "boolean") return "false";
+  return '"Example"';
+}
+
+function buildEventDefinitionLuauTemplate() {
+  const properties = getEventDefinitionPreviewProperties();
+  const propertyLines = properties.length
+    ? properties.map((property) => `\t${formatLuauPropertyKey(property.name)} = ${formatLuauExampleValue(property.type)},`).join("\n")
+    : "";
+  const infoTable = propertyLines ? `{\n${propertyLines}\n}` : "{}";
+  return [
+    'local ServerScriptService = game:GetService("ServerScriptService")',
+    "local Logger = require(ServerScriptService.Server.Services.Game.PresenceService.API)",
+    "",
+    `Logger.Log(${formatLuauString(getEventDefinitionPreviewName())}, ${infoTable}, player)`,
+  ].join("\n");
+}
+
+function renderEventDefinitionCodePreviews() {
+  const jsonCode = JSON.stringify(buildEventDefinitionJsonTemplate(), null, 2);
+  const luauCode = buildEventDefinitionLuauTemplate();
+  const jsonCodeNode = eventJsonPreview?.querySelector("code");
+  const luauCodeNode = eventLuauPreview?.querySelector("code");
+  if (jsonCodeNode) jsonCodeNode.textContent = jsonCode;
+  if (luauCodeNode) luauCodeNode.textContent = luauCode;
+}
+
+function setEventDefinitionPreviewMode(mode) {
+  eventDefinitionPreviewMode = mode === "luau" ? "luau" : "json";
+  if (eventJsonPreview) eventJsonPreview.hidden = eventDefinitionPreviewMode !== "json";
+  if (eventLuauPreview) eventLuauPreview.hidden = eventDefinitionPreviewMode !== "luau";
+  eventJsonTab?.setAttribute("aria-selected", String(eventDefinitionPreviewMode === "json"));
+  eventLuauTab?.setAttribute("aria-selected", String(eventDefinitionPreviewMode === "luau"));
+  if (eventJsonTab) eventJsonTab.tabIndex = eventDefinitionPreviewMode === "json" ? 0 : -1;
+  if (eventLuauTab) eventLuauTab.tabIndex = eventDefinitionPreviewMode === "luau" ? 0 : -1;
+  if (copyEventCodeButton) copyEventCodeButton.textContent = eventDefinitionPreviewMode === "json" ? "Copy JSON" : "Copy Luau";
+  if (downloadEventJsonButton) downloadEventJsonButton.hidden = eventDefinitionPreviewMode !== "json";
+  if (eventCodeStatus) eventCodeStatus.textContent = "";
+}
+
+function handleEventDefinitionTabKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const nextMode = event.key === "ArrowLeft" || event.key === "Home" ? "json" : "luau";
+  setEventDefinitionPreviewMode(nextMode);
+  (nextMode === "json" ? eventJsonTab : eventLuauTab)?.focus();
+}
+
+async function copyEventDefinitionCode() {
+  const code = eventDefinitionPreviewMode === "luau"
+    ? buildEventDefinitionLuauTemplate()
+    : JSON.stringify(buildEventDefinitionJsonTemplate(), null, 2);
+  try {
+    await navigator.clipboard.writeText(code);
+    if (eventCodeStatus) eventCodeStatus.textContent = eventDefinitionPreviewMode === "luau" ? "Luau copied." : "JSON copied.";
+  } catch {
+    if (eventCodeStatus) eventCodeStatus.textContent = "Copy failed. Select the code above and copy it manually.";
+  }
+}
+
+function downloadEventDefinitionJson() {
+  const json = JSON.stringify(buildEventDefinitionJsonTemplate(), null, 2);
+  const filename = `${getEventDefinitionPreviewName().replace(/[^a-z0-9_.-]+/gi, "-") || "event"}.json`;
+  const objectUrl = URL.createObjectURL(new Blob([`${json}\n`], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  if (eventCodeStatus) eventCodeStatus.textContent = `${filename} downloaded.`;
+}
+
+function validateEventDefinitionForm() {
+  const eventName = String(eventDefinitionName?.value || "").trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName)) {
+    return { error: "Use an event name that starts with a letter and contains only letters, numbers, _, ., :, or -." };
+  }
+  syncEventDefinitionPropertiesFromEditor();
+  if (eventDefinitionProperties.length > MAX_EVENT_DEFINITION_PROPERTIES) {
+    return { error: `Events can have up to ${MAX_EVENT_DEFINITION_PROPERTIES} properties.` };
+  }
+  const names = new Set();
+  const properties = [];
+  for (const property of eventDefinitionProperties) {
+    const propertyName = String(property.name || "").trim();
+    if (!propertyName) return { error: "Name or remove every property row." };
+    if (!/^[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?)*$/.test(propertyName) || propertyName.length > 96) {
+      return { error: `"${propertyName}" is not a valid property path.` };
+    }
+    if (names.has(propertyName)) return { error: `Property names must be unique: ${propertyName}` };
+    names.add(propertyName);
+    properties.push({
+      name: propertyName,
+      type: ["string", "number", "boolean"].includes(property.type) ? property.type : "string",
+    });
+  }
+  return { eventName, properties };
+}
+
+async function saveEventDefinition() {
+  if (!selectedUniverseId || !eventDefinitionForm) return;
+  const validated = validateEventDefinitionForm();
+  if (validated.error) {
+    if (eventDefinitionStatus) eventDefinitionStatus.textContent = validated.error;
+    return;
+  }
+
+  setEventDefinitionFormDisabled(true);
+  if (eventDefinitionStatus) eventDefinitionStatus.textContent = "Saving event...";
+  try {
+    const payload = await request("/api/event-definitions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: eventDefinitionId?.value || undefined,
+        universeId: Number(selectedUniverseId),
+        eventName: validated.eventName,
+        keyMode: getSelectedEventDefinitionKeyMode(),
+        properties: validated.properties,
+      }),
+    });
+    selectedCustomEventName = payload.definition?.eventName || validated.eventName;
+    eventDefinitionIsDirty = false;
+    window.dispatchEvent(new CustomEvent("dashboard:eventDefinitionsChanged", {
+      detail: { universeId: selectedUniverseId, eventName: selectedCustomEventName },
+    }));
+    await loadCustomEvents({ force: true });
+    setEventDefinitionBuilderVisible(false);
+    restoreEventDefinitionViewFocus();
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated && eventDefinitionStatus) eventDefinitionStatus.textContent = formatRequestError(error);
+  } finally {
+    setEventDefinitionFormDisabled(false);
+  }
+}
+
+function setEventDefinitionFormDisabled(disabled) {
+  for (const control of eventDefinitionForm?.querySelectorAll("input, select, button") || []) {
+    control.disabled = disabled;
+  }
+  if (!disabled && eventDefinitionName) {
+    eventDefinitionName.disabled = eventDefinitionNameLocked;
+    renderEventDefinitionPropertyEditor();
+  }
+}
+
+function toggleEventMoreMenu() {
+  if (!eventMorePopover || !eventMoreButton || eventMoreButton.disabled) return;
+  const willOpen = eventMorePopover.hidden;
+  eventMorePopover.hidden = !willOpen;
+  eventMoreButton.setAttribute("aria-expanded", String(willOpen));
+  if (willOpen) deleteSelectedEventButton?.focus();
+}
+
+function closeEventMoreMenu() {
+  if (eventMorePopover) eventMorePopover.hidden = true;
+  eventMoreButton?.setAttribute("aria-expanded", "false");
+}
+
+function handleEventMoreOutsidePointer(event) {
+  if (eventMorePopover?.hidden) return;
+  if (event.target.closest(".eventMoreMenu")) return;
+  closeEventMoreMenu();
+}
+
+function handleEventMoreEscape(event) {
+  if (event.key !== "Escape" || eventMorePopover?.hidden) return;
+  closeEventMoreMenu();
+  eventMoreButton?.focus();
+}
+
+async function deleteSelectedCustomEvent() {
+  const catalogItem = getSelectedEventCatalogItem();
+  if (!catalogItem || catalogItem.sourceType === "system" || !selectedUniverseId) return;
+  closeEventMoreMenu();
+  const label = formatEventName(catalogItem.name);
+  const confirmed = await showEventConfirmation({
+    title: `Delete ${label}?`,
+    description: "This deletes its definition and stored dashboard history. New Roblox logs with the same event name can create it again.",
+    confirmLabel: "Delete event",
+    danger: true,
+    returnFocus: eventMoreButton,
+  });
+  if (!confirmed) return;
+
+  if (eventsStatus) eventsStatus.textContent = "Deleting event...";
+  if (eventSelectionActions) eventSelectionActions.hidden = true;
+  try {
+    await request(`/api/events?universeId=${encodeURIComponent(selectedUniverseId)}&eventName=${encodeURIComponent(catalogItem.name)}`, {
+      method: "DELETE",
+    });
+    selectedCustomEventName = "";
+    currentSelectedEvent = null;
+    window.dispatchEvent(new CustomEvent("dashboard:eventDefinitionsChanged", {
+      detail: { universeId: selectedUniverseId, deletedEventName: catalogItem.name },
+    }));
+    window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
+      detail: { eventName: "", source: "events-page" },
+    }));
+    await loadCustomEvents({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated && eventsStatus) eventsStatus.textContent = formatRequestError(error);
+  } finally {
+    updateSelectedEventDefinitionActions(currentSelectedEvent);
+  }
 }
 
 function getSeriesBucketMs(series) {

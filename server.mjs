@@ -27,6 +27,8 @@ const monthlyUserUsageStorePath = path.join(__dirname, "data", "monthly-user-usa
 const objectStorageObjectStorePath = path.join(__dirname, "data", "object-storage-objects.json");
 const reconciliationStorePath = path.join(__dirname, "data", "reconciliations.json");
 const funnelStorePath = path.join(__dirname, "data", "funnels.json");
+const eventDefinitionStorePath = path.join(__dirname, "data", "event-definitions.json");
+const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-deletions.json");
 
 loadLocalEnv();
 
@@ -75,6 +77,9 @@ const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
 const MAX_CUSTOM_EVENT_HEATMAP_RESPONSE = 5000;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
 const EVENT_PROPERTY_TIMELINE_SERIES_LIMIT = 4;
+const MAX_EVENT_DEFINITIONS_PER_UNIVERSE = 200;
+const EVENT_DEFINITION_KEY_MODES = new Set(["auto", "manual"]);
+const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
 const RELEASE_COHORT_MIN_SESSIONS = 20;
 const SYSTEM_ANALYTICS_EVENT_DEFINITIONS = Object.freeze([
   { name: "player_died", type: "death", timestampField: "diedAt" },
@@ -363,6 +368,9 @@ let persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
 let persistedMapUniverseIdsRequest = null;
 let persistedMapUniverseIdsVersion = 0;
 let localFunnelStoreLock = Promise.resolve();
+let localEventDefinitionStoreLock = Promise.resolve();
+let localCustomEventDeletionStoreLock = Promise.resolve();
+const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
 const DEFAULT_AI_AUTOMATION_SETTINGS = {
@@ -635,12 +643,32 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/events" && req.method === "GET") {
       if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
-      if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getCustomEventsFromQuery(url.searchParams));
-      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "custom-events", url.searchParams, () => getCustomEventsFromQuery(url.searchParams)));
+      if (url.searchParams.get("fresh") === "1") return sendJson(res, 200, await getCustomEventsFromQuery(auth.userId, url.searchParams));
+      return sendJson(res, 200, await getCachedAnalyticsResponse(auth.userId, "custom-events", url.searchParams, () => getCustomEventsFromQuery(auth.userId, url.searchParams)));
     }
 
     if (url.pathname === "/api/events" && req.method === "DELETE") {
       return handleCustomEventDelete(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/event-definitions" && req.method === "GET") {
+      if (!await canAccessUniverseFromQuery(auth.userId, url.searchParams)) return sendJson(res, 403, { error: "You do not have access to this universe" });
+      const universeId = cleanInteger(url.searchParams.get("universeId"));
+      const definitions = await readEventDefinitions(auth.userId, universeId);
+      return sendJson(res, 200, {
+        universeId,
+        definitions: definitions.map(serializeEventDefinition),
+        limits: { properties: MAX_CUSTOM_EVENT_PROPERTIES },
+      });
+    }
+
+    if (url.pathname === "/api/event-definitions" && req.method === "POST") {
+      return handleEventDefinitionSave(req, res, auth);
+    }
+
+    const eventDefinitionMatch = url.pathname.match(/^\/api\/event-definitions\/([^/]+)$/);
+    if (eventDefinitionMatch && req.method === "DELETE") {
+      return handleEventDefinitionDelete(req, res, auth, eventDefinitionMatch[1], url.searchParams);
     }
 
     if (url.pathname === "/api/funnels" && req.method === "GET") {
@@ -1177,6 +1205,9 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("reconciliations").createIndex({ updatedAt: -1 }),
     db.collection("funnels").createIndex({ id: 1 }, { unique: true }),
     db.collection("funnels").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
+    db.collection("event_definitions").createIndex({ id: 1 }, { unique: true }),
+    db.collection("event_definitions").createIndex({ ownerUserId: 1, universeId: 1, eventName: 1 }, { unique: true }),
+    db.collection("event_definitions").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
     db.collection("custom_event_deletions").createIndex({ universeId: 1, eventName: 1 }, { unique: true }),
   ]);
 }
@@ -2427,7 +2458,16 @@ async function handlePresenceHeartbeat(req, res) {
   if (savedChatCount + savedMovementCount + savedMovementRollupCount + savedDeathCount + savedLeaveCount + savedVisitCount + savedCustomEventCount > 0) {
     invalidateAnalyticsResponses(presence.value.universeId);
   }
-  await persistPresenceToMongo(presence.value);
+  await Promise.all([
+    persistPresenceToMongo(presence.value),
+    discoverEventDefinitionsFromPresence(presence.value).catch((error) => {
+      console.warn(
+        `Could not update event definitions for universe ${presence.value.universeId}:`,
+        error.message || error,
+      );
+      return 0;
+    }),
+  ]);
   const objectStorageResult = await persistPresenceToObjectStorage(presence.value, usageContext);
   if (usageContext.userId && eventCount > 0) {
     await recordUsage({
@@ -4578,7 +4618,636 @@ async function getRobloxHeatmapFromQuery(searchParams) {
   return getRobloxHeatmap(filters.universeId, filters);
 }
 
-async function getCustomEventsFromQuery(searchParams) {
+async function handleEventDefinitionSave(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 48 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
+  const normalized = normalizeEventDefinition(body, {
+    ownerUserId: auth.userId,
+    universeId,
+  });
+  if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
+
+  try {
+    const definition = await saveEventDefinition(normalized.value);
+    invalidateAnalyticsResponses(universeId);
+    return sendJson(res, 200, {
+      ok: true,
+      definition: serializeEventDefinition(definition),
+    });
+  } catch (error) {
+    const isConflict = error?.code === "EVENT_DEFINITION_LIMIT"
+      || error?.code === "EVENT_DEFINITION_EXISTS"
+      || error?.code === 11000;
+    const status = isConflict ? 409 : (error?.code === "EVENT_DEFINITION_INVALID" ? 400 : 500);
+    if (status === 500) {
+      console.error("Could not save event definition:", error);
+    }
+    return sendJson(res, status, { error: error.message || "Could not save event definition." });
+  }
+}
+
+async function handleEventDefinitionDelete(req, res, auth, definitionId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
+  const deleted = await deleteEventDefinition(auth.userId, universeId, decodeURIComponent(definitionId));
+  if (!deleted) return sendJson(res, 404, { error: "Event definition not found" });
+  invalidateAnalyticsResponses(universeId);
+  return sendJson(res, 200, {
+    ok: true,
+    deletedId: cleanString(deleted.id, 120),
+    eventName: normalizeCustomEventName(deleted.eventName),
+  });
+}
+
+function normalizeEventDefinition(value, context) {
+  const eventName = normalizeCustomEventName(value?.eventName || value?.name);
+  if (!eventName) {
+    return { ok: false, error: "Event names must start with a letter and use only letters, numbers, _, ., :, or -" };
+  }
+  if (SYSTEM_ANALYTICS_EVENT_NAMES.has(eventName)) {
+    return { ok: false, error: "Automatic system event names cannot be configured" };
+  }
+
+  const keyMode = EVENT_DEFINITION_KEY_MODES.has(value?.keyMode) ? value.keyMode : "auto";
+  const rawProperties = Array.isArray(value?.properties) ? value.properties : [];
+  if (rawProperties.length > MAX_CUSTOM_EVENT_PROPERTIES) {
+    return { ok: false, error: `Events can define up to ${MAX_CUSTOM_EVENT_PROPERTIES} properties` };
+  }
+
+  const properties = [];
+  const propertyNames = new Set();
+  for (const rawProperty of rawProperties) {
+    const name = String(
+      typeof rawProperty === "string"
+        ? rawProperty
+        : rawProperty?.name || rawProperty?.key || rawProperty?.path || "",
+    ).trim();
+    if (!isValidCustomEventPropertyPath(name)) {
+      return { ok: false, error: `"${name || "Unnamed property"}" is not a valid property name` };
+    }
+    if (propertyNames.has(name)) {
+      return { ok: false, error: `Property names must be unique: ${name}` };
+    }
+    propertyNames.add(name);
+    const requestedType = cleanString(rawProperty?.type, 16).toLowerCase();
+    properties.push({
+      name,
+      type: EVENT_DEFINITION_PROPERTY_TYPES.has(requestedType) ? requestedType : "string",
+    });
+  }
+
+  const now = Date.now();
+  return {
+    ok: true,
+    value: {
+      id: cleanString(value?.id, 120) || crypto.randomUUID(),
+      ownerUserId: cleanString(context?.ownerUserId, 120),
+      universeId: cleanInteger(context?.universeId),
+      eventName,
+      keyMode,
+      properties,
+      discoveredPropertyNames: [],
+      createdAt: cleanTimestampMs(value?.createdAt) || now,
+      updatedAt: now,
+      firstSeenAt: cleanTimestampMs(value?.firstSeenAt) || null,
+      lastSeenAt: cleanTimestampMs(value?.lastSeenAt) || null,
+    },
+  };
+}
+
+function serializeEventDefinition(definition) {
+  const keyMode = EVENT_DEFINITION_KEY_MODES.has(definition?.keyMode) ? definition.keyMode : "auto";
+  const properties = normalizeEventDefinitionProperties(definition?.properties);
+  const discoveredPropertyNames = normalizeDiscoveredEventPropertyNames(definition?.discoveredPropertyNames);
+  const configuredNames = new Set(properties.map((property) => property.name));
+  const effectiveProperties = keyMode === "auto"
+    ? [
+      ...properties,
+      ...discoveredPropertyNames
+        .filter((name) => !configuredNames.has(name))
+        .map((name) => ({ name, type: "string", discovered: true })),
+    ].slice(0, MAX_CUSTOM_EVENT_PROPERTIES)
+    : properties;
+
+  return {
+    id: cleanString(definition?.id, 120),
+    universeId: cleanInteger(definition?.universeId),
+    eventName: normalizeCustomEventName(definition?.eventName),
+    keyMode,
+    properties,
+    discoveredPropertyNames,
+    effectiveProperties,
+    unexpectedPropertyNames: keyMode === "manual"
+      ? discoveredPropertyNames.filter((name) => !configuredNames.has(name))
+      : [],
+    createdAt: cleanTimestampMs(definition?.createdAt) || null,
+    updatedAt: cleanTimestampMs(definition?.updatedAt) || null,
+    firstSeenAt: cleanTimestampMs(definition?.firstSeenAt) || null,
+    lastSeenAt: cleanTimestampMs(definition?.lastSeenAt) || null,
+  };
+}
+
+function normalizeEventDefinitionProperties(value) {
+  const properties = [];
+  const names = new Set();
+  for (const rawProperty of Array.isArray(value) ? value : []) {
+    const name = String(rawProperty?.name || rawProperty?.key || rawProperty?.path || "").trim();
+    if (!isValidCustomEventPropertyPath(name) || names.has(name)) continue;
+    names.add(name);
+    const requestedType = cleanString(rawProperty?.type, 16).toLowerCase();
+    properties.push({
+      name,
+      type: EVENT_DEFINITION_PROPERTY_TYPES.has(requestedType) ? requestedType : "string",
+    });
+    if (properties.length >= MAX_CUSTOM_EVENT_PROPERTIES) break;
+  }
+  return properties;
+}
+
+function normalizeDiscoveredEventPropertyNames(value) {
+  const names = [];
+  const seen = new Set();
+  for (const rawName of Array.isArray(value) ? value : []) {
+    const name = String(rawName || "").trim();
+    if (!isValidCustomEventPropertyPath(name) || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+    if (names.length >= MAX_CUSTOM_EVENT_PROPERTIES) break;
+  }
+  return names;
+}
+
+function getDiscoveredPropertyNamesFromEvents(events) {
+  const names = [];
+  const seen = new Set();
+  for (const event of Array.isArray(events) ? events : []) {
+    for (const name of Object.keys(event?.properties || {})) {
+      if (!isValidCustomEventPropertyPath(name) || seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+      if (names.length >= MAX_CUSTOM_EVENT_PROPERTIES) return names;
+    }
+  }
+  return names;
+}
+
+function getAutoEventDefinitionId(ownerUserId, universeId, eventName) {
+  const digest = crypto
+    .createHash("sha256")
+    .update(`${ownerUserId}:${universeId}:${eventName}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `event-${digest}`;
+}
+
+async function discoverEventDefinitionsFromPresence(presence) {
+  const ownerUserId = cleanString(presence?.ownerUserId, 120);
+  const universeId = cleanInteger(presence?.universeId);
+  const incomingEvents = Array.isArray(presence?.customEvents) ? presence.customEvents : [];
+  if (!ownerUserId || universeId <= 0 || !incomingEvents.length) return 0;
+
+  const deletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
+  const discoveries = buildEventDefinitionDiscoveries(incomingEvents, deletionCutoffs);
+  if (!discoveries.length) return 0;
+
+  const db = await getMongoDb();
+  if (db) {
+    return withEventDefinitionMutationLock(ownerUserId, universeId, async () => {
+      const currentDeletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
+      const currentDiscoveries = buildEventDefinitionDiscoveries(incomingEvents, currentDeletionCutoffs);
+      if (!currentDiscoveries.length) return 0;
+
+      const now = Date.now();
+      const collection = db.collection("event_definitions");
+      const existingDefinitions = await collection
+        .find(
+          { ownerUserId, universeId },
+          { projection: { _id: 0, eventName: 1 } },
+        )
+        .limit(MAX_EVENT_DEFINITIONS_PER_UNIVERSE)
+        .toArray();
+      const existingNames = new Set(
+        existingDefinitions.map((definition) => normalizeCustomEventName(definition.eventName)).filter(Boolean),
+      );
+      let remainingSlots = Math.max(MAX_EVENT_DEFINITIONS_PER_UNIVERSE - existingNames.size, 0);
+      const allowedDiscoveries = currentDiscoveries.filter((discovery) => {
+        if (existingNames.has(discovery.eventName)) return true;
+        if (remainingSlots <= 0) return false;
+        existingNames.add(discovery.eventName);
+        remainingSlots -= 1;
+        return true;
+      });
+      if (!allowedDiscoveries.length) return 0;
+
+      const operations = allowedDiscoveries.map((discovery) => ({
+        updateOne: {
+          filter: { ownerUserId, universeId, eventName: discovery.eventName },
+          update: [{
+            $set: {
+              id: { $ifNull: ["$id", getAutoEventDefinitionId(ownerUserId, universeId, discovery.eventName)] },
+              ownerUserId,
+              universeId,
+              eventName: discovery.eventName,
+              keyMode: { $ifNull: ["$keyMode", "auto"] },
+              properties: { $ifNull: ["$properties", []] },
+              discoveredPropertyNames: {
+                $slice: [
+                  {
+                    $setUnion: [
+                      { $ifNull: ["$discoveredPropertyNames", []] },
+                      [...discovery.propertyNames],
+                    ],
+                  },
+                  MAX_CUSTOM_EVENT_PROPERTIES,
+                ],
+              },
+              createdAt: { $ifNull: ["$createdAt", now] },
+              updatedAt: now,
+              firstSeenAt: {
+                $cond: [
+                  { $or: [{ $eq: [{ $type: "$firstSeenAt" }, "missing"] }, { $eq: ["$firstSeenAt", null] }] },
+                  discovery.firstSeenAt,
+                  { $min: ["$firstSeenAt", discovery.firstSeenAt] },
+                ],
+              },
+              lastSeenAt: { $max: [{ $ifNull: ["$lastSeenAt", 0] }, discovery.lastSeenAt] },
+            },
+          }],
+          upsert: true,
+        },
+      }));
+
+      try {
+        await collection.bulkWrite(operations, { ordered: false });
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+        await collection.bulkWrite(operations.map((operation) => ({
+          updateOne: {
+            ...operation.updateOne,
+            upsert: false,
+          },
+        })), { ordered: false });
+      }
+      return allowedDiscoveries.length;
+    });
+  }
+
+  return withLocalEventDefinitionStoreLock(async () => {
+    const currentDeletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
+    const currentDiscoveries = buildEventDefinitionDiscoveries(incomingEvents, currentDeletionCutoffs);
+    if (!currentDiscoveries.length) return 0;
+
+    const now = Date.now();
+    const definitions = await readLocalEventDefinitionStore();
+    let changed = 0;
+    for (const discovery of currentDiscoveries) {
+      let definition = definitions.find((entry) => (
+        entry.ownerUserId === ownerUserId
+        && cleanInteger(entry.universeId) === universeId
+        && normalizeCustomEventName(entry.eventName) === discovery.eventName
+      ));
+      if (!definition) {
+        if (definitions.filter((entry) => entry.ownerUserId === ownerUserId && cleanInteger(entry.universeId) === universeId).length >= MAX_EVENT_DEFINITIONS_PER_UNIVERSE) continue;
+        definition = {
+          id: getAutoEventDefinitionId(ownerUserId, universeId, discovery.eventName),
+          ownerUserId,
+          universeId,
+          eventName: discovery.eventName,
+          keyMode: "auto",
+          properties: [],
+          discoveredPropertyNames: [],
+          createdAt: now,
+          firstSeenAt: discovery.firstSeenAt,
+        };
+        definitions.push(definition);
+      }
+      const previousNames = normalizeDiscoveredEventPropertyNames(definition.discoveredPropertyNames);
+      definition.discoveredPropertyNames = normalizeDiscoveredEventPropertyNames([
+        ...previousNames,
+        ...discovery.propertyNames,
+      ]);
+      definition.firstSeenAt = definition.firstSeenAt
+        ? Math.min(cleanTimestampMs(definition.firstSeenAt), discovery.firstSeenAt)
+        : discovery.firstSeenAt;
+      definition.lastSeenAt = Math.max(cleanTimestampMs(definition.lastSeenAt), discovery.lastSeenAt);
+      definition.updatedAt = now;
+      changed += 1;
+    }
+    if (changed) await writeLocalEventDefinitionStore(definitions);
+    return changed;
+  });
+}
+
+function buildEventDefinitionDiscoveries(incomingEvents, deletionCutoffs = new Map()) {
+  const discoveriesByEventName = new Map();
+  for (const event of incomingEvents) {
+    const eventName = normalizeCustomEventName(event?.eventName);
+    if (!eventName || SYSTEM_ANALYTICS_EVENT_NAMES.has(eventName)) continue;
+    const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt) || Date.now();
+    const deletedAt = cleanTimestampMs(deletionCutoffs.get(eventName));
+    if (deletedAt > 0 && occurredAt <= deletedAt) continue;
+    let discovery = discoveriesByEventName.get(eventName);
+    if (!discovery) {
+      discovery = {
+        eventName,
+        firstSeenAt: occurredAt,
+        lastSeenAt: 0,
+        propertyNames: new Set(),
+      };
+      discoveriesByEventName.set(eventName, discovery);
+    }
+    discovery.firstSeenAt = Math.min(discovery.firstSeenAt, occurredAt);
+    discovery.lastSeenAt = Math.max(discovery.lastSeenAt, occurredAt);
+    for (const propertyName of Object.keys(event?.properties || {})) {
+      if (isValidCustomEventPropertyPath(propertyName)) discovery.propertyNames.add(propertyName);
+    }
+  }
+  return [...discoveriesByEventName.values()];
+}
+
+async function readEventDefinitions(ownerUserId, universeId) {
+  const cleanOwnerUserId = cleanString(ownerUserId, 120);
+  const cleanUniverseId = cleanInteger(universeId);
+  if (!cleanOwnerUserId || cleanUniverseId <= 0) return [];
+  const db = await getMongoDb();
+  if (db) {
+    return db.collection("event_definitions")
+      .find({ ownerUserId: cleanOwnerUserId, universeId: cleanUniverseId }, { projection: { _id: 0 } })
+      .sort({ lastSeenAt: -1, updatedAt: -1 })
+      .limit(MAX_EVENT_DEFINITIONS_PER_UNIVERSE)
+      .toArray();
+  }
+  const definitions = await readLocalEventDefinitionStore();
+  return definitions
+    .filter((definition) => (
+      definition.ownerUserId === cleanOwnerUserId
+      && cleanInteger(definition.universeId) === cleanUniverseId
+    ))
+    .sort((left, right) => (
+      cleanTimestampMs(right.lastSeenAt) - cleanTimestampMs(left.lastSeenAt)
+      || cleanTimestampMs(right.updatedAt) - cleanTimestampMs(left.updatedAt)
+    ))
+    .slice(0, MAX_EVENT_DEFINITIONS_PER_UNIVERSE);
+}
+
+async function saveEventDefinition(definition) {
+  const db = await getMongoDb();
+  if (db) {
+    return withEventDefinitionMutationLock(definition.ownerUserId, definition.universeId, async () => {
+      const collection = db.collection("event_definitions");
+      const [existingById, existingByName] = await Promise.all([
+        collection.findOne({ id: definition.id }, { projection: { _id: 0 } }),
+        collection.findOne({
+          ownerUserId: definition.ownerUserId,
+          universeId: definition.universeId,
+          eventName: definition.eventName,
+        }, { projection: { _id: 0 } }),
+      ]);
+      if (existingById && (
+        existingById.ownerUserId !== definition.ownerUserId
+        || cleanInteger(existingById.universeId) !== definition.universeId
+      )) {
+        throw createEventDefinitionInputError("Event definition not found");
+      }
+      if (existingById && normalizeCustomEventName(existingById.eventName) !== definition.eventName) {
+        throw createEventDefinitionInputError("Event names cannot be changed after they are created");
+      }
+      if (existingByName && existingByName.id !== definition.id) {
+        const error = new Error("An event with this name already exists");
+        error.code = "EVENT_DEFINITION_EXISTS";
+        throw error;
+      }
+      if (!existingById && !existingByName) {
+        const count = await collection.countDocuments({
+          ownerUserId: definition.ownerUserId,
+          universeId: definition.universeId,
+        });
+        if (count >= MAX_EVENT_DEFINITIONS_PER_UNIVERSE) throw createEventDefinitionLimitError();
+      }
+
+      const existing = existingById || existingByName;
+      const savedDefinition = {
+        ...definition,
+        id: existing?.id || definition.id,
+        createdAt: cleanTimestampMs(existing?.createdAt) || definition.createdAt,
+        discoveredPropertyNames: normalizeDiscoveredEventPropertyNames(existing?.discoveredPropertyNames),
+        firstSeenAt: cleanTimestampMs(existing?.firstSeenAt) || definition.firstSeenAt,
+        lastSeenAt: cleanTimestampMs(existing?.lastSeenAt) || definition.lastSeenAt,
+      };
+      await collection.updateOne(
+        {
+          ownerUserId: savedDefinition.ownerUserId,
+          universeId: savedDefinition.universeId,
+          eventName: savedDefinition.eventName,
+        },
+        {
+          $set: {
+            id: savedDefinition.id,
+            ownerUserId: savedDefinition.ownerUserId,
+            universeId: savedDefinition.universeId,
+            eventName: savedDefinition.eventName,
+            keyMode: savedDefinition.keyMode,
+            properties: savedDefinition.properties,
+            updatedAt: savedDefinition.updatedAt,
+          },
+          $setOnInsert: {
+            discoveredPropertyNames: savedDefinition.discoveredPropertyNames,
+            createdAt: savedDefinition.createdAt,
+            firstSeenAt: savedDefinition.firstSeenAt,
+            lastSeenAt: savedDefinition.lastSeenAt,
+          },
+        },
+        { upsert: true },
+      );
+      return savedDefinition;
+    });
+  }
+
+  return withLocalEventDefinitionStoreLock(async () => {
+    const definitions = await readLocalEventDefinitionStore();
+    const indexById = definitions.findIndex((entry) => entry.id === definition.id);
+    const indexByName = definitions.findIndex((entry) => (
+      entry.ownerUserId === definition.ownerUserId
+      && cleanInteger(entry.universeId) === definition.universeId
+      && normalizeCustomEventName(entry.eventName) === definition.eventName
+    ));
+    if (indexById >= 0) {
+      const existing = definitions[indexById];
+      if (
+        existing.ownerUserId !== definition.ownerUserId
+        || cleanInteger(existing.universeId) !== definition.universeId
+      ) {
+        throw createEventDefinitionInputError("Event definition not found");
+      }
+      if (normalizeCustomEventName(existing.eventName) !== definition.eventName) {
+        throw createEventDefinitionInputError("Event names cannot be changed after they are created");
+      }
+    }
+    if (indexByName >= 0 && indexByName !== indexById) {
+      const error = new Error("An event with this name already exists");
+      error.code = "EVENT_DEFINITION_EXISTS";
+      throw error;
+    }
+    const existingIndex = indexById >= 0 ? indexById : indexByName;
+    if (existingIndex >= 0) {
+      const existing = definitions[existingIndex];
+      definition.id = existing.id;
+      definition.createdAt = cleanTimestampMs(existing.createdAt) || definition.createdAt;
+      definition.discoveredPropertyNames = normalizeDiscoveredEventPropertyNames(existing.discoveredPropertyNames);
+      definition.firstSeenAt = cleanTimestampMs(existing.firstSeenAt) || definition.firstSeenAt;
+      definition.lastSeenAt = cleanTimestampMs(existing.lastSeenAt) || definition.lastSeenAt;
+      definitions[existingIndex] = definition;
+    } else {
+      const count = definitions.filter((entry) => (
+        entry.ownerUserId === definition.ownerUserId
+        && cleanInteger(entry.universeId) === definition.universeId
+      )).length;
+      if (count >= MAX_EVENT_DEFINITIONS_PER_UNIVERSE) throw createEventDefinitionLimitError();
+      definitions.push(definition);
+    }
+    await writeLocalEventDefinitionStore(definitions);
+    return definition;
+  });
+}
+
+async function deleteEventDefinition(ownerUserId, universeId, definitionId) {
+  const id = cleanString(definitionId, 120);
+  if (!id) return null;
+  const db = await getMongoDb();
+  if (db) {
+    return withEventDefinitionMutationLock(ownerUserId, universeId, () => (
+      db.collection("event_definitions").findOneAndDelete(
+        { id, ownerUserId, universeId },
+        { projection: { _id: 0 } },
+      )
+    ));
+  }
+  return withLocalEventDefinitionStoreLock(async () => {
+    const definitions = await readLocalEventDefinitionStore();
+    const index = definitions.findIndex((entry) => (
+      entry.id === id
+      && entry.ownerUserId === ownerUserId
+      && cleanInteger(entry.universeId) === universeId
+    ));
+    if (index < 0) return null;
+    const [deleted] = definitions.splice(index, 1);
+    await writeLocalEventDefinitionStore(definitions);
+    return deleted;
+  });
+}
+
+async function deleteEventDefinitionByName(ownerUserId, universeId, eventName, options = {}) {
+  const cleanEventName = normalizeCustomEventName(eventName);
+  if (!cleanEventName) return null;
+  const throughTimestamp = cleanTimestampMs(options.throughTimestamp);
+  const db = await getMongoDb();
+  if (db) {
+    return withEventDefinitionMutationLock(ownerUserId, universeId, () => (
+      db.collection("event_definitions").findOneAndDelete(
+        {
+          ownerUserId,
+          universeId,
+          eventName: cleanEventName,
+          ...(throughTimestamp > 0 ? {
+            $or: [
+              { lastSeenAt: { $lte: throughTimestamp } },
+              { lastSeenAt: { $exists: false } },
+              { lastSeenAt: null },
+            ],
+          } : {}),
+        },
+        { projection: { _id: 0 } },
+      )
+    ));
+  }
+  return withLocalEventDefinitionStoreLock(async () => {
+    const definitions = await readLocalEventDefinitionStore();
+    const index = definitions.findIndex((entry) => (
+      entry.ownerUserId === ownerUserId
+      && cleanInteger(entry.universeId) === universeId
+      && normalizeCustomEventName(entry.eventName) === cleanEventName
+      && (
+        throughTimestamp <= 0
+        || cleanTimestampMs(entry.lastSeenAt) <= throughTimestamp
+      )
+    ));
+    if (index < 0) return null;
+    const [deleted] = definitions.splice(index, 1);
+    await writeLocalEventDefinitionStore(definitions);
+    return deleted;
+  });
+}
+
+function createEventDefinitionLimitError() {
+  const error = new Error(`A universe can have up to ${MAX_EVENT_DEFINITIONS_PER_UNIVERSE} event definitions`);
+  error.code = "EVENT_DEFINITION_LIMIT";
+  return error;
+}
+
+function createEventDefinitionInputError(message) {
+  const error = new Error(message);
+  error.code = "EVENT_DEFINITION_INVALID";
+  return error;
+}
+
+async function readLocalEventDefinitionStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(eventDefinitionStorePath, "utf8"));
+    return Array.isArray(payload.definitions) ? payload.definitions : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalEventDefinitionStore(definitions) {
+  await fs.mkdir(path.dirname(eventDefinitionStorePath), { recursive: true });
+  await fs.writeFile(eventDefinitionStorePath, JSON.stringify({ definitions }, null, 2));
+}
+
+async function withLocalEventDefinitionStoreLock(operation) {
+  const previous = localEventDefinitionStoreLock;
+  let release;
+  localEventDefinitionStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+async function withEventDefinitionMutationLock(ownerUserId, universeId, operation) {
+  const scopeKey = `${cleanString(ownerUserId, 120)}:${cleanInteger(universeId)}`;
+  const previous = eventDefinitionMutationLocksByScope.get(scopeKey) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  eventDefinitionMutationLocksByScope.set(scopeKey, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (eventDefinitionMutationLocksByScope.get(scopeKey) === current) {
+      eventDefinitionMutationLocksByScope.delete(scopeKey);
+    }
+  }
+}
+
+async function getCustomEventsFromQuery(ownerUserId, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
@@ -4588,11 +5257,16 @@ async function getCustomEventsFromQuery(searchParams) {
   const interval = normalizeCustomEventInterval(searchParams.get("interval"));
   const recentLimit = Math.min(cleanInteger(searchParams.get("recentLimit")) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
   const propertyValueLimit = Math.min(cleanInteger(searchParams.get("propertyValueLimit")) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
-  const [{ events, visits, hasRollup }, versionHealth] = await Promise.all([
+  const [{ events, visits, hasRollup }, versionHealth, definitions] = await Promise.all([
     getAnalyticsEventRecords({ universeId, fromMs, toMs }),
     getVersionHealthFromQuery(searchParams, { includeMapSnapshot: false }),
+    readEventDefinitions(ownerUserId, universeId),
   ]);
   const releaseMarkers = buildReleasePublishMarkers(versionHealth.versions, { fromMs, toMs });
+  const definitionsByName = new Map(definitions.map((definition) => [
+    normalizeCustomEventName(definition.eventName),
+    definition,
+  ]));
 
   const catalogByName = new Map(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => [event.name, {
     name: event.name,
@@ -4601,9 +5275,24 @@ async function getCustomEventsFromQuery(searchParams) {
     sessionIds: new Set(),
     lastSeenAt: 0,
     sourceType: "system",
+    definition: null,
   }]));
+  for (const definition of definitions) {
+    const eventName = normalizeCustomEventName(definition.eventName);
+    if (!eventName || SYSTEM_ANALYTICS_EVENT_NAMES.has(eventName)) continue;
+    catalogByName.set(eventName, {
+      name: eventName,
+      count: 0,
+      playerIds: new Set(),
+      sessionIds: new Set(),
+      lastSeenAt: cleanTimestampMs(definition.lastSeenAt) || 0,
+      sourceType: "custom",
+      definition,
+    });
+  }
   for (const event of events) {
     const eventName = normalizeCustomEventName(event.eventName);
+    if (!eventName) continue;
     let summary = catalogByName.get(eventName);
     if (!summary) {
       summary = {
@@ -4613,6 +5302,7 @@ async function getCustomEventsFromQuery(searchParams) {
         sessionIds: new Set(),
         lastSeenAt: 0,
         sourceType: event.sourceType || "custom",
+        definition: definitionsByName.get(eventName) || null,
       };
       catalogByName.set(eventName, summary);
     }
@@ -4630,6 +5320,7 @@ async function getCustomEventsFromQuery(searchParams) {
       uniqueSessions: summary.sessionIds.size,
       lastSeenAt: summary.lastSeenAt,
       sourceType: summary.sourceType,
+      definition: summary.definition ? serializeEventDefinition(summary.definition) : null,
     }))
     .sort((left, right) => (
       right.lastSeenAt - left.lastSeenAt
@@ -4673,7 +5364,12 @@ async function getCustomEventsFromQuery(searchParams) {
       releaseMarkers,
       sourceType: catalogByName.get(selectedEventName)?.sourceType,
       systemEventType: SYSTEM_ANALYTICS_EVENT_DEFINITIONS.find((event) => event.name === selectedEventName)?.type,
+      definition: catalogByName.get(selectedEventName)?.definition || null,
     }) : null,
+    limits: {
+      eventDefinitions: MAX_EVENT_DEFINITIONS_PER_UNIVERSE,
+      propertiesPerEvent: MAX_CUSTOM_EVENT_PROPERTIES,
+    },
   };
 }
 
@@ -4690,33 +5386,67 @@ async function handleCustomEventDelete(req, res, auth, searchParams) {
 
   const universeKey = String(universeId);
   const deletedAt = Date.now();
-  const currentEvents = customEventsByUniverseId.get(universeKey) || [];
-  const remainingEvents = currentEvents.filter((event) => normalizeCustomEventName(event?.eventName) !== eventName);
-  const memoryDeleted = currentEvents.length - remainingEvents.length;
-  customEventsByUniverseId.set(universeKey, remainingEvents);
-  customEventIdsByUniverseId.set(universeKey, new Set(remainingEvents.map((event) => cleanString(event?.id, 180)).filter(Boolean)));
+  try {
+    await persistCustomEventDeletionCutoff({
+      ownerUserId: auth.userId,
+      universeId,
+      eventName,
+      deletedAt,
+    });
+  } catch (error) {
+    console.error(`Could not record deletion for custom event ${eventName}:`, error);
+    return sendJson(res, 503, {
+      error: "Could not safely delete this event. Its history was left unchanged; try again.",
+    });
+  }
 
   const deletionCutoffs = await getCustomEventDeletionCutoffs(universeId);
-  deletionCutoffs.set(eventName, deletedAt);
+  deletionCutoffs.set(eventName, Math.max(cleanTimestampMs(deletionCutoffs.get(eventName)), deletedAt));
   customEventDeletionCutoffsByUniverseId.set(universeKey, deletionCutoffs);
 
   let mongoDeleted = 0;
+  let deletedDefinition = null;
   try {
     const db = await getMongoDb();
+    const operations = [
+      deleteEventDefinitionByName(auth.userId, universeId, eventName, {
+        throughTimestamp: deletedAt,
+      }),
+    ];
     if (db) {
-      const [deleteResult] = await Promise.all([
-        db.collection("custom_events").deleteMany({ universeId, eventName }),
-        db.collection("custom_event_deletions").updateOne(
-          { universeId, eventName },
-          { $set: { universeId, eventName, deletedAt, ownerUserId: auth.userId, updatedAt: deletedAt } },
-          { upsert: true },
-        ),
-      ]);
-      mongoDeleted = cleanFiniteInteger(deleteResult.deletedCount);
+      operations.push(
+        db.collection("custom_events").deleteMany({
+          universeId,
+          eventName,
+          $or: [
+            { occurredAt: { $gt: 0, $lte: deletedAt } },
+            { occurredAt: { $exists: false }, receivedAt: { $lte: deletedAt } },
+            { occurredAt: null, receivedAt: { $lte: deletedAt } },
+            { occurredAt: { $lte: 0 }, receivedAt: { $lte: deletedAt } },
+          ],
+        }),
+      );
     }
+    const [definitionResult, deleteResult] = await Promise.all(operations);
+    deletedDefinition = definitionResult;
+    mongoDeleted = cleanFiniteInteger(deleteResult?.deletedCount);
   } catch (error) {
-    console.warn(`Could not persist deletion for custom event ${eventName}:`, error.message || error);
+    console.error(`Deletion was recorded but cleanup failed for custom event ${eventName}:`, error);
+    invalidateAnalyticsResponses(universeId);
+    return sendJson(res, 503, {
+      error: "The deletion was recorded, but cleanup is still pending. Try Delete again.",
+      deletionRecorded: true,
+    });
   }
+
+  const currentEvents = customEventsByUniverseId.get(universeKey) || [];
+  const remainingEvents = currentEvents.filter((event) => (
+    normalizeCustomEventName(event?.eventName) !== eventName
+    || getCustomEventTimestamp(event) > deletedAt
+  ));
+  const memoryDeleted = currentEvents.length - remainingEvents.length;
+  customEventsByUniverseId.set(universeKey, remainingEvents);
+  customEventIdsByUniverseId.set(universeKey, new Set(remainingEvents.map((event) => cleanString(event?.id, 180)).filter(Boolean)));
 
   invalidateAnalyticsResponses(universeId);
   return sendJson(res, 200, {
@@ -4725,6 +5455,57 @@ async function handleCustomEventDelete(req, res, auth, searchParams) {
     eventName,
     deletedAt,
     deletedRecords: Math.max(memoryDeleted, mongoDeleted),
+    deletedDefinition: Boolean(deletedDefinition),
+  });
+}
+
+async function persistCustomEventDeletionCutoff(deletion) {
+  const normalized = {
+    ownerUserId: cleanString(deletion?.ownerUserId, 120),
+    universeId: cleanInteger(deletion?.universeId),
+    eventName: normalizeCustomEventName(deletion?.eventName),
+    deletedAt: cleanTimestampMs(deletion?.deletedAt) || Date.now(),
+    updatedAt: Date.now(),
+  };
+  if (!normalized.ownerUserId || normalized.universeId <= 0 || !normalized.eventName) {
+    throw new Error("Invalid custom event deletion");
+  }
+
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("custom_event_deletions").updateOne(
+      { universeId: normalized.universeId, eventName: normalized.eventName },
+      {
+        $set: {
+          ownerUserId: normalized.ownerUserId,
+          universeId: normalized.universeId,
+          eventName: normalized.eventName,
+          updatedAt: normalized.updatedAt,
+        },
+        $max: { deletedAt: normalized.deletedAt },
+      },
+      { upsert: true },
+    );
+    return normalized;
+  }
+
+  return withLocalCustomEventDeletionStoreLock(async () => {
+    const deletions = await readLocalCustomEventDeletionStore();
+    const index = deletions.findIndex((entry) => (
+      cleanInteger(entry.universeId) === normalized.universeId
+      && normalizeCustomEventName(entry.eventName) === normalized.eventName
+    ));
+    if (index >= 0) {
+      normalized.deletedAt = Math.max(
+        cleanTimestampMs(deletions[index]?.deletedAt),
+        normalized.deletedAt,
+      );
+      deletions[index] = normalized;
+    } else {
+      deletions.push(normalized);
+    }
+    await writeLocalCustomEventDeletionStore(deletions);
+    return normalized;
   });
 }
 
@@ -4746,12 +5527,56 @@ async function getCustomEventDeletionCutoffs(universeId) {
         const deletedAt = cleanTimestampMs(deletion?.deletedAt);
         if (eventName && deletedAt > 0) cutoffs.set(eventName, deletedAt);
       }
+    } else {
+      const deletions = await readLocalCustomEventDeletionStore();
+      for (const deletion of deletions) {
+        if (cleanInteger(deletion?.universeId) !== cleanUniverseId) continue;
+        const eventName = normalizeCustomEventName(deletion?.eventName);
+        const deletedAt = cleanTimestampMs(deletion?.deletedAt);
+        if (eventName && deletedAt > 0) cutoffs.set(eventName, deletedAt);
+      }
     }
-    customEventDeletionCutoffsByUniverseId.set(universeKey, cutoffs);
+    const latest = customEventDeletionCutoffsByUniverseId.get(universeKey) || new Map();
+    const mergedCutoffs = new Map(latest);
+    for (const [eventName, deletedAt] of cutoffs) {
+      mergedCutoffs.set(
+        eventName,
+        Math.max(cleanTimestampMs(mergedCutoffs.get(eventName)), cleanTimestampMs(deletedAt)),
+      );
+    }
+    customEventDeletionCutoffsByUniverseId.set(universeKey, mergedCutoffs);
+    return mergedCutoffs;
   } catch (error) {
     console.warn(`Could not load custom event deletions for universe ${cleanUniverseId}:`, error.message || error);
   }
-  return cutoffs;
+  return customEventDeletionCutoffsByUniverseId.get(universeKey) || cutoffs;
+}
+
+async function readLocalCustomEventDeletionStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(customEventDeletionStorePath, "utf8"));
+    return Array.isArray(payload.deletions) ? payload.deletions : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalCustomEventDeletionStore(deletions) {
+  await fs.mkdir(path.dirname(customEventDeletionStorePath), { recursive: true });
+  await fs.writeFile(customEventDeletionStorePath, JSON.stringify({ deletions }, null, 2));
+}
+
+async function withLocalCustomEventDeletionStoreLock(operation) {
+  const previous = localCustomEventDeletionStoreLock;
+  let release;
+  localCustomEventDeletionStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
 }
 
 async function getAnalyticsEventRecords(filters = {}) {
@@ -4931,6 +5756,36 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
   const eventSeries = buildCustomEventSeries(events, filters);
   const recentLimit = Math.min(cleanInteger(filters.recentLimit) || 7, MAX_CUSTOM_EVENT_RECENT_RESPONSE);
   const propertyValueLimit = Math.min(cleanInteger(filters.propertyValueLimit) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
+  const serializedDefinition = filters.definition ? serializeEventDefinition(filters.definition) : null;
+  const allObservedPropertyNames = getDiscoveredPropertyNamesFromEvents(events);
+  const configuredPropertyNames = new Set(
+    serializedDefinition?.properties?.map((property) => property.name) || [],
+  );
+  const allowedPropertyNames = serializedDefinition?.keyMode === "manual"
+    ? configuredPropertyNames
+    : new Set(
+      serializedDefinition?.effectiveProperties?.map((property) => property.name)
+      || allObservedPropertyNames,
+    );
+  const observedProperties = summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName, {
+    bucketMs: eventSeries.bucketMs,
+    bucketStarts: eventSeries.buckets.map((bucket) => bucket.start),
+    bucketEnds: eventSeries.buckets.map((bucket) => bucket.end),
+    rangeStart: eventSeries.rangeStart,
+    rangeEnd: eventSeries.rangeEnd,
+    allowedPropertyNames,
+  });
+  const properties = observedProperties;
+  const observedPropertyNames = new Set(allObservedPropertyNames);
+  const unexpectedPropertyNames = serializedDefinition?.keyMode === "manual"
+    ? [
+      ...new Set([
+        ...(serializedDefinition.unexpectedPropertyNames || []),
+        ...allObservedPropertyNames
+          .filter((name) => !configuredPropertyNames.has(name)),
+      ]),
+    ]
+    : [];
   return {
     name: eventName,
     sourceType: events[0]?.sourceType || filters.sourceType || "custom",
@@ -4943,13 +5798,10 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     availableIntervals: eventSeries.availableIntervals,
     selectedInterval: eventSeries.selectedInterval,
     series: eventSeries.buckets,
-    properties: summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName, {
-      bucketMs: eventSeries.bucketMs,
-      bucketStarts: eventSeries.buckets.map((bucket) => bucket.start),
-      bucketEnds: eventSeries.buckets.map((bucket) => bucket.end),
-      rangeStart: eventSeries.rangeStart,
-      rangeEnd: eventSeries.rangeEnd,
-    }),
+    properties,
+    observedPropertyNames: [...observedPropertyNames],
+    unexpectedPropertyNames,
+    definition: serializedDefinition,
     truncatedPropertyEvents,
     recentEvents: events.slice(0, recentLimit),
     recentEventsTotal: events.length,
@@ -5053,10 +5905,14 @@ function normalizeCustomEventInterval(value) {
 
 function summarizeCustomEventProperties(events, valueLimit = 4, selectedPropertyName = "", timelineOptions = {}) {
   const cleanValueLimit = Math.min(Math.max(cleanInteger(valueLimit), 1), MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
+  const allowedPropertyNames = timelineOptions.allowedPropertyNames instanceof Set
+    ? timelineOptions.allowedPropertyNames
+    : null;
   const summaries = new Map();
   for (const event of events) {
     for (const [key, value] of Object.entries(event.properties || {})) {
       if (!isValidCustomEventPropertyPath(key)) continue;
+      if (allowedPropertyNames && !allowedPropertyNames.has(key)) continue;
       const observations = (Array.isArray(value) ? value : [value])
         .slice(0, MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS)
         .filter((entry) => typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry)));
@@ -5314,13 +6170,15 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
-  const [definitions, eventRecords] = await Promise.all([
+  const [definitions, eventDefinitions, eventRecords] = await Promise.all([
     readFunnelDefinitions(ownerUserId, universeId),
+    readEventDefinitions(ownerUserId, universeId),
     getAnalyticsEventRecords({ universeId, fromMs, toMs }),
   ]);
   const events = eventRecords.events;
   const eventNames = [...new Set([
     ...SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => event.name),
+    ...eventDefinitions.map((definition) => normalizeCustomEventName(definition.eventName)).filter(Boolean),
     ...events.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean),
   ])].sort();
   const sessions = groupCustomEventsBySession(events);
@@ -11261,6 +12119,7 @@ async function deleteMongoUniverseData(universeId) {
     "visit_samples",
     "custom_events",
     "custom_event_deletions",
+    "event_definitions",
     "funnels",
     "map_snapshots",
     "map_snapshot_chunks",
@@ -11286,7 +12145,24 @@ async function deleteLocalUniverseData(universeId) {
     if (nextFunnels.length !== funnels.length) await writeLocalFunnelStore(nextFunnels);
     return funnels.length - nextFunnels.length;
   });
-  return { mapSnapshot, funnels: deletedFunnels };
+  const deletedEventDefinitions = await withLocalEventDefinitionStoreLock(async () => {
+    const definitions = await readLocalEventDefinitionStore();
+    const nextDefinitions = definitions.filter((definition) => cleanInteger(definition.universeId) !== universeId);
+    if (nextDefinitions.length !== definitions.length) await writeLocalEventDefinitionStore(nextDefinitions);
+    return definitions.length - nextDefinitions.length;
+  });
+  const deletedCustomEventDeletions = await withLocalCustomEventDeletionStoreLock(async () => {
+    const deletions = await readLocalCustomEventDeletionStore();
+    const nextDeletions = deletions.filter((deletion) => cleanInteger(deletion.universeId) !== universeId);
+    if (nextDeletions.length !== deletions.length) await writeLocalCustomEventDeletionStore(nextDeletions);
+    return deletions.length - nextDeletions.length;
+  });
+  return {
+    mapSnapshot,
+    funnels: deletedFunnels,
+    eventDefinitions: deletedEventDefinitions,
+    customEventDeletions: deletedCustomEventDeletions,
+  };
 }
 
 async function deleteObjectStorageUniverseData(universeId) {

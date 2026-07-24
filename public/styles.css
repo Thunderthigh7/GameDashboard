@@ -124,6 +124,14 @@ small,
   padding: 56px 24px;
 }
 
+body[data-active-view="events"]:not(.isLocked) .appShell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-active-view="events"]:not(.isLocked) .sidebar {
+  display: none;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -4320,7 +4328,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
   position: sticky;
   top: 8px;
   align-self: start;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 8px;
   min-height: calc(100vh - 44px);
   max-height: calc(100vh - 44px);
@@ -4329,6 +4337,76 @@ body[data-active-view="connect"] .topbar > div:first-child {
   background: transparent;
   box-shadow: none;
   padding: 0 4px 18px 0;
+}
+
+.eventExitButton,
+.eventNewButton {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border-radius: 9px;
+  text-decoration: none;
+}
+
+.eventExitButton {
+  border: 1px solid transparent;
+  color: #aeb8d7;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 750;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.eventExitButton:hover,
+.eventExitButton:focus-visible {
+  border-color: rgba(104, 122, 178, 0.45);
+  background: rgba(20, 29, 53, 0.72);
+  color: #fff;
+  outline: none;
+}
+
+.eventExitButton svg,
+.eventNewButton svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventCatalogAction {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  padding: 0 3px 4px 0;
+}
+
+.eventNewButton {
+  justify-content: center;
+  border-color: rgba(133, 92, 255, 0.52);
+  background: linear-gradient(135deg, rgba(124, 60, 255, 0.78), rgba(56, 44, 139, 0.72));
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(64, 32, 167, 0.2);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.eventNewButton:hover:not(:disabled),
+.eventNewButton:focus-visible {
+  border-color: rgba(187, 158, 255, 0.8);
+  background: linear-gradient(135deg, rgba(139, 78, 255, 0.92), rgba(66, 51, 155, 0.84));
+  outline: none;
+}
+
+.eventNewButton:disabled {
+  cursor: default;
+  opacity: 0.52;
 }
 
 .eventCatalogTitle {
@@ -4376,22 +4454,47 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .eventCatalogItem {
-  display: block;
+  display: grid;
+  align-content: center;
+  gap: 3px;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: 50px;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
   color: var(--nav-text);
-  padding: 0 11px;
+  padding: 7px 11px;
   font-size: 13px;
   font-weight: 700;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.eventCatalogItem > span,
+.eventCatalogItem > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventCatalogItem > small {
+  color: #8793b2;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.eventCatalogItem.active > small {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.eventCatalogItem:disabled {
+  cursor: default;
+  opacity: 0.58;
 }
 
 .eventCatalogItem:hover:not(:disabled) {
@@ -4430,7 +4533,93 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 body[data-active-view="events"] .eventTopbarSelection {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.eventSelectedHeading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.eventDefinitionModeBadge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(45, 212, 191, 0.34);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.09);
+  color: #67e8d4;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.eventDefinitionModeBadge.manual {
+  border-color: rgba(167, 139, 250, 0.4);
+  background: rgba(124, 60, 255, 0.12);
+  color: #c4b5fd;
+}
+
+.eventDefinitionModeBadge.unconfigured {
+  border-color: rgba(120, 136, 179, 0.38);
+  background: rgba(44, 55, 87, 0.24);
+  color: #aeb8d5;
+}
+
+.eventSelectionActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.eventJsonAction,
+.eventEditButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid rgba(87, 105, 157, 0.48);
+  border-radius: 8px;
+  background: rgba(10, 17, 35, 0.82);
+  color: #d6dcf1;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventJsonAction:hover:not(:disabled),
+.eventJsonAction:focus-visible,
+.eventEditButton:hover:not(:disabled),
+.eventEditButton:focus-visible {
+  border-color: rgba(151, 102, 255, 0.68);
+  background: rgba(124, 60, 255, 0.13);
+  color: #fff;
+  outline: none;
+}
+
+.eventJsonAction:disabled,
+.eventEditButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.eventJsonAction svg,
+.eventEditButton svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .eventIntervalTopbarControl {
@@ -4868,6 +5057,14 @@ body[data-active-view="events"] .topbarFilters .dateFilterCluster {
   order: 2;
   flex: 1 1 620px;
   max-width: 760px;
+}
+
+body[data-active-view="events"].isEditingEventDefinition .topbarFilters {
+  display: none;
+}
+
+body[data-active-view="events"].isEditingEventDefinition .topbarActions {
+  flex-basis: auto;
 }
 
 body[data-active-view="events"] #pageSubtitle {
@@ -7386,6 +7583,648 @@ body[data-active-view="funnels"] #pageSubtitle {
   min-width: 132px;
 }
 
+.eventAnalyticsView,
+.eventDefinitionBuilder,
+.eventDefinitionEditor,
+.eventDefinitionProperties,
+.eventDefinitionPropertyEditor {
+  display: grid;
+  min-width: 0;
+}
+
+.eventAnalyticsView {
+  gap: 12px;
+}
+
+.eventDefinitionBuilder {
+  gap: 20px;
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  border-color: rgba(89, 107, 162, 0.48);
+  background:
+    radial-gradient(circle at 86% 8%, rgba(124, 60, 255, 0.13), transparent 30%),
+    linear-gradient(145deg, rgba(13, 23, 46, 0.99), rgba(7, 14, 30, 0.99));
+  padding: 24px;
+  box-shadow: 0 28px 75px rgba(0, 0, 0, 0.28);
+}
+
+.eventDefinitionBuilderHeader {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 19px;
+}
+
+.eventDefinitionBuilderHeader > div {
+  display: grid;
+  gap: 5px;
+}
+
+.eventDefinitionBuilderHeader h2 {
+  font-size: 25px;
+}
+
+.eventDefinitionBuilderHeader p {
+  max-width: 680px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.eventDefinitionEyebrow {
+  color: #ad8cff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.eventDefinitionBackButton {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--nav-text);
+  cursor: pointer;
+}
+
+.eventDefinitionBackButton:hover:not(:disabled),
+.eventDefinitionBackButton:focus-visible {
+  border-color: rgba(151, 102, 255, 0.72);
+  color: #fff;
+  outline: none;
+}
+
+.eventDefinitionBackButton svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventDefinitionBuilderBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(350px, 0.8fr);
+  align-items: start;
+  gap: 18px;
+  min-width: 0;
+}
+
+.eventDefinitionEditor {
+  gap: 18px;
+}
+
+.eventDefinitionNameField {
+  display: grid;
+  gap: 8px;
+}
+
+.eventDefinitionNameField > span,
+.eventKeyModeFieldset legend {
+  color: #bac4e4;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.eventDefinitionNameField input {
+  min-height: 48px;
+  border: 1px solid rgba(85, 104, 158, 0.52);
+  border-radius: 9px;
+  background: rgba(6, 13, 29, 0.88);
+  color: #fff;
+  padding: 0 13px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.eventDefinitionNameField input:focus {
+  border-color: rgba(157, 110, 255, 0.82);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.12);
+}
+
+.eventDefinitionNameField input:disabled {
+  color: #b6c0dd;
+  cursor: not-allowed;
+  opacity: 0.76;
+}
+
+.eventDefinitionNameField small {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.eventKeyModeFieldset {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.eventKeyModeFieldset legend {
+  margin-bottom: 9px;
+}
+
+.eventKeyModeOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.eventKeyModeOption {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-height: 82px;
+  border: 1px solid rgba(78, 96, 148, 0.42);
+  border-radius: 10px;
+  background: rgba(7, 15, 32, 0.68);
+  padding: 13px;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.eventKeyModeOption:hover {
+  border-color: rgba(130, 94, 220, 0.58);
+}
+
+.eventKeyModeOption:has(input:checked) {
+  border-color: rgba(154, 104, 255, 0.78);
+  background: linear-gradient(145deg, rgba(96, 50, 190, 0.22), rgba(16, 24, 54, 0.78));
+  box-shadow: inset 0 0 0 1px rgba(154, 104, 255, 0.12);
+}
+
+.eventKeyModeOption input {
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: #9664ff;
+}
+
+.eventKeyModeOption > span {
+  display: grid;
+  gap: 5px;
+}
+
+.eventKeyModeOption strong {
+  color: #f4f6ff;
+  font-size: 13px;
+}
+
+.eventKeyModeOption small {
+  color: #929fbe;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.eventDefinitionProperties {
+  gap: 10px;
+}
+
+.eventDefinitionPropertiesHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.eventDefinitionPropertiesHeader > div {
+  display: grid;
+  gap: 4px;
+}
+
+.eventDefinitionPropertiesHeader h3,
+.eventCodePreview h3 {
+  margin: 0;
+  color: #f7f8ff;
+}
+
+.eventDefinitionPropertiesHeader h3 {
+  font-size: 16px;
+}
+
+.eventDefinitionPropertiesHeader p {
+  color: #8f9bbb;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.eventDefinitionPropertiesHeader > strong {
+  flex: 0 0 auto;
+  color: #bda8f8;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.eventDefinitionPropertyEditor {
+  gap: 8px;
+}
+
+.eventDefinitionPropertyRow {
+  display: grid;
+  grid-template-columns: 32px minmax(160px, 1fr) minmax(124px, 0.36fr) 36px;
+  align-items: end;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid rgba(73, 91, 141, 0.38);
+  border-radius: 10px;
+  background: rgba(5, 12, 27, 0.66);
+  padding: 10px;
+}
+
+.eventDefinitionPropertyRow.autoDiscovered {
+  border-color: rgba(45, 212, 191, 0.3);
+}
+
+.eventDefinitionPropertyIndex {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(145, 96, 244, 0.45);
+  border-radius: 8px;
+  background: rgba(124, 60, 255, 0.13);
+  color: #c3adfa;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.eventDefinitionPropertyRow label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.eventDefinitionPropertyRow label > span {
+  color: #8f9bbb;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.eventDefinitionPropertyRow input,
+.eventDefinitionPropertyRow select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid rgba(77, 95, 147, 0.48);
+  border-radius: 8px;
+  background: #071126;
+  color: #f4f6ff;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eventDefinitionPropertyRow input:focus,
+.eventDefinitionPropertyRow select:focus {
+  border-color: rgba(151, 102, 255, 0.78);
+  outline: 0;
+}
+
+.eventDefinitionPropertyRow input[readonly] {
+  color: #cbd5ee;
+  cursor: default;
+}
+
+.eventDefinitionRemovePropertyButton {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 40px;
+  border: 1px solid rgba(92, 105, 148, 0.42);
+  border-radius: 8px;
+  background: rgba(13, 20, 39, 0.88);
+  color: #9ba7c5;
+  cursor: pointer;
+}
+
+.eventDefinitionPropertySource {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 40px;
+  border: 1px solid rgba(45, 212, 191, 0.34);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.09);
+  color: #67e8d4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.eventDefinitionRemovePropertyButton:hover,
+.eventDefinitionRemovePropertyButton:focus-visible {
+  border-color: rgba(251, 113, 133, 0.58);
+  background: rgba(127, 29, 29, 0.14);
+  color: #fb7185;
+  outline: none;
+}
+
+.eventDefinitionRemovePropertyButton svg,
+.eventDefinitionAddPropertyButton svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventDefinitionPropertiesEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-height: 76px;
+  border: 1px dashed rgba(87, 105, 157, 0.42);
+  border-radius: 10px;
+  background: rgba(7, 14, 30, 0.42);
+  padding: 16px;
+  text-align: center;
+}
+
+.eventDefinitionPropertiesEmpty strong {
+  color: #dce2f6;
+  font-size: 12px;
+}
+
+.eventDefinitionPropertiesEmpty span {
+  color: #8995b2;
+  font-size: 11px;
+}
+
+.eventDefinitionAddPropertyButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px dashed rgba(139, 91, 240, 0.56);
+  border-radius: 9px;
+  background: rgba(101, 55, 194, 0.08);
+  color: #bda5f8;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventDefinitionAddPropertyButton:hover:not(:disabled),
+.eventDefinitionAddPropertyButton:focus-visible {
+  border-color: #925cff;
+  background: rgba(101, 55, 194, 0.15);
+  color: #fff;
+  outline: none;
+}
+
+.eventDefinitionAddPropertyButton:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.eventCodePreview {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid rgba(96, 115, 171, 0.48);
+  border-radius: 12px;
+  background: linear-gradient(155deg, rgba(10, 20, 42, 0.97), rgba(5, 11, 25, 0.98));
+  padding: 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 18px 42px rgba(0, 0, 0, 0.2);
+}
+
+.eventCodePreview > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eventCodePreview > header > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.eventCodePreview > header > div:first-child > span {
+  color: #a68aef;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.eventCodePreview h3 {
+  font-size: 16px;
+}
+
+.eventCodeTabs {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(87, 104, 153, 0.44);
+  border-radius: 8px;
+  background: rgba(4, 10, 22, 0.74);
+  padding: 3px;
+}
+
+.eventCodeTabs button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8f9bb8;
+  padding: 0 9px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventCodeTabs button[aria-selected="true"] {
+  background: rgba(124, 60, 255, 0.28);
+  color: #fff;
+}
+
+.eventCodeTabs button:focus-visible {
+  outline: 2px solid rgba(183, 156, 255, 0.8);
+  outline-offset: 1px;
+}
+
+.eventCodeBlock {
+  min-height: 270px;
+  max-height: 440px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid rgba(64, 82, 132, 0.46);
+  border-radius: 9px;
+  background: #030916;
+  color: #d9e1ff;
+  padding: 15px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre;
+  scrollbar-color: rgba(151, 102, 255, 0.44) transparent;
+}
+
+.eventCodeNote {
+  color: #8f9ab7;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.eventCodeActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.eventCodeActions .button {
+  width: 100%;
+  min-width: 0;
+}
+
+.eventCodeStatus {
+  min-height: 16px;
+  margin: -4px 0 0;
+  font-size: 10px;
+}
+
+.eventDefinitionStatus {
+  min-height: 18px;
+  margin: -4px 0 0;
+  color: #aeb8d4;
+  font-size: 11px;
+}
+
+.eventDefinitionFormActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.eventDefinitionFormActions .button {
+  min-width: 132px;
+}
+
+body.hasEventConfirmDialog {
+  overflow: hidden;
+}
+
+.eventConfirmBackdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 18, 0.76);
+  padding: 20px;
+  backdrop-filter: blur(7px);
+}
+
+.eventConfirmDialog {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 15px;
+  width: min(100%, 450px);
+  border: 1px solid rgba(99, 116, 168, 0.58);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(124, 60, 255, 0.16), transparent 34%),
+    linear-gradient(155deg, #0d1830, #071022);
+  padding: 20px;
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.52);
+}
+
+.eventConfirmIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(154, 104, 255, 0.48);
+  border-radius: 12px;
+  background: rgba(124, 60, 255, 0.13);
+  color: #c4b5fd;
+}
+
+.eventConfirmIcon.danger {
+  border-color: rgba(251, 113, 133, 0.48);
+  background: rgba(190, 24, 93, 0.12);
+  color: #fb7185;
+}
+
+.eventConfirmIcon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventConfirmCopy {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.eventConfirmCopy h2 {
+  color: #fff;
+  font-size: 19px;
+}
+
+.eventConfirmCopy p {
+  color: #9ca8c7;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.eventConfirmDialog footer {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 9px;
+  border-top: 1px solid rgba(77, 94, 143, 0.38);
+  padding-top: 16px;
+}
+
+.eventConfirmDialog footer .button {
+  min-width: 116px;
+}
+
+.eventConfirmDialog .button.danger {
+  border-color: rgba(244, 63, 94, 0.7);
+  background: linear-gradient(135deg, #be123c, #9f1239);
+  color: #fff;
+}
+
+.eventConfirmDialog .button.danger:hover,
+.eventConfirmDialog .button.danger:focus-visible {
+  border-color: #fb7185;
+  background: linear-gradient(135deg, #e11d48, #be123c);
+}
+
 [hidden] {
   display: none;
 }
@@ -7420,6 +8259,18 @@ body[data-active-view="funnels"] #pageSubtitle {
   .eventCatalog {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     max-height: 300px;
+  }
+
+  body.isEditingEventDefinition .eventCatalogPanel {
+    display: none;
+  }
+
+  .eventDefinitionBuilderBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventCodePreview {
+    position: static;
   }
 
   .funnelWorkspace {
@@ -7524,6 +8375,17 @@ body[data-active-view="funnels"] #pageSubtitle {
     width: 100%;
   }
 
+  body[data-active-view="events"] .eventTopbarSelection {
+    align-items: flex-start;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .eventSelectionActions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   .topbarFilters {
     display: grid;
     grid-template-columns: 1fr;
@@ -7610,6 +8472,14 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .funnelBuilder {
     padding: 18px;
+  }
+
+  .eventDefinitionBuilder {
+    padding: 18px;
+  }
+
+  .eventKeyModeOptions {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .heatmapToolbar {
@@ -8010,6 +8880,86 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .eventCatalog {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  body[data-active-view="events"] .eventTopbarSelection {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eventSelectionActions {
+    justify-content: flex-start;
+  }
+
+  .eventDefinitionBuilderHeader {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .eventDefinitionBuilder {
+    padding: 14px;
+  }
+
+  .eventDefinitionPropertyRow {
+    grid-template-columns: 30px minmax(0, 1fr) 36px;
+  }
+
+  .eventDefinitionPropertyRow label:nth-of-type(2) {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .eventDefinitionRemovePropertyButton {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .eventDefinitionPropertySource {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .eventCodePreview > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .eventCodeTabs,
+  .eventCodeActions {
+    width: 100%;
+  }
+
+  .eventCodeTabs button {
+    flex: 1 1 0;
+  }
+
+  .eventDefinitionFormActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eventDefinitionFormActions .button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .eventConfirmDialog {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 16px;
+  }
+
+  .eventConfirmIcon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .eventConfirmDialog footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eventConfirmDialog footer .button {
+    width: 100%;
+    min-width: 0;
   }
 
   .funnelCatalog {
