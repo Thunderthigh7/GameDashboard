@@ -99,6 +99,9 @@ const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
+const eventIntervalButton = document.querySelector("#eventIntervalButton");
+const eventIntervalButtonLabel = document.querySelector("#eventIntervalButtonLabel");
+const eventIntervalMenu = document.querySelector("#eventIntervalMenu");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
@@ -221,7 +224,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-12";
+const DASHBOARD_ASSET_VERSION = "20260724-14";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -419,8 +422,15 @@ function bindEvents() {
   });
   eventIntervalSelect?.addEventListener("change", () => {
     selectedEventInterval = eventIntervalSelect.value || "auto";
+    syncEventIntervalDropdown();
     loadCustomEvents({ force: true });
   });
+  eventIntervalButton?.addEventListener("click", toggleEventIntervalMenu);
+  eventIntervalButton?.addEventListener("keydown", handleEventIntervalTriggerKeydown);
+  eventIntervalMenu?.addEventListener("click", handleEventIntervalMenuClick);
+  eventIntervalMenu?.addEventListener("keydown", handleEventIntervalMenuKeydown);
+  document.addEventListener("pointerdown", handleEventIntervalOutsidePointer);
+  syncEventIntervalDropdown();
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
     loadCustomEvents({ force: true });
@@ -867,7 +877,10 @@ function setActiveView(view, options = {}) {
   const requestedView = view === "events" || view === "funnels" || view === "releases" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (activeView !== "funnels") closeFunnelMoreMenu();
-  if (activeView !== "events") closeDateRangePicker();
+  if (activeView !== "events") {
+    closeDateRangePicker();
+    closeEventIntervalMenu();
+  }
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "events"
@@ -3104,6 +3117,102 @@ function updateEventIntervalControl(selectedEvent) {
     autoOption.textContent = `Auto (${formatEventInterval(selectedEvent?.bucketMs || 60 * 60 * 1000)})`;
   }
   if (eventIntervalSelect.value !== selectedEventInterval) eventIntervalSelect.value = selectedEventInterval;
+  syncEventIntervalDropdown();
+}
+
+function syncEventIntervalDropdown() {
+  if (!eventIntervalSelect || !eventIntervalButton || !eventIntervalMenu) return;
+  const selectedOption = eventIntervalSelect.selectedOptions[0]
+    || [...eventIntervalSelect.options].find((option) => option.value === selectedEventInterval)
+    || eventIntervalSelect.options[0];
+  const selectedValue = selectedOption?.value || "auto";
+  const selectedLabel = selectedOption?.textContent?.trim() || "Auto";
+  if (eventIntervalButtonLabel) eventIntervalButtonLabel.textContent = selectedLabel;
+  eventIntervalButton.disabled = eventIntervalSelect.disabled;
+  eventIntervalMenu.innerHTML = [...eventIntervalSelect.options]
+    .filter((option) => !option.hidden && !option.disabled)
+    .map((option) => `
+      <button class="eventIntervalOption" type="button" role="option" tabindex="-1" data-event-interval="${escapeHtml(option.value)}" aria-selected="${option.value === selectedValue}">
+        <span>${escapeHtml(option.textContent.trim())}</span>
+        <span class="eventIntervalOptionCheck" aria-hidden="true">✓</span>
+      </button>
+    `)
+    .join("");
+}
+
+function toggleEventIntervalMenu() {
+  if (!eventIntervalMenu || !eventIntervalButton || eventIntervalButton.disabled) return;
+  if (eventIntervalMenu.hidden) openEventIntervalMenu();
+  else closeEventIntervalMenu();
+}
+
+function openEventIntervalMenu(options = {}) {
+  if (!eventIntervalMenu || !eventIntervalButton || eventIntervalButton.disabled) return;
+  syncEventIntervalDropdown();
+  eventIntervalMenu.hidden = false;
+  eventIntervalButton.setAttribute("aria-expanded", "true");
+  const items = getEventIntervalOptions();
+  const selectedItem = eventIntervalMenu.querySelector('[aria-selected="true"]');
+  const focusTarget = options.focus === "last"
+    ? items.at(-1)
+    : selectedItem || items[0];
+  focusTarget?.focus();
+}
+
+function closeEventIntervalMenu(options = {}) {
+  if (!eventIntervalMenu || !eventIntervalButton) return;
+  eventIntervalMenu.hidden = true;
+  eventIntervalButton.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus) eventIntervalButton.focus();
+}
+
+function handleEventIntervalMenuClick(event) {
+  const option = event.target.closest("[data-event-interval]");
+  if (!option || !eventIntervalSelect) return;
+  const interval = option.dataset.eventInterval || "auto";
+  const changed = interval !== eventIntervalSelect.value;
+  eventIntervalSelect.value = interval;
+  closeEventIntervalMenu({ restoreFocus: true });
+  if (changed) eventIntervalSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  else syncEventIntervalDropdown();
+}
+
+function handleEventIntervalTriggerKeydown(event) {
+  if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+  event.preventDefault();
+  openEventIntervalMenu({ focus: event.key === "ArrowUp" ? "last" : "selected" });
+}
+
+function handleEventIntervalMenuKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeEventIntervalMenu({ restoreFocus: true });
+    return;
+  }
+  if (event.key === "Tab") {
+    closeEventIntervalMenu();
+    return;
+  }
+  const options = getEventIntervalOptions();
+  const currentIndex = options.indexOf(document.activeElement);
+  let nextIndex = null;
+  if (event.key === "ArrowDown") nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
+  if (event.key === "ArrowUp") nextIndex = currentIndex < 0 ? options.length - 1 : (currentIndex - 1 + options.length) % options.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = options.length - 1;
+  if (nextIndex === null || !options.length) return;
+  event.preventDefault();
+  options[nextIndex]?.focus();
+}
+
+function handleEventIntervalOutsidePointer(event) {
+  if (!eventIntervalMenu || eventIntervalMenu.hidden) return;
+  if (eventIntervalButton?.contains(event.target) || eventIntervalMenu.contains(event.target)) return;
+  closeEventIntervalMenu();
+}
+
+function getEventIntervalOptions() {
+  return eventIntervalMenu ? [...eventIntervalMenu.querySelectorAll("[data-event-interval]")] : [];
 }
 
 function formatEventInterval(value) {

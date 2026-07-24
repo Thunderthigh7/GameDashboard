@@ -4439,35 +4439,136 @@ body[data-active-view="events"] .eventTopbarSelection {
 }
 
 body[data-active-view="events"] .eventIntervalTopbarControl {
+  position: relative;
   display: flex;
   order: 1;
+  align-self: flex-end;
   flex: 0 0 136px;
   min-width: 136px;
 }
 
-body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect {
+body[data-active-view="events"] .eventIntervalButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   min-height: 48px;
-  border-color: rgba(86, 105, 157, 0.58);
+  border: 1px solid rgba(86, 105, 157, 0.58);
   border-radius: 10px;
   background: linear-gradient(145deg, rgba(13, 23, 48, 0.98), rgba(8, 15, 34, 0.98));
   color: #fff;
   box-shadow: inset 0 1px 0 rgba(166, 139, 255, 0.04), 0 8px 22px rgba(3, 7, 20, 0.2);
-  padding-inline: 14px 32px;
+  padding: 0 13px 0 14px;
+  font: inherit;
   font-size: 13px;
   font-weight: 800;
+  text-align: left;
+  cursor: pointer;
   transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
 }
 
-body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect:hover {
+body[data-active-view="events"] .eventIntervalButton:hover,
+body[data-active-view="events"] .eventIntervalButton[aria-expanded="true"] {
   border-color: rgba(139, 112, 220, 0.72);
+  background: linear-gradient(145deg, rgba(31, 25, 59, 0.98), rgba(12, 17, 38, 0.98));
 }
 
-body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect:focus-visible {
+body[data-active-view="events"] .eventIntervalButton:focus-visible {
   border-color: rgba(156, 107, 255, 0.78);
   outline: 0;
   box-shadow: inset 0 0 0 1px rgba(156, 107, 255, 0.42), 0 8px 22px rgba(3, 7, 20, 0.2);
+}
+
+.eventIntervalButton span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventIntervalButton svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #b7a6ed;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 150ms ease;
+}
+
+.eventIntervalButton[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.eventIntervalMenu {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  gap: 3px;
+  width: 156px;
+  max-height: min(330px, calc(100vh - 120px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(103, 121, 172, 0.58);
+  border-radius: 11px;
+  background: rgba(9, 16, 33, 0.99);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  padding: 6px;
+  scrollbar-color: rgba(151, 102, 255, 0.46) transparent;
+  scrollbar-width: thin;
+}
+
+.eventIntervalMenu[hidden] {
+  display: none;
+}
+
+.eventIntervalOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #adb8d1;
+  padding: 0 9px 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eventIntervalOption:hover,
+.eventIntervalOption:focus-visible {
+  border-color: rgba(151, 102, 255, 0.34);
+  background: rgba(124, 60, 255, 0.14);
+  color: #fff;
+  outline: none;
+}
+
+.eventIntervalOption[aria-selected="true"] {
+  border-color: rgba(151, 102, 255, 0.48);
+  background: linear-gradient(135deg, rgba(124, 60, 255, 0.3), rgba(65, 46, 137, 0.2));
+  color: #fff;
+}
+
+.eventIntervalOptionCheck {
+  color: #b79cff;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.eventIntervalOption[aria-selected="true"] .eventIntervalOptionCheck {
+  opacity: 1;
 }
 
 .eventTopbarSelection h2 {

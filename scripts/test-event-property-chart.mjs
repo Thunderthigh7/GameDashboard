@@ -11,6 +11,9 @@ const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarCont
 const dateControlIndex = indexSource.indexOf('class="dateFilterCluster"');
 const releaseControlsIndex = indexSource.indexOf('class="releaseTopbarControls"');
 assert.equal(intervalControlMatches.length, 1, "the global event interval selector should exist exactly once");
+assert.match(indexSource, /id="eventIntervalButton"[^>]*aria-haspopup="listbox"/, "the interval control should use a themed listbox trigger");
+assert.match(indexSource, /id="eventIntervalMenu"[^>]*role="listbox"/, "the interval control should include a themed options menu");
+assert.match(indexSource, /id="eventIntervalSelect"[^>]*hidden/, "the native interval select should remain only as the hidden data source");
 assert.ok(
   topbarFiltersIndex >= 0
     && intervalControlIndex > topbarFiltersIndex
@@ -54,6 +57,13 @@ assert.match(
   /body\[data-active-view="events"\] \.eventIntervalTopbarControl\s*\{[^}]*order:\s*1;/,
   "the interval selector should be the first Events filter",
 );
+assert.match(
+  styleSource,
+  /body\[data-active-view="events"\] \.eventIntervalTopbarControl\s*\{[^}]*align-self:\s*flex-end;/,
+  "the interval selector should align to the bottom of the date range",
+);
+assert.match(styleSource, /\.eventIntervalMenu\s*\{[^}]*background:\s*rgba\(9, 16, 33, 0\.99\);/, "the interval menu should use the dashboard theme");
+assert.match(appSource, /function handleEventIntervalMenuClick\(/, "the custom interval menu should preserve interval selection behavior");
 assert.doesNotMatch(indexSource, /eventActivitySection|id="eventChart"/, "the removed Event activity panel should not remain in the page");
 assert.doesNotMatch(appSource, /renderCustomEventChart|querySelector\("#eventChart"\)/, "the removed Event activity renderer should not remain");
 assert.doesNotMatch(

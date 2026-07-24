@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260724-13">
+    <link rel="stylesheet" href="/styles.css?v=20260724-14">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -167,8 +167,12 @@
               <p id="selectedEventSubtitle">The event timeline will appear here.</p>
             </div>
             <div class="topbarFilters" aria-label="Dashboard filters">
-              <label class="eventIntervalTopbarControl" for="eventIntervalSelect">
-                <select class="eventIntervalSelect" id="eventIntervalSelect" aria-label="Timeline interval">
+              <div class="eventIntervalTopbarControl">
+                <button class="eventIntervalButton" id="eventIntervalButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="eventIntervalMenu">
+                  <span id="eventIntervalButtonLabel">Auto (1h)</span>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+                </button>
+                <select class="eventIntervalSelect" id="eventIntervalSelect" aria-label="Timeline interval" tabindex="-1" hidden>
                   <option value="auto">Auto (1h)</option>
                   <option value="1m">1 minute</option>
                   <option value="5m">5 minutes</option>
@@ -179,7 +183,8 @@
                   <option value="1d">1 day</option>
                   <option value="7d">7 days</option>
                 </select>
-              </label>
+                <div class="eventIntervalMenu" id="eventIntervalMenu" role="listbox" aria-label="Timeline interval" hidden></div>
+              </div>
               <div class="dateFilterCluster">
                 <div class="dateRangeControl" id="dateRangeControl" aria-label="Dashboard date range">
                   <button class="dateRangeField dateRangeFrom" id="movementFromPickerButton" type="button" data-date-range-side="from" aria-haspopup="dialog" aria-expanded="false" aria-controls="dateRangePickerPanel">
@@ -1094,6 +1099,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260724-12"></script>
+    <script defer src="/app.js?v=20260724-14"></script>
   </body>
 </html>
