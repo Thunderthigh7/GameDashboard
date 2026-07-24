@@ -101,6 +101,11 @@ assert.doesNotMatch(
   "property graph cards should not render the removed subtitle",
 );
 assert.doesNotMatch(appSource, /class="eventPropertyChartLegend"/, "property charts should not repeat the legend below the graph");
+assert.doesNotMatch(
+  appSource,
+  /formatEventChartLabel\(index === bucketCount - 1 \? timelineEnd : start/,
+  "the exact End label should not replace or crowd the final incremental axis label",
+);
 const changeHelperStart = appSource.indexOf("function getEventPropertySeriesChange(");
 const changeHelperEnd = appSource.indexOf("\nfunction renderCustomEventPropertyChart(", changeHelperStart);
 assert.ok(changeHelperStart >= 0 && changeHelperEnd > changeHelperStart, "ranked breakdown change helper should remain available");
@@ -259,9 +264,26 @@ const helperEnd = appSource.indexOf("\nfunction getEventPropertyPriority(", help
 assert.ok(helperStart >= 0 && helperEnd > helperStart, "event property chart path helpers should remain available");
 
 const helperSource = appSource.slice(helperStart, helperEnd);
-const { buildRoundedEventPropertyPath } = Function(
-  `"use strict";\n${helperSource}\nreturn { buildRoundedEventPropertyPath };`,
+const { buildRoundedEventPropertyPath, completeEventPropertyPathPoints } = Function(
+  `"use strict";\n${helperSource}\nreturn { buildRoundedEventPropertyPath, completeEventPropertyPathPoints };`,
 )();
+assert.deepEqual(
+  completeEventPropertyPathPoints(
+    [
+      { x: 90, y: 100 },
+      { x: 160, y: 80 },
+    ],
+    54,
+    480,
+  ).map((point) => ({ x: point.x, y: point.y })),
+  [
+    { x: 54, y: 100 },
+    { x: 90, y: 100 },
+    { x: 160, y: 80 },
+    { x: 480, y: 80 },
+  ],
+  "a property line should extend its nearest observed values to both graph boundaries",
+);
 
 const periodBucketCounts = new Map([
   ["1m", 240],

@@ -221,7 +221,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-11";
+const DASHBOARD_ASSET_VERSION = "20260724-12";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -3274,13 +3274,7 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
   const plotHeight = plotBottom - top;
   const labelStep = Math.max(1, Math.ceil(bucketCount / 10));
   const xForIndex = (index) => (
-    bucketCount === 1
-      ? left + (plotWidth / 2)
-      : index === 0
-        ? left
-        : index === bucketCount - 1
-          ? chartWidth - right
-          : left + (((bucketStarts[index] - timelineStart) / Math.max(timelineEnd - timelineStart, 1)) * plotWidth)
+    left + (((bucketStarts[index] - timelineStart) / Math.max(timelineEnd - timelineStart, 1)) * plotWidth)
   );
   const yForPercent = (percent) => (
     top + (plotHeight - ((Math.max(0, Math.min(Number(percent) || 0, 100)) / 100) * plotHeight))
@@ -3292,16 +3286,11 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
       <text x="${left - 10}" y="${y + 4}" text-anchor="end">${percent}%</text>
     `;
   }).join("");
-  const xLabels = bucketCount === 1
-    ? `
-      <text class="eventPropertyChartXLabel" x="${left}" y="${chartHeight - 16}" text-anchor="start">${escapeHtml(formatEventChartLabel(timelineStart, bucketMs, chartSpanMs))}</text>
-      <text class="eventPropertyChartXLabel" x="${chartWidth - right}" y="${chartHeight - 16}" text-anchor="end">${escapeHtml(formatEventChartLabel(timelineEnd, bucketMs, chartSpanMs))}</text>
-    `
-    : bucketStarts.map((start, index) => (
-      index === 0 || index === bucketCount - 1 || index % labelStep === 0
-        ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="${index === 0 ? "start" : index === bucketCount - 1 ? "end" : "middle"}">${escapeHtml(formatEventChartLabel(index === bucketCount - 1 ? timelineEnd : start, bucketMs, chartSpanMs))}</text>`
-        : ""
-    )).join("");
+  const xLabels = bucketStarts.map((start, index) => (
+    index === 0 || index === bucketCount - 1 || index % labelStep === 0
+      ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="${index === 0 ? "start" : index === bucketCount - 1 ? "end" : "middle"}">${escapeHtml(formatEventChartLabel(start, bucketMs, chartSpanMs))}</text>`
+      : ""
+  )).join("");
   const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
     releaseMarkers,
     bucketStarts,
@@ -3330,7 +3319,9 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
         y: hasValue ? yForPercent(percent) : null,
       };
     });
-    const path = buildRoundedEventPropertyPath(chartPoints);
+    const path = buildRoundedEventPropertyPath(
+      completeEventPropertyPathPoints(chartPoints, left, chartWidth - right),
+    );
     const dots = chartPoints.map((point) => {
       if (point.y === null) return "";
       const label = formatEventPropertyValue(entry.value);
@@ -3410,6 +3401,19 @@ function buildRoundedEventPropertyPath(points = []) {
     Number.isFinite(point?.x) && Number.isFinite(point?.y)
   ));
   return buildRoundedEventPropertyPathSegment(observedPoints);
+}
+
+function completeEventPropertyPathPoints(points = [], left = 0, right = 0) {
+  const observedPoints = points
+    .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))
+    .map((point) => ({ ...point }));
+  if (!observedPoints.length || right <= left) return observedPoints;
+
+  const first = observedPoints[0];
+  const last = observedPoints.at(-1);
+  if (first.x > left) observedPoints.unshift({ ...first, x: left, isBoundaryExtension: true });
+  if (last.x < right) observedPoints.push({ ...last, x: right, isBoundaryExtension: true });
+  return observedPoints;
 }
 
 function buildRoundedEventPropertyPathSegment(points) {
