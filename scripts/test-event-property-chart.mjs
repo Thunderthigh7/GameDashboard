@@ -114,8 +114,13 @@ assert.match(
 );
 assert.match(
   styleSource,
-  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*22px minmax\(92px, 1fr\) 58px 76px 76px;/,
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*22px minmax\(92px, 1fr\) 64px 82px 92px;/,
   "ranked breakdowns should reserve a readable five-column layout",
+);
+assert.match(
+  styleSource,
+  /\.eventPropertyRankedRow > b,\s*\.eventPropertyChange\s*\{[^}]*font-size:\s*14px;/,
+  "ranked breakdown Events, percent, and Change values should remain prominent",
 );
 assert.match(
   serverSource,

@@ -5275,19 +5275,19 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyRankedTableHeader,
 .eventPropertyRankedRow {
   display: grid;
-  grid-template-columns: 22px minmax(92px, 1fr) 58px 76px 76px;
+  grid-template-columns: 22px minmax(92px, 1fr) 64px 82px 92px;
   align-items: center;
   gap: 8px;
-  min-width: 360px;
+  min-width: 386px;
   padding-inline: 3px;
 }
 
 .eventPropertyRankedTableHeader {
-  min-height: 40px;
+  min-height: 44px;
   border-bottom: 1px solid rgba(80, 99, 150, 0.28);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
+  color: #a7b3cd;
+  font-size: 11px;
+  font-weight: 850;
 }
 
 .eventPropertyRankedTableHeader span:nth-child(n + 3) {
@@ -5299,7 +5299,7 @@ body[data-active-view="events"] #pageSubtitle {
 }
 
 .eventPropertyRankedRow {
-  min-height: 52px;
+  min-height: 58px;
   border-bottom: 1px solid rgba(80, 99, 150, 0.22);
 }
 
@@ -5340,8 +5340,8 @@ body[data-active-view="events"] #pageSubtitle {
 
 .eventPropertyRankedRow > b,
 .eventPropertyChange {
-  font-size: 11px;
-  font-weight: 850;
+  font-size: 14px;
+  font-weight: 900;
   text-align: right;
 }
 
