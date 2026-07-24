@@ -1763,71 +1763,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
   opacity: 0;
 }
 
-.allDataToggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: 9px;
-  min-height: 78px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(10, 18, 39, 0.92);
-  color: var(--nav-text);
-  padding: 0 14px;
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
-}
-
-.allDataToggle:hover {
-  border-color: rgba(151, 105, 255, 0.7);
-  color: #fff;
-}
-
-.allDataToggle:focus-within {
-  outline: 2px solid rgba(169, 139, 255, 0.82);
-  outline-offset: 2px;
-}
-
-.allDataToggle input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.allDataCheckbox {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid rgba(121, 138, 190, 0.68);
-  border-radius: 5px;
-  background: rgba(5, 11, 27, 0.82);
-  color: transparent;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
-}
-
-.allDataCheckbox svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.allDataToggle input:checked + .allDataCheckbox {
-  border-color: #9b6aff;
-  background: linear-gradient(135deg, #965cf4, #6330cf);
-  color: #fff;
-  box-shadow: 0 0 16px rgba(124, 60, 255, 0.28);
-}
-
 .fieldGroup select {
   width: 100%;
   min-height: 38px;
@@ -4172,28 +4107,22 @@ body[data-active-view="events"] .eventTopbarSelection {
 }
 
 body[data-active-view="events"] .eventIntervalTopbarControl {
-  display: grid;
-  flex: 0 0 148px;
-  gap: 6px;
-  min-width: 148px;
-}
-
-.eventIntervalTopbarControl > span {
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  display: flex;
+  order: 1;
+  flex: 0 0 164px;
+  min-width: 164px;
 }
 
 body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect {
   width: 100%;
-  min-height: 44px;
+  min-height: 78px;
   border-color: rgba(89, 105, 151, 0.38);
-  border-radius: 9px;
+  border-radius: 10px;
   background: rgba(7, 13, 27, 0.86);
-  color: var(--text);
-  font-size: 12px;
+  color: #fff;
+  padding-inline: 18px;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .eventTopbarSelection h2 {
@@ -4632,7 +4561,7 @@ body[data-active-view="events"] .topbarActions {
 }
 
 body[data-active-view="events"] .topbarFilters {
-  align-items: flex-end;
+  align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
 }
@@ -7173,9 +7102,15 @@ body[data-active-view="funnels"] #pageSubtitle {
     width: 100%;
   }
 
+  body[data-active-view="events"] .eventIntervalTopbarControl {
+    width: 100%;
+    min-width: 0;
+    flex-basis: auto;
+  }
+
   .topbarFilters .dateFilterCluster {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
     min-width: 0;
     max-width: none;
@@ -7447,12 +7382,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .dateRangeField strong {
     font-size: 12px;
-  }
-
-  .allDataToggle {
-    justify-content: flex-start;
-    width: 100%;
-    min-height: 46px;
   }
 
   .heatmapToolbar {

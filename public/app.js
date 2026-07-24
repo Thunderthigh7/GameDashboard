@@ -149,7 +149,6 @@ const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
 const movementFromDisplay = document.querySelector("#movementFromDisplay");
 const movementToDisplay = document.querySelector("#movementToDisplay");
-const allDataFilter = document.querySelector("#allDataFilter");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
@@ -198,7 +197,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260723-8";
+const DASHBOARD_ASSET_VERSION = "20260723-9";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -475,11 +474,10 @@ function bindEvents() {
   });
   movementFromFilter?.addEventListener("click", () => showDateFilterPicker(movementFromFilter));
   movementToFilter?.addEventListener("click", () => showDateFilterPicker(movementToFilter));
-  movementFromFilter?.addEventListener("change", handleExplicitDateFilterChange);
-  movementToFilter?.addEventListener("change", handleExplicitDateFilterChange);
+  movementFromFilter?.addEventListener("change", handleDateFilterChange);
+  movementToFilter?.addEventListener("change", handleDateFilterChange);
   movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
   movementToFilter?.addEventListener("input", syncDateFilterDisplays);
-  allDataFilter?.addEventListener("change", handleDateFilterChange);
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -4610,7 +4608,7 @@ function getDateTimeMs(value) {
 }
 
 function getDashboardDateFilterMs(input) {
-  return allDataFilter?.checked ? 0 : getDateTimeMs(input?.value);
+  return getDateTimeMs(input?.value);
 }
 
 function handleDateFilterChange() {
@@ -4621,11 +4619,6 @@ function handleDateFilterChange() {
   }
   if (activeView === "funnels") loadFunnels({ force: true });
   if (activeView === "chat") loadChatLogs({ includeInsights: true });
-}
-
-function handleExplicitDateFilterChange() {
-  if (allDataFilter) allDataFilter.checked = false;
-  handleDateFilterChange();
 }
 
 function showDateFilterPicker(input) {

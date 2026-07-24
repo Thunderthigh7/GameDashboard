@@ -3,14 +3,30 @@ import { readFileSync } from "node:fs";
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 const intervalControlMatches = indexSource.match(/id="eventIntervalSelect"/g) || [];
 const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters"');
 const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarControl"');
+const dateControlIndex = indexSource.indexOf('class="dateFilterCluster"');
 const releaseControlsIndex = indexSource.indexOf('class="releaseTopbarControls"');
 assert.equal(intervalControlMatches.length, 1, "the global event interval selector should exist exactly once");
 assert.ok(
-  topbarFiltersIndex >= 0 && intervalControlIndex > topbarFiltersIndex && intervalControlIndex < releaseControlsIndex,
-  "the event interval selector should live in the shared topbar beside the date filters",
+  topbarFiltersIndex >= 0
+    && intervalControlIndex > topbarFiltersIndex
+    && dateControlIndex > intervalControlIndex
+    && dateControlIndex < releaseControlsIndex,
+  "the event interval selector should precede the shared date filter cluster",
+);
+assert.doesNotMatch(indexSource, /allDataFilter|allDataToggle/, "the removed All data control should not remain in the topbar");
+assert.doesNotMatch(
+  indexSource,
+  /class="eventIntervalTopbarControl"[^>]*>\s*<span>Interval<\/span>/,
+  "the interval selector should not retain a redundant visible label",
+);
+assert.match(
+  styleSource,
+  /body\[data-active-view="events"\] \.eventIntervalTopbarControl\s*\{[^}]*order:\s*1;/,
+  "the interval selector should be the first Events filter",
 );
 assert.doesNotMatch(indexSource, /class="eventChartActions"/, "the event chart card should not retain a duplicate interval action");
 assert.doesNotMatch(appSource, /data-event-property-view/, "property cards should not include Timeline/Average tabs");
