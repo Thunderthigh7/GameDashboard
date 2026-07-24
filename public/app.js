@@ -148,6 +148,13 @@ const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
 const movementFromDisplay = document.querySelector("#movementFromDisplay");
 const movementToDisplay = document.querySelector("#movementToDisplay");
+const movementFromVersionIndicator = document.querySelector("#movementFromVersionIndicator");
+const movementToVersionIndicator = document.querySelector("#movementToVersionIndicator");
+const dateVersionPickerButton = document.querySelector("#dateVersionPickerButton");
+const dateVersionPanel = document.querySelector("#dateVersionPanel");
+const dateVersionCloseButton = document.querySelector("#dateVersionCloseButton");
+const dateVersionList = document.querySelector("#dateVersionList");
+const dateVersionTargetButtons = document.querySelectorAll("[data-date-version-side]");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
@@ -187,6 +194,12 @@ let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let selectedEventInterval = "auto";
 let recentEventsExpanded = false;
+let currentEventReleaseVersions = [];
+let currentEventReleaseVersionsUniverseId = "";
+let eventReleaseVersionRequestSequence = 0;
+let eventReleaseVersionsLoading = false;
+let dateVersionPickerSide = "from";
+const selectedDateReleaseVersions = { from: null, to: null };
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
 let currentFunnels = [];
@@ -196,7 +209,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-8";
+const DASHBOARD_ASSET_VERSION = "20260724-10";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -473,10 +486,33 @@ function bindEvents() {
   });
   movementFromFilter?.addEventListener("click", () => showDateFilterPicker(movementFromFilter));
   movementToFilter?.addEventListener("click", () => showDateFilterPicker(movementToFilter));
-  movementFromFilter?.addEventListener("change", handleDateFilterChange);
-  movementToFilter?.addEventListener("change", handleDateFilterChange);
-  movementFromFilter?.addEventListener("input", syncDateFilterDisplays);
-  movementToFilter?.addEventListener("input", syncDateFilterDisplays);
+  movementFromFilter?.addEventListener("change", () => {
+    clearSelectedDateReleaseVersion("from");
+    handleDateFilterChange();
+  });
+  movementToFilter?.addEventListener("change", () => {
+    clearSelectedDateReleaseVersion("to");
+    handleDateFilterChange();
+  });
+  movementFromFilter?.addEventListener("input", () => {
+    clearSelectedDateReleaseVersion("from");
+    syncDateFilterDisplays();
+  });
+  movementToFilter?.addEventListener("input", () => {
+    clearSelectedDateReleaseVersion("to");
+    syncDateFilterDisplays();
+  });
+  dateVersionPickerButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleDateVersionPanel();
+  });
+  dateVersionCloseButton?.addEventListener("click", closeDateVersionPanel);
+  for (const button of dateVersionTargetButtons) {
+    button.addEventListener("click", () => setDateVersionPickerSide(button.dataset.dateVersionSide));
+  }
+  dateVersionList?.addEventListener("click", handleDateReleaseVersionSelection);
+  document.addEventListener("pointerdown", handleDateVersionOutsidePointer);
+  document.addEventListener("keydown", handleDateVersionEscape);
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -747,6 +783,13 @@ function setAuthenticated(value, user = null) {
       aiReportSelect.disabled = true;
     }
     selectedUniverseId = "";
+    currentEventReleaseVersions = [];
+    currentEventReleaseVersionsUniverseId = "";
+    eventReleaseVersionRequestSequence += 1;
+    eventReleaseVersionsLoading = false;
+    clearSelectedDateReleaseVersion("from");
+    clearSelectedDateReleaseVersion("to");
+    closeDateVersionPanel();
     selectedUniverseLabel.textContent = "No universe selected";
     universeSelect.innerHTML = `<option value="">Sign in to load universes</option>`;
     universeSelect.disabled = true;
@@ -825,6 +868,7 @@ function setActiveView(view, options = {}) {
   const requestedView = view === "events" || view === "funnels" || view === "releases" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (activeView !== "funnels") closeFunnelMoreMenu();
+  if (activeView !== "events") closeDateVersionPanel();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "events"
@@ -2258,6 +2302,12 @@ function selectUniverse(value) {
   currentChatLogs = [];
   selectedCustomEventName = "";
   recentEventsExpanded = false;
+  currentEventReleaseVersions = [];
+  currentEventReleaseVersionsUniverseId = "";
+  eventReleaseVersionRequestSequence += 1;
+  clearSelectedDateReleaseVersion("from");
+  clearSelectedDateReleaseVersion("to");
+  closeDateVersionPanel();
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
@@ -2781,11 +2831,17 @@ async function loadCustomEvents(options = {}) {
 
   if (!universeId) {
     renderCustomEvents({ totals: {}, events: [], selectedEvent: null });
+    currentEventReleaseVersions = [];
+    currentEventReleaseVersionsUniverseId = "";
+    renderDateVersionPanel();
     eventPropertyList?.setAttribute("aria-busy", "false");
     eventsStatus.textContent = "Connect or select a Roblox game to view events.";
     return false;
   }
 
+  if (currentEventReleaseVersionsUniverseId !== universeId) {
+    loadEventReleaseVersions(universeId);
+  }
   eventsStatus.textContent = "Loading events...";
   eventPropertyList?.setAttribute("aria-busy", "true");
   const params = new URLSearchParams();
@@ -2819,6 +2875,57 @@ async function loadCustomEvents(options = {}) {
   } finally {
     if (requestSequence === customEventsRequestSequence) {
       eventPropertyList?.setAttribute("aria-busy", "false");
+    }
+  }
+}
+
+async function loadEventReleaseVersions(universeId = selectedUniverseId, options = {}) {
+  const cleanUniverseId = String(universeId || "");
+  if (!authenticated || !cleanUniverseId) return false;
+  if (
+    !options.force
+    && currentEventReleaseVersionsUniverseId === cleanUniverseId
+    && (currentEventReleaseVersions.length || eventReleaseVersionsLoading)
+  ) {
+    return true;
+  }
+
+  const requestSequence = ++eventReleaseVersionRequestSequence;
+  currentEventReleaseVersionsUniverseId = cleanUniverseId;
+  eventReleaseVersionsLoading = true;
+  renderDateVersionPanel();
+  try {
+    const payload = await request(`/api/version-health?universeId=${encodeURIComponent(cleanUniverseId)}`, {
+      dedupe: !options.force,
+    });
+    if (
+      requestSequence !== eventReleaseVersionRequestSequence
+      || cleanUniverseId !== selectedUniverseId
+    ) {
+      return false;
+    }
+    currentEventReleaseVersions = (Array.isArray(payload.versions) ? payload.versions : [])
+      .filter((version) => (
+        version?.environment === "production"
+        && Number(version?.placeId) > 0
+        && Number(version?.placeVersion) > 0
+        && Number(version?.firstSeenAt) > 0
+      ))
+      .map((version) => ({
+        placeId: Number(version.placeId),
+        placeVersion: Number(version.placeVersion),
+        publishedAt: Number(version.firstSeenAt),
+      }));
+    return true;
+  } catch (error) {
+    if (requestSequence !== eventReleaseVersionRequestSequence) return false;
+    handleAuthError(error);
+    currentEventReleaseVersions = [];
+    return false;
+  } finally {
+    if (requestSequence === eventReleaseVersionRequestSequence) {
+      eventReleaseVersionsLoading = false;
+      renderDateVersionPanel();
     }
   }
 }
@@ -3246,10 +3353,11 @@ function buildEventPropertyReleaseMarkers({
 } = {}) {
   if (!bucketStarts.length || !releaseMarkers.length) return "";
   const timelineStart = Number(bucketStarts[0]) || 0;
-  const timelineEnd = (Number(bucketStarts.at(-1)) || timelineStart) + (Number(bucketMs) || 0);
-  const timelineDuration = timelineEnd - timelineStart;
+  const lastBucketStart = Number(bucketStarts.at(-1)) || timelineStart;
+  const timelineEnd = lastBucketStart + (Number(bucketMs) || 0);
+  const timelineDuration = lastBucketStart - timelineStart;
   const plotWidth = chartWidth - left - right;
-  if (timelineStart <= 0 || timelineDuration <= 0 || plotWidth <= 0) return "";
+  if (timelineStart <= 0 || timelineEnd <= timelineStart || plotWidth <= 0) return "";
 
   return releaseMarkers
     .filter((marker) => {
@@ -3258,7 +3366,9 @@ function buildEventPropertyReleaseMarkers({
     })
     .map((marker) => {
       const publishedAt = Number(marker.publishedAt);
-      const x = left + (((publishedAt - timelineStart) / timelineDuration) * plotWidth);
+      const x = timelineDuration > 0
+        ? left + (((Math.min(publishedAt, lastBucketStart) - timelineStart) / timelineDuration) * plotWidth)
+        : left + (plotWidth / 2);
       const labelHalfWidth = 58;
       const labelX = Math.max(left + labelHalfWidth, Math.min(x, chartWidth - right - labelHalfWidth));
       const version = formatReleaseVersion(marker.placeVersion);
@@ -4595,6 +4705,15 @@ function getDateTimeMs(value) {
 }
 
 function getDashboardDateFilterMs(input) {
+  const side = input === movementFromFilter ? "from" : input === movementToFilter ? "to" : "";
+  const selectedRelease = side ? selectedDateReleaseVersions[side] : null;
+  if (
+    selectedRelease
+    && selectedRelease.inputValue === input?.value
+    && Number(selectedRelease.publishedAt) > 0
+  ) {
+    return Number(selectedRelease.publishedAt);
+  }
   return getDateTimeMs(input?.value);
 }
 
@@ -4615,6 +4734,152 @@ function showDateFilterPicker(input) {
   } catch {
     input.focus();
   }
+}
+
+function toggleDateVersionPanel() {
+  if (!dateVersionPanel || !dateVersionPickerButton) return;
+  if (!dateVersionPanel.hidden) {
+    closeDateVersionPanel();
+    return;
+  }
+  renderDateVersionPanel();
+  dateVersionPanel.hidden = false;
+  dateVersionPickerButton.setAttribute("aria-expanded", "true");
+  if (
+    selectedUniverseId
+    && (currentEventReleaseVersionsUniverseId !== selectedUniverseId || !currentEventReleaseVersions.length)
+  ) {
+    loadEventReleaseVersions(selectedUniverseId, {
+      force: currentEventReleaseVersionsUniverseId === selectedUniverseId,
+    });
+  }
+}
+
+function closeDateVersionPanel() {
+  if (dateVersionPanel) dateVersionPanel.hidden = true;
+  dateVersionPickerButton?.setAttribute("aria-expanded", "false");
+}
+
+function handleDateVersionOutsidePointer(event) {
+  if (dateVersionPanel?.hidden) return;
+  if (dateVersionPanel?.contains(event.target) || dateVersionPickerButton?.contains(event.target)) return;
+  closeDateVersionPanel();
+}
+
+function handleDateVersionEscape(event) {
+  if (event.key !== "Escape" || dateVersionPanel?.hidden) return;
+  closeDateVersionPanel();
+  dateVersionPickerButton?.focus();
+}
+
+function setDateVersionPickerSide(side) {
+  dateVersionPickerSide = side === "to" ? "to" : "from";
+  renderDateVersionPanel();
+}
+
+function renderDateVersionPanel() {
+  for (const button of dateVersionTargetButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.dateVersionSide === dateVersionPickerSide));
+  }
+  if (!dateVersionList) return;
+
+  const versions = [...currentEventReleaseVersions]
+    .filter((version) => Number(version?.publishedAt) > 0 && Number(version?.placeVersion) > 0)
+    .sort((left, right) => (
+      Number(right.publishedAt) - Number(left.publishedAt)
+      || Number(right.placeVersion) - Number(left.placeVersion)
+      || Number(right.placeId) - Number(left.placeId)
+    ));
+  if (!versions.length) {
+    dateVersionList.innerHTML = `<p class="dateVersionEmpty">${eventReleaseVersionsLoading ? "Loading versions..." : "No production versions found."}</p>`;
+    return;
+  }
+
+  const hasMultiplePlaces = new Set(versions.map((version) => Number(version.placeId) || 0)).size > 1;
+  const selectedRelease = selectedDateReleaseVersions[dateVersionPickerSide];
+  dateVersionList.innerHTML = versions.map((version) => {
+    const placeId = Number(version.placeId) || 0;
+    const placeVersion = Number(version.placeVersion) || 0;
+    const publishedAt = Number(version.publishedAt) || 0;
+    const isSelected = Boolean(
+      selectedRelease
+      && Number(selectedRelease.placeId) === placeId
+      && Number(selectedRelease.placeVersion) === placeVersion
+      && Number(selectedRelease.publishedAt) === publishedAt
+    );
+    const placeLabel = hasMultiplePlaces && placeId > 0 ? ` · Place ${placeId}` : "";
+    return `
+      <button class="dateVersionOption" type="button" data-date-release-time="${publishedAt}" data-date-release-place="${placeId}" data-date-release-version="${placeVersion}" aria-selected="${isSelected}">
+        <span class="dateVersionDot" aria-hidden="true"></span>
+        <span class="dateVersionOptionCopy">
+          <strong>v${escapeHtml(formatReleaseVersion(placeVersion))}</strong>
+          <small>${escapeHtml(formatDateVersionReleaseTime(publishedAt))}${escapeHtml(placeLabel)}</small>
+        </span>
+        <span class="dateVersionOptionAction">${isSelected ? "Selected" : `Set ${dateVersionPickerSide === "to" ? "end" : "start"}`}</span>
+      </button>`;
+  }).join("");
+}
+
+function handleDateReleaseVersionSelection(event) {
+  const option = event.target.closest("[data-date-release-time]");
+  if (!option || !dateVersionList?.contains(option)) return;
+  const publishedAt = Number(option.dataset.dateReleaseTime) || 0;
+  const placeId = Number(option.dataset.dateReleasePlace) || 0;
+  const placeVersion = Number(option.dataset.dateReleaseVersion) || 0;
+  const input = dateVersionPickerSide === "to" ? movementToFilter : movementFromFilter;
+  if (!input || publishedAt <= 0 || placeVersion <= 0) return;
+
+  const inputValue = toDateTimeLocalValue(new Date(publishedAt));
+  input.value = inputValue;
+  selectedDateReleaseVersions[dateVersionPickerSide] = {
+    inputValue,
+    placeId,
+    placeVersion,
+    publishedAt,
+  };
+  syncDateFilterDisplays();
+  closeDateVersionPanel();
+  handleDateFilterChange();
+}
+
+function clearSelectedDateReleaseVersion(side) {
+  const cleanSide = side === "to" ? "to" : "from";
+  selectedDateReleaseVersions[cleanSide] = null;
+  renderDateVersionIndicators();
+  if (!dateVersionPanel?.hidden) renderDateVersionPanel();
+}
+
+function renderDateVersionIndicators() {
+  const indicators = {
+    from: movementFromVersionIndicator,
+    to: movementToVersionIndicator,
+  };
+  for (const side of ["from", "to"]) {
+    const indicator = indicators[side];
+    const selectedRelease = selectedDateReleaseVersions[side];
+    if (indicator) {
+      indicator.hidden = !selectedRelease;
+      indicator.textContent = selectedRelease
+        ? `(v${formatReleaseVersion(selectedRelease.placeVersion)} release time)`
+        : "";
+      indicator.closest(".dateRangeField")?.classList.toggle("hasReleaseTime", Boolean(selectedRelease));
+    }
+  }
+}
+
+function formatDateVersionReleaseTime(timestamp) {
+  const date = new Date(Number(timestamp) || 0);
+  if (!Number.isFinite(date.getTime())) return "Unknown release time";
+  const dateLabel = date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timeLabel = date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${dateLabel} at ${timeLabel}`;
 }
 
 function initializeDateFilterDefaults() {
@@ -4638,21 +4903,30 @@ function toDateTimeLocalValue(date) {
 
 function syncDateFilterDisplays() {
   if (movementFromDisplay) {
-    movementFromDisplay.textContent = formatDateFilterDisplay(movementFromFilter?.value, "Choose date");
+    movementFromDisplay.textContent = formatDateFilterDisplay(
+      movementFromFilter?.value,
+      "Choose date",
+      getDashboardDateFilterMs(movementFromFilter),
+    );
   }
 
   if (movementToDisplay) {
-    movementToDisplay.textContent = formatDateFilterDisplay(movementToFilter?.value, "Choose date");
+    movementToDisplay.textContent = formatDateFilterDisplay(
+      movementToFilter?.value,
+      "Choose date",
+      getDashboardDateFilterMs(movementToFilter),
+    );
   }
 
   if (movementFromFilter && movementToFilter) {
     movementFromFilter.max = movementToFilter.value;
     movementToFilter.min = movementFromFilter.value;
   }
+  renderDateVersionIndicators();
 }
 
-function formatDateFilterDisplay(value, fallback) {
-  const timestamp = getDateTimeMs(value);
+function formatDateFilterDisplay(value, fallback, timestampOverride = 0) {
+  const timestamp = Number(timestampOverride) || getDateTimeMs(value);
   if (!timestamp) return fallback;
 
   const date = new Date(timestamp);

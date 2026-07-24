@@ -24,6 +24,26 @@ assert.doesNotMatch(
   /class="eventIntervalTopbarControl"[^>]*>\s*<span>Interval<\/span>/,
   "the interval selector should not retain a redundant visible label",
 );
+assert.match(indexSource, /id="dateVersionPickerButton"/, "Events should expose the version release-time panel");
+assert.match(indexSource, /data-date-version-side="from"/, "the version panel should support setting Start");
+assert.match(indexSource, /data-date-version-side="to"/, "the version panel should support setting End");
+assert.match(indexSource, /id="movementFromVersionIndicator"/, "Start should show a selected-version indicator");
+assert.match(indexSource, /id="movementToVersionIndicator"/, "End should show a selected-version indicator");
+assert.match(
+  appSource,
+  /request\(`\/api\/version-health\?universeId=\$\{encodeURIComponent\(cleanUniverseId\)\}`/,
+  "the version panel should reuse the existing version-health endpoint",
+);
+assert.match(
+  appSource,
+  /selectedRelease\.inputValue === input\?\.value[\s\S]*return Number\(selectedRelease\.publishedAt\);/,
+  "a selected version should preserve its exact recorded release timestamp in date-range requests",
+);
+assert.match(
+  appSource,
+  /input\.value = inputValue;[\s\S]*selectedDateReleaseVersions\[dateVersionPickerSide\] = \{[\s\S]*publishedAt,/,
+  "selecting a version should only set the chosen date boundary and its release metadata",
+);
 assert.match(
   styleSource,
   /body\[data-active-view="events"\] \.eventIntervalTopbarControl\s*\{[^}]*order:\s*1;/,
@@ -121,7 +141,26 @@ const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
 });
 assert.match(releaseMarkerMarkup, /Update v17/, "in-range release versions should render on property timelines");
 assert.match(releaseMarkerMarkup, /eventPropertyReleaseMarkerLine/, "release markers should include a vertical timeline line");
+assert.match(
+  releaseMarkerMarkup,
+  /eventPropertyReleaseMarkerLine" x1="480\.00"/,
+  "release markers should use the same first-to-last point scale as the plotted data",
+);
 assert.doesNotMatch(releaseMarkerMarkup, /Update v18/, "out-of-range releases should not render on a timeline");
+assert.match(
+  buildEventPropertyReleaseMarkers({
+    releaseMarkers: [{ placeId: 1, placeVersion: 19, publishedAt: 1_500 }],
+    bucketStarts: [1_000],
+    bucketMs: 1_000,
+    chartWidth: 500,
+    left: 50,
+    right: 20,
+    top: 58,
+    plotBottom: 280,
+  }),
+  /eventPropertyReleaseMarkerLine" x1="265\.00"/,
+  "single-bucket timelines should center their release markers",
+);
 assert.match(
   serverSource,
   /releaseMarkers:\s*\(Array\.isArray\(filters\.releaseMarkers\)\s*\?\s*filters\.releaseMarkers\s*:\s*\[\]\)\s*\.filter\(/,
