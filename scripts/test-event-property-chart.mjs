@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const intervalControlMatches = indexSource.match(/id="eventIntervalSelect"/g) || [];
+const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters"');
+const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarControl"');
+const releaseControlsIndex = indexSource.indexOf('class="releaseTopbarControls"');
+assert.equal(intervalControlMatches.length, 1, "the global event interval selector should exist exactly once");
+assert.ok(
+  topbarFiltersIndex >= 0 && intervalControlIndex > topbarFiltersIndex && intervalControlIndex < releaseControlsIndex,
+  "the event interval selector should live in the shared topbar beside the date filters",
+);
+assert.doesNotMatch(indexSource, /class="eventChartActions"/, "the event chart card should not retain a duplicate interval action");
 assert.doesNotMatch(appSource, /data-event-property-view/, "property cards should not include Timeline/Average tabs");
 assert.match(
   appSource,

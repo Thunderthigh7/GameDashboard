@@ -4167,6 +4167,35 @@ body[data-active-view="events"] .eventTopbarSelection {
   display: grid;
 }
 
+.eventIntervalTopbarControl {
+  display: none;
+}
+
+body[data-active-view="events"] .eventIntervalTopbarControl {
+  display: grid;
+  flex: 0 0 148px;
+  gap: 6px;
+  min-width: 148px;
+}
+
+.eventIntervalTopbarControl > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect {
+  width: 100%;
+  min-height: 44px;
+  border-color: rgba(89, 105, 151, 0.38);
+  border-radius: 9px;
+  background: rgba(7, 13, 27, 0.86);
+  color: var(--text);
+  font-size: 12px;
+}
+
 .eventTopbarSelection h2 {
   overflow: hidden;
   font-size: 24px;
@@ -4180,13 +4209,6 @@ body[data-active-view="events"] .eventTopbarSelection {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.eventChartActions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 0 0 auto;
 }
 
 .eventIntervalSelect,
@@ -4914,7 +4936,7 @@ body[data-active-view="events"] #pageSubtitle {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--muted);
+  color: #f2f5ff;
   font-size: 10px;
   font-weight: 800;
 }
@@ -7213,10 +7235,6 @@ body[data-active-view="funnels"] #pageSubtitle {
     flex-direction: column;
   }
 
-  .eventChartActions {
-    justify-content: flex-end;
-  }
-
   .funnelBuilderFields {
     grid-template-columns: 1fr;
   }
@@ -7578,10 +7596,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 
   .eventPropertyBreakdown .eventNumericSummaryGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .eventChartActions {
-    justify-content: stretch;
   }
 
   .eventIntervalSelect {

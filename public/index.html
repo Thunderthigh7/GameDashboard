@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260723-7">
+    <link rel="stylesheet" href="/styles.css?v=20260723-8">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -203,6 +203,20 @@
                   <span>All data</span>
                 </label>
               </div>
+              <label class="eventIntervalTopbarControl" for="eventIntervalSelect">
+                <span>Interval</span>
+                <select class="eventIntervalSelect" id="eventIntervalSelect">
+                  <option value="auto">Auto (1h)</option>
+                  <option value="1m">1 minute</option>
+                  <option value="5m">5 minutes</option>
+                  <option value="15m">15 minutes</option>
+                  <option value="1h">1 hour</option>
+                  <option value="6h">6 hours</option>
+                  <option value="12h">12 hours</option>
+                  <option value="1d">1 day</option>
+                  <option value="7d">7 days</option>
+                </select>
+              </label>
               <div class="releaseTopbarControls" aria-label="Release comparison controls">
                 <label class="releaseSelectField releasePlaceField" for="releasePlaceSelect">
                   <span>Place</span>
@@ -584,20 +598,6 @@
                 <div class="eventChartHeader">
                   <div>
                     <h2>Event activity</h2>
-                  </div>
-                  <div class="eventChartActions">
-                    <label class="srOnly" for="eventIntervalSelect">Event chart interval</label>
-                    <select class="eventIntervalSelect" id="eventIntervalSelect">
-                      <option value="auto">Auto (1h)</option>
-                      <option value="1m">1 minute</option>
-                      <option value="5m">5 minutes</option>
-                      <option value="15m">15 minutes</option>
-                      <option value="1h">1 hour</option>
-                      <option value="6h">6 hours</option>
-                      <option value="12h">12 hours</option>
-                      <option value="1d">1 day</option>
-                      <option value="7d">7 days</option>
-                    </select>
                   </div>
                 </div>
                 <div class="eventChart" id="eventChart" aria-label="Event and visit counts over time"></div>
@@ -1066,6 +1066,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/app.js?v=20260723-7"></script>
+    <script defer src="/app.js?v=20260723-8"></script>
   </body>
 </html>
