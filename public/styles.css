@@ -1644,10 +1644,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .dateRangeControl {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
-  flex: 1 1 620px;
-  width: clamp(520px, 34vw, 700px);
+  flex: 1 1 700px;
+  width: clamp(560px, 38vw, 760px);
   min-width: 0;
-  max-width: 700px;
+  max-width: 760px;
   overflow: hidden;
   border: 1px solid rgba(86, 105, 157, 0.58);
   border-radius: 14px;
@@ -1663,9 +1663,13 @@ body[data-active-view="connect"] .topbar > div:first-child {
   gap: 13px;
   min-width: 0;
   min-height: 78px;
+  border: 0;
   background: transparent;
+  color: inherit;
   padding: 12px 18px;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   transition: background 150ms ease, box-shadow 150ms ease;
 }
 
@@ -1673,8 +1677,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
   background: rgba(74, 52, 145, 0.1);
 }
 
-.dateRangeField:focus-within {
+.dateRangeField:focus-visible,
+.dateRangeField[aria-expanded="true"] {
   z-index: 1;
+  outline: 0;
   background: rgba(81, 57, 156, 0.13);
   box-shadow: inset 0 0 0 2px rgba(156, 107, 255, 0.58);
 }
@@ -1765,140 +1771,80 @@ body[data-active-view="connect"] .topbar > div:first-child {
   stroke-linejoin: round;
 }
 
-.dateRangeField input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  border: 0;
-  background: transparent;
-  color: transparent;
-  cursor: pointer;
-  opacity: 0;
-}
-
-.dateVersionPickerButton {
-  display: none;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  min-width: 126px;
-  min-height: 78px;
-  border: 1px solid rgba(86, 105, 157, 0.58);
-  border-radius: 12px;
-  background: linear-gradient(145deg, rgba(13, 23, 48, 0.98), rgba(8, 15, 34, 0.98));
-  color: #fff;
-  padding: 12px 14px;
-  text-align: left;
-  box-shadow: inset 0 1px 0 rgba(166, 139, 255, 0.04), 0 10px 28px rgba(3, 7, 20, 0.2);
-  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-}
-
-.dateVersionPickerButton:hover,
-.dateVersionPickerButton[aria-expanded="true"] {
-  border-color: rgba(156, 107, 255, 0.7);
-  background: linear-gradient(145deg, rgba(31, 25, 69, 0.98), rgba(10, 18, 39, 0.98));
-  box-shadow: inset 0 0 0 1px rgba(156, 107, 255, 0.18), 0 12px 30px rgba(3, 7, 20, 0.28);
-}
-
-.dateVersionPickerButton:active {
-  transform: translateY(1px);
-}
-
-.dateVersionPickerButton svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: #9b8bff;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.dateVersionPickerButton > span {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.dateVersionPickerButton small {
-  color: #9d97b8;
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.dateVersionPickerButton strong {
-  font-size: 13px;
-  font-weight: 850;
-  line-height: 1.1;
-}
-
-.dateVersionPanel {
+.dateRangePickerPanel {
   position: absolute;
   z-index: 80;
   top: calc(100% + 10px);
   right: 0;
-  width: min(430px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
   overflow: hidden;
-  border: 1px solid rgba(111, 92, 183, 0.62);
-  border-radius: 14px;
-  background: linear-gradient(155deg, rgba(15, 18, 43, 0.995), rgba(6, 12, 29, 0.995));
-  box-shadow: 0 24px 64px rgba(1, 4, 15, 0.58), inset 0 1px 0 rgba(196, 181, 253, 0.08);
+  border: 1px solid rgba(116, 98, 191, 0.68);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 82% 0, rgba(112, 61, 207, 0.15), transparent 34%),
+    linear-gradient(155deg, rgba(15, 18, 43, 0.998), rgba(6, 12, 29, 0.998));
+  box-shadow: 0 28px 72px rgba(1, 4, 15, 0.66), inset 0 1px 0 rgba(196, 181, 253, 0.1);
 }
 
-.dateVersionPanel[hidden] {
+.dateRangePickerPanel[data-picker-side="from"] {
+  right: auto;
+  left: 0;
+}
+
+.dateRangePickerPanel[hidden] {
   display: none;
 }
 
-.dateVersionPanelHeader {
+.dateRangePickerHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 16px 13px;
+  min-height: 68px;
+  padding: 14px 16px 13px 18px;
   border-bottom: 1px solid rgba(78, 92, 137, 0.36);
 }
 
-.dateVersionPanelHeader > div {
+.dateRangePickerHeader > div {
   display: grid;
   gap: 4px;
 }
 
-.dateVersionPanelHeader span {
-  color: #a7a0c2;
+.dateRangePickerHeader span {
+  color: #a9a1c3;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.dateVersionPanelHeader strong {
+.dateRangePickerHeader strong {
   color: #fff;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 850;
 }
 
-.dateVersionCloseButton {
+.dateRangePickerCloseButton,
+.dateRangeMonthNavigation button {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border: 1px solid rgba(88, 102, 148, 0.44);
   border-radius: 8px;
   background: rgba(10, 17, 37, 0.8);
   color: #aaa3c0;
 }
 
-.dateVersionCloseButton:hover {
+.dateRangePickerCloseButton:hover,
+.dateRangeMonthNavigation button:hover {
   border-color: rgba(156, 107, 255, 0.62);
+  background: rgba(63, 42, 119, 0.24);
   color: #fff;
 }
 
-.dateVersionCloseButton svg {
+.dateRangePickerCloseButton svg,
+.dateRangeMonthNavigation svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -1907,41 +1853,200 @@ body[data-active-view="connect"] .topbar > div:first-child {
   stroke-linecap: round;
 }
 
-.dateVersionTarget {
+.dateRangePickerBody {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  margin: 12px 14px 8px;
-  padding: 4px;
-  border: 1px solid rgba(78, 92, 137, 0.42);
-  border-radius: 9px;
-  background: rgba(5, 10, 24, 0.78);
+  grid-template-columns: minmax(0, 1.12fr) minmax(280px, 0.88fr);
+  min-width: 0;
 }
 
-.dateVersionTarget button {
-  min-height: 34px;
-  border: 0;
-  border-radius: 6px;
+.dateRangeCalendarSection {
+  min-width: 0;
+  padding: 15px 17px 16px;
+}
+
+.dateRangeMonthNavigation {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+
+.dateRangeMonthNavigation strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.dateRangeWeekdays,
+.dateRangeCalendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.dateRangeWeekdays {
+  margin-bottom: 5px;
+}
+
+.dateRangeWeekdays span {
+  color: #77738d;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.dateRangeCalendarDay {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
-  color: #aaa3c0;
+  color: #e9e7f3;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.dateRangeCalendarDay:hover:not(:disabled) {
+  border-color: rgba(147, 111, 255, 0.42);
+  background: rgba(91, 62, 158, 0.2);
+}
+
+.dateRangeCalendarDay.outsideMonth {
+  color: #625f73;
+}
+
+.dateRangeCalendarDay.isToday {
+  border-color: rgba(45, 212, 191, 0.46);
+  color: #71e6d5;
+}
+
+.dateRangeCalendarDay.isSelected {
+  border-color: #9b6dff;
+  background: linear-gradient(135deg, #7950d8, #5b37aa);
+  color: #fff;
+  box-shadow: 0 5px 16px rgba(75, 42, 152, 0.42);
+}
+
+.dateRangeCalendarDay:disabled {
+  color: #454352;
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.dateRangePickerFooter {
+  display: grid;
+  grid-template-columns: auto minmax(132px, 1fr) auto;
+  align-items: end;
+  gap: 9px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(78, 92, 137, 0.34);
+}
+
+.dateRangeTodayButton,
+.dateRangeApplyButton {
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.dateRangeTodayButton {
+  border: 1px solid rgba(88, 102, 148, 0.46);
+  background: rgba(10, 17, 37, 0.78);
+  color: #c6c1d6;
+}
+
+.dateRangeTodayButton:hover {
+  border-color: rgba(156, 107, 255, 0.62);
+  color: #fff;
+}
+
+.dateRangeApplyButton {
+  border: 1px solid rgba(166, 125, 255, 0.78);
+  background: linear-gradient(135deg, #7f52db, #5c38ad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(73, 40, 148, 0.32);
+}
+
+.dateRangeApplyButton:hover:not(:disabled) {
+  background: linear-gradient(135deg, #9368eb, #6844bc);
+}
+
+.dateRangeApplyButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.dateRangeTimeField {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dateRangeTimeField span {
+  color: #8f89a7;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dateRangeTimeField input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid rgba(88, 102, 148, 0.48);
+  border-radius: 8px;
+  background: rgba(7, 13, 29, 0.9);
+  color: #fff;
+  padding: 0 10px;
+  color-scheme: dark;
   font-size: 12px;
   font-weight: 800;
 }
 
-.dateVersionTarget button:hover {
-  color: #fff;
+.dateRangeTimeField input:focus {
+  border-color: rgba(156, 107, 255, 0.72);
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(124, 60, 255, 0.14);
 }
 
-.dateVersionTarget button[aria-pressed="true"] {
-  background: linear-gradient(135deg, rgba(105, 64, 205, 0.88), rgba(77, 47, 160, 0.88));
+.dateRangeVersionSection {
+  min-width: 0;
+  border-left: 1px solid rgba(78, 92, 137, 0.36);
+  background: rgba(5, 10, 24, 0.34);
+  padding: 15px 0 0;
+}
+
+.dateRangeVersionSection > header {
+  display: grid;
+  gap: 3px;
+  padding: 0 14px 10px;
+}
+
+.dateRangeVersionSection > header span {
+  color: #b9b2cb;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dateRangeVersionSection > header strong {
   color: #fff;
-  box-shadow: 0 4px 14px rgba(79, 45, 165, 0.28);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .dateVersionList {
   display: grid;
   gap: 5px;
-  max-height: min(360px, 52vh);
+  max-height: min(360px, 54vh);
   overflow-y: auto;
   padding: 6px 14px 14px;
 }
@@ -1965,6 +2070,11 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .dateVersionOption[aria-selected="true"] {
   border-color: rgba(156, 107, 255, 0.54);
   background: rgba(72, 48, 137, 0.22);
+}
+
+.dateVersionOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .dateVersionDot {
@@ -4335,10 +4445,6 @@ body[data-active-view="events"] .eventIntervalTopbarControl {
   min-width: 164px;
 }
 
-body[data-active-view="events"] .dateVersionPickerButton {
-  display: grid;
-}
-
 body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect {
   width: 100%;
   min-height: 78px;
@@ -4655,8 +4761,8 @@ body[data-active-view="events"] .topbarFilters {
 
 body[data-active-view="events"] .topbarFilters .dateFilterCluster {
   order: 2;
-  flex: 1 1 760px;
-  max-width: 900px;
+  flex: 1 1 620px;
+  max-width: 760px;
 }
 
 body[data-active-view="events"] #pageSubtitle {
@@ -7236,16 +7342,19 @@ body[data-active-view="funnels"] #pageSubtitle {
     max-width: none;
   }
 
-  body[data-active-view="events"] .topbarFilters .dateFilterCluster {
-    grid-template-columns: minmax(0, 1fr) 126px;
-  }
-
   .dateRangeControl,
   body[data-active-view="funnels"] .topbarFilters .dateFilterCluster,
   body[data-active-view="events"] .topbarFilters .dateFilterCluster {
     width: 100%;
     min-width: 0;
     max-width: none;
+  }
+
+  .dateRangePickerPanel,
+  .dateRangePickerPanel[data-picker-side="from"] {
+    right: 0;
+    left: auto;
+    width: 100%;
   }
 
   .funnelNewButton {
@@ -7465,20 +7574,43 @@ body[data-active-view="funnels"] #pageSubtitle {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  body[data-active-view="events"] .topbarFilters .dateFilterCluster {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dateVersionPickerButton {
-    width: 100%;
-    min-height: 58px;
-  }
-
   .dateRangeField {
     grid-template-columns: 20px minmax(0, 1fr);
     gap: 8px;
     min-height: 68px;
     padding: 9px 10px;
+  }
+
+  .dateRangePickerPanel {
+    max-height: min(720px, calc(100vh - 24px));
+    overflow-y: auto;
+  }
+
+  .dateRangePickerBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dateRangeVersionSection {
+    border-top: 1px solid rgba(78, 92, 137, 0.36);
+    border-left: 0;
+  }
+
+  .dateRangePickerFooter {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr);
+  }
+
+  .dateRangeTimeField {
+    grid-column: 1 / -1;
+  }
+
+  .dateRangeTodayButton {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .dateRangeApplyButton {
+    grid-column: 2;
+    grid-row: 2;
   }
 
   .dateRangeCalendarIcon {

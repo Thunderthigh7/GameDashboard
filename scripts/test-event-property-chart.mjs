@@ -24,9 +24,13 @@ assert.doesNotMatch(
   /class="eventIntervalTopbarControl"[^>]*>\s*<span>Interval<\/span>/,
   "the interval selector should not retain a redundant visible label",
 );
-assert.match(indexSource, /id="dateVersionPickerButton"/, "Events should expose the version release-time panel");
-assert.match(indexSource, /data-date-version-side="from"/, "the version panel should support setting Start");
-assert.match(indexSource, /data-date-version-side="to"/, "the version panel should support setting End");
+assert.doesNotMatch(indexSource, /id="dateVersionPickerButton"/, "the standalone Versions button should be removed");
+assert.match(indexSource, /id="movementFromPickerButton"/, "Start should open the themed date picker");
+assert.match(indexSource, /id="movementToPickerButton"/, "End should open the themed date picker");
+assert.match(indexSource, /id="dateRangePickerPanel"/, "Start and End should share the themed date and time panel");
+assert.match(indexSource, /class="dateRangeCalendarGrid"/, "the themed picker should include its own calendar");
+assert.match(indexSource, /class="dateRangeVersionSection"/, "the themed picker should include a dedicated Versions section");
+assert.doesNotMatch(indexSource, /type="datetime-local"/, "the browser-native datetime picker should not remain");
 assert.match(indexSource, /id="movementFromVersionIndicator"/, "Start should show a selected-version indicator");
 assert.match(indexSource, /id="movementToVersionIndicator"/, "End should show a selected-version indicator");
 assert.match(
@@ -41,9 +45,10 @@ assert.match(
 );
 assert.match(
   appSource,
-  /input\.value = inputValue;[\s\S]*selectedDateReleaseVersions\[dateVersionPickerSide\] = \{[\s\S]*publishedAt,/,
+  /input\.value = inputValue;[\s\S]*selectedDateReleaseVersions\[dateRangePickerSide\] = \{[\s\S]*publishedAt,/,
   "selecting a version should only set the chosen date boundary and its release metadata",
 );
+assert.doesNotMatch(appSource, /showDateFilterPicker/, "the removed native date picker should not retain event wiring");
 assert.match(
   styleSource,
   /body\[data-active-view="events"\] \.eventIntervalTopbarControl\s*\{[^}]*order:\s*1;/,
@@ -130,9 +135,12 @@ const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
   releaseMarkers: [
     { placeId: 1, placeVersion: 17, publishedAt: 2_000 },
     { placeId: 1, placeVersion: 18, publishedAt: 4_000 },
+    { placeId: 1, placeVersion: 19, publishedAt: 5_000 },
   ],
-  bucketStarts: [1_000, 2_000],
+  bucketStarts: [2_000, 3_000],
   bucketMs: 1_000,
+  rangeStart: 2_000,
+  rangeEnd: 4_000,
   chartWidth: 500,
   left: 50,
   right: 20,
@@ -140,18 +148,26 @@ const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
   plotBottom: 280,
 });
 assert.match(releaseMarkerMarkup, /Update v17/, "in-range release versions should render on property timelines");
+assert.match(releaseMarkerMarkup, /Update v18/, "a release exactly at the selected End should render");
 assert.match(releaseMarkerMarkup, /eventPropertyReleaseMarkerLine/, "release markers should include a vertical timeline line");
 assert.match(
   releaseMarkerMarkup,
-  /eventPropertyReleaseMarkerLine" x1="480\.00"/,
-  "release markers should use the same first-to-last point scale as the plotted data",
+  /eventPropertyReleaseMarkerLine" x1="50\.00"/,
+  "a release exactly at the selected Start should align to the graph's left edge",
 );
-assert.doesNotMatch(releaseMarkerMarkup, /Update v18/, "out-of-range releases should not render on a timeline");
+assert.match(
+  releaseMarkerMarkup,
+  /eventPropertyReleaseMarkerLine" x1="480\.00"/,
+  "a release exactly at the selected End should align to the graph's right edge",
+);
+assert.doesNotMatch(releaseMarkerMarkup, /Update v19/, "out-of-range releases should not render on a timeline");
 assert.match(
   buildEventPropertyReleaseMarkers({
     releaseMarkers: [{ placeId: 1, placeVersion: 19, publishedAt: 1_500 }],
     bucketStarts: [1_000],
     bucketMs: 1_000,
+    rangeStart: 1_000,
+    rangeEnd: 2_000,
     chartWidth: 500,
     left: 50,
     right: 20,
@@ -160,6 +176,65 @@ assert.match(
   }),
   /eventPropertyReleaseMarkerLine" x1="265\.00"/,
   "single-bucket timelines should center their release markers",
+);
+const exactBucketHelperStart = serverSource.indexOf("function buildExactCustomEventBuckets(");
+const exactBucketHelperEnd = serverSource.indexOf("\nfunction normalizeCustomEventInterval(", exactBucketHelperStart);
+assert.ok(
+  exactBucketHelperStart >= 0 && exactBucketHelperEnd > exactBucketHelperStart,
+  "exact event-range bucket helpers should remain available",
+);
+const { buildExactCustomEventBuckets, getExactCustomEventBucketIndex } = Function(
+  `"use strict";
+  ${serverSource.slice(exactBucketHelperStart, exactBucketHelperEnd)}
+  return { buildExactCustomEventBuckets, getExactCustomEventBucketIndex };`,
+)();
+const exactRangeStart = Date.UTC(2026, 5, 24, 6);
+const exactRangeEnd = Date.UTC(2026, 6, 6, 6, 48);
+const sevenDayMs = 7 * 24 * 60 * 60 * 1000;
+const exactBuckets = buildExactCustomEventBuckets(exactRangeStart, exactRangeEnd, sevenDayMs);
+assert.deepEqual(
+  exactBuckets,
+  [
+    { start: exactRangeStart, end: exactRangeStart + sevenDayMs },
+    { start: exactRangeStart + sevenDayMs, end: exactRangeEnd },
+  ],
+  "7d buckets should begin at the selected version time and retain a partial final bucket at the exact End",
+);
+assert.equal(
+  getExactCustomEventBucketIndex(exactRangeStart, exactRangeStart, exactRangeEnd, sevenDayMs, exactBuckets.length),
+  0,
+  "the exact Start should belong to the first bucket",
+);
+assert.equal(
+  getExactCustomEventBucketIndex(exactRangeEnd, exactRangeStart, exactRangeEnd, sevenDayMs, exactBuckets.length),
+  1,
+  "the exact End should remain in the final partial bucket",
+);
+assert.equal(
+  getExactCustomEventBucketIndex(exactRangeStart - 1, exactRangeStart, exactRangeEnd, sevenDayMs, exactBuckets.length),
+  -1,
+  "data before the exact Start should never enter a chart bucket",
+);
+for (const intervalMs of [
+  60 * 1000,
+  5 * 60 * 1000,
+  15 * 60 * 1000,
+  60 * 60 * 1000,
+  6 * 60 * 60 * 1000,
+  12 * 60 * 60 * 1000,
+  24 * 60 * 60 * 1000,
+  sevenDayMs,
+]) {
+  const rangeEnd = exactRangeStart + (intervalMs * 2) + 1_234;
+  const buckets = buildExactCustomEventBuckets(exactRangeStart, rangeEnd, intervalMs);
+  assert.equal(buckets[0].start, exactRangeStart, `${intervalMs}ms should preserve the exact Start`);
+  assert.equal(buckets.at(-1).end, rangeEnd, `${intervalMs}ms should preserve the exact End`);
+  assert.equal(buckets.length, 3, `${intervalMs}ms should retain its partial final bucket`);
+}
+assert.doesNotMatch(
+  serverSource,
+  /const bucketStart = Math\.floor\(fromMs \/ bucketMs\)/,
+  "event timelines should not floor the selected Start to an interval boundary",
 );
 assert.match(
   serverSource,

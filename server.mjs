@@ -4941,6 +4941,9 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     properties: summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName, {
       bucketMs: eventSeries.bucketMs,
       bucketStarts: eventSeries.buckets.map((bucket) => bucket.start),
+      bucketEnds: eventSeries.buckets.map((bucket) => bucket.end),
+      rangeStart: eventSeries.rangeStart,
+      rangeEnd: eventSeries.rangeEnd,
     }),
     truncatedPropertyEvents,
     recentEvents: events.slice(0, recentLimit),
@@ -4957,8 +4960,9 @@ function buildCustomEventSeries(events, filters = {}) {
     .filter((timestamp) => timestamp > 0);
   const now = Date.now();
   const fromMs = cleanInteger(filters.fromMs) || (timestamps.length ? Math.min(...timestamps) : now - 24 * 60 * 60 * 1000);
-  const toMs = cleanInteger(filters.toMs) || (timestamps.length ? Math.max(...timestamps) : now);
-  const spanMs = Math.max(toMs - fromMs, 60 * 60 * 1000);
+  const requestedToMs = cleanInteger(filters.toMs) || (timestamps.length ? Math.max(...timestamps) : now);
+  const toMs = Math.max(requestedToMs, fromMs);
+  const spanMs = Math.max(toMs - fromMs, 1);
   const autoIntervals = [
     60 * 60 * 1000,
     6 * 60 * 60 * 1000,
@@ -4979,19 +4983,12 @@ function buildCustomEventSeries(events, filters = {}) {
   const bucketMs = selectedInterval === "auto"
     ? (autoIntervals.find((intervalMs) => Math.ceil(spanMs / intervalMs) <= 30) || Math.ceil(spanMs / 30))
     : CUSTOM_EVENT_INTERVALS_MS.get(selectedInterval);
-  const bucketStart = Math.floor(fromMs / bucketMs) * bucketMs;
-  const bucketEnd = Math.max(Math.ceil(toMs / bucketMs) * bucketMs, bucketStart + bucketMs);
-  const buckets = [];
-  const byStart = new Map();
-  for (let timestamp = bucketStart; timestamp < bucketEnd; timestamp += bucketMs) {
-    const bucket = { start: timestamp, count: 0, visits: 0, playerIds: new Set() };
-    buckets.push(bucket);
-    byStart.set(timestamp, bucket);
-  }
+  const buckets = buildExactCustomEventBuckets(fromMs, toMs, bucketMs)
+    .map((bucket) => ({ ...bucket, count: 0, visits: 0, playerIds: new Set() }));
   for (const event of events) {
     const occurredAt = cleanTimestampMs(event.occurredAt) || cleanTimestampMs(event.receivedAt);
-    const start = Math.floor(occurredAt / bucketMs) * bucketMs;
-    const bucket = byStart.get(start);
+    const bucketIndex = getExactCustomEventBucketIndex(occurredAt, fromMs, toMs, bucketMs, buckets.length);
+    const bucket = buckets[bucketIndex];
     if (!bucket) continue;
     bucket.count += 1;
     if (cleanInteger(event.userId) > 0) bucket.playerIds.add(cleanInteger(event.userId));
@@ -5000,21 +4997,48 @@ function buildCustomEventSeries(events, filters = {}) {
   for (const event of visitEvents) {
     const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
     if (!occurredAt) continue;
-    const start = Math.floor(occurredAt / bucketMs) * bucketMs;
-    const bucket = byStart.get(start);
+    const bucketIndex = getExactCustomEventBucketIndex(occurredAt, fromMs, toMs, bucketMs, buckets.length);
+    const bucket = buckets[bucketIndex];
     if (bucket) bucket.visits += 1;
   }
   return {
     bucketMs,
+    rangeStart: fromMs,
+    rangeEnd: toMs,
     availableIntervals,
     selectedInterval,
     buckets: buckets.map((bucket) => ({
       start: bucket.start,
+      end: bucket.end,
       count: bucket.count,
       visits: bucket.visits,
       uniquePlayers: bucket.playerIds.size,
     })),
   };
+}
+
+function buildExactCustomEventBuckets(fromMs, toMs, bucketMs) {
+  const rangeStart = Math.trunc(Number(fromMs) || 0);
+  const rangeEnd = Math.max(Math.trunc(Number(toMs) || 0), rangeStart);
+  const intervalMs = Math.max(Math.trunc(Number(bucketMs) || 0), 1);
+  const bucketCount = Math.max(1, Math.ceil(Math.max(rangeEnd - rangeStart, 1) / intervalMs));
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const start = rangeStart + (index * intervalMs);
+    return {
+      start,
+      end: index === bucketCount - 1 ? rangeEnd : Math.min(start + intervalMs, rangeEnd),
+    };
+  });
+}
+
+function getExactCustomEventBucketIndex(timestamp, rangeStart, rangeEnd, bucketMs, bucketCount) {
+  const value = Number(timestamp) || 0;
+  const start = Number(rangeStart) || 0;
+  const end = Math.max(Number(rangeEnd) || 0, start);
+  const intervalMs = Math.max(Number(bucketMs) || 0, 1);
+  const count = Math.max(Math.trunc(Number(bucketCount) || 0), 0);
+  if (!count || value < start || value > end) return -1;
+  return Math.min(Math.floor((value - start) / intervalMs), count - 1);
 }
 
 function normalizeCustomEventInterval(value) {
@@ -5133,12 +5157,21 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
   const bucketStarts = Array.isArray(options.bucketStarts)
     ? options.bucketStarts.map(cleanFiniteInteger).filter((start) => start > 0)
     : [];
+  const bucketEnds = Array.isArray(options.bucketEnds)
+    ? options.bucketEnds.map(cleanFiniteInteger).filter((end) => end > 0)
+    : [];
+  const rangeStart = cleanFiniteInteger(options.rangeStart) || bucketStarts[0] || 0;
+  const fallbackRangeEnd = bucketStarts.length && bucketMs ? bucketStarts.at(-1) + bucketMs : rangeStart;
+  const rangeEnd = Math.max(
+    cleanFiniteInteger(options.rangeEnd) || bucketEnds.at(-1) || fallbackRangeEnd,
+    rangeStart,
+  );
   const topValues = Array.isArray(property.topValues) ? property.topValues : [];
   if (!bucketMs || !bucketStarts.length || !topValues.length) {
     return {
       bucketMs: bucketMs || null,
-      start: bucketStarts[0] || null,
-      end: bucketStarts.length && bucketMs ? bucketStarts.at(-1) + bucketMs : null,
+      start: rangeStart || null,
+      end: rangeEnd || null,
       axisMaxPercent: 100,
       series: [],
     };
@@ -5167,16 +5200,23 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
     });
   }
 
-  const buckets = bucketStarts.map((start) => ({
+  const buckets = bucketStarts.map((start, index) => ({
     start,
+    end: bucketEnds[index] || Math.min(start + bucketMs, rangeEnd),
     observationCount: 0,
     counts: new Map(),
   }));
-  const bucketsByStart = new Map(buckets.map((bucket) => [bucket.start, bucket]));
   for (const event of events) {
     const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
     if (!occurredAt) continue;
-    const bucket = bucketsByStart.get(Math.floor(occurredAt / bucketMs) * bucketMs);
+    const bucketIndex = getExactCustomEventBucketIndex(
+      occurredAt,
+      rangeStart,
+      rangeEnd,
+      bucketMs,
+      buckets.length,
+    );
+    const bucket = buckets[bucketIndex];
     if (!bucket) continue;
     const observations = getCustomEventPropertyObservations(event, property.name);
     for (const observation of observations) {
@@ -5198,8 +5238,8 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
   const totalObservations = buckets.reduce((total, bucket) => total + bucket.observationCount, 0);
   return {
     bucketMs,
-    start: bucketStarts[0],
-    end: bucketStarts.at(-1) + bucketMs,
+    start: rangeStart,
+    end: rangeEnd,
     axisMaxPercent: 100,
     observationCount: totalObservations,
     series: trackedSeries.map((series) => {
@@ -5214,6 +5254,7 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
           const pointCount = bucket.counts.get(series.id) || 0;
           return {
             start: bucket.start,
+            end: bucket.end,
             count: pointCount,
             percent: bucket.observationCount
               ? (pointCount / bucket.observationCount) * 100

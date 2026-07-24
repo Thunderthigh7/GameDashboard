@@ -150,11 +150,21 @@ const movementFromDisplay = document.querySelector("#movementFromDisplay");
 const movementToDisplay = document.querySelector("#movementToDisplay");
 const movementFromVersionIndicator = document.querySelector("#movementFromVersionIndicator");
 const movementToVersionIndicator = document.querySelector("#movementToVersionIndicator");
-const dateVersionPickerButton = document.querySelector("#dateVersionPickerButton");
-const dateVersionPanel = document.querySelector("#dateVersionPanel");
-const dateVersionCloseButton = document.querySelector("#dateVersionCloseButton");
+const movementFromPickerButton = document.querySelector("#movementFromPickerButton");
+const movementToPickerButton = document.querySelector("#movementToPickerButton");
+const dateRangeFieldButtons = document.querySelectorAll("[data-date-range-side]");
+const dateRangePickerPanel = document.querySelector("#dateRangePickerPanel");
+const dateRangePickerSideLabel = document.querySelector("#dateRangePickerSideLabel");
+const dateRangePickerTitle = document.querySelector("#dateRangePickerTitle");
+const dateRangePickerCloseButton = document.querySelector("#dateRangePickerCloseButton");
+const dateRangePreviousMonthButton = document.querySelector("#dateRangePreviousMonthButton");
+const dateRangeNextMonthButton = document.querySelector("#dateRangeNextMonthButton");
+const dateRangeMonthLabel = document.querySelector("#dateRangeMonthLabel");
+const dateRangeCalendarGrid = document.querySelector("#dateRangeCalendarGrid");
+const dateRangeTodayButton = document.querySelector("#dateRangeTodayButton");
+const dateRangeTimeInput = document.querySelector("#dateRangeTimeInput");
+const dateRangeApplyButton = document.querySelector("#dateRangeApplyButton");
 const dateVersionList = document.querySelector("#dateVersionList");
-const dateVersionTargetButtons = document.querySelectorAll("[data-date-version-side]");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
@@ -198,7 +208,9 @@ let currentEventReleaseVersions = [];
 let currentEventReleaseVersionsUniverseId = "";
 let eventReleaseVersionRequestSequence = 0;
 let eventReleaseVersionsLoading = false;
-let dateVersionPickerSide = "from";
+let dateRangePickerSide = "from";
+let dateRangePickerDraft = null;
+let dateRangePickerMonth = null;
 const selectedDateReleaseVersions = { from: null, to: null };
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
@@ -209,7 +221,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-10";
+const DASHBOARD_ASSET_VERSION = "20260724-11";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -484,35 +496,22 @@ function bindEvents() {
     const planButton = event.target.closest("[data-admin-save-plan-user]");
     if (planButton) saveAdminUserPlan(planButton);
   });
-  movementFromFilter?.addEventListener("click", () => showDateFilterPicker(movementFromFilter));
-  movementToFilter?.addEventListener("click", () => showDateFilterPicker(movementToFilter));
-  movementFromFilter?.addEventListener("change", () => {
-    clearSelectedDateReleaseVersion("from");
-    handleDateFilterChange();
-  });
-  movementToFilter?.addEventListener("change", () => {
-    clearSelectedDateReleaseVersion("to");
-    handleDateFilterChange();
-  });
-  movementFromFilter?.addEventListener("input", () => {
-    clearSelectedDateReleaseVersion("from");
-    syncDateFilterDisplays();
-  });
-  movementToFilter?.addEventListener("input", () => {
-    clearSelectedDateReleaseVersion("to");
-    syncDateFilterDisplays();
-  });
-  dateVersionPickerButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleDateVersionPanel();
-  });
-  dateVersionCloseButton?.addEventListener("click", closeDateVersionPanel);
-  for (const button of dateVersionTargetButtons) {
-    button.addEventListener("click", () => setDateVersionPickerSide(button.dataset.dateVersionSide));
+  for (const button of dateRangeFieldButtons) {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDateRangePicker(button.dataset.dateRangeSide);
+    });
   }
+  dateRangePickerCloseButton?.addEventListener("click", closeDateRangePicker);
+  dateRangePreviousMonthButton?.addEventListener("click", () => moveDateRangePickerMonth(-1));
+  dateRangeNextMonthButton?.addEventListener("click", () => moveDateRangePickerMonth(1));
+  dateRangeCalendarGrid?.addEventListener("click", handleDateRangeCalendarSelection);
+  dateRangeTodayButton?.addEventListener("click", selectDateRangeToday);
+  dateRangeTimeInput?.addEventListener("input", syncDateRangePickerTime);
+  dateRangeApplyButton?.addEventListener("click", applyDateRangePickerValue);
   dateVersionList?.addEventListener("click", handleDateReleaseVersionSelection);
-  document.addEventListener("pointerdown", handleDateVersionOutsidePointer);
-  document.addEventListener("keydown", handleDateVersionEscape);
+  document.addEventListener("pointerdown", handleDateRangePickerOutsidePointer);
+  document.addEventListener("keydown", handleDateRangePickerEscape);
 
   for (const link of viewNavLinks) {
     link.addEventListener("click", (event) => {
@@ -789,7 +788,7 @@ function setAuthenticated(value, user = null) {
     eventReleaseVersionsLoading = false;
     clearSelectedDateReleaseVersion("from");
     clearSelectedDateReleaseVersion("to");
-    closeDateVersionPanel();
+    closeDateRangePicker();
     selectedUniverseLabel.textContent = "No universe selected";
     universeSelect.innerHTML = `<option value="">Sign in to load universes</option>`;
     universeSelect.disabled = true;
@@ -868,7 +867,7 @@ function setActiveView(view, options = {}) {
   const requestedView = view === "events" || view === "funnels" || view === "releases" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (activeView !== "funnels") closeFunnelMoreMenu();
-  if (activeView !== "events") closeDateVersionPanel();
+  if (activeView !== "events") closeDateRangePicker();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "events"
@@ -2307,7 +2306,7 @@ function selectUniverse(value) {
   eventReleaseVersionRequestSequence += 1;
   clearSelectedDateReleaseVersion("from");
   clearSelectedDateReleaseVersion("to");
-  closeDateVersionPanel();
+  closeDateRangePicker();
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
@@ -2833,7 +2832,7 @@ async function loadCustomEvents(options = {}) {
     renderCustomEvents({ totals: {}, events: [], selectedEvent: null });
     currentEventReleaseVersions = [];
     currentEventReleaseVersionsUniverseId = "";
-    renderDateVersionPanel();
+    renderDateRangePicker();
     eventPropertyList?.setAttribute("aria-busy", "false");
     eventsStatus.textContent = "Connect or select a Roblox game to view events.";
     return false;
@@ -2893,7 +2892,7 @@ async function loadEventReleaseVersions(universeId = selectedUniverseId, options
   const requestSequence = ++eventReleaseVersionRequestSequence;
   currentEventReleaseVersionsUniverseId = cleanUniverseId;
   eventReleaseVersionsLoading = true;
-  renderDateVersionPanel();
+  renderDateRangePicker();
   try {
     const payload = await request(`/api/version-health?universeId=${encodeURIComponent(cleanUniverseId)}`, {
       dedupe: !options.force,
@@ -2925,7 +2924,7 @@ async function loadEventReleaseVersions(universeId = selectedUniverseId, options
   } finally {
     if (requestSequence === eventReleaseVersionRequestSequence) {
       eventReleaseVersionsLoading = false;
-      renderDateVersionPanel();
+      renderDateRangePicker();
     }
   }
 }
@@ -3258,7 +3257,12 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
   }
   const bucketCount = bucketStarts.length;
   const bucketMs = Number(timeline.bucketMs) || getSeriesBucketMs(bucketStarts.map((start) => ({ start })));
-  const chartSpanMs = getEventChartSpanMs(bucketStarts, bucketMs);
+  const timelineStart = Number(timeline.start) || bucketStarts[0];
+  const timelineEnd = Math.max(
+    Number(timeline.end) || (bucketStarts.at(-1) + bucketMs),
+    timelineStart,
+  );
+  const chartSpanMs = Math.max(timelineEnd - timelineStart, bucketMs);
   const chartWidth = getEventChartWidth(container.clientWidth, bucketCount, 116, 10);
   const chartHeight = 326;
   const left = 54;
@@ -3272,7 +3276,11 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
   const xForIndex = (index) => (
     bucketCount === 1
       ? left + (plotWidth / 2)
-      : left + ((index / (bucketCount - 1)) * plotWidth)
+      : index === 0
+        ? left
+        : index === bucketCount - 1
+          ? chartWidth - right
+          : left + (((bucketStarts[index] - timelineStart) / Math.max(timelineEnd - timelineStart, 1)) * plotWidth)
   );
   const yForPercent = (percent) => (
     top + (plotHeight - ((Math.max(0, Math.min(Number(percent) || 0, 100)) / 100) * plotHeight))
@@ -3284,15 +3292,22 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
       <text x="${left - 10}" y="${y + 4}" text-anchor="end">${percent}%</text>
     `;
   }).join("");
-  const xLabels = bucketStarts.map((start, index) => (
-    index === 0 || index === bucketCount - 1 || index % labelStep === 0
-      ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="middle">${escapeHtml(formatEventChartLabel(start, bucketMs, chartSpanMs))}</text>`
-      : ""
-  )).join("");
+  const xLabels = bucketCount === 1
+    ? `
+      <text class="eventPropertyChartXLabel" x="${left}" y="${chartHeight - 16}" text-anchor="start">${escapeHtml(formatEventChartLabel(timelineStart, bucketMs, chartSpanMs))}</text>
+      <text class="eventPropertyChartXLabel" x="${chartWidth - right}" y="${chartHeight - 16}" text-anchor="end">${escapeHtml(formatEventChartLabel(timelineEnd, bucketMs, chartSpanMs))}</text>
+    `
+    : bucketStarts.map((start, index) => (
+      index === 0 || index === bucketCount - 1 || index % labelStep === 0
+        ? `<text class="eventPropertyChartXLabel" x="${xForIndex(index)}" y="${chartHeight - 16}" text-anchor="${index === 0 ? "start" : index === bucketCount - 1 ? "end" : "middle"}">${escapeHtml(formatEventChartLabel(index === bucketCount - 1 ? timelineEnd : start, bucketMs, chartSpanMs))}</text>`
+        : ""
+    )).join("");
   const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
     releaseMarkers,
     bucketStarts,
     bucketMs,
+    rangeStart: timelineStart,
+    rangeEnd: timelineEnd,
     chartWidth,
     left,
     right,
@@ -3308,6 +3323,7 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
       const hasValue = percent !== null && percent !== undefined && Number.isFinite(Number(percent));
       return {
         start,
+        end: Math.max(Number(point?.end) || Math.min(start + bucketMs, timelineEnd), start),
         count: Number(point?.count) || 0,
         percent: hasValue ? Math.max(0, Math.min(Number(percent), 100)) : null,
         x: xForIndex(index),
@@ -3318,7 +3334,9 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
     const dots = chartPoints.map((point) => {
       if (point.y === null) return "";
       const label = formatEventPropertyValue(entry.value);
-      const dateLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
+      const pointStartLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
+      const pointEndLabel = formatEventChartLabel(point.end, bucketMs, chartSpanMs, { detailed: true });
+      const dateLabel = point.end > point.start ? `${pointStartLabel} – ${pointEndLabel}` : pointStartLabel;
       return `<circle cx="${point.x}" cy="${point.y}" r="3.5" style="fill:${color};stroke:${color}"><title>${escapeHtml(label)} · ${escapeHtml(dateLabel)}: ${formatEventNumber(point.percent)}% (${formatCompactNumber(point.count)} values)</title></circle>`;
     }).join("");
     return `
@@ -3345,6 +3363,8 @@ function buildEventPropertyReleaseMarkers({
   releaseMarkers = [],
   bucketStarts = [],
   bucketMs = 0,
+  rangeStart = 0,
+  rangeEnd = 0,
   chartWidth = 0,
   left = 0,
   right = 0,
@@ -3352,12 +3372,14 @@ function buildEventPropertyReleaseMarkers({
   plotBottom = 0,
 } = {}) {
   if (!bucketStarts.length || !releaseMarkers.length) return "";
-  const timelineStart = Number(bucketStarts[0]) || 0;
-  const lastBucketStart = Number(bucketStarts.at(-1)) || timelineStart;
-  const timelineEnd = lastBucketStart + (Number(bucketMs) || 0);
-  const timelineDuration = lastBucketStart - timelineStart;
+  const timelineStart = Number(rangeStart) || Number(bucketStarts[0]) || 0;
+  const timelineEnd = Math.max(
+    Number(rangeEnd) || ((Number(bucketStarts.at(-1)) || timelineStart) + (Number(bucketMs) || 0)),
+    timelineStart,
+  );
+  const timelineDuration = timelineEnd - timelineStart;
   const plotWidth = chartWidth - left - right;
-  if (timelineStart <= 0 || timelineEnd <= timelineStart || plotWidth <= 0) return "";
+  if (timelineStart <= 0 || timelineDuration <= 0 || plotWidth <= 0) return "";
 
   return releaseMarkers
     .filter((marker) => {
@@ -3366,9 +3388,7 @@ function buildEventPropertyReleaseMarkers({
     })
     .map((marker) => {
       const publishedAt = Number(marker.publishedAt);
-      const x = timelineDuration > 0
-        ? left + (((Math.min(publishedAt, lastBucketStart) - timelineStart) / timelineDuration) * plotWidth)
-        : left + (plotWidth / 2);
+      const x = left + (((publishedAt - timelineStart) / timelineDuration) * plotWidth);
       const labelHalfWidth = 58;
       const labelX = Math.max(left + labelHalfWidth, Math.min(x, chartWidth - right - labelHalfWidth));
       const version = formatReleaseVersion(marker.placeVersion);
@@ -4727,24 +4747,40 @@ function handleDateFilterChange() {
   if (activeView === "chat") loadChatLogs({ includeInsights: true });
 }
 
-function showDateFilterPicker(input) {
-  if (!input || typeof input.showPicker !== "function") return;
-  try {
-    input.showPicker();
-  } catch {
-    input.focus();
-  }
+function getDateRangeInput(side) {
+  return side === "to" ? movementToFilter : movementFromFilter;
 }
 
-function toggleDateVersionPanel() {
-  if (!dateVersionPanel || !dateVersionPickerButton) return;
-  if (!dateVersionPanel.hidden) {
-    closeDateVersionPanel();
+function getDateRangePickerButton(side) {
+  return side === "to" ? movementToPickerButton : movementFromPickerButton;
+}
+
+function openDateRangePicker(side) {
+  const cleanSide = side === "to" ? "to" : "from";
+  if (!dateRangePickerPanel) return;
+  if (!dateRangePickerPanel.hidden && dateRangePickerSide === cleanSide) {
+    closeDateRangePicker();
     return;
   }
-  renderDateVersionPanel();
-  dateVersionPanel.hidden = false;
-  dateVersionPickerButton.setAttribute("aria-expanded", "true");
+
+  dateRangePickerSide = cleanSide;
+  const input = getDateRangeInput(cleanSide);
+  const selectedTimestamp = getDashboardDateFilterMs(input) || Date.now();
+  dateRangePickerDraft = new Date(selectedTimestamp);
+  dateRangePickerMonth = new Date(
+    dateRangePickerDraft.getFullYear(),
+    dateRangePickerDraft.getMonth(),
+    1,
+  );
+  if (dateRangeTimeInput) dateRangeTimeInput.value = formatTimeInputValue(dateRangePickerDraft);
+
+  dateRangePickerPanel.hidden = false;
+  dateRangePickerPanel.dataset.pickerSide = cleanSide;
+  for (const button of dateRangeFieldButtons) {
+    button.setAttribute("aria-expanded", String(button.dataset.dateRangeSide === cleanSide));
+  }
+  renderDateRangePicker();
+
   if (
     selectedUniverseId
     && (currentEventReleaseVersionsUniverseId !== selectedUniverseId || !currentEventReleaseVersions.length)
@@ -4755,34 +4791,133 @@ function toggleDateVersionPanel() {
   }
 }
 
-function closeDateVersionPanel() {
-  if (dateVersionPanel) dateVersionPanel.hidden = true;
-  dateVersionPickerButton?.setAttribute("aria-expanded", "false");
+function closeDateRangePicker() {
+  if (dateRangePickerPanel) dateRangePickerPanel.hidden = true;
+  for (const button of dateRangeFieldButtons) button.setAttribute("aria-expanded", "false");
 }
 
-function handleDateVersionOutsidePointer(event) {
-  if (dateVersionPanel?.hidden) return;
-  if (dateVersionPanel?.contains(event.target) || dateVersionPickerButton?.contains(event.target)) return;
-  closeDateVersionPanel();
+function handleDateRangePickerOutsidePointer(event) {
+  if (dateRangePickerPanel?.hidden) return;
+  if (dateRangePickerPanel?.contains(event.target)) return;
+  if ([...dateRangeFieldButtons].some((button) => button.contains(event.target))) return;
+  closeDateRangePicker();
 }
 
-function handleDateVersionEscape(event) {
-  if (event.key !== "Escape" || dateVersionPanel?.hidden) return;
-  closeDateVersionPanel();
-  dateVersionPickerButton?.focus();
+function handleDateRangePickerEscape(event) {
+  if (event.key !== "Escape" || dateRangePickerPanel?.hidden) return;
+  const activeButton = getDateRangePickerButton(dateRangePickerSide);
+  closeDateRangePicker();
+  activeButton?.focus();
 }
 
-function setDateVersionPickerSide(side) {
-  dateVersionPickerSide = side === "to" ? "to" : "from";
-  renderDateVersionPanel();
+function moveDateRangePickerMonth(offset) {
+  if (!(dateRangePickerMonth instanceof Date)) return;
+  dateRangePickerMonth = new Date(
+    dateRangePickerMonth.getFullYear(),
+    dateRangePickerMonth.getMonth() + Number(offset),
+    1,
+  );
+  renderDateRangeCalendar();
 }
 
-function renderDateVersionPanel() {
-  for (const button of dateVersionTargetButtons) {
-    button.setAttribute("aria-pressed", String(button.dataset.dateVersionSide === dateVersionPickerSide));
+function handleDateRangeCalendarSelection(event) {
+  const dayButton = event.target.closest("[data-date-range-day]");
+  if (!dayButton || dayButton.disabled || !dateRangeCalendarGrid?.contains(dayButton)) return;
+  const [year, month, day] = String(dayButton.dataset.dateRangeDay || "").split("-").map(Number);
+  if (!year || !month || !day) return;
+  const draft = dateRangePickerDraft instanceof Date ? new Date(dateRangePickerDraft) : new Date();
+  draft.setFullYear(year, month - 1, day);
+  dateRangePickerDraft = draft;
+  dateRangePickerMonth = new Date(year, month - 1, 1);
+  renderDateRangePicker();
+}
+
+function selectDateRangeToday() {
+  const now = new Date();
+  const draft = dateRangePickerDraft instanceof Date ? new Date(dateRangePickerDraft) : now;
+  draft.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
+  dateRangePickerDraft = draft;
+  dateRangePickerMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  renderDateRangePicker();
+}
+
+function syncDateRangePickerTime() {
+  if (!(dateRangePickerDraft instanceof Date) || !dateRangeTimeInput?.value) return;
+  const [hours, minutes] = dateRangeTimeInput.value.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return;
+  dateRangePickerDraft.setHours(hours, minutes, 0, 0);
+  renderDateRangePickerHeader();
+  updateDateRangeApplyState();
+}
+
+function applyDateRangePickerValue() {
+  if (!(dateRangePickerDraft instanceof Date) || !isDateRangeTimestampValid(dateRangePickerDraft.getTime(), dateRangePickerSide)) return;
+  const input = getDateRangeInput(dateRangePickerSide);
+  if (!input) return;
+  input.value = toDateTimeLocalValue(dateRangePickerDraft);
+  selectedDateReleaseVersions[dateRangePickerSide] = null;
+  syncDateFilterDisplays();
+  closeDateRangePicker();
+  handleDateFilterChange();
+}
+
+function renderDateRangePicker() {
+  if (!dateRangePickerPanel || dateRangePickerPanel.hidden) return;
+  renderDateRangePickerHeader();
+  renderDateRangeCalendar();
+  renderDateRangeVersionList();
+  updateDateRangeApplyState();
+}
+
+function renderDateRangePickerHeader() {
+  const isEnd = dateRangePickerSide === "to";
+  if (dateRangePickerSideLabel) dateRangePickerSideLabel.textContent = `${isEnd ? "End" : "Start"} date & time`;
+  if (dateRangePickerTitle) {
+    dateRangePickerTitle.textContent = dateRangePickerDraft instanceof Date
+      ? formatDateVersionReleaseTime(dateRangePickerDraft.getTime())
+      : `Choose exact ${isEnd ? "end" : "start"}`;
   }
-  if (!dateVersionList) return;
+}
 
+function renderDateRangeCalendar() {
+  if (!dateRangeCalendarGrid || !(dateRangePickerMonth instanceof Date)) return;
+  const year = dateRangePickerMonth.getFullYear();
+  const month = dateRangePickerMonth.getMonth();
+  if (dateRangeMonthLabel) {
+    dateRangeMonthLabel.textContent = dateRangePickerMonth.toLocaleDateString([], {
+      month: "long",
+      year: "numeric",
+    });
+  }
+  const firstVisibleDate = new Date(year, month, 1 - new Date(year, month, 1).getDay());
+  const selectedDateKey = dateRangePickerDraft instanceof Date ? getLocalDateKey(dateRangePickerDraft) : "";
+  const todayKey = getLocalDateKey(new Date());
+  dateRangeCalendarGrid.innerHTML = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(
+      firstVisibleDate.getFullYear(),
+      firstVisibleDate.getMonth(),
+      firstVisibleDate.getDate() + index,
+    );
+    const dateKey = getLocalDateKey(date);
+    const outsideMonth = date.getMonth() !== month;
+    const isSelected = dateKey === selectedDateKey;
+    const isToday = dateKey === todayKey;
+    const isUnavailable = !isDateRangeDayAvailable(date, dateRangePickerSide);
+    return `
+      <button
+        class="dateRangeCalendarDay${outsideMonth ? " outsideMonth" : ""}${isToday ? " isToday" : ""}${isSelected ? " isSelected" : ""}"
+        type="button"
+        role="gridcell"
+        data-date-range-day="${dateKey}"
+        aria-selected="${isSelected}"
+        aria-label="${escapeHtml(date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }))}"
+        ${isUnavailable ? "disabled" : ""}
+      >${date.getDate()}</button>`;
+  }).join("");
+}
+
+function renderDateRangeVersionList() {
+  if (!dateVersionList) return;
   const versions = [...currentEventReleaseVersions]
     .filter((version) => Number(version?.publishedAt) > 0 && Number(version?.placeVersion) > 0)
     .sort((left, right) => (
@@ -4796,7 +4931,7 @@ function renderDateVersionPanel() {
   }
 
   const hasMultiplePlaces = new Set(versions.map((version) => Number(version.placeId) || 0)).size > 1;
-  const selectedRelease = selectedDateReleaseVersions[dateVersionPickerSide];
+  const selectedRelease = selectedDateReleaseVersions[dateRangePickerSide];
   dateVersionList.innerHTML = versions.map((version) => {
     const placeId = Number(version.placeId) || 0;
     const placeVersion = Number(version.placeVersion) || 0;
@@ -4807,46 +4942,85 @@ function renderDateVersionPanel() {
       && Number(selectedRelease.placeVersion) === placeVersion
       && Number(selectedRelease.publishedAt) === publishedAt
     );
+    const isUnavailable = !isDateRangeTimestampValid(publishedAt, dateRangePickerSide);
     const placeLabel = hasMultiplePlaces && placeId > 0 ? ` · Place ${placeId}` : "";
+    const unavailableLabel = dateRangePickerSide === "to" ? "Before start" : "After end";
     return `
-      <button class="dateVersionOption" type="button" data-date-release-time="${publishedAt}" data-date-release-place="${placeId}" data-date-release-version="${placeVersion}" aria-selected="${isSelected}">
+      <button class="dateVersionOption" type="button" data-date-release-time="${publishedAt}" data-date-release-place="${placeId}" data-date-release-version="${placeVersion}" aria-selected="${isSelected}" ${isUnavailable ? "disabled" : ""}>
         <span class="dateVersionDot" aria-hidden="true"></span>
         <span class="dateVersionOptionCopy">
           <strong>v${escapeHtml(formatReleaseVersion(placeVersion))}</strong>
           <small>${escapeHtml(formatDateVersionReleaseTime(publishedAt))}${escapeHtml(placeLabel)}</small>
         </span>
-        <span class="dateVersionOptionAction">${isSelected ? "Selected" : `Set ${dateVersionPickerSide === "to" ? "end" : "start"}`}</span>
+        <span class="dateVersionOptionAction">${isUnavailable ? unavailableLabel : isSelected ? "Selected" : "Use"}</span>
       </button>`;
   }).join("");
 }
 
 function handleDateReleaseVersionSelection(event) {
   const option = event.target.closest("[data-date-release-time]");
-  if (!option || !dateVersionList?.contains(option)) return;
+  if (!option || option.disabled || !dateVersionList?.contains(option)) return;
   const publishedAt = Number(option.dataset.dateReleaseTime) || 0;
   const placeId = Number(option.dataset.dateReleasePlace) || 0;
   const placeVersion = Number(option.dataset.dateReleaseVersion) || 0;
-  const input = dateVersionPickerSide === "to" ? movementToFilter : movementFromFilter;
-  if (!input || publishedAt <= 0 || placeVersion <= 0) return;
+  const input = getDateRangeInput(dateRangePickerSide);
+  if (!input || publishedAt <= 0 || placeVersion <= 0 || !isDateRangeTimestampValid(publishedAt, dateRangePickerSide)) return;
 
   const inputValue = toDateTimeLocalValue(new Date(publishedAt));
   input.value = inputValue;
-  selectedDateReleaseVersions[dateVersionPickerSide] = {
+  selectedDateReleaseVersions[dateRangePickerSide] = {
     inputValue,
     placeId,
     placeVersion,
     publishedAt,
   };
   syncDateFilterDisplays();
-  closeDateVersionPanel();
+  closeDateRangePicker();
   handleDateFilterChange();
+}
+
+function isDateRangeTimestampValid(timestamp, side) {
+  const value = Number(timestamp) || 0;
+  if (value <= 0) return false;
+  const otherInput = side === "to" ? movementFromFilter : movementToFilter;
+  const otherTimestamp = getDashboardDateFilterMs(otherInput);
+  if (!otherTimestamp) return true;
+  return side === "to" ? value >= otherTimestamp : value <= otherTimestamp;
+}
+
+function isDateRangeDayAvailable(date, side) {
+  const otherInput = side === "to" ? movementFromFilter : movementToFilter;
+  const otherTimestamp = getDashboardDateFilterMs(otherInput);
+  if (!otherTimestamp) return true;
+  const candidateKey = getLocalDateKey(date);
+  const otherKey = getLocalDateKey(new Date(otherTimestamp));
+  return side === "to" ? candidateKey >= otherKey : candidateKey <= otherKey;
+}
+
+function updateDateRangeApplyState() {
+  if (!dateRangeApplyButton) return;
+  dateRangeApplyButton.disabled = !(
+    dateRangePickerDraft instanceof Date
+    && isDateRangeTimestampValid(dateRangePickerDraft.getTime(), dateRangePickerSide)
+  );
+}
+
+function getLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeInputValue(date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function clearSelectedDateReleaseVersion(side) {
   const cleanSide = side === "to" ? "to" : "from";
   selectedDateReleaseVersions[cleanSide] = null;
   renderDateVersionIndicators();
-  if (!dateVersionPanel?.hidden) renderDateVersionPanel();
+  if (!dateRangePickerPanel?.hidden) renderDateRangeVersionList();
 }
 
 function renderDateVersionIndicators() {
