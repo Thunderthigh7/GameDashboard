@@ -51,6 +51,16 @@ assert.match(
   /\.eventPropertyAverageItem > small\s*\{[^}]*font-size:\s*14px;/,
   "property legend average percentages should remain large enough to scan",
 );
+assert.match(
+  styleSource,
+  /\.eventPropertyCardHeader h2\s*\{[^}]*font-size:\s*21px;/,
+  "the Property breakdowns heading should remain prominent",
+);
+assert.match(
+  styleSource,
+  /\.eventPropertyBreakdownHeader h3\s*\{[^}]*font-size:\s*21px;/,
+  "every property graph heading should remain prominent",
+);
 assert.doesNotMatch(appSource, /class="eventPropertyChartLegend"/, "property charts should not repeat the legend below the graph");
 const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
 const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);

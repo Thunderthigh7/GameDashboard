@@ -4766,6 +4766,11 @@ body[data-active-view="events"] #pageSubtitle {
   flex-wrap: wrap;
 }
 
+.eventPropertyCardHeader h2 {
+  font-size: 21px;
+  font-weight: 800;
+}
+
 .eventPropertyCardHeader > div {
   flex: 1 1 160px;
 }
@@ -4806,7 +4811,8 @@ body[data-active-view="events"] #pageSubtitle {
   overflow: hidden;
   margin: 0;
   color: var(--text);
-  font-size: 15px;
+  font-size: 21px;
+  font-weight: 800;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
