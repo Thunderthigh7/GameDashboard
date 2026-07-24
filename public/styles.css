@@ -4066,32 +4066,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
   min-width: 0;
 }
 
-.eventActivitySection {
-  min-width: 0;
-  min-height: 400px;
-  overflow: visible;
-}
-
-.eventChartHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 10px;
-}
-
-.eventChartHeader > div:first-child {
-  min-width: 0;
-}
-
-.eventChartHeader h2 {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 9px;
-  font-size: 18px;
-}
-
 .eventTopbarSelection {
   display: none;
   gap: 4px;
@@ -4226,145 +4200,6 @@ body[data-active-view="events"] .eventIntervalTopbarControl .eventIntervalSelect
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.eventChart {
-  min-width: 0;
-  min-height: 300px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 8px 0 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(124, 60, 255, 0.45) transparent;
-}
-
-.eventChartFrame {
-  display: grid;
-  grid-template-columns: 52px minmax(var(--event-chart-width, 680px), 1fr);
-  width: 100%;
-  min-width: calc(52px + var(--event-chart-width, 680px));
-  height: 270px;
-}
-
-.eventYAxis {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  min-width: 0;
-  padding-bottom: 48px;
-}
-
-.eventYAxisTitle {
-  align-self: center;
-  color: var(--nav-text);
-  font-size: 11px;
-  font-weight: 700;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-}
-
-.eventYAxisTicks {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex-direction: column;
-  padding-right: 8px;
-}
-
-.eventYAxisTicks span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.eventChartPlot {
-  position: relative;
-  min-width: 0;
-  border-left: 1px solid rgba(91, 111, 164, 0.4);
-}
-
-.eventChartGrid {
-  position: absolute;
-  inset: 0 0 48px;
-  display: flex;
-  justify-content: space-between;
-  flex-direction: column;
-  pointer-events: none;
-}
-
-.eventChartGrid span {
-  width: 100%;
-  border-top: 1px dashed rgba(80, 99, 150, 0.24);
-}
-
-.eventChartBars {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: stretch;
-  gap: var(--event-bucket-gap, 7px);
-  padding: 0 8px;
-}
-
-.eventChartBucket {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) 48px;
-  flex: 1 0 var(--event-bucket-width, 44px);
-  min-width: var(--event-bucket-width, 44px);
-}
-
-.eventChartBarArea {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.eventChartBarArea strong {
-  position: absolute;
-  bottom: calc(var(--event-bar-height, 0%) + 5px);
-  color: var(--nav-text);
-  font-size: 11px;
-}
-
-.eventChartBar {
-  display: block;
-  width: min(30px, 76%);
-  min-height: 0;
-  border-radius: 4px 4px 1px 1px;
-  background: linear-gradient(180deg, #a78bfa, #6d28d9);
-  box-shadow: 0 7px 20px rgba(124, 60, 255, 0.2);
-}
-
-.eventChartBucket small {
-  align-self: start;
-  justify-self: center;
-  width: 62px;
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
-  transform: rotate(-18deg);
-  transform-origin: center;
-}
-
-.eventChartLegend {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 4px;
-  color: var(--nav-text);
-  font-size: 11px;
-}
-
-.eventChartLegend i {
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #a78bfa, #6d28d9);
 }
 
 .eventBreakdownSection,
@@ -4605,133 +4440,9 @@ body[data-active-view="events"] #pageSubtitle {
   white-space: normal;
 }
 
-.eventActivitySection {
-  min-height: 390px;
-  overflow: hidden;
-}
-
-.eventActivitySection + .eventBreakdownSection {
-  margin-top: 48px;
-}
-
-.eventChartHeader {
-  margin-bottom: 3px;
-}
-
-.eventChartHeader p {
-  margin-top: 6px;
-}
-
 .eventIntervalSelect {
   min-width: 148px;
   min-height: 38px;
-}
-
-.eventChart {
-  min-height: 310px;
-  overflow: hidden;
-  padding-top: 2px;
-}
-
-.eventChartScroller {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(124, 60, 255, 0.45) transparent;
-}
-
-.eventChartSvg {
-  display: block;
-  min-width: 100%;
-  overflow: visible;
-}
-
-.eventChartSvgGrid line {
-  stroke: rgba(84, 101, 149, 0.28);
-  stroke-dasharray: 3 4;
-}
-
-.eventChartSvgGrid text,
-.eventChartVisitTick,
-.eventChartXLabel,
-.eventChartSvgYAxisTitle {
-  fill: var(--muted);
-  font-family: inherit;
-  font-size: 10px;
-}
-
-.eventChartSvgYAxisTitle {
-  fill: var(--nav-text);
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.eventChartArea {
-  fill: url(#eventChartAreaGradient);
-}
-
-.eventChartLine {
-  fill: none;
-  stroke: #925cff;
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 4px 8px rgba(124, 60, 255, 0.36));
-}
-
-.eventChartVisitLine {
-  fill: none;
-  stroke: #2dd4bf;
-  stroke-width: 2.25;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 3px 7px rgba(45, 212, 191, 0.26));
-}
-
-.eventChartPoint circle {
-  fill: #a878ff;
-  stroke: #dfd2ff;
-  stroke-width: 1.5;
-}
-
-.eventChartPoint text {
-  fill: #e6e9fb;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.eventChartVisitPoint circle {
-  fill: #071b24;
-  stroke: #5eead4;
-  stroke-width: 2;
-}
-
-.eventChartLegend {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  margin-top: 0;
-}
-
-.eventChartLegend > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.eventChartLegend i {
-  display: inline-block;
-  width: 16px;
-  height: 3px;
-  border-radius: 999px;
-  background: #925cff;
-}
-
-.eventChartLegend .eventChartVisitLegend {
-  background: #2dd4bf;
 }
 
 .eventRecentCard {
@@ -4782,15 +4493,28 @@ body[data-active-view="events"] #pageSubtitle {
 }
 
 .eventPropertyBreakdown {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+  align-items: stretch;
+  gap: 14px;
   min-width: 0;
   min-height: 370px;
-  flex-direction: column;
+}
+
+.eventPropertyChartPane,
+.eventPropertyRanked {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid rgba(80, 99, 150, 0.34);
   border-radius: 12px;
   background: linear-gradient(145deg, rgba(12, 21, 46, 0.92), rgba(7, 13, 31, 0.96));
   padding: 14px;
+}
+
+.eventPropertyChartPane {
+  display: flex;
+  min-height: 370px;
+  flex-direction: column;
 }
 
 .eventPropertyBreakdownHeader {
@@ -4818,12 +4542,6 @@ body[data-active-view="events"] #pageSubtitle {
   white-space: nowrap;
 }
 
-.eventPropertyBreakdownHeader p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-}
-
 .eventPropertyAverageLegend {
   display: flex;
   align-items: flex-start;
@@ -4831,14 +4549,13 @@ body[data-active-view="events"] #pageSubtitle {
   flex-wrap: wrap;
   gap: 12px 26px;
   min-width: 0;
-  margin-top: -39px;
+  margin-top: -26px;
   padding: 0 10px 10px;
 }
 
 .eventPropertyAverageItem {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   color: var(--nav-text);
   font-size: 14px;
@@ -4866,26 +4583,6 @@ body[data-active-view="events"] #pageSubtitle {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.eventPropertyAverageItem > small {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #f2f5ff;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.eventPropertyAverageItem > small b {
-  border: 1px solid rgba(155, 109, 255, 0.3);
-  border-radius: 5px;
-  background: rgba(124, 60, 255, 0.12);
-  color: #bca6ff;
-  padding: 2px 6px;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.05em;
 }
 
 .eventPropertyTimeline {
@@ -4946,6 +4643,133 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyChartSeries circle {
   stroke-width: 1.5;
   filter: drop-shadow(0 2px 4px rgba(3, 8, 22, 0.5));
+}
+
+.eventPropertyRanked {
+  display: flex;
+  flex-direction: column;
+}
+
+.eventPropertyRankedHeader {
+  min-height: 38px;
+  border-bottom: 1px solid rgba(80, 99, 150, 0.32);
+  padding: 1px 2px 12px;
+}
+
+.eventPropertyRankedHeader h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.eventPropertyRankedHeader h4 span {
+  color: var(--nav-text);
+  font-weight: 750;
+}
+
+.eventPropertyRankedTable {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.eventPropertyRankedTableHeader,
+.eventPropertyRankedRow {
+  display: grid;
+  grid-template-columns: 22px minmax(110px, 1fr) 88px 82px;
+  align-items: center;
+  gap: 10px;
+  min-width: 360px;
+  padding-inline: 3px;
+}
+
+.eventPropertyRankedTableHeader {
+  min-height: 40px;
+  border-bottom: 1px solid rgba(80, 99, 150, 0.28);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.eventPropertyRankedTableHeader span:nth-child(n + 3) {
+  text-align: right;
+}
+
+.eventPropertyRankedRows {
+  display: grid;
+}
+
+.eventPropertyRankedRow {
+  min-height: 52px;
+  border-bottom: 1px solid rgba(80, 99, 150, 0.22);
+}
+
+.eventPropertyRankedRow:last-child {
+  border-bottom: 0;
+}
+
+.eventPropertyRankedPosition {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.eventPropertyRankedValue {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.eventPropertyRankedValue i {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(124, 60, 255, 0.2);
+}
+
+.eventPropertyRankedValue strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventPropertyRankedRow > b,
+.eventPropertyChange {
+  font-size: 11px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.eventPropertyRankedRow > b {
+  color: var(--text);
+}
+
+.eventPropertyChange {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.eventPropertyChange-positive {
+  color: #48d597;
+}
+
+.eventPropertyChange-negative {
+  color: #fb7185;
+}
+
+.eventPropertyChange-neutral {
+  color: var(--muted);
 }
 
 .eventLiveBadge {
@@ -7172,11 +6996,6 @@ body[data-active-view="funnels"] #pageSubtitle {
     min-height: 520px;
   }
 
-  .eventChartHeader {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .funnelBuilderFields {
     grid-template-columns: 1fr;
   }
@@ -7729,6 +7548,10 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 @media (max-width: 1100px) {
+  body[data-active-view="events"] .eventPropertyBreakdown {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   body[data-active-view="releases"] .topbar > div:first-child,
   body[data-active-view="releases"] .topbarActions {
     flex-basis: 100%;

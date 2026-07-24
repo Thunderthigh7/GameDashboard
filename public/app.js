@@ -99,7 +99,6 @@ const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const selectedEventSubtitle = document.querySelector("#selectedEventSubtitle");
-const eventChart = document.querySelector("#eventChart");
 const eventIntervalSelect = document.querySelector("#eventIntervalSelect");
 const eventPropertyList = document.querySelector("#eventPropertyList");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
@@ -197,7 +196,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-2";
+const DASHBOARD_ASSET_VERSION = "20260724-6";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -2837,11 +2836,7 @@ function syncEventCatalogSelection(eventName) {
 function prepareCustomEventSelection(eventName) {
   if (selectedEventTitle) selectedEventTitle.textContent = formatEventName(eventName);
   if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Loading event details...";
-  if (eventChart) {
-    eventChart.setAttribute("aria-busy", "true");
-    eventChart.innerHTML = '<p class="status">Loading event activity...</p>';
-  }
-  renderCustomEventProperties([], 0);
+  renderCustomEventProperties([]);
   if (eventPropertyList) {
     eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Loading property values...</span></div>';
   }
@@ -2855,10 +2850,6 @@ function prepareCustomEventSelection(eventName) {
 
 function renderCustomEventSelectionError() {
   if (selectedEventSubtitle) selectedEventSubtitle.textContent = "Could not load this event. Select it again to retry.";
-  if (eventChart) {
-    eventChart.setAttribute("aria-busy", "false");
-    eventChart.innerHTML = '<p class="status">Could not load event activity.</p>';
-  }
   if (eventPropertyList) {
     eventPropertyList.innerHTML = '<div class="status eventPropertyEmptyRow" role="row"><span role="cell" aria-colspan="4">Could not load property values.</span></div>';
   }
@@ -2877,7 +2868,6 @@ function renderCustomEvents(payload = {}) {
     recentEventsExpanded = false;
   }
 
-  const selectedCount = Number(selected?.count) || 0;
   if (eventCatalog) {
     const previousScrollTop = eventCatalog.scrollTop;
     const focusedCatalogItem = document.activeElement?.closest?.("[data-event-name]");
@@ -2909,11 +2899,10 @@ function renderCustomEvents(payload = {}) {
           `${formatCompactNumber(selected.uniqueSessions)} sessions`,
           ...(sessionCoverage === null ? [] : [`${formatEventNumber(sessionCoverage)}% session coverage`]),
         ].join(" · ")
-      : "The event timeline will appear here.";
+      : "Property timelines will appear here.";
   }
   updateEventIntervalControl(selected);
-  renderCustomEventChart(selected?.series || [], selected?.bucketMs);
-  renderCustomEventProperties(selected?.properties || [], selectedCount);
+  renderCustomEventProperties(selected?.properties || []);
   renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
 
   const recentTotal = Number(selected?.recentEventsTotal) || 0;
@@ -2938,114 +2927,6 @@ function renderEventCatalog(catalog) {
     .sort((left, right) => (systemOrder.get(left.name) ?? 99) - (systemOrder.get(right.name) ?? 99));
   const customEvents = catalog.filter((item) => item.sourceType !== "system");
   return [...systemEvents, ...customEvents].map(renderItem).join("");
-}
-
-function renderCustomEventChart(series, selectedBucketMs) {
-  if (!eventChart) return;
-  eventChart.setAttribute("aria-busy", "false");
-  if (!series.length || !series.some((bucket) => Number(bucket.count) > 0)) {
-    eventChart.innerHTML = '<p class="status">No events in this date range.</p>';
-    return;
-  }
-
-  const maxCount = Math.max(...series.map((bucket) => Number(bucket.count) || 0), 1);
-  const maxVisits = Math.max(...series.map((bucket) => Number(bucket.visits) || 0), 1);
-  const axisMax = getEventChartAxisMax(maxCount);
-  const visitAxisMax = getEventChartAxisMax(maxVisits);
-  const tickCount = 4;
-  const bucketMs = Number(selectedBucketMs) || getSeriesBucketMs(series);
-  const bucketCount = series.length;
-  const chartSpanMs = getEventChartSpanMs(series.map((bucket) => Number(bucket?.start)), bucketMs);
-  const chartWidth = getEventChartWidth(eventChart.clientWidth, bucketCount, 140, 14);
-  const chartHeight = 286;
-  const left = 62;
-  const right = 62;
-  const top = 18;
-  const bottom = 48;
-  const plotWidth = chartWidth - left - right;
-  const plotBottom = chartHeight - bottom;
-  const plotHeight = plotBottom - top;
-  const labelStep = Math.max(1, Math.ceil(bucketCount / 12));
-  const points = series.map((bucket, index) => {
-    const count = Number(bucket.count) || 0;
-    const visits = Number(bucket.visits) || 0;
-    const x = bucketCount === 1 ? left + (plotWidth / 2) : left + ((index / (bucketCount - 1)) * plotWidth);
-    const y = top + (plotHeight - ((count / axisMax) * plotHeight));
-    const visitY = top + (plotHeight - ((visits / visitAxisMax) * plotHeight));
-    return {
-      bucket,
-      count,
-      visits,
-      x,
-      y,
-      visitY,
-      label: formatEventChartLabel(bucket.start, bucketMs, chartSpanMs),
-      tooltipLabel: formatEventChartLabel(bucket.start, bucketMs, chartSpanMs, { detailed: true }),
-    };
-  });
-  const linePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
-  const visitLinePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.visitY.toFixed(2)}`).join(" ");
-  const areaPath = `${linePath} L${points.at(-1).x.toFixed(2)} ${plotBottom} L${points[0].x.toFixed(2)} ${plotBottom} Z`;
-  const grid = Array.from({ length: tickCount + 1 }, (_, index) => {
-    const value = axisMax - ((axisMax / tickCount) * index);
-    const visitValue = visitAxisMax - ((visitAxisMax / tickCount) * index);
-    const y = top + ((plotHeight / tickCount) * index);
-    return `
-      <line x1="${left}" y1="${y}" x2="${chartWidth - right}" y2="${y}" />
-      <text x="${left - 11}" y="${y + 4}" text-anchor="end">${formatCompactNumber(value)}</text>
-      <text class="eventChartVisitTick" x="${chartWidth - right + 11}" y="${y + 4}" text-anchor="start">${formatCompactNumber(visitValue)}</text>
-    `;
-  }).join("");
-  const xLabels = points.map((point, index) => (
-    index % labelStep === 0 || index === points.length - 1
-      ? `<text class="eventChartXLabel" x="${point.x}" y="${chartHeight - 17}" text-anchor="middle">${escapeHtml(point.label)}</text>`
-      : ""
-  )).join("");
-  const dots = points.map((point) => `
-    <g class="eventChartPoint">
-      <circle cx="${point.x}" cy="${point.y}" r="4.5"><title>${escapeHtml(point.tooltipLabel)}: ${formatCompactNumber(point.count)} events, ${formatCompactNumber(point.visits)} visits, ${formatCompactNumber(point.bucket.uniquePlayers)} players</title></circle>
-      <text x="${point.x}" y="${Math.max(point.y - 11, 12)}" text-anchor="middle">${point.count ? formatCompactNumber(point.count) : ""}</text>
-    </g>
-  `).join("");
-  const visitDots = points.map((point) => `
-    <g class="eventChartVisitPoint">
-      <circle cx="${point.x}" cy="${point.visitY}" r="3.5"><title>${escapeHtml(point.tooltipLabel)}: ${formatCompactNumber(point.visits)} visits</title></circle>
-    </g>
-  `).join("");
-
-  eventChart.innerHTML = `
-    <div class="eventChartScroller">
-      <svg class="eventChartSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Selected events and game visits over time">
-        <defs>
-          <linearGradient id="eventChartAreaGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.48" />
-            <stop offset="100%" stop-color="#5b21b6" stop-opacity="0.04" />
-          </linearGradient>
-        </defs>
-        <g class="eventChartSvgGrid">${grid}</g>
-        <text class="eventChartSvgYAxisTitle" x="16" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 16 ${top + (plotHeight / 2)})">Events</text>
-        <text class="eventChartSvgYAxisTitle eventChartVisitAxisTitle" x="${chartWidth - 16}" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(90 ${chartWidth - 16} ${top + (plotHeight / 2)})">Visits</text>
-        <path class="eventChartArea" d="${areaPath}" />
-        <path class="eventChartLine" d="${linePath}" />
-        <path class="eventChartVisitLine" d="${visitLinePath}" />
-        ${dots}
-        ${visitDots}
-        ${xLabels}
-      </svg>
-    </div>
-    <div class="eventChartLegend">
-      <span><i class="eventChartEventLegend" aria-hidden="true"></i>Selected event</span>
-      <span><i class="eventChartVisitLegend" aria-hidden="true"></i>Visits</span>
-    </div>
-  `;
-}
-
-function getEventChartAxisMax(maxCount) {
-  const roughStep = Math.max(maxCount / 4, 1);
-  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
-  const normalized = roughStep / magnitude;
-  const niceStep = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  return Math.max(niceStep * magnitude * Math.ceil(maxCount / (niceStep * magnitude)), 4);
 }
 
 function getSeriesBucketMs(series) {
@@ -3129,7 +3010,7 @@ function formatEventInterval(value) {
   return `${Math.max(1, Math.round(milliseconds / minute))}m`;
 }
 
-function renderCustomEventProperties(properties, totalEventCount = 0) {
+function renderCustomEventProperties(properties) {
   if (!eventPropertyList) return;
   const cleanProperties = (Array.isArray(properties) ? properties : [])
     .filter((property) => property?.name)
@@ -3142,9 +3023,8 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
     return;
   }
 
-  const selectedTotal = Math.max(Number(totalEventCount) || 0, ...cleanProperties.map((property) => Number(property.eventCount ?? property.count) || 0), 1);
   eventPropertyList.innerHTML = cleanProperties
-    .map((property, index) => renderCustomEventPropertyCard(property, selectedTotal, index))
+    .map((property, index) => renderCustomEventPropertyCard(property, index))
     .join("");
   for (const chart of eventPropertyList.querySelectorAll("[data-event-property-chart-index]")) {
     const property = cleanProperties[Number(chart.dataset.eventPropertyChartIndex)];
@@ -3152,22 +3032,21 @@ function renderCustomEventProperties(properties, totalEventCount = 0) {
   }
 }
 
-function renderCustomEventPropertyCard(property, selectedTotal, propertyIndex) {
+function renderCustomEventPropertyCard(property, propertyIndex) {
   const propertyName = String(property.name || "Property");
-  const eventCount = Number(property.eventCount ?? property.count) || 0;
-  const observationCount = Number(property.observationCount) || eventCount;
-  const coverage = selectedTotal ? (eventCount / selectedTotal) * 100 : 0;
 
   return `
     <section class="eventPropertyBreakdown" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} breakdown">
-      <header class="eventPropertyBreakdownHeader">
-        <div class="eventPropertyBreakdownTitle">
-          <h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3>
-          <p>${formatCompactNumber(observationCount)} recorded values · ${formatEventNumber(coverage)}% event coverage</p>
-        </div>
-      </header>
-      ${renderEventPropertyAverageLegend(property)}
-      <div class="eventPropertyTimeline" data-event-property-chart-index="${propertyIndex}" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values over time"></div>
+      <div class="eventPropertyChartPane">
+        <header class="eventPropertyBreakdownHeader">
+          <div class="eventPropertyBreakdownTitle">
+            <h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3>
+          </div>
+        </header>
+        ${renderEventPropertyAverageLegend(property)}
+        <div class="eventPropertyTimeline" data-event-property-chart-index="${propertyIndex}" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values over time"></div>
+      </div>
+      ${renderEventPropertyRankedBreakdown(property, propertyName)}
     </section>`;
 }
 
@@ -3183,18 +3062,74 @@ function renderEventPropertyAverageLegend(property = {}) {
     const color = EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length];
     const value = formatEventPropertyValue(entry.value);
     return `
-      <span class="eventPropertyAverageItem" title="${escapeHtml(value)}: ${formatEventNumber(entry.percent)}% average share" aria-label="${escapeHtml(value)}, average ${formatEventNumber(entry.percent)}%">
+      <span class="eventPropertyAverageItem" title="${escapeHtml(value)}" aria-label="${escapeHtml(value)}">
         <span class="eventPropertyAverageKey">
           <i style="background:${color}" aria-hidden="true"></i>
           <strong>${escapeHtml(value)}</strong>
         </span>
-        <small><b>AVG</b>${formatEventNumber(entry.percent)}%</small>
       </span>`;
   }).join("");
   return `
-    <div class="eventPropertyAverageLegend" aria-label="Average share by value">
+    <div class="eventPropertyAverageLegend" aria-label="Property values">
       ${items}
     </div>`;
+}
+
+function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Property") {
+  const rankedSeries = getEventPropertyChartSeries(property)
+    .map((entry, index) => ({
+      ...entry,
+      color: EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length],
+      change: getEventPropertySeriesChange(entry.points),
+    }))
+    .sort((left, right) => (Number(right.percent) || 0) - (Number(left.percent) || 0));
+  if (!rankedSeries.length) return "";
+
+  const rows = rankedSeries.map((entry, index) => {
+    const value = formatEventPropertyValue(entry.value);
+    const percent = Math.max(0, Math.min(Number(entry.percent) || 0, 100));
+    const change = Number(entry.change) || 0;
+    const direction = change > 0.049 ? "positive" : change < -0.049 ? "negative" : "neutral";
+    const arrow = direction === "positive" ? "↑" : direction === "negative" ? "↓" : "→";
+    const changeText = `${change > 0 ? "+" : ""}${formatEventNumber(change)}%`;
+    return `
+      <div class="eventPropertyRankedRow" role="row">
+        <span class="eventPropertyRankedPosition" role="cell">${index + 1}</span>
+        <span class="eventPropertyRankedValue" role="cell" title="${escapeHtml(value)}">
+          <i style="background:${entry.color}" aria-hidden="true"></i>
+          <strong>${escapeHtml(value)}</strong>
+        </span>
+        <b role="cell">${formatEventNumber(percent)}%</b>
+        <em class="eventPropertyChange eventPropertyChange-${direction}" role="cell" aria-label="Change ${changeText}">
+          <span aria-hidden="true">${arrow}</span>${changeText}
+        </em>
+      </div>`;
+  }).join("");
+
+  return `
+    <aside class="eventPropertyRanked" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} ranked breakdown">
+      <header class="eventPropertyRankedHeader">
+        <h4>${escapeHtml(formatEventPropertyName(propertyName))} Breakdown <span>(Ranked)</span></h4>
+      </header>
+      <div class="eventPropertyRankedTable" role="table">
+        <div class="eventPropertyRankedTableHeader" role="row">
+          <span role="columnheader">#</span>
+          <span role="columnheader">Value</span>
+          <span role="columnheader">% of Events</span>
+          <span role="columnheader">Change</span>
+        </div>
+        <div class="eventPropertyRankedRows" role="rowgroup">${rows}</div>
+      </div>
+    </aside>`;
+}
+
+function getEventPropertySeriesChange(points = []) {
+  const observedPercents = (Array.isArray(points) ? points : [])
+    .map((point) => point?.percent)
+    .filter((percent) => percent !== null && percent !== undefined && Number.isFinite(Number(percent)))
+    .map(Number);
+  if (observedPercents.length < 2) return 0;
+  return observedPercents.at(-1) - observedPercents[0];
 }
 
 function renderCustomEventPropertyChart(container, property = {}) {
@@ -4614,7 +4549,7 @@ function getDashboardDateFilterMs(input) {
 function handleDateFilterChange() {
   syncDateFilterDisplays();
   if (activeView === "events") {
-    renderCustomEventProperties([], 0);
+    renderCustomEventProperties([]);
     loadCustomEvents({ force: true });
   }
   if (activeView === "funnels") loadFunnels({ force: true });

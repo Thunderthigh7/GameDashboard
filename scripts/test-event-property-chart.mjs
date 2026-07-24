@@ -28,6 +28,13 @@ assert.match(
   /body\[data-active-view="events"\] \.eventIntervalTopbarControl\s*\{[^}]*order:\s*1;/,
   "the interval selector should be the first Events filter",
 );
+assert.doesNotMatch(indexSource, /eventActivitySection|id="eventChart"/, "the removed Event activity panel should not remain in the page");
+assert.doesNotMatch(appSource, /renderCustomEventChart|querySelector\("#eventChart"\)/, "the removed Event activity renderer should not remain");
+assert.doesNotMatch(
+  styleSource,
+  /\.eventActivitySection|\.eventChartHeader|\.eventChartLegend/,
+  "the removed Event activity panel should not retain dedicated styling",
+);
 assert.doesNotMatch(indexSource, /class="eventChartActions"/, "the event chart card should not retain a duplicate interval action");
 assert.doesNotMatch(appSource, /data-event-property-view/, "property cards should not include Timeline/Average tabs");
 assert.match(
@@ -36,21 +43,22 @@ assert.match(
   "property cards should render the legend above the timeline",
 );
 assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend should retain the original colored key layout");
+assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should not render average badges");
+assert.match(appSource, /class="eventPropertyRanked"/, "each property graph should include a ranked breakdown panel");
+assert.match(appSource, /<span role="columnheader">% of Events<\/span>/, "ranked breakdowns should show event percentage");
+assert.match(appSource, /<span role="columnheader">Change<\/span>/, "ranked breakdowns should label trend movement as Change");
+assert.doesNotMatch(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should not show raw event counts");
 assert.match(
-  appSource,
-  /<small><b>AVG<\/b>\$\{formatEventNumber\(entry\.percent\)\}%<\/small>/,
-  "each legend key should show its average below an AVG badge",
+  styleSource,
+  /\.eventPropertyBreakdown\s*\{[^}]*grid-template-columns:\s*minmax\(0, 3fr\) minmax\(320px, 2fr\);/,
+  "property cards should reserve roughly 60 percent for the graph and 40 percent for the ranked panel",
 );
 assert.match(
   styleSource,
   /\.eventPropertyAverageKey strong\s*\{[^}]*font-size:\s*14px;/,
   "property legend names should remain large enough to scan",
 );
-assert.match(
-  styleSource,
-  /\.eventPropertyAverageItem > small\s*\{[^}]*font-size:\s*14px;/,
-  "property legend average percentages should remain large enough to scan",
-);
+assert.doesNotMatch(styleSource, /\.eventPropertyAverageItem > small/, "removed average rows should not retain styling");
 assert.match(
   styleSource,
   /\.eventPropertyCardHeader h2\s*\{[^}]*font-size:\s*21px;/,
@@ -61,7 +69,29 @@ assert.match(
   /\.eventPropertyBreakdownHeader h3\s*\{[^}]*font-size:\s*21px;/,
   "every property graph heading should remain prominent",
 );
+assert.doesNotMatch(
+  appSource,
+  /recorded values\s*·\s*\$\{formatEventNumber\(coverage\)\}% event coverage/,
+  "property graph cards should not render the removed subtitle",
+);
 assert.doesNotMatch(appSource, /class="eventPropertyChartLegend"/, "property charts should not repeat the legend below the graph");
+const changeHelperStart = appSource.indexOf("function getEventPropertySeriesChange(");
+const changeHelperEnd = appSource.indexOf("\nfunction renderCustomEventPropertyChart(", changeHelperStart);
+assert.ok(changeHelperStart >= 0 && changeHelperEnd > changeHelperStart, "ranked breakdown change helper should remain available");
+const { getEventPropertySeriesChange } = Function(
+  `"use strict";\n${appSource.slice(changeHelperStart, changeHelperEnd)}\nreturn { getEventPropertySeriesChange };`,
+)();
+assert.equal(
+  getEventPropertySeriesChange([{ percent: 20 }, { percent: null }, { percent: 35 }]),
+  15,
+  "Change should compare the first and latest observed shares",
+);
+assert.equal(
+  getEventPropertySeriesChange([{ percent: 35 }, { percent: 20 }]),
+  -15,
+  "Change should retain negative movement",
+);
+assert.equal(getEventPropertySeriesChange([{ percent: 35 }]), 0, "a single observed share should have neutral change");
 const timelineHelperStart = appSource.indexOf("function getEventChartSpanMs(");
 const timelineHelperEnd = appSource.indexOf("\nfunction updateEventIntervalControl(", timelineHelperStart);
 assert.ok(timelineHelperStart >= 0 && timelineHelperEnd > timelineHelperStart, "event timeline formatting helpers should remain available");
