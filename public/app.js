@@ -196,7 +196,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-6";
+const DASHBOARD_ASSET_VERSION = "20260724-7";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -3043,8 +3043,8 @@ function renderCustomEventPropertyCard(property, propertyIndex) {
             <h3>${escapeHtml(formatEventPropertyName(propertyName))}</h3>
           </div>
         </header>
-        ${renderEventPropertyAverageLegend(property)}
         <div class="eventPropertyTimeline" data-event-property-chart-index="${propertyIndex}" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} values over time"></div>
+        ${renderEventPropertyAverageLegend(property)}
       </div>
       ${renderEventPropertyRankedBreakdown(property, propertyName)}
     </section>`;

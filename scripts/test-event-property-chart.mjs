@@ -39,8 +39,8 @@ assert.doesNotMatch(indexSource, /class="eventChartActions"/, "the event chart c
 assert.doesNotMatch(appSource, /data-event-property-view/, "property cards should not include Timeline/Average tabs");
 assert.match(
   appSource,
-  /<\/header>\s*\$\{renderEventPropertyAverageLegend\(property\)\}\s*<div class="eventPropertyTimeline"/,
-  "property cards should render the legend above the timeline",
+  /<div class="eventPropertyTimeline"[^>]*><\/div>\s*\$\{renderEventPropertyAverageLegend\(property\)\}/,
+  "property cards should render the legend below the timeline",
 );
 assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend should retain the original colored key layout");
 assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should not render average badges");
