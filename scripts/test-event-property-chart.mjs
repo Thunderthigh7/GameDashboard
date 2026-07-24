@@ -11,7 +11,16 @@ const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarCont
 const dateControlIndex = indexSource.indexOf('class="dateFilterCluster"');
 const releaseControlsIndex = indexSource.indexOf('class="releaseTopbarControls"');
 assert.equal(intervalControlMatches.length, 1, "the global event interval selector should exist exactly once");
-assert.match(indexSource, /id="eventIntervalButton"[^>]*aria-haspopup="listbox"/, "the interval control should use a themed listbox trigger");
+assert.match(
+  indexSource,
+  /class="eventIntervalSelect eventIntervalButton"[^>]*id="eventIntervalButton"[^>]*aria-haspopup="listbox"/,
+  "the interval control should use a themed listbox trigger with the previous selector as a styled fallback",
+);
+assert.match(
+  indexSource,
+  /id="eventIntervalButton"[\s\S]*?<svg[^>]*width="14"[^>]*height="14"/,
+  "the interval chevron should retain safe intrinsic dimensions before the latest stylesheet loads",
+);
 assert.match(indexSource, /id="eventIntervalMenu"[^>]*role="listbox"/, "the interval control should include a themed options menu");
 assert.match(indexSource, /id="eventIntervalSelect"[^>]*hidden/, "the native interval select should remain only as the hidden data source");
 assert.ok(
