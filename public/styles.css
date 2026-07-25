@@ -8394,8 +8394,8 @@ body.hasEventValueManager {
 
 .eventValueManagerRow {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 105px 36px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(155px, 0.66fr) 36px;
+  align-items: end;
   gap: 9px;
   border: 1px solid rgba(80, 99, 150, 0.32);
   border-radius: 10px;
@@ -8403,43 +8403,9 @@ body.hasEventValueManager {
   padding: 10px;
 }
 
-.eventValueManagerColor {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 38px;
-  border: 1px solid rgba(102, 119, 171, 0.48);
-  border-radius: 8px;
-  background: rgba(15, 24, 49, 0.82);
-  cursor: pointer;
-}
-
-.eventValueManagerColor input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.eventValueManagerColor:focus-within {
-  border-color: rgba(167, 139, 250, 0.84);
-  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.12);
-}
-
-.eventValueManagerColor span {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.7);
-  border-radius: 50%;
-  box-shadow: 0 0 12px rgba(124, 60, 255, 0.28);
-}
-
 .eventValueManagerValue input,
 .eventValueManagerValue select,
-.eventValueManagerHex input {
+.eventValueManagerHexInput {
   width: 100%;
   height: 38px;
   border: 1px solid rgba(88, 105, 154, 0.44);
@@ -8454,7 +8420,7 @@ body.hasEventValueManager {
 
 .eventValueManagerValue {
   display: grid;
-  gap: 6px;
+  gap: 9px;
   min-width: 0;
 }
 
@@ -8465,7 +8431,7 @@ body.hasEventValueManager {
 }
 
 .eventValueManagerValueLabel > span,
-.eventValueManagerHex > span {
+.eventValueManagerColorEditor > span:first-child {
   color: #8f9bb7;
   font-size: 8px;
   font-weight: 900;
@@ -8473,63 +8439,54 @@ body.hasEventValueManager {
   text-transform: uppercase;
 }
 
-.eventValueManagerRawSummary {
-  width: fit-content;
-  max-width: 100%;
+.eventValueManagerColorEditor {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.eventValueManagerColorControls {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 7px;
+  min-width: 0;
+}
+
+.eventValueManagerColorWheel {
+  width: 42px;
+  height: 38px;
   overflow: hidden;
-  border: 0;
-  background: transparent;
-  color: #8896b5;
-  padding: 0 2px;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border: 1px solid rgba(102, 119, 171, 0.52);
+  border-radius: 8px;
+  background: rgba(15, 24, 49, 0.82);
+  padding: 3px;
   cursor: pointer;
 }
 
-.eventValueManagerRawSummary:hover,
-.eventValueManagerRawSummary:focus-visible {
-  color: #cfc4ff;
-  outline: none;
+.eventValueManagerColorWheel::-webkit-color-swatch-wrapper {
+  padding: 0;
 }
 
-.eventValueManagerRawEditor {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  color: #8896b5;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
+.eventValueManagerColorWheel::-webkit-color-swatch {
+  border: 0;
+  border-radius: 5px;
 }
 
-.eventValueManagerRawEditor input,
-.eventValueManagerRawEditor select {
-  min-width: 90px;
-  height: 28px;
-  padding: 0 7px;
-  font-size: 11px;
+.eventValueManagerColorWheel::-moz-color-swatch {
+  border: 0;
+  border-radius: 5px;
 }
 
 .eventValueManagerValue input:focus,
 .eventValueManagerValue select:focus,
-.eventValueManagerHex input:focus {
+.eventValueManagerHexInput:focus,
+.eventValueManagerColorWheel:focus-visible {
   border-color: rgba(167, 139, 250, 0.84);
   box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.12);
   outline: none;
 }
 
-.eventValueManagerHex {
-  display: grid;
-  gap: 5px;
-}
-
-.eventValueManagerHex input {
+.eventValueManagerHexInput {
   color: #cfc4ff;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 11px;
@@ -8746,16 +8703,16 @@ body.hasEventConfirmDialog {
   }
 
   .eventValueManagerRow {
-    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    grid-template-columns: minmax(0, 1fr) 36px;
   }
 
-  .eventValueManagerHex {
-    grid-column: 2 / -1;
+  .eventValueManagerColorEditor {
+    grid-column: 1 / -1;
     grid-row: 2;
   }
 
   .eventValueManagerDeleteButton {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
   }
 

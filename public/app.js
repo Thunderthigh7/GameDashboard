@@ -286,7 +286,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-29";
+const DASHBOARD_ASSET_VERSION = "20260724-30";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -4436,7 +4436,6 @@ function getCurrentEventPropertyValueRows() {
       persisted: Boolean(savedSetting),
       originalValue: series.value,
       originalValueType: valueType,
-      rawEditorOpen: false,
     });
   }
   for (const setting of selectedSettings) {
@@ -4453,7 +4452,6 @@ function getCurrentEventPropertyValueRows() {
       persisted: true,
       originalValue: setting.value,
       originalValueType: setting.valueType,
-      rawEditorOpen: false,
     });
   }
   return [...rowsByIdentity.values()];
@@ -4548,28 +4546,8 @@ function renderEventValueManagerRow(row, index) {
         placeholder="Real value sent by Roblox"
         aria-label="Real Roblox value ${index + 1}"
       >`;
-  const rawValueLine = row.rawEditorOpen
-    ? `
-      <div class="eventValueManagerRawEditor" title="Changing this value changes which Roblox data the row matches.">
-        <span>(Real value sent:</span>
-        ${rawValueControl}
-        <span>)</span>
-      </div>`
-    : `
-      <button
-        class="eventValueManagerRawSummary"
-        type="button"
-        data-event-value-action="edit-raw"
-        data-event-value-index="${index}"
-        title="Edit the real value sent by Roblox"
-        aria-label="Edit real Roblox value ${index + 1}"
-      >(${escapeHtml(getEventValueManagerRawSummary(row))})</button>`;
   return `
     <div class="eventValueManagerRow" data-event-value-row="${index}">
-      <label class="eventValueManagerColor" title="Choose color">
-        <input type="color" value="${color}" data-event-value-color="${index}" aria-label="Color for ${escapeHtml(formatEventPropertyValue(row.value))}">
-        <span style="background:${color}" aria-hidden="true"></span>
-      </label>
       <div class="eventValueManagerValue">
         <label class="eventValueManagerValueLabel">
           <span>Display name</span>
@@ -4582,11 +4560,32 @@ function renderEventValueManagerRow(row, index) {
             aria-label="Display name ${index + 1}"
           >
         </label>
-        ${rawValueLine}
+        <label class="eventValueManagerValueLabel" title="Changing this value changes which Roblox data the row matches.">
+          <span>Roblox value</span>
+          ${rawValueControl}
+        </label>
       </div>
-      <label class="eventValueManagerHex">
+      <label class="eventValueManagerColorEditor">
         <span>Color</span>
-        <input type="text" value="${color}" maxlength="7" spellcheck="false" data-event-value-color-text="${index}" aria-label="Hex color for ${escapeHtml(formatEventPropertyValue(row.value))}">
+        <span class="eventValueManagerColorControls">
+          <input
+            class="eventValueManagerColorWheel"
+            type="color"
+            value="${color}"
+            data-event-value-color="${index}"
+            aria-label="Open color picker for ${escapeHtml(formatEventPropertyValue(row.value))}"
+            title="Open color picker"
+          >
+          <input
+            class="eventValueManagerHexInput"
+            type="text"
+            value="${color}"
+            maxlength="7"
+            spellcheck="false"
+            data-event-value-color-text="${index}"
+            aria-label="Hex color for ${escapeHtml(formatEventPropertyValue(row.value))}"
+          >
+        </span>
       </label>
       <button class="eventValueManagerDeleteButton" type="button" data-event-value-action="delete" data-event-value-index="${index}" aria-label="Delete ${escapeHtml(formatEventPropertyValue(row.value))}" title="Delete value">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
@@ -4600,16 +4599,6 @@ function getEventValueManagerDisplayName(row = {}) {
   return row.value === "" || row.value === null || row.value === undefined
     ? ""
     : formatEventPropertyValue(row.value);
-}
-
-function getEventValueManagerRawSummary(row = {}) {
-  const rawValue = row.value === "" || row.value === null || row.value === undefined
-    ? "Not set"
-    : formatEventPropertyValue(row.value);
-  const savedDisplayName = String(row.displayName || "").trim();
-  return !savedDisplayName || savedDisplayName === rawValue
-    ? "N/A"
-    : `Real value sent: ${rawValue}`;
 }
 
 function addEventValueManagerRow() {
@@ -4635,7 +4624,6 @@ function addEventValueManagerRow() {
     persisted: false,
     originalValue: value,
     originalValueType: valueType,
-    rawEditorOpen: true,
   });
   eventValueManagerDirty = true;
   if (eventValueManagerStatus) eventValueManagerStatus.textContent = "";
@@ -4662,23 +4650,16 @@ function handleEventValueManagerInput(event) {
     }
   } else if (event.target.matches("[data-event-value-display-name]")) {
     row.displayName = String(event.target.value || "").slice(0, 80);
-    const summary = eventValueManagerList
-      ?.querySelector(`[data-event-value-row="${valueIndex}"] .eventValueManagerRawSummary`);
-    if (summary) summary.textContent = `(${getEventValueManagerRawSummary(row)})`;
   } else if (event.target.matches("[data-event-value-color]")) {
     row.color = event.target.value.toLowerCase();
     const textInput = eventValueManagerList?.querySelector(`[data-event-value-color-text="${valueIndex}"]`);
-    const swatch = event.target.parentElement?.querySelector("span");
     if (textInput) textInput.value = row.color;
-    if (swatch) swatch.style.background = row.color;
   } else if (event.target.matches("[data-event-value-color-text]")) {
     const color = String(event.target.value || "").trim().toLowerCase();
     row.color = color;
     if (/^#[0-9a-f]{6}$/.test(color)) {
       const colorInput = eventValueManagerList?.querySelector(`[data-event-value-color="${valueIndex}"]`);
-      const swatch = colorInput?.parentElement?.querySelector("span");
       if (colorInput) colorInput.value = color;
-      if (swatch) swatch.style.background = color;
     }
   }
   eventValueManagerDirty = true;
@@ -4691,10 +4672,7 @@ function handleEventValueManagerAction(event) {
   const index = Number(button.dataset.eventValueIndex);
   const row = eventValueManagerRows[index];
   if (!row) return;
-  if (button.dataset.eventValueAction === "edit-raw") {
-    row.rawEditorOpen = true;
-    renderEventValueManagerRows({ focusIndex: index });
-  } else if (button.dataset.eventValueAction === "delete") {
+  if (button.dataset.eventValueAction === "delete") {
     if (row.manual && !row.observed && !row.persisted) {
       eventValueManagerRows.splice(index, 1);
     } else {

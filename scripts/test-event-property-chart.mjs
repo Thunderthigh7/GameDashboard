@@ -184,15 +184,25 @@ assert.match(
 );
 assert.match(
   appSource,
-  /getEventValueManagerRawSummary[\s\S]*\?\s*"N\/A"[\s\S]*Real value sent:/,
-  "managed values should show the real Roblox value beneath an alias and N/A when both names match",
+  /<span>Display name<\/span>[\s\S]*<span>Roblox value<\/span>/,
+  "managed values should keep separately labeled display and Roblox value fields visible",
 );
-assert.match(
+assert.doesNotMatch(
   appSource,
-  /data-event-value-action="edit-raw"/,
-  "managed values should allow the real Roblox value to be edited separately from its display name",
+  /eventValueManagerRawSummary|data-event-value-action="edit-raw"|\(N\/A\)/,
+  "the value manager should not hide real values behind the removed parenthesized interaction",
 );
 assert.match(appSource, /data-event-value-input=/, "the real Roblox value editor should remain editable");
+assert.match(
+  appSource,
+  /class="eventValueManagerColorWheel"[\s\S]*type="color"[\s\S]*class="eventValueManagerHexInput"/,
+  "each managed value should provide both a visible color picker and an editable hex value",
+);
+assert.match(
+  styleSource,
+  /\.eventValueManagerColorWheel\s*\{[^}]*cursor:\s*pointer;/,
+  "the native color picker should be presented as an obvious interactive control",
+);
 assert.match(
   appSource,
   /entry\.displayName[\s\S]*formatEventPropertyValue\(entry\.value\)/,
@@ -202,31 +212,20 @@ const valueManagerHelperStart = appSource.indexOf("function getEventValueManager
 const valueManagerHelperEnd = appSource.indexOf("\nfunction addEventValueManagerRow(", valueManagerHelperStart);
 assert.ok(
   valueManagerHelperStart >= 0 && valueManagerHelperEnd > valueManagerHelperStart,
-  "the display and raw value helpers should remain extractable",
+  "the display-name fallback helper should remain extractable",
 );
 const {
   getEventValueManagerDisplayName,
-  getEventValueManagerRawSummary,
 } = Function(
   `"use strict";
   const formatEventPropertyValue = (value) => String(value);
   ${appSource.slice(valueManagerHelperStart, valueManagerHelperEnd)}
-  return { getEventValueManagerDisplayName, getEventValueManagerRawSummary };`,
+  return { getEventValueManagerDisplayName };`,
 )();
 assert.equal(
   getEventValueManagerDisplayName({ value: "Shotgun", displayName: "" }),
   "Shotgun",
   "an unset display name should visibly fall back to the real Roblox value",
-);
-assert.equal(
-  getEventValueManagerRawSummary({ value: "Shotgun", displayName: "" }),
-  "N/A",
-  "matching display and real values should use the compact N/A indicator",
-);
-assert.equal(
-  getEventValueManagerRawSummary({ value: "Shotgun", displayName: "Pump Shotgun" }),
-  "Real value sent: Shotgun",
-  "an alias should expose its matching real Roblox value underneath",
 );
 assert.match(
   serverSource,
