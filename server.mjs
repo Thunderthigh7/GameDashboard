@@ -81,6 +81,8 @@ const MAX_EVENT_DEFINITIONS_PER_UNIVERSE = 200;
 const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = 200;
 const MAX_EVENT_DEFINITION_STORED_PROPERTIES =
   MAX_EVENT_DEFINITION_KNOWN_PROPERTIES + MAX_CUSTOM_EVENT_PROPERTIES;
+const MAX_EVENT_PROPERTY_VALUE_SETTINGS = 400;
+const MAX_EVENT_PROPERTY_ACTIVE_VALUES = 8;
 const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
 const RELEASE_COHORT_MIN_SESSIONS = 20;
 const SYSTEM_ANALYTICS_EVENT_DEFINITIONS = Object.freeze([
@@ -4749,6 +4751,36 @@ function normalizeEventDefinition(value, context) {
   if (visiblePropertyCount > MAX_CUSTOM_EVENT_PROPERTIES) {
     return { ok: false, error: `Events can define up to ${MAX_CUSTOM_EVENT_PROPERTIES} visible properties` };
   }
+  const hasExplicitValueSettings = Object.prototype.hasOwnProperty.call(
+    value && typeof value === "object" ? value : {},
+    "valueSettings",
+  );
+  if (hasExplicitValueSettings && !Array.isArray(value.valueSettings)) {
+    return { ok: false, error: "valueSettings must be an array" };
+  }
+  const rawValueSettings = Array.isArray(value?.valueSettings) ? value.valueSettings : [];
+  if (rawValueSettings.length > MAX_EVENT_PROPERTY_VALUE_SETTINGS) {
+    return {
+      ok: false,
+      error: `Events can retain up to ${MAX_EVENT_PROPERTY_VALUE_SETTINGS} property value settings`,
+    };
+  }
+  const valueSettings = normalizeEventDefinitionValueSettings(rawValueSettings);
+  if (valueSettings.length !== rawValueSettings.length) {
+    return { ok: false, error: "Every property value setting must have a valid property, value, and color" };
+  }
+  const activeValueCounts = new Map();
+  for (const setting of valueSettings) {
+    if (setting.hidden) continue;
+    const nextCount = (activeValueCounts.get(setting.propertyName) || 0) + 1;
+    if (nextCount > MAX_EVENT_PROPERTY_ACTIVE_VALUES) {
+      return {
+        ok: false,
+        error: `Each property can keep up to ${MAX_EVENT_PROPERTY_ACTIVE_VALUES} managed values`,
+      };
+    }
+    activeValueCounts.set(setting.propertyName, nextCount);
+  }
 
   const now = Date.now();
   return {
@@ -4760,6 +4792,7 @@ function normalizeEventDefinition(value, context) {
       eventName,
       properties,
       hiddenPropertyNames,
+      valueSettings,
       discoveredPropertyNames: [],
       createdAt: cleanTimestampMs(value?.createdAt) || now,
       updatedAt: now,
@@ -4768,6 +4801,7 @@ function normalizeEventDefinition(value, context) {
     },
     metadata: {
       hasExplicitHiddenPropertyNames,
+      hasExplicitValueSettings,
       legacyKeyMode: value?.keyMode === "manual"
         ? "manual"
         : (value?.keyMode === "auto" ? "auto" : ""),
@@ -4810,6 +4844,7 @@ function serializeEventDefinition(definition) {
     properties,
     hiddenPropertyNames,
     effectiveProperties,
+    valueSettings: normalizeEventDefinitionValueSettings(definition?.valueSettings),
     createdAt: cleanTimestampMs(definition?.createdAt) || null,
     updatedAt: cleanTimestampMs(definition?.updatedAt) || null,
     firstSeenAt: cleanTimestampMs(definition?.firstSeenAt) || null,
@@ -4853,6 +4888,59 @@ function normalizeKnownEventPropertyNames(value) {
     if (names.length >= MAX_EVENT_DEFINITION_KNOWN_PROPERTIES) break;
   }
   return names;
+}
+
+function normalizeEventDefinitionValueSettings(value) {
+  const settings = [];
+  const identities = new Set();
+  for (const rawSetting of Array.isArray(value) ? value : []) {
+    const setting = normalizeEventDefinitionValueSetting(rawSetting);
+    if (!setting) continue;
+    const identity = `${setting.propertyName}\u0000${getCustomEventPropertyValueKey(setting.value)}`;
+    if (identities.has(identity)) continue;
+    identities.add(identity);
+    settings.push(setting);
+    if (settings.length >= MAX_EVENT_PROPERTY_VALUE_SETTINGS) break;
+  }
+  return settings;
+}
+
+function normalizeEventDefinitionValueSetting(rawSetting) {
+  const propertyName = String(rawSetting?.propertyName || rawSetting?.property || "").trim();
+  if (!isValidCustomEventPropertyPath(propertyName)) return null;
+
+  const requestedType = cleanString(rawSetting?.valueType, 16).toLowerCase();
+  const inferredType = typeof rawSetting?.value;
+  const valueType = ["string", "number", "boolean"].includes(requestedType)
+    ? requestedType
+    : (["string", "number", "boolean"].includes(inferredType) ? inferredType : "string");
+  let settingValue;
+  if (valueType === "number") {
+    settingValue = Number(rawSetting?.value);
+    if (!Number.isFinite(settingValue)) return null;
+  } else if (valueType === "boolean") {
+    if (rawSetting?.value === true || String(rawSetting?.value).toLowerCase() === "true") {
+      settingValue = true;
+    } else if (rawSetting?.value === false || String(rawSetting?.value).toLowerCase() === "false") {
+      settingValue = false;
+    } else {
+      return null;
+    }
+  } else {
+    settingValue = cleanString(rawSetting?.value, 240);
+    if (!settingValue) return null;
+  }
+
+  const requestedColor = cleanString(rawSetting?.color, 16).toLowerCase();
+  if (requestedColor && !/^#[0-9a-f]{6}$/.test(requestedColor)) return null;
+  return {
+    propertyName,
+    value: settingValue,
+    valueType,
+    color: requestedColor,
+    manual: Boolean(rawSetting?.manual),
+    hidden: Boolean(rawSetting?.hidden),
+  };
 }
 
 function getEventDefinitionPropertyState(definition) {
@@ -4902,6 +4990,13 @@ function resolveSavedEventDefinitionHiddenPropertyNames(definition, existing, me
     );
   }
   return existingState.hiddenPropertyNames;
+}
+
+function resolveSavedEventDefinitionValueSettings(definition, existing, metadata = {}) {
+  if (metadata.hasExplicitValueSettings) {
+    return normalizeEventDefinitionValueSettings(definition?.valueSettings);
+  }
+  return normalizeEventDefinitionValueSettings(existing?.valueSettings);
 }
 
 function getDiscoveredPropertyNamesFromEvents(events) {
@@ -4985,6 +5080,7 @@ async function discoverEventDefinitionsFromPresence(presence) {
                   universeId,
                   eventName: discovery.eventName,
                   properties: { $ifNull: ["$properties", []] },
+                  valueSettings: { $ifNull: ["$valueSettings", []] },
                   hiddenPropertyNames: {
                     $cond: [
                       { $isArray: "$hiddenPropertyNames" },
@@ -5078,6 +5174,7 @@ async function discoverEventDefinitionsFromPresence(presence) {
           eventName: discovery.eventName,
           properties: [],
           hiddenPropertyNames: [],
+          valueSettings: [],
           discoveredPropertyNames: [],
           createdAt: now,
           firstSeenAt: discovery.firstSeenAt,
@@ -5087,6 +5184,7 @@ async function discoverEventDefinitionsFromPresence(presence) {
       const propertyState = getEventDefinitionPropertyState(definition);
       definition.properties = propertyState.properties;
       definition.hiddenPropertyNames = propertyState.hiddenPropertyNames;
+      definition.valueSettings = normalizeEventDefinitionValueSettings(definition.valueSettings);
       delete definition.keyMode;
       const previousNames = propertyState.discoveredPropertyNames;
       definition.discoveredPropertyNames = normalizeDiscoveredEventPropertyNames([
@@ -5204,6 +5302,7 @@ async function saveEventDefinition(definition, metadata = {}) {
         createdAt: cleanTimestampMs(existing?.createdAt) || definition.createdAt,
         properties: normalizeEventDefinitionProperties(definition.properties),
         hiddenPropertyNames,
+        valueSettings: resolveSavedEventDefinitionValueSettings(definition, existing, metadata),
         discoveredPropertyNames: normalizeDiscoveredEventPropertyNames(existing?.discoveredPropertyNames),
         firstSeenAt: cleanTimestampMs(existing?.firstSeenAt) || definition.firstSeenAt,
         lastSeenAt: cleanTimestampMs(existing?.lastSeenAt) || definition.lastSeenAt,
@@ -5222,6 +5321,7 @@ async function saveEventDefinition(definition, metadata = {}) {
             eventName: savedDefinition.eventName,
             properties: savedDefinition.properties,
             hiddenPropertyNames: savedDefinition.hiddenPropertyNames,
+            valueSettings: savedDefinition.valueSettings,
             updatedAt: savedDefinition.updatedAt,
           },
           $unset: {
@@ -5277,6 +5377,7 @@ async function saveEventDefinition(definition, metadata = {}) {
         existing,
         metadata,
       ),
+      valueSettings: resolveSavedEventDefinitionValueSettings(definition, existing, metadata),
       discoveredPropertyNames: normalizeDiscoveredEventPropertyNames(
         existing?.discoveredPropertyNames,
       ),
@@ -5546,6 +5647,7 @@ async function getCustomEventsFromQuery(ownerUserId, searchParams) {
       eventDefinitions: MAX_EVENT_DEFINITIONS_PER_UNIVERSE,
       propertiesPerEvent: MAX_CUSTOM_EVENT_PROPERTIES,
       knownPropertiesPerEvent: MAX_EVENT_DEFINITION_KNOWN_PROPERTIES,
+      managedValuesPerProperty: MAX_EVENT_PROPERTY_ACTIVE_VALUES,
     },
   };
 }
@@ -5962,6 +6064,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     rangeStart: eventSeries.rangeStart,
     rangeEnd: eventSeries.rangeEnd,
     allowedPropertyNames,
+    propertyDefinitions: serializedDefinition?.effectiveProperties || [],
+    valueSettings: serializedDefinition?.valueSettings || [],
   });
   const properties = observedProperties;
   const observedPropertyNames = allObservedPropertyNames
@@ -6087,31 +6191,60 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
   const allowedPropertyNames = timelineOptions.allowedPropertyNames instanceof Set
     ? timelineOptions.allowedPropertyNames
     : null;
+  const valueSettings = normalizeEventDefinitionValueSettings(timelineOptions.valueSettings);
+  const settingsByProperty = new Map();
+  for (const setting of valueSettings) {
+    if (!settingsByProperty.has(setting.propertyName)) settingsByProperty.set(setting.propertyName, []);
+    settingsByProperty.get(setting.propertyName).push(setting);
+  }
+  const propertyTypes = new Map(
+    (Array.isArray(timelineOptions.propertyDefinitions) ? timelineOptions.propertyDefinitions : [])
+      .filter((property) => isValidCustomEventPropertyPath(property?.name))
+      .map((property) => [property.name, property.type]),
+  );
   const summaries = new Map();
+  const getSummary = (name) => {
+    let summary = summaries.get(name);
+    if (summary) return summary;
+    summary = {
+      name,
+      configuredType: propertyTypes.get(name) || "string",
+      eventCount: 0,
+      observationCount: 0,
+      numericCount: 0,
+      total: 0,
+      min: Infinity,
+      max: -Infinity,
+      values: new Map(),
+      valueEventCounts: new Map(),
+      valuesTruncated: false,
+    };
+    summaries.set(name, summary);
+    return summary;
+  };
+  for (const name of propertyTypes.keys()) {
+    if (!allowedPropertyNames || allowedPropertyNames.has(name)) getSummary(name);
+  }
+  for (const propertyName of settingsByProperty.keys()) {
+    if (!allowedPropertyNames || allowedPropertyNames.has(propertyName)) getSummary(propertyName);
+  }
+
   for (const event of events) {
     for (const [key, value] of Object.entries(event.properties || {})) {
       if (!isValidCustomEventPropertyPath(key)) continue;
       if (allowedPropertyNames && !allowedPropertyNames.has(key)) continue;
+      const hiddenValueKeys = new Set(
+        (settingsByProperty.get(key) || [])
+          .filter((setting) => setting.hidden)
+          .map((setting) => getCustomEventPropertyValueKey(setting.value)),
+      );
       const observations = (Array.isArray(value) ? value : [value])
         .slice(0, MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS)
-        .filter((entry) => typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry)));
+        .filter((entry) => typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry)))
+        .map((entry) => (typeof entry === "string" ? cleanString(entry, 240) : entry))
+        .filter((entry) => !hiddenValueKeys.has(getCustomEventPropertyValueKey(entry)));
       if (!observations.length) continue;
-      let summary = summaries.get(key);
-      if (!summary) {
-        summary = {
-          name: key,
-          eventCount: 0,
-          observationCount: 0,
-          numericCount: 0,
-          total: 0,
-          min: Infinity,
-          max: -Infinity,
-          values: new Map(),
-          valueEventCounts: new Map(),
-          valuesTruncated: false,
-        };
-        summaries.set(key, summary);
-      }
+      const summary = getSummary(key);
       summary.eventCount += 1;
       summary.observationCount += observations.length;
       const valueKeysInEvent = new Set();
@@ -6123,7 +6256,7 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
           summary.max = Math.max(summary.max, observation);
         }
         const valueType = typeof observation;
-        const displayValue = valueType === "string" ? cleanString(observation, 240) : observation;
+        const displayValue = observation;
         const valueKey = getCustomEventPropertyValueKey(displayValue);
         if (summary.values.has(valueKey) || summary.values.size < MAX_CUSTOM_EVENT_PROPERTY_VALUES_TRACKED) {
           const trackedValue = summary.values.get(valueKey) || { value: displayValue, valueType, occurrences: 0 };
@@ -6141,10 +6274,44 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
   }
 
   return [...summaries.values()].map((summary) => {
-    const responseValueLimit = summary.name === selectedPropertyName ? cleanValueLimit : Math.min(cleanValueLimit, 4);
-    const type = summary.numericCount === summary.observationCount
+    const responseValueLimit = cleanValueLimit;
+    const propertySettings = settingsByProperty.get(summary.name) || [];
+    const visibleSettingsByKey = new Map(
+      propertySettings
+        .filter((setting) => !setting.hidden)
+        .map((setting) => [getCustomEventPropertyValueKey(setting.value), setting]),
+    );
+    for (const [valueKey, setting] of visibleSettingsByKey) {
+      if (!summary.values.has(valueKey)) {
+        summary.values.set(valueKey, {
+          value: setting.value,
+          valueType: setting.valueType,
+          occurrences: 0,
+        });
+      }
+    }
+    const type = summary.observationCount > 0 && summary.numericCount === summary.observationCount
       ? "number"
-      : (summary.numericCount > 0 ? "mixed" : "category");
+      : (summary.numericCount > 0
+          ? "mixed"
+          : (summary.configuredType === "number" ? "number" : "category"));
+    const rankedValues = [...summary.values.entries()]
+      .map(([valueKey, trackedValue]) => {
+        const setting = visibleSettingsByKey.get(valueKey);
+        return {
+          value: trackedValue.value,
+          valueType: trackedValue.valueType,
+          count: summary.valueEventCounts.get(valueKey) || 0,
+          occurrences: trackedValue.occurrences,
+          color: setting?.color || "",
+          managed: Boolean(setting),
+          manual: Boolean(setting?.manual),
+        };
+      })
+      .sort((left, right) => Number(right.managed) - Number(left.managed)
+        || right.count - left.count
+        || right.occurrences - left.occurrences
+        || String(left.value).localeCompare(String(right.value)));
     const property = {
       name: summary.name,
       count: summary.eventCount,
@@ -6157,19 +6324,12 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
       max: summary.numericCount ? summary.max : null,
       totalValues: summary.values.size,
       valuesTruncated: summary.valuesTruncated,
-      topValues: [...summary.values.entries()]
-        .map(([valueKey, trackedValue]) => ({
-          value: trackedValue.value,
-          valueType: trackedValue.valueType,
-          count: summary.valueEventCounts.get(valueKey) || 0,
-          occurrences: trackedValue.occurrences,
-        }))
-        .sort((left, right) => right.count - left.count
-          || right.occurrences - left.occurrences
-          || String(left.value).localeCompare(String(right.value)))
-        .slice(0, responseValueLimit),
+      topValues: rankedValues.slice(0, responseValueLimit),
     };
-    property.timeline = buildCustomEventPropertyTimeline(events, property, timelineOptions);
+    property.timeline = buildCustomEventPropertyTimeline(events, property, {
+      ...timelineOptions,
+      valueSettings: propertySettings,
+    });
     return property;
   }).sort((left, right) => right.eventCount - left.eventCount);
 }
@@ -6217,7 +6377,15 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
     };
   }
 
-  const numericSeries = buildNumericCustomEventPropertySeries(property);
+  const propertyValueSettings = normalizeEventDefinitionValueSettings(options.valueSettings)
+    .filter((setting) => setting.propertyName === property.name);
+  const hiddenValueKeys = new Set(
+    propertyValueSettings
+      .filter((setting) => setting.hidden)
+      .map((setting) => getCustomEventPropertyValueKey(setting.value)),
+  );
+  const hasManagedValues = topValues.some((entry) => entry.managed);
+  const numericSeries = hasManagedValues ? [] : buildNumericCustomEventPropertySeries(property);
   const trackedSeries = numericSeries.length
     ? numericSeries
     : topValues.map((entry) => ({
@@ -6225,6 +6393,9 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
       value: entry.value,
       valueType: entry.valueType || typeof entry.value,
       isOther: false,
+      color: entry.color || "",
+      managed: Boolean(entry.managed),
+      manual: Boolean(entry.manual),
     }));
   const trackedSeriesIds = new Set(trackedSeries.map((entry) => entry.id));
   const includeOther = !numericSeries.length && (
@@ -6258,7 +6429,8 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
     );
     const bucket = buckets[bucketIndex];
     if (!bucket) continue;
-    const observations = getCustomEventPropertyObservations(event, property.name);
+    const observations = getCustomEventPropertyObservations(event, property.name)
+      .filter((observation) => !hiddenValueKeys.has(getCustomEventPropertyValueKey(observation)));
     for (const observation of observations) {
       const valueKey = getCustomEventPropertyValueKey(observation);
       const numericBucket = numericSeries.length && typeof observation === "number"
@@ -6288,6 +6460,9 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
         value: series.value,
         valueType: series.valueType,
         isOther: series.isOther,
+        color: series.color || "",
+        managed: Boolean(series.managed),
+        manual: Boolean(series.manual),
         count,
         percent: totalObservations ? (count / totalObservations) * 100 : 0,
         points: buckets.map((bucket) => {

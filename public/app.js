@@ -137,6 +137,14 @@ const eventPropertyHeaderPlayerCount = document.querySelector("#eventPropertyHea
 const eventPropertyHeaderSessionCount = document.querySelector("#eventPropertyHeaderSessionCount");
 const eventPropertyHeaderSessionCoverage = document.querySelector("#eventPropertyHeaderSessionCoverage");
 const eventPropertyList = document.querySelector("#eventPropertyList");
+const eventValueManagerDialog = document.querySelector("#eventValueManagerDialog");
+const eventValueManagerPropertyName = document.querySelector("#eventValueManagerPropertyName");
+const eventValueManagerCloseButton = document.querySelector("#eventValueManagerCloseButton");
+const eventValueManagerList = document.querySelector("#eventValueManagerList");
+const eventValueManagerAddButton = document.querySelector("#eventValueManagerAddButton");
+const eventValueManagerStatus = document.querySelector("#eventValueManagerStatus");
+const eventValueManagerCancelButton = document.querySelector("#eventValueManagerCancelButton");
+const eventValueManagerSaveButton = document.querySelector("#eventValueManagerSaveButton");
 const recentEventTableHeader = document.querySelector("#recentEventTableHeader");
 const recentEventList = document.querySelector("#recentEventList");
 const viewAllRecentEventsButton = document.querySelector("#viewAllRecentEventsButton");
@@ -243,6 +251,10 @@ let currentSelectedEvent = null;
 let selectedEventInterval = "auto";
 let selectedEventPropertyName = "";
 let selectedEventPropertyEventName = "";
+let eventValueManagerRows = [];
+let eventValueManagerUntouchedSettings = [];
+let eventValueManagerDirty = false;
+let eventValueManagerReturnFocus = null;
 let recentEventsExpanded = false;
 let isEditingEventDefinition = false;
 let eventDefinitionProperties = [];
@@ -274,11 +286,21 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-26";
-const EVENT_PROPERTY_VALUE_LIMIT = 4;
+const DASHBOARD_ASSET_VERSION = "20260724-27";
+const EVENT_PROPERTY_VALUE_LIMIT = 8;
+const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
-const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
+const EVENT_PROPERTY_SERIES_COLORS = [
+  "#9b6dff",
+  "#2dd4bf",
+  "#f5b942",
+  "#fb7185",
+  "#60a5fa",
+  "#f97316",
+  "#22c55e",
+  "#e879f9",
+];
 const RECENT_EVENT_LIMIT = 7;
 const RECENT_EVENT_EXPANDED_LIMIT = 100;
 const MAX_AI_CHAT_HISTORY_MESSAGES = 8;
@@ -528,6 +550,17 @@ function bindEvents() {
   eventPropertyList?.addEventListener("click", handleEventPropertyTabClick);
   eventPropertyList?.addEventListener("keydown", handleEventPropertyTabKeydown);
   document.addEventListener("pointerdown", handleEventPropertyMoreOutsidePointer);
+  eventValueManagerCloseButton?.addEventListener("click", () => closeEventValueManager());
+  eventValueManagerCancelButton?.addEventListener("click", () => closeEventValueManager());
+  eventValueManagerAddButton?.addEventListener("click", addEventValueManagerRow);
+  eventValueManagerList?.addEventListener("input", handleEventValueManagerInput);
+  eventValueManagerList?.addEventListener("change", handleEventValueManagerInput);
+  eventValueManagerList?.addEventListener("click", handleEventValueManagerAction);
+  eventValueManagerSaveButton?.addEventListener("click", saveEventValueSettings);
+  eventValueManagerDialog?.addEventListener("pointerdown", (event) => {
+    if (event.target === eventValueManagerDialog) closeEventValueManager();
+  });
+  document.addEventListener("keydown", handleEventValueManagerKeydown);
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
     loadCustomEvents({ force: true });
@@ -980,6 +1013,7 @@ function setActiveView(view, options = {}) {
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (activeView !== "funnels") closeFunnelMoreMenu();
   if (activeView !== "events") {
+    closeEventValueManager({ force: true, skipFocus: true });
     closeDateRangePicker();
     closeEventIntervalMenu();
     closeEventMoreMenu();
@@ -2431,6 +2465,15 @@ async function selectUniverse(value) {
   const previousUniverseId = selectedUniverseId;
   const nextUniverseId = /^\d+$/.test(cleanValue) && knownIds.has(cleanValue) ? cleanValue : "";
   if (nextUniverseId === previousUniverseId) return true;
+  if (
+    eventValueManagerDialog
+    && !eventValueManagerDialog.hidden
+    && !await closeEventValueManager({ skipFocus: true })
+  ) {
+    if (universeSelect) universeSelect.value = previousUniverseId;
+    updateSelectedUniverse();
+    return false;
+  }
   if (isEditingEventDefinition && eventDefinitionIsDirty && !await confirmUnsavedEventDefinition()) {
     if (universeSelect) universeSelect.value = previousUniverseId;
     updateSelectedUniverse();
@@ -3407,6 +3450,15 @@ function setEventDefinitionBuilderVisible(visible) {
 
 async function confirmEventDefinitionDiscard(nextView) {
   if (
+    activeView === "events"
+    && nextView !== "events"
+    && eventValueManagerDialog
+    && !eventValueManagerDialog.hidden
+    && !await closeEventValueManager({ skipFocus: true })
+  ) {
+    return false;
+  }
+  if (
     activeView !== "events"
     || nextView === "events"
     || !isEditingEventDefinition
@@ -4116,7 +4168,11 @@ function renderCustomEventProperties(properties, releaseMarkers = [], options = 
   selectedEventPropertyName = selectedProperty.name;
 
   eventPropertyList.innerHTML = `
-    ${renderEventPropertyTabs(visibleProperties, selectedProperty.name)}
+    ${renderEventPropertyTabs(visibleProperties, selectedProperty.name, {
+      canManageValues: options.selectedEvent?.sourceType === "custom"
+        && options.selectedEvent?.definition
+        && selectedProperty.name !== "Event activity",
+    })}
     <div class="eventPropertyWorkspace">
       ${isCreatedPlaceholder
         ? renderCreatedEventPropertyPlaceholder(selectedProperty.name)
@@ -4131,7 +4187,14 @@ function renderCustomEventProperties(properties, releaseMarkers = [], options = 
   }
 
   const chart = eventPropertyList.querySelector("[data-event-property-chart-index]");
-  if (chart) renderCustomEventPropertyChart(chart, selectedProperty, releaseMarkers);
+  if (chart) {
+    if (getEventPropertyChartSeries(selectedProperty).length) {
+      renderCustomEventPropertyChart(chart, selectedProperty, releaseMarkers);
+    } else {
+      chart.dataset.eventPropertyName = selectedProperty.name;
+      renderEmptyCustomEventPropertyChart(chart, options.selectedEvent, releaseMarkers);
+    }
+  }
 }
 
 function getCreatedEventPlaceholderProperties(definition = {}) {
@@ -4144,7 +4207,7 @@ function getCreatedEventPlaceholderProperties(definition = {}) {
   return visiblePropertyNames.map((name) => ({ name }));
 }
 
-function renderEventPropertyTabs(properties = [], activePropertyName = "") {
+function renderEventPropertyTabs(properties = [], activePropertyName = "", options = {}) {
   const primaryProperties = properties.slice(0, EVENT_PROPERTY_PRIMARY_TAB_LIMIT);
   const overflowProperties = properties.slice(EVENT_PROPERTY_PRIMARY_TAB_LIMIT);
   const activeOverflowProperty = overflowProperties
@@ -4170,6 +4233,13 @@ function renderEventPropertyTabs(properties = [], activePropertyName = "") {
         </div>
       </details>`
     : "";
+  const manageButton = options.canManageValues
+    ? `
+      <button class="eventPropertyManageValuesButton" type="button" data-event-property-manage-values>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 17h16M18 7h2M4 12h3M11 12h9" /><circle cx="16" cy="7" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="8" cy="17" r="2" /></svg>
+        <span>Manage values &amp; colors</span>
+      </button>`
+    : "";
 
   return `
     <nav class="eventPropertyTabs" aria-label="Event properties">
@@ -4177,6 +4247,7 @@ function renderEventPropertyTabs(properties = [], activePropertyName = "") {
         ${primaryTabs}
       </div>
       ${overflowMenu}
+      ${manageButton}
     </nav>`;
 }
 
@@ -4195,6 +4266,11 @@ function renderEventPropertyTab(property = {}, activePropertyName = "") {
 }
 
 function handleEventPropertyTabClick(event) {
+  const manageButton = event.target.closest("[data-event-property-manage-values]");
+  if (manageButton && eventPropertyList?.contains(manageButton)) {
+    openEventValueManager(manageButton);
+    return;
+  }
   const button = event.target.closest("[data-event-property-tab]");
   if (!button || !eventPropertyList?.contains(button)) return;
   selectEventPropertyTab(button.dataset.eventPropertyTab || "");
@@ -4272,6 +4348,441 @@ function selectEventPropertyTab(propertyName, options = {}) {
   });
 }
 
+function getEventPropertyValueIdentity(value, valueType = typeof value) {
+  const normalized = normalizeManagedEventPropertyValue(value, valueType);
+  if (!normalized.ok) return "";
+  return `${normalized.valueType}:${String(normalized.value)}`;
+}
+
+function normalizeManagedEventPropertyValue(value, valueType = "string") {
+  if (valueType === "number") {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? { ok: true, value: number, valueType: "number" }
+      : { ok: false, error: "Enter a valid number for every value." };
+  }
+  if (valueType === "boolean") {
+    if (value === true || String(value).toLowerCase() === "true") {
+      return { ok: true, value: true, valueType: "boolean" };
+    }
+    if (value === false || String(value).toLowerCase() === "false") {
+      return { ok: true, value: false, valueType: "boolean" };
+    }
+    return { ok: false, error: "Boolean values must be true or false." };
+  }
+  const text = String(value ?? "").trim();
+  return text
+    ? { ok: true, value: text.slice(0, 240), valueType: "string" }
+    : { ok: false, error: "Name or remove every value." };
+}
+
+function getSelectedEventProperty() {
+  return (currentSelectedEvent?.properties || [])
+    .find((property) => property?.name === selectedEventPropertyName)
+    || null;
+}
+
+function getNewManagedEventPropertyValueType() {
+  const configuredType = (currentSelectedEvent?.definition?.properties || [])
+    .find((property) => property?.name === selectedEventPropertyName)
+    ?.type;
+  if (configuredType === "number" || configuredType === "boolean") return configuredType;
+  const selectedProperty = getSelectedEventProperty();
+  const observedValueTypes = new Set(
+    (selectedProperty?.timeline?.series || [])
+      .filter((series) => !series?.isOther && series?.valueType !== "range")
+      .map((series) => series?.valueType)
+      .filter((valueType) => ["string", "number", "boolean"].includes(valueType)),
+  );
+  if (observedValueTypes.size === 1) return [...observedValueTypes][0];
+  return selectedProperty?.type === "number" ? "number" : "string";
+}
+
+function getCurrentEventPropertyValueRows() {
+  const propertyName = selectedEventPropertyName;
+  const definitionSettings = Array.isArray(currentSelectedEvent?.definition?.valueSettings)
+    ? currentSelectedEvent.definition.valueSettings
+    : [];
+  eventValueManagerUntouchedSettings = definitionSettings
+    .filter((setting) => setting?.propertyName !== propertyName)
+    .map((setting) => ({ ...setting }));
+  const selectedSettings = definitionSettings
+    .filter((setting) => setting?.propertyName === propertyName);
+  const settingsByIdentity = new Map(
+    selectedSettings.map((setting) => [
+      getEventPropertyValueIdentity(setting.value, setting.valueType),
+      setting,
+    ]),
+  );
+  const rowsByIdentity = new Map();
+  const propertySeries = getEventPropertyChartSeries(getSelectedEventProperty() || {});
+  for (const series of propertySeries) {
+    if (series?.isOther || series?.valueType === "range") continue;
+    const valueType = ["string", "number", "boolean"].includes(series.valueType)
+      ? series.valueType
+      : typeof series.value;
+    const identity = getEventPropertyValueIdentity(series.value, valueType);
+    if (!identity) continue;
+    const savedSetting = settingsByIdentity.get(identity);
+    if (savedSetting?.hidden) continue;
+    rowsByIdentity.set(identity, {
+      value: series.value,
+      valueType,
+      color: savedSetting?.color || getEventPropertySeriesColor(series, propertyName),
+      manual: Boolean(savedSetting?.manual),
+      hidden: false,
+      observed: Number(series.count) > 0 || !savedSetting?.manual,
+      persisted: Boolean(savedSetting),
+      originalValue: series.value,
+      originalValueType: valueType,
+    });
+  }
+  for (const setting of selectedSettings) {
+    const identity = getEventPropertyValueIdentity(setting.value, setting.valueType);
+    if (!identity || rowsByIdentity.has(identity)) continue;
+    rowsByIdentity.set(identity, {
+      value: setting.value,
+      valueType: setting.valueType,
+      color: setting.color || getEventPropertySeriesColor(setting, propertyName),
+      manual: Boolean(setting.manual),
+      hidden: Boolean(setting.hidden),
+      observed: !setting.manual,
+      persisted: true,
+      originalValue: setting.value,
+      originalValueType: setting.valueType,
+    });
+  }
+  return [...rowsByIdentity.values()];
+}
+
+function openEventValueManager(returnFocus) {
+  if (
+    !eventValueManagerDialog
+    || currentSelectedEvent?.sourceType !== "custom"
+    || !currentSelectedEvent?.definition
+    || !selectedEventPropertyName
+  ) {
+    return;
+  }
+  eventValueManagerReturnFocus = returnFocus || document.activeElement;
+  eventValueManagerRows = getCurrentEventPropertyValueRows();
+  eventValueManagerDirty = false;
+  if (eventValueManagerPropertyName) {
+    eventValueManagerPropertyName.textContent = formatEventPropertyName(selectedEventPropertyName);
+  }
+  if (eventValueManagerStatus) eventValueManagerStatus.textContent = "";
+  eventValueManagerDialog.hidden = false;
+  document.body.classList.add("hasEventValueManager");
+  renderEventValueManagerRows();
+  requestAnimationFrame(() => eventValueManagerCloseButton?.focus());
+}
+
+async function closeEventValueManager(options = {}) {
+  if (!eventValueManagerDialog || eventValueManagerDialog.hidden) return true;
+  if (eventValueManagerDirty && !options.force) {
+    const confirmed = await showEventConfirmation({
+      title: "Discard value changes?",
+      description: "Your value names, colors, and deletions have not been saved.",
+      confirmLabel: "Discard changes",
+      danger: true,
+      returnFocus: eventValueManagerCancelButton,
+    });
+    if (!confirmed) return false;
+  }
+  const returnFocus = eventValueManagerReturnFocus;
+  eventValueManagerDirty = false;
+  eventValueManagerRows = [];
+  eventValueManagerUntouchedSettings = [];
+  eventValueManagerReturnFocus = null;
+  eventValueManagerDialog.hidden = true;
+  document.body.classList.remove("hasEventValueManager");
+  if (!options.skipFocus) requestAnimationFrame(() => returnFocus?.isConnected && returnFocus.focus());
+  return true;
+}
+
+function renderEventValueManagerRows(options = {}) {
+  if (!eventValueManagerList) return;
+  const visibleRows = eventValueManagerRows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => !row.hidden);
+  eventValueManagerList.innerHTML = visibleRows.length
+    ? visibleRows.map(({ row, index }) => renderEventValueManagerRow(row, index)).join("")
+    : `
+      <div class="eventValueManagerEmpty">
+        <strong>No visible values</strong>
+        <span>Add one now or wait for Roblox to send a value.</span>
+      </div>`;
+  if (eventValueManagerAddButton) {
+    eventValueManagerAddButton.disabled = visibleRows.length >= MAX_EVENT_PROPERTY_MANAGED_VALUES;
+  }
+  if (Number.isInteger(options.focusIndex)) {
+    requestAnimationFrame(() => {
+      eventValueManagerList
+        ?.querySelector(`[data-event-value-input="${options.focusIndex}"]`)
+        ?.focus();
+    });
+  }
+}
+
+function renderEventValueManagerRow(row, index) {
+  const color = /^#[0-9a-f]{6}$/i.test(String(row.color || ""))
+    ? String(row.color).toLowerCase()
+    : getEventPropertySeriesColor(row, selectedEventPropertyName);
+  const valueControl = row.manual
+    ? row.valueType === "boolean"
+      ? `
+        <select data-event-value-input="${index}" aria-label="Value ${index + 1}">
+          <option value="true" ${row.value === true || row.value === "true" ? "selected" : ""}>True</option>
+          <option value="false" ${row.value === false || row.value === "false" ? "selected" : ""}>False</option>
+        </select>`
+      : `
+        <input
+          data-event-value-input="${index}"
+          type="${row.valueType === "number" ? "number" : "text"}"
+          ${row.valueType === "number" ? 'step="any"' : 'maxlength="240"'}
+          value="${escapeHtml(String(row.value ?? ""))}"
+          placeholder="Value name"
+          aria-label="Value ${index + 1}"
+        >`
+    : `
+      <input
+        type="text"
+        value="${escapeHtml(formatEventPropertyValue(row.value))}"
+        aria-label="Automatic value ${index + 1}"
+        title="Automatically discovered from Roblox"
+        readonly
+      >`;
+  return `
+    <div class="eventValueManagerRow" data-event-value-row="${index}">
+      <label class="eventValueManagerColor" title="Choose color">
+        <input type="color" value="${color}" data-event-value-color="${index}" aria-label="Color for ${escapeHtml(formatEventPropertyValue(row.value))}">
+        <span style="background:${color}" aria-hidden="true"></span>
+      </label>
+      <div class="eventValueManagerValue">${valueControl}</div>
+      <label class="eventValueManagerHex">
+        <span>Color</span>
+        <input type="text" value="${color}" maxlength="7" spellcheck="false" data-event-value-color-text="${index}" aria-label="Hex color for ${escapeHtml(formatEventPropertyValue(row.value))}">
+      </label>
+      <button class="eventValueManagerDeleteButton" type="button" data-event-value-action="delete" data-event-value-index="${index}" aria-label="Delete ${escapeHtml(formatEventPropertyValue(row.value))}" title="Delete value">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
+      </button>
+    </div>`;
+}
+
+function addEventValueManagerRow() {
+  const visibleCount = eventValueManagerRows.filter((row) => !row.hidden).length;
+  if (visibleCount >= MAX_EVENT_PROPERTY_MANAGED_VALUES) return;
+  const valueType = getNewManagedEventPropertyValueType();
+  const value = valueType === "number" ? 0 : valueType === "boolean" ? true : "";
+  const usedColors = new Set(
+    eventValueManagerRows
+      .filter((row) => !row.hidden)
+      .map((row) => String(row.color || "").toLowerCase()),
+  );
+  const color = EVENT_PROPERTY_SERIES_COLORS.find((candidate) => !usedColors.has(candidate))
+    || EVENT_PROPERTY_SERIES_COLORS[visibleCount % EVENT_PROPERTY_SERIES_COLORS.length];
+  eventValueManagerRows.push({
+    value,
+    valueType,
+    color,
+    manual: true,
+    hidden: false,
+    observed: false,
+    persisted: false,
+    originalValue: value,
+    originalValueType: valueType,
+  });
+  eventValueManagerDirty = true;
+  if (eventValueManagerStatus) eventValueManagerStatus.textContent = "";
+  renderEventValueManagerRows({ focusIndex: eventValueManagerRows.length - 1 });
+}
+
+function handleEventValueManagerInput(event) {
+  const valueIndex = Number(
+    event.target.dataset.eventValueInput
+    ?? event.target.dataset.eventValueColor
+    ?? event.target.dataset.eventValueColorText,
+  );
+  if (!Number.isInteger(valueIndex) || !eventValueManagerRows[valueIndex]) return;
+  const row = eventValueManagerRows[valueIndex];
+  if (event.target.matches("[data-event-value-input]")) {
+    row.value = event.target.value;
+  } else if (event.target.matches("[data-event-value-color]")) {
+    row.color = event.target.value.toLowerCase();
+    const textInput = eventValueManagerList?.querySelector(`[data-event-value-color-text="${valueIndex}"]`);
+    const swatch = event.target.parentElement?.querySelector("span");
+    if (textInput) textInput.value = row.color;
+    if (swatch) swatch.style.background = row.color;
+  } else if (event.target.matches("[data-event-value-color-text]")) {
+    const color = String(event.target.value || "").trim().toLowerCase();
+    row.color = color;
+    if (/^#[0-9a-f]{6}$/.test(color)) {
+      const colorInput = eventValueManagerList?.querySelector(`[data-event-value-color="${valueIndex}"]`);
+      const swatch = colorInput?.parentElement?.querySelector("span");
+      if (colorInput) colorInput.value = color;
+      if (swatch) swatch.style.background = color;
+    }
+  }
+  eventValueManagerDirty = true;
+  if (eventValueManagerStatus) eventValueManagerStatus.textContent = "";
+}
+
+function handleEventValueManagerAction(event) {
+  const button = event.target.closest("[data-event-value-action]");
+  if (!button) return;
+  const index = Number(button.dataset.eventValueIndex);
+  const row = eventValueManagerRows[index];
+  if (!row) return;
+  if (button.dataset.eventValueAction === "delete") {
+    if (row.manual && !row.observed && !row.persisted) {
+      eventValueManagerRows.splice(index, 1);
+    } else {
+      row.hidden = true;
+    }
+    eventValueManagerDirty = true;
+    if (eventValueManagerStatus) eventValueManagerStatus.textContent = "";
+    renderEventValueManagerRows();
+  }
+}
+
+function buildSavedEventValueSettings() {
+  const activeSettings = [];
+  const activeIdentities = new Set();
+  const retiredSettings = [];
+  for (const row of eventValueManagerRows.filter((entry) => !entry.hidden)) {
+    const normalized = normalizeManagedEventPropertyValue(row.value, row.valueType);
+    if (!normalized.ok) return normalized;
+    const color = String(row.color || "").trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(color)) {
+      return { ok: false, error: "Use a six-digit hex color such as #9b6dff." };
+    }
+    const identity = getEventPropertyValueIdentity(normalized.value, normalized.valueType);
+    if (activeIdentities.has(identity)) {
+      return { ok: false, error: `Values must be unique: ${formatEventPropertyValue(normalized.value)}` };
+    }
+    activeIdentities.add(identity);
+    activeSettings.push({
+      propertyName: selectedEventPropertyName,
+      value: normalized.value,
+      valueType: normalized.valueType,
+      color,
+      manual: Boolean(row.manual),
+      hidden: false,
+    });
+    const originalIdentity = getEventPropertyValueIdentity(row.originalValue, row.originalValueType);
+    if (row.persisted && originalIdentity && originalIdentity !== identity) {
+      retiredSettings.push({
+        propertyName: selectedEventPropertyName,
+        value: row.originalValue,
+        valueType: row.originalValueType,
+        color: "",
+        manual: false,
+        hidden: true,
+      });
+    }
+  }
+  if (activeSettings.length > MAX_EVENT_PROPERTY_MANAGED_VALUES) {
+    return { ok: false, error: `Keep up to ${MAX_EVENT_PROPERTY_MANAGED_VALUES} visible values per property.` };
+  }
+
+  const hiddenSettings = [
+    ...eventValueManagerRows.filter((row) => row.hidden).map((row) => ({
+      propertyName: selectedEventPropertyName,
+      value: row.originalValue,
+      valueType: row.originalValueType,
+      color: "",
+      manual: false,
+      hidden: true,
+    })),
+    ...retiredSettings,
+  ];
+  const settings = [...eventValueManagerUntouchedSettings, ...activeSettings];
+  const identities = new Set(settings.map((setting) => {
+    const valueIdentity = getEventPropertyValueIdentity(setting.value, setting.valueType);
+    return valueIdentity ? `${setting.propertyName}\u0000${valueIdentity}` : "";
+  }).filter(Boolean));
+  for (const setting of hiddenSettings) {
+    const valueIdentity = getEventPropertyValueIdentity(setting.value, setting.valueType);
+    if (!valueIdentity) continue;
+    const identity = `${setting.propertyName}\u0000${valueIdentity}`;
+    if (identities.has(identity)) continue;
+    identities.add(identity);
+    settings.push(setting);
+  }
+  return { ok: true, settings };
+}
+
+async function saveEventValueSettings() {
+  if (
+    !selectedUniverseId
+    || !currentSelectedEvent?.definition
+    || !eventValueManagerDialog
+    || eventValueManagerDialog.hidden
+  ) {
+    return;
+  }
+  const result = buildSavedEventValueSettings();
+  if (!result.ok) {
+    if (eventValueManagerStatus) eventValueManagerStatus.textContent = result.error;
+    return;
+  }
+  setEventValueManagerDisabled(true);
+  if (eventValueManagerStatus) eventValueManagerStatus.textContent = "Saving values...";
+  try {
+    const definition = currentSelectedEvent.definition;
+    await request("/api/event-definitions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: definition.id,
+        universeId: Number(selectedUniverseId),
+        eventName: currentSelectedEvent.name,
+        properties: definition.properties || [],
+        hiddenPropertyNames: definition.hiddenPropertyNames || [],
+        valueSettings: result.settings,
+      }),
+    });
+    eventValueManagerDirty = false;
+    if (eventValueManagerStatus) eventValueManagerStatus.textContent = "Saved.";
+    await loadCustomEvents({ force: true });
+    await closeEventValueManager({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated && eventValueManagerStatus) {
+      eventValueManagerStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setEventValueManagerDisabled(false);
+  }
+}
+
+function setEventValueManagerDisabled(disabled) {
+  for (const control of eventValueManagerDialog?.querySelectorAll("input, select, button") || []) {
+    control.disabled = disabled;
+  }
+}
+
+function handleEventValueManagerKeydown(event) {
+  if (!eventValueManagerDialog || eventValueManagerDialog.hidden) return;
+  if (!eventConfirmDialog?.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeEventValueManager();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const controls = [...eventValueManagerDialog.querySelectorAll("input, select, button")]
+    .filter((control) => !control.disabled && control.offsetParent !== null);
+  if (!controls.length) return;
+  const currentIndex = controls.indexOf(document.activeElement);
+  const direction = event.shiftKey ? -1 : 1;
+  const nextIndex = currentIndex < 0
+    ? 0
+    : (currentIndex + direction + controls.length) % controls.length;
+  event.preventDefault();
+  controls[nextIndex].focus();
+}
+
 function renderCreatedEventPropertyPlaceholder(propertyName = "Event activity") {
   const formattedPropertyName = formatEventPropertyName(propertyName);
   return `
@@ -4308,14 +4819,29 @@ function renderCustomEventPropertyCard(property, propertyIndex) {
 
 function getEventPropertyChartSeries(property = {}) {
   return (Array.isArray(property?.timeline?.series) ? property.timeline.series : [])
-    .filter((entry) => Array.isArray(entry?.points) && entry.points.length && Number(entry.count) > 0);
+    .filter((entry) => (
+      Array.isArray(entry?.points)
+      && entry.points.length
+      && (Number(entry.count) > 0 || entry.managed)
+    ));
+}
+
+function getEventPropertySeriesColor(entry = {}, propertyName = "") {
+  const savedColor = String(entry?.color || "").trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(savedColor)) return savedColor;
+  const identity = `${propertyName}\u0000${typeof entry?.value}:${String(entry?.value ?? "")}`;
+  let hash = 0;
+  for (let index = 0; index < identity.length; index += 1) {
+    hash = ((hash * 31) + identity.charCodeAt(index)) >>> 0;
+  }
+  return EVENT_PROPERTY_SERIES_COLORS[hash % EVENT_PROPERTY_SERIES_COLORS.length];
 }
 
 function renderEventPropertyAverageLegend(property = {}) {
   const series = getEventPropertyChartSeries(property);
   if (!series.length) return "";
-  const items = series.map((entry, index) => {
-    const color = EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length];
+  const items = series.map((entry) => {
+    const color = getEventPropertySeriesColor(entry, property.name);
     const value = formatEventPropertyValue(entry.value);
     return `
       <span class="eventPropertyAverageItem" title="${escapeHtml(value)}" aria-label="${escapeHtml(value)}">
@@ -4333,9 +4859,9 @@ function renderEventPropertyAverageLegend(property = {}) {
 
 function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Property") {
   const rankedSeries = getEventPropertyChartSeries(property)
-    .map((entry, index) => ({
+    .map((entry) => ({
       ...entry,
-      color: EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length],
+      color: getEventPropertySeriesColor(entry, propertyName),
       change: getEventPropertySeriesChange(entry.points),
     }))
     .sort((left, right) => (Number(right.percent) || 0) - (Number(left.percent) || 0));
@@ -4479,8 +5005,8 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
     top,
     plotBottom,
   });
-  const lines = series.map((entry, seriesIndex) => {
-    const color = EVENT_PROPERTY_SERIES_COLORS[seriesIndex % EVENT_PROPERTY_SERIES_COLORS.length];
+  const lines = series.map((entry) => {
+    const color = getEventPropertySeriesColor(entry, property.name);
     const pointsByStart = new Map(entry.points.map((point) => [Number(point?.start), point]));
     const chartPoints = bucketStarts.map((start, index) => {
       const point = pointsByStart.get(start);

@@ -5346,6 +5346,45 @@ body[data-active-view="events"] #pageSubtitle {
   color: #fff;
 }
 
+.eventPropertyManageValuesButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 5px 6px auto;
+  border: 1px solid rgba(124, 92, 210, 0.48);
+  border-radius: 8px;
+  background: rgba(27, 21, 61, 0.72);
+  color: #d8ceff;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.eventPropertyManageValuesButton:hover,
+.eventPropertyManageValuesButton:focus-visible {
+  border-color: rgba(167, 139, 250, 0.82);
+  background: rgba(67, 42, 132, 0.58);
+  color: #fff;
+  outline: none;
+}
+
+.eventPropertyManageValuesButton svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .eventPropertyWorkspace {
   display: grid;
   min-width: 0;
@@ -8223,6 +8262,319 @@ body[data-active-view="funnels"] #pageSubtitle {
   min-width: 132px;
 }
 
+body.hasEventValueManager {
+  overflow: hidden;
+}
+
+.eventValueManagerBackdrop {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(2, 6, 18, 0.68);
+  backdrop-filter: blur(5px);
+}
+
+.eventValueManager {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(100%, 530px);
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid rgba(92, 110, 162, 0.52);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(124, 60, 255, 0.16), transparent 30%),
+    linear-gradient(165deg, #0c1730, #071022 70%);
+  box-shadow: -28px 0 80px rgba(0, 0, 0, 0.48);
+}
+
+.eventValueManagerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid rgba(80, 99, 150, 0.34);
+  padding: 22px 22px 18px;
+}
+
+.eventValueManagerHeader > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.eventValueManagerHeader > div > span {
+  color: #a78bfa;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.eventValueManagerHeader h2 {
+  color: #fff;
+  font-size: 21px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.eventValueManagerHeader p {
+  overflow: hidden;
+  color: #9eabc8;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventValueManagerHeader > button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(90, 108, 160, 0.42);
+  border-radius: 9px;
+  background: rgba(12, 21, 45, 0.7);
+  color: #aab5cf;
+  cursor: pointer;
+}
+
+.eventValueManagerHeader > button:hover,
+.eventValueManagerHeader > button:focus-visible {
+  border-color: rgba(167, 139, 250, 0.68);
+  color: #fff;
+  outline: none;
+}
+
+.eventValueManagerHeader svg,
+.eventValueManagerAddButton svg,
+.eventValueManagerDeleteButton svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eventValueManagerBody {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 22px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 60, 255, 0.5) transparent;
+}
+
+.eventValueManagerIntro {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.eventValueManagerIntro strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.eventValueManagerIntro p {
+  color: #929fba;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.eventValueManagerList {
+  display: grid;
+  gap: 9px;
+}
+
+.eventValueManagerRow {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 105px 36px;
+  align-items: end;
+  gap: 9px;
+  border: 1px solid rgba(80, 99, 150, 0.32);
+  border-radius: 10px;
+  background: rgba(8, 16, 36, 0.72);
+  padding: 10px;
+}
+
+.eventValueManagerColor {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 38px;
+  border: 1px solid rgba(102, 119, 171, 0.48);
+  border-radius: 8px;
+  background: rgba(15, 24, 49, 0.82);
+  cursor: pointer;
+}
+
+.eventValueManagerColor input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.eventValueManagerColor:focus-within {
+  border-color: rgba(167, 139, 250, 0.84);
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.12);
+}
+
+.eventValueManagerColor span {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(124, 60, 255, 0.28);
+}
+
+.eventValueManagerValue input,
+.eventValueManagerValue select,
+.eventValueManagerHex input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid rgba(88, 105, 154, 0.44);
+  border-radius: 8px;
+  background: rgba(7, 14, 32, 0.88);
+  color: #f4f6ff;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.eventValueManagerValue input[readonly] {
+  color: #bbc5dc;
+  cursor: default;
+}
+
+.eventValueManagerValue input:focus,
+.eventValueManagerValue select:focus,
+.eventValueManagerHex input:focus {
+  border-color: rgba(167, 139, 250, 0.84);
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.12);
+  outline: none;
+}
+
+.eventValueManagerHex {
+  display: grid;
+  gap: 5px;
+}
+
+.eventValueManagerHex > span {
+  color: #8f9bb7;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eventValueManagerHex input {
+  color: #cfc4ff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.eventValueManagerDeleteButton {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 38px;
+  border: 1px solid rgba(91, 108, 156, 0.4);
+  border-radius: 8px;
+  background: rgba(12, 21, 44, 0.72);
+  color: #9ca8c3;
+  cursor: pointer;
+}
+
+.eventValueManagerDeleteButton:hover,
+.eventValueManagerDeleteButton:focus-visible {
+  border-color: rgba(251, 113, 133, 0.64);
+  background: rgba(159, 18, 57, 0.16);
+  color: #fb7185;
+  outline: none;
+}
+
+.eventValueManagerAddButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  border: 1px dashed rgba(148, 112, 241, 0.52);
+  border-radius: 9px;
+  background: rgba(52, 31, 109, 0.18);
+  color: #cabdff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eventValueManagerAddButton:hover,
+.eventValueManagerAddButton:focus-visible {
+  border-color: rgba(167, 139, 250, 0.88);
+  background: rgba(75, 46, 147, 0.3);
+  color: #fff;
+  outline: none;
+}
+
+.eventValueManagerAddButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.eventValueManagerEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  border: 1px dashed rgba(84, 101, 149, 0.38);
+  border-radius: 10px;
+  padding: 30px 16px;
+  text-align: center;
+}
+
+.eventValueManagerEmpty strong {
+  color: #e9edff;
+  font-size: 13px;
+}
+
+.eventValueManagerEmpty span {
+  color: #8f9bb6;
+  font-size: 10px;
+}
+
+.eventValueManagerStatus {
+  min-height: 17px;
+  margin: 10px 0 0;
+  color: #b9c2d8;
+  font-size: 10px;
+}
+
+.eventValueManagerFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid rgba(80, 99, 150, 0.34);
+  padding: 16px 22px;
+}
+
+.eventValueManagerFooter .button {
+  min-width: 124px;
+}
+
 body.hasEventConfirmDialog {
   overflow: hidden;
 }
@@ -8319,6 +8671,52 @@ body.hasEventConfirmDialog {
 .eventConfirmDialog .button.danger:focus-visible {
   border-color: #fb7185;
   background: linear-gradient(135deg, #e11d48, #be123c);
+}
+
+@media (max-width: 640px) {
+  .eventPropertyManageValuesButton {
+    width: 36px;
+    padding: 0;
+  }
+
+  .eventPropertyManageValuesButton span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .eventValueManagerHeader,
+  .eventValueManagerBody,
+  .eventValueManagerFooter {
+    padding-inline: 14px;
+  }
+
+  .eventValueManagerRow {
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+  }
+
+  .eventValueManagerHex {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .eventValueManagerDeleteButton {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .eventValueManagerFooter {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eventValueManagerFooter .button {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 [hidden] {

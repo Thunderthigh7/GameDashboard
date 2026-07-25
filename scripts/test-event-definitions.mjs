@@ -9,6 +9,9 @@ const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "ut
 const clientPropertyLimit = Number(
   appSource.match(/const MAX_EVENT_DEFINITION_PROPERTIES = (\d+);/)?.[1],
 );
+const clientManagedValueLimit = Number(
+  appSource.match(/const MAX_EVENT_PROPERTY_MANAGED_VALUES = (\d+);/)?.[1],
+);
 const serverPropertyLimit = Number(
   serverSource.match(/const MAX_CUSTOM_EVENT_PROPERTIES = (\d+);/)?.[1],
 );
@@ -17,6 +20,12 @@ const serverKnownPropertyLimit = Number(
 );
 const serverDefinitionLimit = Number(
   serverSource.match(/const MAX_EVENT_DEFINITIONS_PER_UNIVERSE = (\d+);/)?.[1],
+);
+const serverValueSettingsLimit = Number(
+  serverSource.match(/const MAX_EVENT_PROPERTY_VALUE_SETTINGS = (\d+);/)?.[1],
+);
+const serverActiveValueLimit = Number(
+  serverSource.match(/const MAX_EVENT_PROPERTY_ACTIVE_VALUES = (\d+);/)?.[1],
 );
 const markupPropertyLimit = Number(
   indexSource.match(/id="eventDefinitionPropertyCount">\s*0\s*\/\s*(\d+)</)?.[1],
@@ -27,6 +36,13 @@ assert.equal(markupPropertyLimit, clientPropertyLimit, "the visible property cou
 assert.equal(clientPropertyLimit, 20, "an event should expose at most 20 active properties");
 assert.equal(serverKnownPropertyLimit, 200, "an event should retain up to 200 known property names");
 assert.equal(serverDefinitionLimit, 200, "a universe should retain up to 200 event definitions");
+assert.equal(serverValueSettingsLimit, 400, "event definitions should retain a bounded value-setting history");
+assert.equal(serverActiveValueLimit, 8, "each property should keep a readable maximum of eight visible managed values");
+assert.equal(
+  clientManagedValueLimit,
+  serverActiveValueLimit,
+  "the value manager and server should enforce the same per-property limit",
+);
 assert.notEqual(
   serverKnownPropertyLimit,
   clientPropertyLimit,
@@ -131,6 +147,10 @@ for (const id of [
   "editEventButton",
   "deleteSelectedEventButton",
   "eventConfirmDialog",
+  "eventValueManagerDialog",
+  "eventValueManagerList",
+  "eventValueManagerAddButton",
+  "eventValueManagerSaveButton",
 ]) {
   assert.match(indexSource, new RegExp(`id="${id}"`), `${id} should exist in the Events workflow`);
 }
@@ -417,12 +437,15 @@ const {
   const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = ${serverKnownPropertyLimit};
   const MAX_EVENT_DEFINITION_STORED_PROPERTIES =
     MAX_EVENT_DEFINITION_KNOWN_PROPERTIES + MAX_CUSTOM_EVENT_PROPERTIES;
+  const MAX_EVENT_PROPERTY_VALUE_SETTINGS = ${serverValueSettingsLimit};
+  const MAX_EVENT_PROPERTY_ACTIVE_VALUES = ${serverActiveValueLimit};
   const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
   const SYSTEM_ANALYTICS_EVENT_NAMES = new Set(["player_died", "player_left", "chat_message"]);
   const crypto = { randomUUID: () => "event-test-id" };
   const cleanString = (value, maxLength = 1000) => String(value ?? "").slice(0, maxLength);
   const cleanInteger = (value) => Math.trunc(Number(value) || 0);
   const cleanTimestampMs = (value) => Math.max(0, Math.trunc(Number(value) || 0));
+  const getCustomEventPropertyValueKey = (value) => \`\${typeof value}:\${String(value)}\`;
   const normalizeCustomEventName = (value) => {
     const eventName = cleanString(value, 64).trim().toLowerCase();
     return /^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName) ? eventName : "";
@@ -480,6 +503,21 @@ const normalizedDefinition = normalizeEventDefinition({
     { name: "critical", type: "boolean" },
   ],
   hiddenPropertyNames: ["critical", "server.secret"],
+  valueSettings: [
+    {
+      propertyName: "weapon.name",
+      value: "Shotgun",
+      valueType: "string",
+      color: "#9B6DFF",
+      manual: true,
+    },
+    {
+      propertyName: "weapon.name",
+      value: "Sniper",
+      valueType: "string",
+      hidden: true,
+    },
+  ],
 }, definitionContext);
 assert.equal(normalizedDefinition.ok, true);
 assert.equal(normalizedDefinition.value.eventName, "weapon_equipped", "event names should normalize to lowercase");
@@ -487,6 +525,49 @@ assert.deepEqual(
   normalizedDefinition.value.properties.map((property) => property.type),
   ["string", "number", "boolean"],
   "configured example types should be retained",
+);
+assert.deepEqual(
+  normalizedDefinition.value.valueSettings,
+  [
+    {
+      propertyName: "weapon.name",
+      value: "Shotgun",
+      valueType: "string",
+      color: "#9b6dff",
+      manual: true,
+      hidden: false,
+    },
+    {
+      propertyName: "weapon.name",
+      value: "Sniper",
+      valueType: "string",
+      color: "",
+      manual: false,
+      hidden: true,
+    },
+  ],
+  "manual values, colors, and suppressed discoveries should normalize into the saved definition",
+);
+assert.equal(
+  normalizeEventDefinition({
+    eventName: "invalid_color",
+    valueSettings: [{ propertyName: "weapon", value: "Shotgun", color: "purple" }],
+  }, definitionContext).ok,
+  false,
+  "saved value colors should require canonical six-digit hex values",
+);
+assert.equal(
+  normalizeEventDefinition({
+    eventName: "too_many_values",
+    valueSettings: Array.from({ length: serverActiveValueLimit + 1 }, (_, index) => ({
+      propertyName: "weapon",
+      value: `Weapon ${index}`,
+      color: "#9b6dff",
+      manual: true,
+    })),
+  }, definitionContext).ok,
+  false,
+  "a property should reject more visible managed values than the chart can clearly display",
 );
 
 const mergedDefinition = serializeEventDefinition({
@@ -519,6 +600,11 @@ assert.equal(
   "hidden properties must not enter the active property list",
 );
 assert.equal(Object.hasOwn(mergedDefinition, "keyMode"), false, "serialized definitions should omit legacy keyMode");
+assert.equal(
+  mergedDefinition.valueSettings[0].color,
+  "#9b6dff",
+  "serialized definitions should return saved series colors to the dashboard",
+);
 
 const cappedDefinition = serializeEventDefinition({
   ...normalizedDefinition.value,
@@ -603,6 +689,11 @@ assert.match(
 );
 assert.match(
   discoverySource,
+  /valueSettings:\s*\{\s*\$ifNull:\s*\["\$valueSettings",\s*\[\]\]\s*\}/,
+  "automatic property discovery should preserve saved value names, colors, and suppressions",
+);
+assert.match(
+  discoverySource,
   /\$reduce:\s*\{[\s\S]*\$concatArrays:[\s\S]*\$in:\s*\["\$\$this",\s*"\$\$value"\]/,
   "Mongo discovery should append and deduplicate names while preserving first-seen order",
 );
@@ -645,6 +736,8 @@ const { buildCustomEventDetail } = Function(
   const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = ${serverKnownPropertyLimit};
   const MAX_EVENT_DEFINITION_STORED_PROPERTIES =
     MAX_EVENT_DEFINITION_KNOWN_PROPERTIES + MAX_CUSTOM_EVENT_PROPERTIES;
+  const MAX_EVENT_PROPERTY_VALUE_SETTINGS = ${serverValueSettingsLimit};
+  const MAX_EVENT_PROPERTY_ACTIVE_VALUES = ${serverActiveValueLimit};
   const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
   const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
   const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
@@ -653,6 +746,7 @@ const { buildCustomEventDetail } = Function(
   const cleanInteger = (value) => Math.trunc(Number(value) || 0);
   const cleanString = (value, maxLength = 1000) => String(value ?? "").slice(0, maxLength);
   const cleanTimestampMs = (value) => Math.max(0, Math.trunc(Number(value) || 0));
+  const getCustomEventPropertyValueKey = (value) => \`\${typeof value}:\${String(value)}\`;
   const normalizeCustomEventName = (value) => {
     const eventName = cleanString(value, 64).trim().toLowerCase();
     return /^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName) ? eventName : "";
@@ -729,6 +823,95 @@ assert.equal(
   "display filtering should retain hidden fields in raw recent event records",
 );
 
+const valueSettingsHelperStart = serverSource.indexOf("function normalizeEventDefinitionValueSettings(");
+const valueSettingsHelperEnd = serverSource.indexOf("\nfunction getEventDefinitionPropertyState(", valueSettingsHelperStart);
+const propertySummaryStart = serverSource.indexOf("function summarizeCustomEventProperties(");
+const propertySummaryEnd = serverSource.indexOf("\nasync function getFunnelsFromQuery(", propertySummaryStart);
+assert.ok(
+  valueSettingsHelperStart >= 0
+    && valueSettingsHelperEnd > valueSettingsHelperStart
+    && propertySummaryStart >= 0
+    && propertySummaryEnd > propertySummaryStart,
+  "managed-value property analytics helpers should remain extractable",
+);
+const { summarizeCustomEventProperties } = Function(
+  `"use strict";
+  const MAX_EVENT_PROPERTY_VALUE_SETTINGS = ${serverValueSettingsLimit};
+  const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
+  const MAX_CUSTOM_EVENT_PROPERTY_OBSERVATIONS = 40;
+  const MAX_CUSTOM_EVENT_PROPERTY_VALUES_TRACKED = 1000;
+  const EVENT_PROPERTY_TIMELINE_SERIES_LIMIT = 4;
+  const cleanInteger = (value) => {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : 0;
+  };
+  const cleanFiniteInteger = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.trunc(number) : 0;
+  };
+  const cleanFiniteNumber = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : NaN;
+  };
+  const cleanString = (value, maxLength = 1000) => typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+  const cleanTimestampMs = (value) => Math.max(0, Math.trunc(Number(value) || 0));
+  const isValidCustomEventPropertyPath = (value) => (
+    typeof value === "string"
+    && value.length > 0
+    && value.length <= 96
+    && /^[A-Za-z][A-Za-z0-9_:-]*(?:\\[\\])?(?:\\.[A-Za-z][A-Za-z0-9_:-]*(?:\\[\\])?)*$/.test(value)
+  );
+  const getExactCustomEventBucketIndex = (timestamp, rangeStart, rangeEnd, bucketMs, bucketCount) => {
+    if (timestamp < rangeStart || timestamp > rangeEnd || !bucketCount) return -1;
+    return Math.min(Math.floor((timestamp - rangeStart) / bucketMs), bucketCount - 1);
+  };
+  ${serverSource.slice(valueSettingsHelperStart, valueSettingsHelperEnd)}
+  ${serverSource.slice(propertySummaryStart, propertySummaryEnd)}
+  return { summarizeCustomEventProperties };`,
+)();
+const managedPropertySummary = summarizeCustomEventProperties(
+  [
+    { occurredAt: 1_100, properties: { weapon: "Shotgun" } },
+    { occurredAt: 2_100, properties: { weapon: "Sniper" } },
+  ],
+  serverActiveValueLimit,
+  "weapon",
+  {
+    allowedPropertyNames: new Set(["weapon"]),
+    propertyDefinitions: [{ name: "weapon", type: "string" }],
+    valueSettings: [
+      { propertyName: "weapon", value: "Shotgun", valueType: "string", color: "#123456" },
+      { propertyName: "weapon", value: "SMG", valueType: "string", color: "#abcdef", manual: true },
+      { propertyName: "weapon", value: "Sniper", valueType: "string", hidden: true },
+    ],
+    bucketMs: 1_000,
+    bucketStarts: [1_000, 2_000],
+    bucketEnds: [2_000, 3_000],
+    rangeStart: 1_000,
+    rangeEnd: 3_000,
+  },
+)[0];
+assert.deepEqual(
+  managedPropertySummary.timeline.series.map((series) => series.value),
+  ["Shotgun", "SMG"],
+  "manual values should join automatic values while deleted discoveries remain suppressed",
+);
+assert.equal(
+  managedPropertySummary.timeline.series[0].color,
+  "#123456",
+  "saved colors should be returned with their matching timeline series",
+);
+assert.equal(
+  managedPropertySummary.timeline.series[1].managed,
+  true,
+  "a zero-event manual value should remain marked for graph and breakdown rendering",
+);
+assert.equal(
+  managedPropertySummary.timeline.observationCount,
+  1,
+  "suppressed values should not distort visible-value percentages",
+);
+
 const analyticsRecordsStart = serverSource.indexOf("async function getAnalyticsEventRecords(");
 const analyticsRecordsEnd = serverSource.indexOf("\nfunction createVisitAnalyticsEvent(", analyticsRecordsStart);
 assert.ok(
@@ -796,6 +979,11 @@ assert.match(
   /hiddenPropertyNames:\s*savedDefinition\.hiddenPropertyNames/,
   "editing a Mongo definition should persist its user-owned hidden property names",
 );
+assert.match(
+  editableSetSource,
+  /valueSettings:\s*savedDefinition\.valueSettings/,
+  "editing a Mongo definition should persist user-owned value colors and suppressions",
+);
 assert.doesNotMatch(
   editableSetSource,
   /discoveredPropertyNames/,
@@ -825,7 +1013,7 @@ assert.doesNotMatch(
 );
 
 console.log("Event definition workflow tests passed.", {
-  controls: 13,
+  controls: 17,
   generatedFormats: ["luau"],
   propertyModel: "configured + discovered - hidden",
   activePropertyLimit: clientPropertyLimit,

@@ -138,7 +138,7 @@ assert.match(appSource, /EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;/, "large property
 assert.match(appSource, /class="eventPropertyMoreMenu"/, "overflow properties should remain available from a More menu");
 assert.match(
   appSource,
-  /selectedEventPropertyName = selectedProperty\.name;[\s\S]*renderEventPropertyTabs\(visibleProperties, selectedProperty\.name\)[\s\S]*renderCustomEventPropertyCard\(selectedProperty, selectedPropertyIndex\)/,
+  /selectedEventPropertyName = selectedProperty\.name;[\s\S]*renderEventPropertyTabs\(visibleProperties, selectedProperty\.name,\s*\{[\s\S]*renderCustomEventPropertyCard\(selectedProperty, selectedPropertyIndex\)/,
   "the property workspace should render only the active property's graph and breakdown",
 );
 assert.match(
@@ -150,6 +150,42 @@ assert.match(
   styleSource,
   /\.eventPropertyChartPane\s*\{[^}]*min-height:\s*450px;/,
   "the full-width property graph should use the larger chart height",
+);
+assert.match(indexSource, /id="eventValueManagerDialog"/, "custom properties should expose a value and color manager");
+assert.match(
+  appSource,
+  /class="eventPropertyManageValuesButton"[\s\S]*Manage values &amp; colors/,
+  "the value manager should sit beside the property tabs",
+);
+assert.match(
+  appSource,
+  /const EVENT_PROPERTY_VALUE_LIMIT = 8;/,
+  "the selected property workspace should support up to eight readable values",
+);
+assert.match(
+  appSource,
+  /function getEventPropertySeriesColor\([\s\S]*savedColor[\s\S]*identity\.charCodeAt/,
+  "saved colors should win while automatic values retain deterministic colors across rank changes",
+);
+assert.match(
+  appSource,
+  /Number\(entry\.count\) > 0 \|\| entry\.managed/,
+  "manual values should remain visible before their first event arrives",
+);
+assert.match(
+  appSource,
+  /valueSettings:\s*result\.settings/,
+  "saving the value manager should persist its names, colors, and deletions on the event definition",
+);
+assert.match(
+  serverSource,
+  /filter\(\(observation\) => !hiddenValueKeys\.has\(getCustomEventPropertyValueKey\(observation\)\)\)/,
+  "deleted automatic values should remain suppressed when new events contain them",
+);
+assert.match(
+  serverSource,
+  /color:\s*series\.color \|\| ""[\s\S]*managed:\s*Boolean\(series\.managed\)/,
+  "saved value presentation should flow through the server timeline response",
 );
 assert.match(
   styleSource,

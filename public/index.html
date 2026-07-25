@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260724-26/styles.css">
+    <link rel="stylesheet" href="/assets/20260724-27/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -790,6 +790,37 @@
             </section>
           </div>
 
+          <div class="eventValueManagerBackdrop" id="eventValueManagerDialog" hidden>
+            <section class="eventValueManager" role="dialog" aria-modal="true" aria-labelledby="eventValueManagerTitle">
+              <header class="eventValueManagerHeader">
+                <div>
+                  <span>Property display</span>
+                  <h2 id="eventValueManagerTitle">Manage values &amp; colors</h2>
+                  <p id="eventValueManagerPropertyName">Selected property</p>
+                </div>
+                <button id="eventValueManagerCloseButton" type="button" aria-label="Close value manager">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                </button>
+              </header>
+              <div class="eventValueManagerBody">
+                <div class="eventValueManagerIntro">
+                  <strong>Visible graph values</strong>
+                  <p>Incoming values still appear automatically. Add expected values now or give any value a permanent color.</p>
+                </div>
+                <div class="eventValueManagerList" id="eventValueManagerList"></div>
+                <button class="eventValueManagerAddButton" id="eventValueManagerAddButton" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                  <span>Add value</span>
+                </button>
+                <p class="status eventValueManagerStatus" id="eventValueManagerStatus" aria-live="polite"></p>
+              </div>
+              <footer class="eventValueManagerFooter">
+                <button class="button secondary compact" id="eventValueManagerCancelButton" type="button">Cancel</button>
+                <button class="button compact" id="eventValueManagerSaveButton" type="button">Save changes</button>
+              </footer>
+            </section>
+          </div>
+
           <div class="eventConfirmBackdrop" id="eventConfirmDialog" hidden>
             <section class="eventConfirmDialog" role="alertdialog" aria-modal="true" aria-labelledby="eventConfirmTitle" aria-describedby="eventConfirmDescription">
               <span class="eventConfirmIcon" id="eventConfirmIcon" aria-hidden="true">
@@ -1241,6 +1272,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260724-26/app.js"></script>
+    <script defer src="/assets/20260724-27/app.js"></script>
   </body>
 </html>
