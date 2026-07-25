@@ -4454,12 +4454,11 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .eventCatalogItem {
-  display: grid;
-  align-content: center;
-  gap: 3px;
+  display: flex;
+  align-items: center;
   width: 100%;
   min-width: 0;
-  min-height: 50px;
+  min-height: 42px;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 9px;
@@ -4474,22 +4473,11 @@ body[data-active-view="connect"] .topbar > div:first-child {
   cursor: pointer;
 }
 
-.eventCatalogItem > span,
-.eventCatalogItem > small {
+.eventCatalogItem > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.eventCatalogItem > small {
-  color: #8793b2;
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.eventCatalogItem.active > small {
-  color: rgba(255, 255, 255, 0.68);
 }
 
 .eventCatalogItem:disabled {
@@ -4543,32 +4531,6 @@ body[data-active-view="events"] .eventTopbarSelection {
   align-items: center;
   gap: 9px;
   min-width: 0;
-}
-
-.eventDefinitionModeBadge {
-  flex: 0 0 auto;
-  border: 1px solid rgba(45, 212, 191, 0.34);
-  border-radius: 999px;
-  background: rgba(45, 212, 191, 0.09);
-  color: #67e8d4;
-  padding: 4px 7px;
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.07em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.eventDefinitionModeBadge.manual {
-  border-color: rgba(167, 139, 250, 0.4);
-  background: rgba(124, 60, 255, 0.12);
-  color: #c4b5fd;
-}
-
-.eventDefinitionModeBadge.unconfigured {
-  border-color: rgba(120, 136, 179, 0.38);
-  background: rgba(44, 55, 87, 0.24);
-  color: #aeb8d5;
 }
 
 .eventSelectionActions {

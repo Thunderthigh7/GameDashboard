@@ -99,7 +99,6 @@ const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
 const newEventButton = document.querySelector("#newEventButton");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
-const eventDefinitionModeBadge = document.querySelector("#eventDefinitionModeBadge");
 const eventSelectionActions = document.querySelector("#eventSelectionActions");
 const editEventButton = document.querySelector("#editEventButton");
 const eventMoreButton = document.querySelector("#eventMoreButton");
@@ -270,7 +269,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-21";
+const DASHBOARD_ASSET_VERSION = "20260724-22";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
@@ -3189,19 +3188,9 @@ function updateEventPropertyHeaderMetrics(selectedEvent, options = {}) {
 function renderEventCatalog(catalog) {
   const renderItem = (item) => {
     const isActive = item.name === selectedCustomEventName;
-    const definition = item.definition || null;
-    const propertyCount = definition?.effectiveProperties?.length || 0;
-    const meta = item.sourceType === "system"
-      ? "Automatic"
-      : !definition
-        ? "Not configured"
-        : definition.keyMode === "manual"
-          ? `${formatCompactNumber(propertyCount)} manual ${propertyCount === 1 ? "key" : "keys"}`
-          : `${formatCompactNumber(propertyCount)} auto ${propertyCount === 1 ? "key" : "keys"}`;
     return `
       <button class="eventCatalogItem ${isActive ? "active" : ""}" type="button" data-event-name="${escapeHtml(item.name)}" title="${escapeHtml(formatEventName(item.name))}" ${isActive ? 'aria-current="true"' : ""} ${isEditingEventDefinition ? "disabled" : ""}>
         <span>${escapeHtml(formatEventName(item.name))}</span>
-        <small>${escapeHtml(meta)}</small>
       </button>
     `;
   };
@@ -3221,17 +3210,8 @@ function updateSelectedEventDefinitionActions(selectedEvent) {
   const catalogItem = getSelectedEventCatalogItem();
   const hasSelection = Boolean(selectedEvent?.name && catalogItem);
   const isCustomEvent = hasSelection && catalogItem.sourceType !== "system";
-  const definition = selectedEvent?.definition || catalogItem?.definition || null;
 
   if (eventSelectionActions) eventSelectionActions.hidden = !isCustomEvent || isEditingEventDefinition;
-  if (eventDefinitionModeBadge) {
-    eventDefinitionModeBadge.hidden = !isCustomEvent || isEditingEventDefinition;
-    eventDefinitionModeBadge.textContent = !definition
-      ? "Not configured"
-      : (definition.keyMode === "manual" ? "Manual keys" : "Auto keys");
-    eventDefinitionModeBadge.classList.toggle("manual", definition?.keyMode === "manual");
-    eventDefinitionModeBadge.classList.toggle("unconfigured", !definition);
-  }
   if (editEventButton) editEventButton.disabled = !isCustomEvent;
   if (eventMoreButton) eventMoreButton.disabled = !isCustomEvent;
 }

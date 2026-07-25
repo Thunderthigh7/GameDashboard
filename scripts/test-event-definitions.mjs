@@ -56,6 +56,7 @@ for (const removedId of [
   "eventJsonTab",
   "eventJsonPreview",
   "downloadEventJsonButton",
+  "eventDefinitionModeBadge",
 ]) {
   assert.doesNotMatch(
     indexSource,
@@ -64,6 +65,11 @@ for (const removedId of [
   );
 }
 assert.match(indexSource, /id="eventCodePreviewTitle">Roblox Luau</, "the generated-code panel should be explicitly Luau");
+const eventCatalogRendererStart = appSource.indexOf("function renderEventCatalog(");
+const eventCatalogRendererEnd = appSource.indexOf("\nfunction getSelectedEventCatalogItem(", eventCatalogRendererStart);
+assert.ok(eventCatalogRendererStart >= 0 && eventCatalogRendererEnd > eventCatalogRendererStart, "the tracked-event renderer should remain extractable");
+const eventCatalogRendererSource = appSource.slice(eventCatalogRendererStart, eventCatalogRendererEnd);
+assert.doesNotMatch(eventCatalogRendererSource, /<small>|Auto keys|Manual keys|Not configured|Automatic/, "tracked events should render names only");
 
 assert.match(
   styleSource,
