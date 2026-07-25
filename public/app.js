@@ -160,6 +160,15 @@ const funnelCompletedCount = document.querySelector("#funnelCompletedCount");
 const funnelConversionRate = document.querySelector("#funnelConversionRate");
 const funnelMedianTime = document.querySelector("#funnelMedianTime");
 const funnelResultSteps = document.querySelector("#funnelResultSteps");
+const funnelTimelineChart = document.querySelector("#funnelTimelineChart");
+const funnelTimelineLegend = document.querySelector("#funnelTimelineLegend");
+const funnelTimelineStepPickerButton = document.querySelector("#funnelTimelineStepPickerButton");
+const funnelTimelineStepPickerLabel = document.querySelector("#funnelTimelineStepPickerLabel");
+const funnelTimelineStepMenu = document.querySelector("#funnelTimelineStepMenu");
+const funnelIntervalSelect = document.querySelector("#funnelIntervalSelect");
+const funnelIntervalButton = document.querySelector("#funnelIntervalButton");
+const funnelIntervalButtonLabel = document.querySelector("#funnelIntervalButtonLabel");
+const funnelIntervalMenu = document.querySelector("#funnelIntervalMenu");
 const chatInsightsStatus = document.querySelector("#chatInsightsStatus");
 const chatInsightsMode = document.querySelector("#chatInsightsMode");
 const aiChatMessages = document.querySelector("#aiChatMessages");
@@ -271,14 +280,16 @@ const selectedDateReleaseVersions = { from: null, to: null };
 const selectedFunnelDateReleaseVersions = { from: null, to: null };
 let funnelRequestSequence = 0;
 let selectedFunnelId = "";
+let selectedFunnelInterval = "auto";
 let currentFunnels = [];
 let currentFunnelEventNames = [];
 let isCreatingFunnel = false;
+const selectedFunnelTimelineSteps = new Map();
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-35";
+const DASHBOARD_ASSET_VERSION = "20260725-36";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -537,6 +548,28 @@ function bindEvents() {
   });
   newFunnelButton?.addEventListener("click", startNewFunnel);
   editFunnelButton?.addEventListener("click", editSelectedFunnel);
+  funnelIntervalSelect?.addEventListener("change", () => {
+    selectedFunnelInterval = funnelIntervalSelect.value || "auto";
+    syncFunnelIntervalDropdown();
+    loadFunnels({ force: true });
+  });
+  funnelIntervalButton?.addEventListener("click", toggleFunnelIntervalMenu);
+  funnelIntervalButton?.addEventListener("keydown", handleFunnelIntervalTriggerKeydown);
+  funnelIntervalMenu?.addEventListener("click", handleFunnelIntervalMenuClick);
+  funnelIntervalMenu?.addEventListener("keydown", handleFunnelIntervalMenuKeydown);
+  document.addEventListener("pointerdown", handleFunnelIntervalOutsidePointer);
+  syncFunnelIntervalDropdown();
+  funnelTimelineStepPickerButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleFunnelTimelineStepMenu();
+  });
+  funnelTimelineStepMenu?.addEventListener("click", handleFunnelTimelineStepMenuClick);
+  funnelTimelineStepMenu?.addEventListener("change", handleFunnelTimelineStepSelectionChange);
+  document.addEventListener("pointerdown", handleFunnelTimelineStepOutsidePointer);
+  document.addEventListener("keydown", handleFunnelTimelineStepEscape);
+  window.addEventListener("resize", () => {
+    if (activeView === "funnels" && !isCreatingFunnel) renderFunnelTimeline(getSelectedFunnel());
+  });
   funnelCatalog?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-funnel-id]");
     if (!button || button.disabled) return;
@@ -977,7 +1010,11 @@ function setActiveView(view, options = {}) {
   const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (previousView !== activeView) closeDateRangePicker();
-  if (activeView !== "funnels") closeFunnelMoreMenu();
+  if (activeView !== "funnels") {
+    closeFunnelMoreMenu();
+    closeFunnelIntervalMenu();
+    closeFunnelTimelineStepMenu();
+  }
   if (activeView !== "events") {
     closeEventValueManager({ force: true, skipFocus: true });
     closeEventIntervalMenu();
@@ -2462,6 +2499,7 @@ async function selectUniverse(value) {
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
+  selectedFunnelTimelineSteps.clear();
   isCreatingFunnel = false;
   setFunnelBuilderVisible(false);
   renderChatSummary();
@@ -3608,6 +3646,129 @@ function formatEventInterval(value) {
   if (milliseconds >= day && milliseconds % day === 0) return `${milliseconds / day}d`;
   if (milliseconds >= hour && milliseconds % hour === 0) return `${milliseconds / hour}h`;
   return `${Math.max(1, Math.round(milliseconds / minute))}m`;
+}
+
+function updateFunnelIntervalControl(funnel) {
+  if (!funnelIntervalSelect) return;
+  const timeline = funnel?.timeline;
+  const availableIntervals = new Set(timeline?.availableIntervals || []);
+  for (const option of funnelIntervalSelect.options) {
+    if (option.value === "auto") continue;
+    const isAvailable = !timeline || availableIntervals.has(option.value);
+    option.hidden = !isAvailable;
+    option.disabled = !isAvailable;
+  }
+
+  const forcedInterval = timeline?.selectedInterval;
+  if (forcedInterval && forcedInterval !== selectedFunnelInterval) {
+    selectedFunnelInterval = forcedInterval;
+  }
+  const autoOption = funnelIntervalSelect.querySelector('option[value="auto"]');
+  if (autoOption) {
+    autoOption.textContent = `Auto (${formatEventInterval(timeline?.bucketMs || 24 * 60 * 60 * 1000)})`;
+  }
+  if (funnelIntervalSelect.value !== selectedFunnelInterval) {
+    funnelIntervalSelect.value = selectedFunnelInterval;
+  }
+  syncFunnelIntervalDropdown();
+}
+
+function syncFunnelIntervalDropdown() {
+  if (!funnelIntervalSelect || !funnelIntervalButton || !funnelIntervalMenu) return;
+  const selectedOption = funnelIntervalSelect.selectedOptions[0]
+    || [...funnelIntervalSelect.options].find((option) => option.value === selectedFunnelInterval)
+    || funnelIntervalSelect.options[0];
+  const selectedValue = selectedOption?.value || "auto";
+  const selectedLabel = selectedOption?.textContent?.trim() || "Auto";
+  if (funnelIntervalButtonLabel) funnelIntervalButtonLabel.textContent = selectedLabel;
+  funnelIntervalButton.disabled = funnelIntervalSelect.disabled;
+  funnelIntervalMenu.innerHTML = [...funnelIntervalSelect.options]
+    .filter((option) => !option.hidden && !option.disabled)
+    .map((option) => `
+      <button class="eventIntervalOption" type="button" role="option" tabindex="-1" data-funnel-interval="${escapeHtml(option.value)}" aria-selected="${option.value === selectedValue}">
+        <span>${escapeHtml(option.textContent.trim())}</span>
+        <span class="eventIntervalOptionCheck" aria-hidden="true">&#10003;</span>
+      </button>
+    `)
+    .join("");
+}
+
+function toggleFunnelIntervalMenu() {
+  if (!funnelIntervalMenu || !funnelIntervalButton || funnelIntervalButton.disabled) return;
+  if (funnelIntervalMenu.hidden) openFunnelIntervalMenu();
+  else closeFunnelIntervalMenu();
+}
+
+function openFunnelIntervalMenu(options = {}) {
+  if (!funnelIntervalMenu || !funnelIntervalButton || funnelIntervalButton.disabled) return;
+  closeFunnelTimelineStepMenu();
+  syncFunnelIntervalDropdown();
+  funnelIntervalMenu.hidden = false;
+  funnelIntervalButton.setAttribute("aria-expanded", "true");
+  const items = getFunnelIntervalOptions();
+  const selectedItem = funnelIntervalMenu.querySelector('[aria-selected="true"]');
+  const focusTarget = options.focus === "last"
+    ? items.at(-1)
+    : selectedItem || items[0];
+  focusTarget?.focus();
+}
+
+function closeFunnelIntervalMenu(options = {}) {
+  if (!funnelIntervalMenu || !funnelIntervalButton) return;
+  funnelIntervalMenu.hidden = true;
+  funnelIntervalButton.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus) funnelIntervalButton.focus();
+}
+
+function handleFunnelIntervalMenuClick(event) {
+  const option = event.target.closest("[data-funnel-interval]");
+  if (!option || !funnelIntervalSelect) return;
+  const interval = option.dataset.funnelInterval || "auto";
+  const changed = interval !== funnelIntervalSelect.value;
+  funnelIntervalSelect.value = interval;
+  closeFunnelIntervalMenu({ restoreFocus: true });
+  if (changed) funnelIntervalSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  else syncFunnelIntervalDropdown();
+}
+
+function handleFunnelIntervalTriggerKeydown(event) {
+  if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+  event.preventDefault();
+  openFunnelIntervalMenu({ focus: event.key === "ArrowUp" ? "last" : "selected" });
+}
+
+function handleFunnelIntervalMenuKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFunnelIntervalMenu({ restoreFocus: true });
+    return;
+  }
+  if (event.key === "Tab") {
+    closeFunnelIntervalMenu();
+    return;
+  }
+  const options = getFunnelIntervalOptions();
+  const currentIndex = options.indexOf(document.activeElement);
+  let nextIndex = null;
+  if (event.key === "ArrowDown") nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % options.length;
+  if (event.key === "ArrowUp") nextIndex = currentIndex < 0 ? options.length - 1 : (currentIndex - 1 + options.length) % options.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = options.length - 1;
+  if (nextIndex === null || !options.length) return;
+  event.preventDefault();
+  options[nextIndex]?.focus();
+}
+
+function handleFunnelIntervalOutsidePointer(event) {
+  if (!funnelIntervalMenu || funnelIntervalMenu.hidden) return;
+  if (funnelIntervalButton?.contains(event.target) || funnelIntervalMenu.contains(event.target)) return;
+  closeFunnelIntervalMenu();
+}
+
+function getFunnelIntervalOptions() {
+  return funnelIntervalMenu
+    ? [...funnelIntervalMenu.querySelectorAll("[data-funnel-interval]")]
+    : [];
 }
 
 function renderCustomEventProperties(properties, releaseMarkers = [], options = {}) {
@@ -4902,6 +5063,7 @@ async function loadFunnels(options = {}) {
   if (!universeId) {
     currentFunnels = [];
     currentFunnelEventNames = [];
+    selectedFunnelTimelineSteps.clear();
     renderFunnelCatalog();
     renderFunnelResults(null);
     setFunnelBuilderVisible(false);
@@ -4915,6 +5077,8 @@ async function loadFunnels(options = {}) {
   const to = getDashboardDateFilterMs(funnelToFilter);
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
+  if (selectedFunnelId) params.set("funnelId", selectedFunnelId);
+  params.set("interval", selectedFunnelInterval);
 
   try {
     const payload = await request(`/api/funnels?${params.toString()}`, { dedupe: !options.force });
@@ -4985,12 +5149,14 @@ function selectFunnel(id) {
   const funnel = currentFunnels.find((entry) => entry.id === id);
   if (!funnel) return;
   closeFunnelMoreMenu();
+  closeFunnelTimelineStepMenu();
   selectedFunnelId = funnel.id;
   isCreatingFunnel = false;
   populateFunnelEditor(funnel);
   setFunnelBuilderVisible(false);
   renderFunnelCatalog();
   renderFunnelResults(funnel);
+  loadFunnels({ force: true, background: true });
 }
 
 function startNewFunnel() {
@@ -5219,6 +5385,267 @@ function setFunnelFormDisabled(disabled) {
   if (!disabled) renderFunnelStepEditor(getFunnelEditorSteps());
 }
 
+function getFunnelTimelineSteps(funnel) {
+  const timelineSteps = funnel?.timeline?.buckets?.find((bucket) => (
+    Array.isArray(bucket?.steps) && bucket.steps.length
+  ))?.steps;
+  if (Array.isArray(timelineSteps) && timelineSteps.length) return timelineSteps;
+  return (Array.isArray(funnel?.steps) ? funnel.steps : []).map((eventName, index) => ({
+    index: index + 1,
+    eventName,
+  }));
+}
+
+function getFunnelTimelineStepSelection(funnel) {
+  if (!funnel?.id) return new Set();
+  const steps = getFunnelTimelineSteps(funnel);
+  const validIndices = new Set(steps.map((step) => Number(step.index)).filter(Number.isFinite));
+  if (!selectedFunnelTimelineSteps.has(funnel.id)) {
+    selectedFunnelTimelineSteps.set(funnel.id, new Set(validIndices));
+  } else {
+    const selection = selectedFunnelTimelineSteps.get(funnel.id);
+    for (const index of [...selection]) {
+      if (!validIndices.has(index)) selection.delete(index);
+    }
+  }
+  return selectedFunnelTimelineSteps.get(funnel.id);
+}
+
+function renderFunnelTimelineStepMenu(funnel) {
+  if (!funnelTimelineStepMenu || !funnelTimelineStepPickerButton) return;
+  const steps = getFunnelTimelineSteps(funnel);
+  const selection = getFunnelTimelineStepSelection(funnel);
+  funnelTimelineStepPickerButton.disabled = !funnel || !steps.length;
+  if (funnelTimelineStepPickerLabel) {
+    funnelTimelineStepPickerLabel.textContent = !steps.length
+      ? "No steps"
+      : selection.size === steps.length
+        ? "All steps"
+        : selection.size
+          ? `${selection.size} of ${steps.length} steps`
+          : "No steps";
+  }
+  funnelTimelineStepMenu.innerHTML = steps.length
+    ? `
+      <div class="funnelTimelineStepMenuActions">
+        <button type="button" data-funnel-step-selection-action="all">Select all</button>
+        <button type="button" data-funnel-step-selection-action="none">Clear</button>
+      </div>
+      <div class="funnelTimelineStepOptions" role="group" aria-label="Visible Funnel steps">
+        ${steps.map((step) => {
+          const index = Number(step.index);
+          const color = EVENT_PROPERTY_SERIES_COLORS[(index - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
+          return `
+            <label class="funnelTimelineStepOption">
+              <input type="checkbox" value="${index}" data-funnel-timeline-step ${selection.has(index) ? "checked" : ""}>
+              <span class="funnelTimelineStepCheck" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" /></svg>
+              </span>
+              <i style="--funnel-step-color:${color}" aria-hidden="true"></i>
+              <span><strong>Step ${index}</strong><small>${escapeHtml(formatEventName(step.eventName))}</small></span>
+            </label>`;
+        }).join("")}
+      </div>
+    `
+    : '<p class="funnelTimelineStepMenuEmpty">No Funnel steps available.</p>';
+}
+
+function toggleFunnelTimelineStepMenu() {
+  if (!funnelTimelineStepMenu || !funnelTimelineStepPickerButton || funnelTimelineStepPickerButton.disabled) return;
+  if (funnelTimelineStepMenu.hidden) {
+    closeFunnelIntervalMenu();
+    renderFunnelTimelineStepMenu(getSelectedFunnel());
+    funnelTimelineStepMenu.hidden = false;
+    funnelTimelineStepPickerButton.setAttribute("aria-expanded", "true");
+  } else {
+    closeFunnelTimelineStepMenu();
+  }
+}
+
+function closeFunnelTimelineStepMenu(options = {}) {
+  if (!funnelTimelineStepMenu || !funnelTimelineStepPickerButton) return;
+  funnelTimelineStepMenu.hidden = true;
+  funnelTimelineStepPickerButton.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus) funnelTimelineStepPickerButton.focus();
+}
+
+function handleFunnelTimelineStepMenuClick(event) {
+  const actionButton = event.target.closest("[data-funnel-step-selection-action]");
+  if (!actionButton) return;
+  const funnel = getSelectedFunnel();
+  if (!funnel) return;
+  const selection = getFunnelTimelineStepSelection(funnel);
+  const steps = getFunnelTimelineSteps(funnel);
+  selection.clear();
+  if (actionButton.dataset.funnelStepSelectionAction === "all") {
+    for (const step of steps) selection.add(Number(step.index));
+  }
+  renderFunnelTimelineStepMenu(funnel);
+  renderFunnelTimeline(funnel);
+}
+
+function handleFunnelTimelineStepSelectionChange(event) {
+  const checkbox = event.target.closest("[data-funnel-timeline-step]");
+  if (!checkbox) return;
+  const funnel = getSelectedFunnel();
+  if (!funnel) return;
+  const selection = getFunnelTimelineStepSelection(funnel);
+  const stepIndex = Number(checkbox.value);
+  if (!Number.isFinite(stepIndex)) return;
+  if (checkbox.checked) selection.add(stepIndex);
+  else selection.delete(stepIndex);
+  renderFunnelTimelineStepMenu(funnel);
+  renderFunnelTimeline(funnel);
+}
+
+function handleFunnelTimelineStepOutsidePointer(event) {
+  if (!funnelTimelineStepMenu || funnelTimelineStepMenu.hidden) return;
+  if (funnelTimelineStepPickerButton?.contains(event.target) || funnelTimelineStepMenu.contains(event.target)) return;
+  closeFunnelTimelineStepMenu();
+}
+
+function handleFunnelTimelineStepEscape(event) {
+  if (event.key !== "Escape" || !funnelTimelineStepMenu || funnelTimelineStepMenu.hidden) return;
+  event.preventDefault();
+  closeFunnelTimelineStepMenu({ restoreFocus: true });
+}
+
+function renderFunnelTimeline(funnel) {
+  if (!funnelTimelineChart || !funnelTimelineLegend) return;
+  const timeline = funnel?.timeline;
+  const buckets = (Array.isArray(timeline?.buckets) ? timeline.buckets : [])
+    .filter((bucket) => Number(bucket?.start) > 0)
+    .sort((leftBucket, rightBucket) => Number(leftBucket.start) - Number(rightBucket.start));
+  const steps = getFunnelTimelineSteps(funnel);
+  const selection = getFunnelTimelineStepSelection(funnel);
+  renderFunnelTimelineStepMenu(funnel);
+
+  if (!funnel) {
+    funnelTimelineChart.innerHTML = '<p class="funnelTimelineEmpty">Select a Funnel to view step conversion over time.</p>';
+    funnelTimelineLegend.innerHTML = "";
+    return;
+  }
+  if (!timeline) {
+    funnelTimelineChart.innerHTML = '<p class="funnelTimelineEmpty">Loading this Funnel timeline...</p>';
+    funnelTimelineLegend.innerHTML = "";
+    return;
+  }
+  if (!buckets.length) {
+    funnelTimelineChart.innerHTML = '<p class="funnelTimelineEmpty">No timeline buckets are available for this range.</p>';
+    funnelTimelineLegend.innerHTML = "";
+    return;
+  }
+
+  const visibleSteps = steps.filter((step) => selection.has(Number(step.index)));
+  funnelTimelineLegend.innerHTML = visibleSteps.length
+    ? visibleSteps.map((step) => {
+      const index = Number(step.index);
+      const color = EVENT_PROPERTY_SERIES_COLORS[(index - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
+      const aggregateStep = funnel?.analytics?.steps?.find((entry) => Number(entry.index) === index);
+      return `
+        <button type="button" data-funnel-timeline-legend-step="${index}" title="Hide Step ${index}">
+          <i style="--funnel-step-color:${color}" aria-hidden="true"></i>
+          <span><strong>Step ${index}</strong> ${escapeHtml(formatEventName(step.eventName))}</span>
+          <em>${formatFunnelPercentage(aggregateStep?.conversionFromStart)}</em>
+        </button>`;
+    }).join("")
+    : '<span class="funnelTimelineLegendEmpty">Choose at least one step to draw its line.</span>';
+  for (const button of funnelTimelineLegend.querySelectorAll("[data-funnel-timeline-legend-step]")) {
+    button.addEventListener("click", () => {
+      selection.delete(Number(button.dataset.funnelTimelineLegendStep));
+      renderFunnelTimeline(funnel);
+    });
+  }
+
+  const bucketMs = Math.max(Number(timeline.bucketMs) || getSeriesBucketMs(buckets), 1);
+  const timelineStart = Number(timeline.start) || Number(buckets[0].start);
+  const timelineEnd = Math.max(
+    Number(timeline.end) || Number(buckets.at(-1)?.end) || timelineStart + bucketMs,
+    timelineStart + 1,
+  );
+  const chartSpanMs = Math.max(timelineEnd - timelineStart, bucketMs);
+  const chartWidth = getEventChartWidth(funnelTimelineChart.clientWidth, buckets.length, 112, 36);
+  const chartHeight = 340;
+  const left = 56;
+  const right = 24;
+  const top = 22;
+  const bottom = 50;
+  const plotWidth = chartWidth - left - right;
+  const plotBottom = chartHeight - bottom;
+  const plotHeight = plotBottom - top;
+  const xForIndex = (index) => (
+    buckets.length === 1 ? left + (plotWidth / 2) : left + ((index / (buckets.length - 1)) * plotWidth)
+  );
+  const yForPercent = (percentage) => top + (plotHeight - ((percentage / 100) * plotHeight));
+  const grid = [100, 75, 50, 25, 0].map((percentage) => {
+    const y = yForPercent(percentage);
+    return `
+      <line x1="${left}" y1="${y}" x2="${chartWidth - right}" y2="${y}" />
+      <text x="${left - 10}" y="${y + 4}" text-anchor="end">${percentage}%</text>`;
+  }).join("");
+  const labelStep = Math.max(1, Math.ceil(buckets.length / 8));
+  const xLabels = buckets.map((bucket, index) => (
+    index === 0 || index === buckets.length - 1 || index % labelStep === 0
+      ? `<text class="funnelTimelineXLabel" x="${xForIndex(index)}" y="${chartHeight - 17}" text-anchor="${index === 0 ? "start" : index === buckets.length - 1 ? "end" : "middle"}">${escapeHtml(formatEventChartLabel(bucket.start, bucketMs, chartSpanMs))}</text>`
+      : ""
+  )).join("");
+  const series = visibleSteps.map((step) => {
+    const stepIndex = Number(step.index);
+    const color = EVENT_PROPERTY_SERIES_COLORS[(stepIndex - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
+    const points = buckets.map((bucket, index) => {
+      const point = bucket.steps?.find((entry) => Number(entry.index) === stepIndex);
+      const rawPercentage = point?.percentage;
+      const hasPercentage = rawPercentage !== null
+        && rawPercentage !== undefined
+        && Number.isFinite(Number(rawPercentage));
+      return {
+        x: xForIndex(index),
+        y: hasPercentage ? yForPercent(Math.max(0, Math.min(Number(rawPercentage), 100))) : null,
+        percentage: hasPercentage ? Number(rawPercentage) : null,
+        sessions: Number(point?.sessions) || 0,
+        entrants: Number(bucket.entrySessions) || 0,
+        start: Number(bucket.start),
+        end: Number(bucket.end),
+      };
+    });
+    const segments = [];
+    let segment = [];
+    for (const point of points) {
+      if (point.y === null) {
+        if (segment.length) segments.push(segment);
+        segment = [];
+      } else {
+        segment.push(point);
+      }
+    }
+    if (segment.length) segments.push(segment);
+    const paths = segments.map((pathPoints) => (
+      `<path d="${buildRoundedEventPropertyPathSegment(pathPoints)}" style="stroke:${color}" />`
+    )).join("");
+    const circles = points.map((point) => {
+      if (point.y === null) return "";
+      const startLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
+      const endLabel = formatEventChartLabel(point.end, bucketMs, chartSpanMs, { detailed: true });
+      return `
+        <circle cx="${point.x}" cy="${point.y}" r="3.7" style="fill:${color};stroke:${color}">
+          <title>Step ${stepIndex} | ${escapeHtml(formatEventName(step.eventName))} | ${escapeHtml(startLabel)} - ${escapeHtml(endLabel)}: ${formatEventNumber(point.percentage)}% (${formatCompactNumber(point.sessions)} of ${formatCompactNumber(point.entrants)} entering sessions)</title>
+        </circle>`;
+    }).join("");
+    return `<g class="funnelTimelineSeries">${paths}${circles}</g>`;
+  }).join("");
+
+  funnelTimelineChart.innerHTML = `
+    <div class="funnelTimelineChartScroller">
+      <svg class="funnelTimelineSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Selected Funnel step conversion percentages over time">
+        <g class="funnelTimelineGrid">${grid}</g>
+        <text class="funnelTimelineYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Reached step</text>
+        ${series}
+        ${xLabels}
+      </svg>
+      ${visibleSteps.length ? "" : '<p class="funnelTimelineChartNotice">No steps selected</p>'}
+    </div>`;
+}
+
 function renderFunnelResults(funnel) {
   const analytics = funnel?.analytics;
   if (funnelResultsTitle) funnelResultsTitle.textContent = funnel?.name || "Funnel steps";
@@ -5233,6 +5660,8 @@ function renderFunnelResults(funnel) {
   const medianText = analytics?.completedSessions ? formatFunnelDuration(analytics.medianCompletionMs) : "--";
   if (funnelConversionRate) funnelConversionRate.textContent = conversionText;
   if (funnelMedianTime) funnelMedianTime.textContent = medianText;
+  updateFunnelIntervalControl(funnel);
+  renderFunnelTimeline(funnel);
   if (!funnelResultSteps) return;
 
   const steps = analytics?.steps || [];

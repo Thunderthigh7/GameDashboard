@@ -14,7 +14,12 @@ import {
   DEMO_UNIVERSE_NAME,
   getDemoAiReportSummary,
 } from "./lib/demo-universe.mjs";
-import { calculateFunnelAnalytics, calculateFunnelMapSamples, groupCustomEventsBySession } from "./lib/funnels.mjs";
+import {
+  calculateFunnelAnalytics,
+  calculateFunnelMapSamples,
+  calculateFunnelTimelineAnalytics,
+  groupCustomEventsBySession,
+} from "./lib/funnels.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -6573,6 +6578,8 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   const fromMs = cleanFlexibleTimestampMs(searchParams.get("from"));
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
+  const requestedFunnelId = cleanString(searchParams.get("funnelId"), 120);
+  const requestedInterval = normalizeCustomEventInterval(searchParams.get("interval"));
   const [definitions, eventDefinitions, eventRecords] = await Promise.all([
     readFunnelDefinitions(ownerUserId, universeId),
     readEventDefinitions(ownerUserId, universeId),
@@ -6585,16 +6592,45 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
     ...events.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean),
   ])].sort();
   const sessions = groupCustomEventsBySession(events);
+  const selectedTimelineDefinition = definitions.find((definition) => definition.id === requestedFunnelId)
+    || definitions[0]
+    || null;
+  const timelineScaffold = buildCustomEventSeries(events, {
+    fromMs,
+    toMs,
+    interval: requestedInterval,
+  });
 
   return {
     universeId,
-    filters: { from: fromMs || null, to: toMs || null },
+    filters: {
+      from: fromMs || null,
+      to: toMs || null,
+      interval: timelineScaffold.selectedInterval,
+      funnelId: selectedTimelineDefinition?.id || null,
+    },
     eventNames,
     eventCount: events.length,
     sessionCount: sessions.length,
     funnels: definitions.map((definition) => ({
       ...serializeFunnelDefinition(definition),
       analytics: calculateFunnelAnalytics(definition, sessions),
+      ...(definition.id === selectedTimelineDefinition?.id
+        ? {
+          timeline: {
+            bucketMs: timelineScaffold.bucketMs,
+            start: timelineScaffold.rangeStart,
+            end: timelineScaffold.rangeEnd,
+            availableIntervals: timelineScaffold.availableIntervals,
+            selectedInterval: timelineScaffold.selectedInterval,
+            buckets: calculateFunnelTimelineAnalytics(
+              definition,
+              sessions,
+              timelineScaffold.buckets,
+            ),
+          },
+        }
+        : {}),
     })),
   };
 }

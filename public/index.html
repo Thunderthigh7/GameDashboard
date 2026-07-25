@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-35/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-36/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -290,6 +290,24 @@
               </div>
             </div>
             <div class="topbarFilters funnelTopbarFilters" aria-label="Funnel timeline filters">
+              <div class="eventIntervalTopbarControl funnelIntervalTopbarControl">
+                <button class="eventIntervalSelect eventIntervalButton" id="funnelIntervalButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="funnelIntervalMenu">
+                  <span id="funnelIntervalButtonLabel">Auto (1d)</span>
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#b7a6ed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+                </button>
+                <select class="eventIntervalSelect" id="funnelIntervalSelect" aria-label="Funnel timeline interval" tabindex="-1" hidden>
+                  <option value="auto">Auto (1d)</option>
+                  <option value="1m">1 minute</option>
+                  <option value="5m">5 minutes</option>
+                  <option value="15m">15 minutes</option>
+                  <option value="1h">1 hour</option>
+                  <option value="6h">6 hours</option>
+                  <option value="12h">12 hours</option>
+                  <option value="1d">1 day</option>
+                  <option value="7d">7 days</option>
+                </select>
+                <div class="eventIntervalMenu" id="funnelIntervalMenu" role="listbox" aria-label="Funnel timeline interval" hidden></div>
+              </div>
               <div class="dateFilterCluster funnelDateFilterCluster">
                 <div class="dateRangeControl" id="funnelDateRangeControl" aria-label="Funnel date range">
                   <button class="dateRangeField dateRangeFrom" id="funnelFromPickerButton" type="button" data-date-range-context="funnels" data-date-range-side="from" aria-haspopup="dialog" aria-expanded="false" aria-controls="dateRangePickerPanel">
@@ -865,6 +883,23 @@
                     <div><dt>Conversion</dt><dd><strong id="funnelConversionRate">--</strong><small>First step to last</small></dd></div>
                     <div><dt>Median time</dt><dd><strong id="funnelMedianTime">--</strong><small>For completed players</small></dd></div>
                   </dl>
+                  <section class="funnelTimelinePanel" aria-labelledby="funnelTimelineTitle">
+                    <header class="funnelTimelineHeader">
+                      <div>
+                        <h3 id="funnelTimelineTitle">Step conversion over time</h3>
+                        <p>Percent of entering sessions that reached each selected step.</p>
+                      </div>
+                      <div class="funnelTimelineStepPicker">
+                        <button id="funnelTimelineStepPickerButton" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="funnelTimelineStepMenu">
+                          <span id="funnelTimelineStepPickerLabel">All steps</span>
+                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+                        </button>
+                        <div class="funnelTimelineStepMenu" id="funnelTimelineStepMenu" hidden></div>
+                      </div>
+                    </header>
+                    <div class="funnelTimelineChart" id="funnelTimelineChart" aria-label="Funnel step conversion timeline"></div>
+                    <div class="funnelTimelineLegend" id="funnelTimelineLegend" aria-label="Visible funnel steps"></div>
+                  </section>
                   <div class="funnelResultSteps" id="funnelResultSteps">
                     <p class="status">No funnel selected.</p>
                   </div>
@@ -1251,6 +1286,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-35/app.js"></script>
+    <script defer src="/assets/20260725-36/app.js"></script>
   </body>
 </html>
