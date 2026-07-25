@@ -165,6 +165,14 @@ const funnelTimelineLegend = document.querySelector("#funnelTimelineLegend");
 const funnelTimelineStepPickerButton = document.querySelector("#funnelTimelineStepPickerButton");
 const funnelTimelineStepPickerLabel = document.querySelector("#funnelTimelineStepPickerLabel");
 const funnelTimelineStepMenu = document.querySelector("#funnelTimelineStepMenu");
+const funnelManageColorsButton = document.querySelector("#funnelManageColorsButton");
+const funnelColorManagerDialog = document.querySelector("#funnelColorManagerDialog");
+const funnelColorManagerName = document.querySelector("#funnelColorManagerName");
+const funnelColorManagerCloseButton = document.querySelector("#funnelColorManagerCloseButton");
+const funnelColorManagerList = document.querySelector("#funnelColorManagerList");
+const funnelColorManagerStatus = document.querySelector("#funnelColorManagerStatus");
+const funnelColorManagerCancelButton = document.querySelector("#funnelColorManagerCancelButton");
+const funnelColorManagerSaveButton = document.querySelector("#funnelColorManagerSaveButton");
 const funnelStepChangesTable = document.querySelector("#funnelStepChangesTable");
 const funnelIntervalSelect = document.querySelector("#funnelIntervalSelect");
 const funnelIntervalButton = document.querySelector("#funnelIntervalButton");
@@ -286,11 +294,14 @@ let currentFunnels = [];
 let currentFunnelEventNames = [];
 let isCreatingFunnel = false;
 const selectedFunnelTimelineSteps = new Map();
+let funnelColorManagerRows = [];
+let funnelColorManagerDirty = false;
+let funnelColorManagerReturnFocus = null;
 const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-44";
+const DASHBOARD_ASSET_VERSION = "20260725-45";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -383,6 +394,9 @@ init();
 
 async function init() {
   showAuthError();
+  if (eventConfirmDialog && eventConfirmDialog.parentElement !== document.body) {
+    document.body.append(eventConfirmDialog);
+  }
   applyStoredLayoutSizes();
   bindEvents();
   initializeDateFilterDefaults();
@@ -568,6 +582,16 @@ function bindEvents() {
   funnelTimelineStepMenu?.addEventListener("change", handleFunnelTimelineStepSelectionChange);
   document.addEventListener("pointerdown", handleFunnelTimelineStepOutsidePointer);
   document.addEventListener("keydown", handleFunnelTimelineStepEscape);
+  funnelManageColorsButton?.addEventListener("click", () => openFunnelColorManager(funnelManageColorsButton));
+  funnelColorManagerCloseButton?.addEventListener("click", () => closeFunnelColorManager());
+  funnelColorManagerCancelButton?.addEventListener("click", () => closeFunnelColorManager());
+  funnelColorManagerList?.addEventListener("input", handleFunnelColorManagerInput);
+  funnelColorManagerList?.addEventListener("change", handleFunnelColorManagerInput);
+  funnelColorManagerSaveButton?.addEventListener("click", saveFunnelStepColors);
+  funnelColorManagerDialog?.addEventListener("pointerdown", (event) => {
+    if (event.target === funnelColorManagerDialog) closeFunnelColorManager();
+  });
+  document.addEventListener("keydown", handleFunnelColorManagerKeydown);
   window.addEventListener("resize", () => {
     if (activeView === "funnels" && !isCreatingFunnel) renderFunnelTimeline(getSelectedFunnel());
   });
@@ -5267,6 +5291,24 @@ function getFunnelEditorSteps() {
   return [...(funnelStepEditor?.querySelectorAll("[data-funnel-step-select]") || [])].map((select) => select.value);
 }
 
+function getEditedFunnelStepColors(steps) {
+  const funnel = getSelectedFunnel();
+  const existingSteps = Array.isArray(funnel?.steps) ? funnel.steps : [];
+  const available = existingSteps.map((eventName, index) => ({
+    eventName,
+    color: getFunnelStepColor(funnel, index + 1),
+    used: false,
+  }));
+  return (Array.isArray(steps) ? steps : []).map((eventName, index) => {
+    const match = available.find((entry) => !entry.used && entry.eventName === eventName);
+    if (match) {
+      match.used = true;
+      return match.color;
+    }
+    return EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length];
+  });
+}
+
 function addFunnelStep() {
   const steps = getFunnelEditorSteps();
   if (steps.length >= 10 || !currentFunnelEventNames.length) return;
@@ -5290,6 +5332,7 @@ function handleFunnelStepAction(event) {
 async function saveFunnel() {
   if (!selectedUniverseId || !funnelForm) return;
   const steps = getFunnelEditorSteps();
+  const stepColors = getEditedFunnelStepColors(steps);
   const name = String(funnelName?.value || "").trim();
   if (!name || steps.length < 2 || steps.some((step) => !step)) {
     funnelFormStatus.textContent = "Enter a name and choose at least two event steps.";
@@ -5308,6 +5351,7 @@ async function saveFunnel() {
         name,
         conversionWindowMinutes: Number(funnelWindowMinutes?.value || 30),
         steps,
+        stepColors,
       }),
     });
     selectedFunnelId = payload.funnel?.id || "";
@@ -5397,6 +5441,13 @@ function getFunnelTimelineSteps(funnel) {
   }));
 }
 
+function getFunnelStepColor(funnel, stepIndex) {
+  const savedColor = String(funnel?.stepColors?.[Number(stepIndex) - 1] || "").trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(savedColor)) return savedColor;
+  const paletteIndex = Math.max(Number(stepIndex) - 1, 0) % EVENT_PROPERTY_SERIES_COLORS.length;
+  return EVENT_PROPERTY_SERIES_COLORS[paletteIndex];
+}
+
 function getFunnelTimelineStepSelection(funnel) {
   if (!funnel?.id) return new Set();
   const steps = getFunnelTimelineSteps(funnel);
@@ -5435,7 +5486,7 @@ function renderFunnelTimelineStepMenu(funnel) {
       <div class="funnelTimelineStepOptions" role="group" aria-label="Visible Funnel steps">
         ${steps.map((step) => {
           const index = Number(step.index);
-          const color = EVENT_PROPERTY_SERIES_COLORS[(index - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
+          const color = getFunnelStepColor(funnel, index);
           return `
             <label class="funnelTimelineStepOption">
               <input type="checkbox" value="${index}" data-funnel-timeline-step ${selection.has(index) ? "checked" : ""}>
@@ -5511,6 +5562,177 @@ function handleFunnelTimelineStepEscape(event) {
   closeFunnelTimelineStepMenu({ restoreFocus: true });
 }
 
+function openFunnelColorManager(returnFocus) {
+  const funnel = getSelectedFunnel();
+  if (!funnel || !funnelColorManagerDialog) return;
+  closeFunnelTimelineStepMenu();
+  funnelColorManagerRows = getFunnelTimelineSteps(funnel).map((step) => ({
+    index: Number(step.index),
+    eventName: String(step.eventName || ""),
+    color: getFunnelStepColor(funnel, step.index),
+  }));
+  funnelColorManagerDirty = false;
+  funnelColorManagerReturnFocus = returnFocus || document.activeElement;
+  if (funnelColorManagerName) funnelColorManagerName.textContent = funnel.name || "Selected funnel";
+  if (funnelColorManagerStatus) funnelColorManagerStatus.textContent = "";
+  funnelColorManagerDialog.hidden = false;
+  document.body.classList.add("hasFunnelColorManager");
+  renderFunnelColorManagerRows();
+  requestAnimationFrame(() => funnelColorManagerCloseButton?.focus());
+}
+
+async function closeFunnelColorManager(options = {}) {
+  if (!funnelColorManagerDialog || funnelColorManagerDialog.hidden) return true;
+  if (funnelColorManagerDirty && !options.force) {
+    const confirmed = await showEventConfirmation({
+      title: "Discard color changes?",
+      description: "Your Funnel step colors have not been saved.",
+      confirmLabel: "Discard changes",
+      danger: true,
+      returnFocus: funnelColorManagerCancelButton,
+    });
+    if (!confirmed) return false;
+  }
+  const returnFocus = funnelColorManagerReturnFocus;
+  funnelColorManagerDirty = false;
+  funnelColorManagerRows = [];
+  funnelColorManagerReturnFocus = null;
+  funnelColorManagerDialog.hidden = true;
+  document.body.classList.remove("hasFunnelColorManager");
+  if (!options.skipFocus) requestAnimationFrame(() => returnFocus?.isConnected && returnFocus.focus());
+  return true;
+}
+
+function renderFunnelColorManagerRows() {
+  if (!funnelColorManagerList) return;
+  funnelColorManagerList.innerHTML = funnelColorManagerRows.length
+    ? funnelColorManagerRows.map((row, index) => {
+      const color = /^#[0-9a-f]{6}$/i.test(String(row.color || ""))
+        ? String(row.color).toLowerCase()
+        : EVENT_PROPERTY_SERIES_COLORS[index % EVENT_PROPERTY_SERIES_COLORS.length];
+      const stepName = formatEventName(row.eventName);
+      return `
+        <div class="funnelColorManagerRow">
+          <div class="funnelColorManagerStep">
+            <span>${row.index}</span>
+            <div>
+              <small>Step ${row.index}</small>
+              <strong>${escapeHtml(stepName)}</strong>
+            </div>
+          </div>
+          <label class="eventValueManagerColorEditor">
+            <span>Color</span>
+            <span class="eventValueManagerColorControls">
+              <input
+                class="eventValueManagerColorWheel"
+                type="color"
+                value="${color}"
+                data-funnel-step-color="${index}"
+                aria-label="Open color picker for Step ${row.index}, ${escapeHtml(stepName)}"
+                title="Open color picker"
+              >
+              <input
+                class="eventValueManagerHexInput"
+                type="text"
+                value="${escapeHtml(String(row.color || color))}"
+                maxlength="7"
+                spellcheck="false"
+                data-funnel-step-color-text="${index}"
+                aria-label="Hex color for Step ${row.index}, ${escapeHtml(stepName)}"
+              >
+            </span>
+          </label>
+        </div>`;
+    }).join("")
+    : '<div class="eventValueManagerEmpty"><strong>No Funnel steps</strong><span>Add steps before managing colors.</span></div>';
+}
+
+function handleFunnelColorManagerInput(event) {
+  const rowIndex = Number(
+    event.target.dataset.funnelStepColor
+    ?? event.target.dataset.funnelStepColorText,
+  );
+  if (!Number.isInteger(rowIndex) || !funnelColorManagerRows[rowIndex]) return;
+  const row = funnelColorManagerRows[rowIndex];
+  if (event.target.matches("[data-funnel-step-color]")) {
+    row.color = String(event.target.value || "").toLowerCase();
+    const textInput = funnelColorManagerList?.querySelector(`[data-funnel-step-color-text="${rowIndex}"]`);
+    if (textInput) textInput.value = row.color;
+  } else if (event.target.matches("[data-funnel-step-color-text]")) {
+    row.color = String(event.target.value || "").trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(row.color)) {
+      const colorInput = funnelColorManagerList?.querySelector(`[data-funnel-step-color="${rowIndex}"]`);
+      if (colorInput) colorInput.value = row.color;
+    }
+  }
+  funnelColorManagerDirty = true;
+  if (funnelColorManagerStatus) funnelColorManagerStatus.textContent = "";
+}
+
+async function saveFunnelStepColors() {
+  const funnel = getSelectedFunnel();
+  if (!selectedUniverseId || !funnel || !funnelColorManagerDialog || funnelColorManagerDialog.hidden) return;
+  const stepColors = funnelColorManagerRows.map((row) => String(row.color || "").trim().toLowerCase());
+  if (stepColors.some((color) => !/^#[0-9a-f]{6}$/.test(color))) {
+    if (funnelColorManagerStatus) funnelColorManagerStatus.textContent = "Use a six-digit hex color such as #9b6dff.";
+    return;
+  }
+
+  setFunnelColorManagerDisabled(true);
+  if (funnelColorManagerStatus) funnelColorManagerStatus.textContent = "Saving colors...";
+  try {
+    await request("/api/funnels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: funnel.id,
+        universeId: Number(selectedUniverseId),
+        name: funnel.name,
+        conversionWindowMinutes: Number(funnel.conversionWindowMinutes || 30),
+        steps: funnel.steps || [],
+        stepColors,
+      }),
+    });
+    funnelColorManagerDirty = false;
+    if (funnelColorManagerStatus) funnelColorManagerStatus.textContent = "Saved.";
+    await loadFunnels({ force: true });
+    await closeFunnelColorManager({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated && funnelColorManagerStatus) {
+      funnelColorManagerStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setFunnelColorManagerDisabled(false);
+  }
+}
+
+function setFunnelColorManagerDisabled(disabled) {
+  for (const control of funnelColorManagerDialog?.querySelectorAll("input, button") || []) {
+    control.disabled = disabled;
+  }
+}
+
+function handleFunnelColorManagerKeydown(event) {
+  if (!funnelColorManagerDialog || funnelColorManagerDialog.hidden || !eventConfirmDialog?.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFunnelColorManager();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const controls = [...funnelColorManagerDialog.querySelectorAll("input, button")]
+    .filter((control) => !control.disabled && control.offsetParent !== null);
+  if (!controls.length) return;
+  const currentIndex = controls.indexOf(document.activeElement);
+  const direction = event.shiftKey ? -1 : 1;
+  const nextIndex = currentIndex < 0
+    ? 0
+    : (currentIndex + direction + controls.length) % controls.length;
+  event.preventDefault();
+  controls[nextIndex].focus();
+}
+
 function renderFunnelTimeline(funnel) {
   if (!funnelTimelineChart || !funnelTimelineLegend) return;
   const timeline = funnel?.timeline;
@@ -5519,6 +5741,7 @@ function renderFunnelTimeline(funnel) {
     .sort((leftBucket, rightBucket) => Number(leftBucket.start) - Number(rightBucket.start));
   const steps = getFunnelTimelineSteps(funnel);
   const selection = getFunnelTimelineStepSelection(funnel);
+  if (funnelManageColorsButton) funnelManageColorsButton.disabled = !funnel || !steps.length;
   renderFunnelTimelineStepMenu(funnel);
 
   if (!funnel) {
@@ -5541,7 +5764,7 @@ function renderFunnelTimeline(funnel) {
   funnelTimelineLegend.innerHTML = visibleSteps.length
     ? visibleSteps.map((step) => {
       const index = Number(step.index);
-      const color = EVENT_PROPERTY_SERIES_COLORS[(index - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
+      const color = getFunnelStepColor(funnel, index);
       return `
         <button type="button" data-funnel-timeline-legend-step="${index}" title="Hide Step ${index}">
           <i style="--funnel-step-color:${color}" aria-hidden="true"></i>
@@ -5590,7 +5813,7 @@ function renderFunnelTimeline(funnel) {
   )).join("");
   const series = visibleSteps.map((step) => {
     const stepIndex = Number(step.index);
-    const color = EVENT_PROPERTY_SERIES_COLORS[(stepIndex - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
+    const color = getFunnelStepColor(funnel, stepIndex);
     const points = buckets.map((bucket, index) => {
       const point = bucket.steps?.find((entry) => Number(entry.index) === stepIndex);
       const rawPercentage = point?.percentage;

@@ -6559,6 +6559,53 @@ body[data-active-view="funnels"] #pageSubtitle {
   font-size: 11px;
 }
 
+.funnelTimelineActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.funnelManageColorsButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid rgba(91, 108, 158, 0.56);
+  border-radius: 8px;
+  background: rgba(11, 20, 42, 0.96);
+  color: #e8e3ff;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.funnelManageColorsButton svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #bca8f4;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.funnelManageColorsButton:hover:not(:disabled),
+.funnelManageColorsButton:focus-visible {
+  border-color: rgba(151, 102, 255, 0.7);
+  background: rgba(124, 60, 255, 0.13);
+  color: #fff;
+  outline: none;
+}
+
+.funnelManageColorsButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .funnelTimelineStepPicker {
   position: relative;
   flex: 0 0 auto;
@@ -7996,7 +8043,8 @@ body[data-active-view="funnels"] #pageSubtitle {
   min-width: 132px;
 }
 
-body.hasEventValueManager {
+body.hasEventValueManager,
+body.hasFunnelColorManager {
   overflow: hidden;
 }
 
@@ -8135,6 +8183,69 @@ body.hasEventValueManager {
   border-radius: 10px;
   background: rgba(8, 16, 36, 0.72);
   padding: 10px;
+}
+
+.funnelColorManagerList {
+  gap: 10px;
+}
+
+.funnelColorManagerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.58fr);
+  align-items: end;
+  gap: 12px;
+  border: 1px solid rgba(80, 99, 150, 0.32);
+  border-radius: 10px;
+  background: rgba(8, 16, 36, 0.72);
+  padding: 12px;
+}
+
+.funnelColorManagerStep {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.funnelColorManagerStep > span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(165, 111, 255, 0.52);
+  border-radius: 50%;
+  background: rgba(124, 60, 255, 0.16);
+  color: #dacbff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.funnelColorManagerStep > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.funnelColorManagerStep small,
+.funnelColorManagerStep strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelColorManagerStep small {
+  color: #8f9bb7;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.funnelColorManagerStep strong {
+  color: #f4f6ff;
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .eventValueManagerValue input,
@@ -8440,6 +8551,10 @@ body.hasEventConfirmDialog {
     grid-template-columns: minmax(0, 1fr) 36px;
   }
 
+  .funnelColorManagerRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .eventValueManagerColorEditor {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -8708,9 +8823,20 @@ body.hasEventConfirmDialog {
     flex-direction: column;
   }
 
+  .funnelTimelineActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .funnelManageColorsButton,
   .funnelTimelineStepPicker,
   .funnelTimelineStepPicker > button {
     width: 100%;
+  }
+
+  .funnelTimelineStepPicker {
+    flex: initial;
   }
 
   .funnelTimelineStepMenu {

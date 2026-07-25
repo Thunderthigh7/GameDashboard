@@ -58,6 +58,8 @@ const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "ut
 
 assert.match(indexSource, /id="funnelIntervalButton"[^>]*aria-haspopup="listbox"/, "Funnels should have a themed interval trigger");
 assert.match(indexSource, /id="funnelTimelineStepPickerButton"/, "Funnels should have a step visibility control");
+assert.match(indexSource, /id="funnelManageColorsButton"[\s\S]*?>[\s\S]*?Manage colors/, "Funnels should have a color manager beside the timeline controls");
+assert.match(indexSource, /id="funnelColorManagerDialog"/, "Funnels should include a dedicated step color manager");
 assert.match(indexSource, /id="funnelTimelineChart"/, "Funnels should include the step conversion line chart");
 assert.match(indexSource, /id="funnelStepChangesTable"/, "Funnels should include the step change comparison below the main table");
 assert.match(indexSource, />Step-to-step conversion</, "the comparison should retain its direct title");
@@ -65,6 +67,11 @@ assert.doesNotMatch(indexSource, /funnelStepChangesPeriod|change vs prior period
 assert.match(appSource, /params\.set\("funnelId", selectedFunnelId\)/, "the selected Funnel should request its timeline");
 assert.match(appSource, /params\.set\("interval", selectedFunnelInterval\)/, "Funnel interval changes should reach the API");
 assert.match(appSource, /function renderFunnelTimeline\(funnel\)/, "the Funnel timeline renderer should be present");
+assert.match(appSource, /function getFunnelStepColor\(funnel, stepIndex\)/, "saved Funnel step colors should drive the timeline");
+assert.match(appSource, /async function saveFunnelStepColors\(\)/, "Funnel step color changes should persist");
+assert.match(appSource, /document\.body\.append\(eventConfirmDialog\)/, "the shared discard confirmation should remain visible from the Funnels view");
+assert.match(appSource, /data-funnel-step-color-text/, "the color manager should retain direct hex editing");
+assert.doesNotMatch(appSource, /data-funnel-step-name/, "the color manager should not make Funnel step values editable");
 assert.match(appSource, /function renderFunnelStepChanges\(funnel\)/, "the Funnel step comparison renderer should be present");
 assert.match(appSource, /funnelStepChangeDelta">\(\$\{formatFunnelPercentagePointChange/, "the change should sit directly beside its current percentage");
 assert.match(appSource, /<span>Average<\/span>/, "the step-to-step table should show an explicit average column");
@@ -76,9 +83,13 @@ assert.match(appSource, /const startBucket = completedBuckets\[0\]/, "the compar
 assert.match(appSource, /const endBucket = completedBuckets\[completedBuckets\.length - 1\]/, "the comparison should use the last completed populated timeline bucket");
 assert.match(appSource, /const selectedFunnelTimelineSteps = new Map\(\)/, "step visibility should be retained independently by Funnel");
 assert.match(serverSource, /calculateFunnelTimelineAnalytics\(\s*definition,\s*sessions,\s*timelineScaffold\.buckets,/s, "the API should calculate the selected Funnel timeline");
+assert.match(serverSource, /stepColors\.some\(\(color\) => color && !\/\^#\[0-9a-f\]\{6\}\$\/\.test\(color\)\)/, "the API should validate saved Funnel step colors");
+assert.match(serverSource, /stepColors:\s*Array\.isArray\(funnel\?\.stepColors\)/, "the API should serialize saved Funnel step colors");
+assert.match(serverSource, /body\?\.stepColors === undefined[\s\S]*?stepColors: existing\.stepColors/, "older Funnel saves should preserve existing step colors");
 assert.doesNotMatch(serverSource, /calculateFunnelStepChanges|getFunnelStepChangesForRange/, "the API should not fetch or calculate a separate previous period");
 assert.match(styleSource, /\.funnelTimelinePanel\s*\{/, "the Funnel chart should use a dedicated themed panel");
 assert.match(styleSource, /\.funnelTimelineStepMenu\s*\{/, "the step selector should use a themed menu");
+assert.match(styleSource, /\.funnelColorManagerRow\s*\{/, "the Funnel color manager should use themed step rows");
 assert.match(styleSource, /body\[data-active-view="funnels"\] \.funnelTopbarFilters\s*\{[\s\S]*?column-gap:\s*20px/, "the Funnel interval should have clear space before the date range");
 assert.match(styleSource, /\.funnelResultSteps\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?border-radius:\s*12px/, "the main Funnel step table should use a themed container");
 assert.match(styleSource, /\.funnelStepPlayerCount,[\s\S]*?\.funnelDropCell strong\s*\{[\s\S]*?font-size:\s*18px/, "the main Funnel table values should use the larger scannable number size");

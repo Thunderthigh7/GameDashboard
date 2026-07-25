@@ -6753,7 +6753,15 @@ async function handleFunnelSave(req, res, auth) {
     return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
 
-  const normalized = normalizeFunnelDefinition(body, {
+  let definitionInput = body;
+  const requestedFunnelId = cleanString(body?.id, 120);
+  if (requestedFunnelId && body?.stepColors === undefined) {
+    const existing = (await readFunnelDefinitions(auth.userId, universeId))
+      .find((funnel) => funnel.id === requestedFunnelId);
+    if (existing) definitionInput = { ...body, stepColors: existing.stepColors || [] };
+  }
+
+  const normalized = normalizeFunnelDefinition(definitionInput, {
     ownerUserId: auth.userId,
     universeId,
   });
@@ -6792,6 +6800,16 @@ function normalizeFunnelDefinition(value, context) {
   if (steps.some((step) => !step)) {
     return { ok: false, error: "Every funnel step must be a valid logged event name" };
   }
+  const rawStepColors = value?.stepColors === undefined
+    ? []
+    : Array.isArray(value.stepColors)
+      ? value.stepColors
+      : null;
+  if (!rawStepColors) return { ok: false, error: "Funnel step colors must be a list" };
+  const stepColors = steps.map((_, index) => cleanString(rawStepColors[index], 16).toLowerCase());
+  if (stepColors.some((color) => color && !/^#[0-9a-f]{6}$/.test(color))) {
+    return { ok: false, error: "Every Funnel step color must use a six-digit hex value" };
+  }
 
   const conversionWindowMinutes = Number(value?.conversionWindowMinutes);
   if (!Number.isSafeInteger(conversionWindowMinutes) || conversionWindowMinutes < 1 || conversionWindowMinutes > 43_200) {
@@ -6807,6 +6825,7 @@ function normalizeFunnelDefinition(value, context) {
       universeId: context.universeId,
       name,
       steps,
+      stepColors,
       conversionWindowMinutes,
       createdAt: cleanInteger(value?.createdAt) || now,
       updatedAt: now,
@@ -6820,6 +6839,12 @@ function serializeFunnelDefinition(funnel) {
     universeId: cleanInteger(funnel?.universeId),
     name: cleanString(funnel?.name, 80),
     steps: Array.isArray(funnel?.steps) ? funnel.steps.map(normalizeCustomEventName).filter(Boolean).slice(0, MAX_FUNNEL_STEPS) : [],
+    stepColors: Array.isArray(funnel?.stepColors)
+      ? funnel.stepColors.slice(0, MAX_FUNNEL_STEPS).map((color) => {
+        const cleanColor = cleanString(color, 16).toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(cleanColor) ? cleanColor : "";
+      })
+      : [],
     conversionWindowMinutes: cleanInteger(funnel?.conversionWindowMinutes),
     createdAt: cleanInteger(funnel?.createdAt),
     updatedAt: cleanInteger(funnel?.updatedAt),

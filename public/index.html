@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-44/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-45/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -889,12 +889,18 @@
                         <h3 id="funnelTimelineTitle">Step conversion over time</h3>
                         <p>Percent of entering sessions that reached each selected step.</p>
                       </div>
-                      <div class="funnelTimelineStepPicker">
-                        <button id="funnelTimelineStepPickerButton" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="funnelTimelineStepMenu">
-                          <span id="funnelTimelineStepPickerLabel">All steps</span>
-                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+                      <div class="funnelTimelineActions">
+                        <button class="funnelManageColorsButton" id="funnelManageColorsButton" type="button">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.2a1.8 1.8 0 0 0 0-3.6h-.7a1.5 1.5 0 0 1 0-3h2.2A6.3 6.3 0 0 0 21 8.1C21 5.3 17 3 12 3Z" /><circle cx="7.5" cy="9" r=".8" /><circle cx="10.5" cy="6.8" r=".8" /><circle cx="15" cy="7.2" r=".8" /><circle cx="17.2" cy="10.2" r=".8" /></svg>
+                          <span>Manage colors</span>
                         </button>
-                        <div class="funnelTimelineStepMenu" id="funnelTimelineStepMenu" hidden></div>
+                        <div class="funnelTimelineStepPicker">
+                          <button id="funnelTimelineStepPickerButton" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="funnelTimelineStepMenu">
+                            <span id="funnelTimelineStepPickerLabel">All steps</span>
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+                          </button>
+                          <div class="funnelTimelineStepMenu" id="funnelTimelineStepMenu" hidden></div>
+                        </div>
                       </div>
                     </header>
                     <div class="funnelTimelineChart" id="funnelTimelineChart" aria-label="Funnel step conversion timeline"></div>
@@ -964,6 +970,33 @@
               <button class="button compact" id="saveFunnelButton" type="submit">Create funnel</button>
             </footer>
                 </form>
+              </section>
+            </div>
+
+            <div class="eventValueManagerBackdrop funnelColorManagerBackdrop" id="funnelColorManagerDialog" hidden>
+              <section class="eventValueManager funnelColorManager" role="dialog" aria-modal="true" aria-labelledby="funnelColorManagerTitle">
+                <header class="eventValueManagerHeader">
+                  <div>
+                    <span>Funnel display</span>
+                    <h2 id="funnelColorManagerTitle">Manage step colors</h2>
+                    <p id="funnelColorManagerName">Selected funnel</p>
+                  </div>
+                  <button id="funnelColorManagerCloseButton" type="button" aria-label="Close color manager">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                  </button>
+                </header>
+                <div class="eventValueManagerBody">
+                  <div class="eventValueManagerIntro">
+                    <strong>Timeline step colors</strong>
+                    <p>Step names come from the Funnel and stay unchanged here.</p>
+                  </div>
+                  <div class="eventValueManagerList funnelColorManagerList" id="funnelColorManagerList"></div>
+                  <p class="status eventValueManagerStatus" id="funnelColorManagerStatus" aria-live="polite"></p>
+                </div>
+                <footer class="eventValueManagerFooter">
+                  <button class="button secondary compact" id="funnelColorManagerCancelButton" type="button">Cancel</button>
+                  <button class="button compact" id="funnelColorManagerSaveButton" type="button">Save colors</button>
+                </footer>
               </section>
             </div>
         </section>
@@ -1294,6 +1327,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-44/app.js"></script>
+    <script defer src="/assets/20260725-45/app.js"></script>
   </body>
 </html>
