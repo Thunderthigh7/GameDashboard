@@ -79,6 +79,7 @@ assert.match(serverSource, /calculateFunnelTimelineAnalytics\(\s*definition,\s*s
 assert.doesNotMatch(serverSource, /calculateFunnelStepChanges|getFunnelStepChangesForRange/, "the API should not fetch or calculate a separate previous period");
 assert.match(styleSource, /\.funnelTimelinePanel\s*\{/, "the Funnel chart should use a dedicated themed panel");
 assert.match(styleSource, /\.funnelTimelineStepMenu\s*\{/, "the step selector should use a themed menu");
+assert.match(styleSource, /body\[data-active-view="funnels"\] \.funnelTopbarFilters\s*\{[\s\S]*?column-gap:\s*20px/, "the Funnel interval should have clear space before the date range");
 assert.match(styleSource, /\.funnelResultSteps\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?border-radius:\s*12px/, "the main Funnel step table should use a themed container");
 assert.match(styleSource, /\.funnelStepPlayerCount,[\s\S]*?\.funnelDropCell strong\s*\{[\s\S]*?font-size:\s*18px/, "the main Funnel table values should use the larger scannable number size");
 assert.match(styleSource, /\.funnelStepChangesPanel\s*\{/, "the step changes should use a dedicated scannable panel");
