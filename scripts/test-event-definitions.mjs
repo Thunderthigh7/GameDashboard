@@ -12,12 +12,26 @@ const clientPropertyLimit = Number(
 const serverPropertyLimit = Number(
   serverSource.match(/const MAX_CUSTOM_EVENT_PROPERTIES = (\d+);/)?.[1],
 );
+const serverKnownPropertyLimit = Number(
+  serverSource.match(/const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = (\d+);/)?.[1],
+);
+const serverDefinitionLimit = Number(
+  serverSource.match(/const MAX_EVENT_DEFINITIONS_PER_UNIVERSE = (\d+);/)?.[1],
+);
 const markupPropertyLimit = Number(
   indexSource.match(/id="eventDefinitionPropertyCount">\s*0\s*\/\s*(\d+)</)?.[1],
 );
 assert.ok(Number.isInteger(clientPropertyLimit) && clientPropertyLimit > 0, "the client property limit should be explicit");
 assert.equal(serverPropertyLimit, clientPropertyLimit, "client and server event property limits should match");
 assert.equal(markupPropertyLimit, clientPropertyLimit, "the visible property counter should match the enforced limit");
+assert.equal(clientPropertyLimit, 20, "an event should expose at most 20 active properties");
+assert.equal(serverKnownPropertyLimit, 200, "an event should retain up to 200 known property names");
+assert.equal(serverDefinitionLimit, 200, "a universe should retain up to 200 event definitions");
+assert.notEqual(
+  serverKnownPropertyLimit,
+  clientPropertyLimit,
+  "the known-property retention cap must remain independent from the active-property cap",
+);
 
 const ids = [...indexSource.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
 const duplicateIds = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
@@ -38,9 +52,10 @@ assert.ok(
 for (const id of [
   "eventDefinitionForm",
   "eventDefinitionName",
-  "eventKeyModeAuto",
-  "eventKeyModeManual",
   "eventDefinitionPropertyEditor",
+  "eventDefinitionHiddenProperties",
+  "eventDefinitionHiddenPropertiesTitle",
+  "eventDefinitionHiddenPropertyList",
   "addEventDefinitionPropertyButton",
   "eventLuauPreview",
   "copyEventCodeButton",
@@ -57,6 +72,8 @@ for (const removedId of [
   "eventJsonPreview",
   "downloadEventJsonButton",
   "eventDefinitionModeBadge",
+  "eventKeyModeAuto",
+  "eventKeyModeManual",
 ]) {
   assert.doesNotMatch(
     indexSource,
@@ -98,10 +115,46 @@ assert.match(
 assert.match(appSource, /newEventButton\?\.addEventListener\("click", startNewEventDefinition\)/, "New event should open the builder");
 assert.match(appSource, /editEventButton\?\.addEventListener\("click"/, "existing custom events should be editable");
 assert.match(appSource, /deleteSelectedEventButton\?\.addEventListener\("click", deleteSelectedCustomEvent\)/, "existing custom events should be deletable");
+const clientSaveStart = appSource.indexOf("async function saveEventDefinition(");
+const clientSaveEnd = appSource.indexOf("\nfunction setEventDefinitionFormDisabled(", clientSaveStart);
+assert.ok(clientSaveStart >= 0 && clientSaveEnd > clientSaveStart, "the client definition save should remain extractable");
+const clientSaveSource = appSource.slice(clientSaveStart, clientSaveEnd);
 assert.match(
+  clientSaveSource,
+  /universeId:\s*Number\(selectedUniverseId\)[\s\S]*eventName:\s*validated\.eventName[\s\S]*properties:\s*validated\.properties[\s\S]*hiddenPropertyNames:\s*validated\.hiddenPropertyNames/,
+  "saving should send the selected universe, event name, typed property definitions, and hidden property names",
+);
+assert.doesNotMatch(
+  clientSaveSource,
+  /\bkeyMode\b/,
+  "the unified client save payload must not send a legacy key mode",
+);
+assert.doesNotMatch(
   appSource,
-  /request\("\/api\/event-definitions",\s*\{[\s\S]*method:\s*"POST"[\s\S]*universeId:\s*Number\(selectedUniverseId\)[\s\S]*eventName:\s*validated\.eventName[\s\S]*keyMode:\s*getSelectedEventDefinitionKeyMode\(\)[\s\S]*properties:\s*validated\.properties/,
-  "saving should send the selected universe, event name, key mode, and properties",
+  /eventKeyMode(?:Auto|Manual)|function\s+(?:getSelectedEventDefinitionKeyMode|handleEventDefinitionModeChange)\s*\(/,
+  "legacy key-mode controls and client helpers should be removed",
+);
+const hiddenActionStart = appSource.indexOf("function handleEventDefinitionHiddenPropertyAction(");
+const hiddenActionEnd = appSource.indexOf("\nfunction addEventDefinitionProperty(", hiddenActionStart);
+assert.ok(hiddenActionStart >= 0 && hiddenActionEnd > hiddenActionStart, "the hidden-property restore action should remain extractable");
+const hiddenActionSource = appSource.slice(hiddenActionStart, hiddenActionEnd);
+assert.ok(
+  hiddenActionSource.indexOf("eventDefinitionProperties.length >= MAX_EVENT_DEFINITION_PROPERTIES")
+    < hiddenActionSource.indexOf("eventDefinitionHiddenPropertyNames.delete(name)"),
+  "restoring at the active-property limit must keep the hidden tombstone intact",
+);
+assert.match(
+  hiddenActionSource,
+  /const hiddenType = eventDefinitionHiddenPropertyTypes\.get\(name\)[\s\S]*type:\s*hiddenType \|\|/,
+  "restoring should reuse the hidden property's saved example type",
+);
+const clientValidationStart = appSource.indexOf("function validateEventDefinitionForm(");
+const clientValidationEnd = appSource.indexOf("\nasync function saveEventDefinition(", clientValidationStart);
+assert.ok(clientValidationStart >= 0 && clientValidationEnd > clientValidationStart, "the client definition validator should remain extractable");
+assert.match(
+  appSource.slice(clientValidationStart, clientValidationEnd),
+  /for \(const hiddenName of hiddenPropertyNames\)[\s\S]*properties\.push\(\{[\s\S]*type:\s*eventDefinitionHiddenPropertyTypes\.get\(hiddenName\) \|\| "string"/,
+  "saving should retain hidden property type metadata outside the visible editor rows",
 );
 assert.match(
   appSource,
@@ -145,15 +198,61 @@ assert.equal(
   "string",
   "mixed observed types should use a safe string example",
 );
+const normalizeEditorPropertiesStart = appSource.indexOf("function normalizeEventDefinitionEditorProperties(");
+const normalizeEditorPropertiesEnd = appSource.indexOf("\nfunction setEventDefinitionBuilderVisible(", normalizeEditorPropertiesStart);
+assert.ok(
+  normalizeEditorPropertiesStart >= 0 && normalizeEditorPropertiesEnd > normalizeEditorPropertiesStart,
+  "the unified editor property normalizer should remain extractable",
+);
+const { normalizeEditorPropertyTypes } = Function(
+  `"use strict";
+  const MAX_EVENT_DEFINITION_PROPERTIES = ${clientPropertyLimit};
+  const eventDefinitionConfiguredPropertyNames = new Set(["configured"]);
+  ${appSource.slice(normalizeEditorPropertiesStart, normalizeEditorPropertiesEnd)}
+  return {
+    normalizeEditorPropertyTypes() {
+      return normalizeEventDefinitionEditorProperties(
+        [
+          { name: "configured", type: "string" },
+          { name: "discovered", type: "string" },
+        ],
+        new Map([
+          ["configured", "number"],
+          ["discovered", "boolean"],
+        ]),
+      );
+    },
+  };`,
+)();
+assert.deepEqual(
+  normalizeEditorPropertyTypes().map((property) => property.type),
+  ["string", "boolean"],
+  "configured example types should win while newly observed properties use their inferred type",
+);
+const propertyPathValidatorStart = appSource.indexOf("function isValidEventDefinitionPropertyPath(");
+const propertyPathValidatorEnd = appSource.indexOf("\nfunction validateEventDefinitionForm(", propertyPathValidatorStart);
+assert.ok(
+  propertyPathValidatorStart >= 0 && propertyPathValidatorEnd > propertyPathValidatorStart,
+  "the client property-path validator should remain extractable",
+);
+const { isValidEventDefinitionPropertyPath } = Function(
+  `"use strict";
+  ${appSource.slice(propertyPathValidatorStart, propertyPathValidatorEnd)}
+  return { isValidEventDefinitionPropertyPath };`,
+)();
+assert.equal(isValidEventDefinitionPropertyPath("weapon.name"), true, "canonical nested property paths should remain valid");
+assert.equal(isValidEventDefinitionPropertyPath("legacy.1"), true, "the client should accept legacy flat paths accepted by ingestion");
+assert.equal(isValidEventDefinitionPropertyPath("legacy..value"), true, "the client should preserve editable legacy dotted keys");
+assert.equal(isValidEventDefinitionPropertyPath(".invalid"), false, "property paths must still start with a letter");
 assert.match(
   appSource,
   /Property names must be unique/,
   "duplicate property rows should be rejected instead of silently discarded",
 );
-assert.match(
-  appSource,
-  /Switch to Manual keys to exclude this property/,
-  "Auto-discovered keys should explain how to exclude them",
+assert.doesNotMatch(
+  `${indexSource}\n${appSource}\n${styleSource}`,
+  /eventDefinitionPropertySource|Auto keys|Manual keys|Switch to Manual keys/,
+  "property rows should not show obsolete source or mode labels",
 );
 
 const generatorStart = appSource.indexOf("function formatLuauString(");
@@ -180,6 +279,15 @@ assert.match(luauTemplate, /\["weapon\.name"\] = "Example"/, "nested paths shoul
 assert.match(luauTemplate, /damage = 0/, "numeric properties should use numeric Luau examples");
 assert.match(luauTemplate, /isCritical = false/, "boolean properties should use boolean Luau examples");
 assert.match(luauTemplate, /Logger\.Log\("weapon_equipped",[\s\S]*, player\)/, "the generated code should log the event for a player");
+assert.doesNotMatch(luauTemplate, /hiddenDebug/, "hidden properties should stay out of generated Luau");
+const editorDefinitionStart = appSource.indexOf("function editSelectedEventDefinition(");
+const editorDefinitionEnd = appSource.indexOf("\nfunction normalizeEventDefinitionEditorProperties(", editorDefinitionStart);
+assert.ok(editorDefinitionStart >= 0 && editorDefinitionEnd > editorDefinitionStart, "the definition editor initializer should remain extractable");
+assert.match(
+  appSource.slice(editorDefinitionStart, editorDefinitionEnd),
+  /\.filter\(\(property\) => !eventDefinitionHiddenPropertyNames\.has\(/,
+  "the editor and its generated Luau should be initialized from visible properties only",
+);
 
 const syncPropertiesStart = appSource.indexOf("function syncEventDefinitionPropertiesFromEditor(");
 const syncPropertiesEnd = appSource.indexOf("\nfunction handleEventDefinitionPropertyInput(", syncPropertiesStart);
@@ -238,7 +346,9 @@ const {
 } = Function(
   `"use strict";
   const MAX_CUSTOM_EVENT_PROPERTIES = ${serverPropertyLimit};
-  const EVENT_DEFINITION_KEY_MODES = new Set(["auto", "manual"]);
+  const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = ${serverKnownPropertyLimit};
+  const MAX_EVENT_DEFINITION_STORED_PROPERTIES =
+    MAX_EVENT_DEFINITION_KNOWN_PROPERTIES + MAX_CUSTOM_EVENT_PROPERTIES;
   const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
   const SYSTEM_ANALYTICS_EVENT_NAMES = new Set(["player_died", "player_left", "chat_message"]);
   const crypto = { randomUUID: () => "event-test-id" };
@@ -281,15 +391,27 @@ assert.equal(
   false,
   "event definitions should enforce the configured property limit",
 );
+assert.equal(
+  normalizeEventDefinition({
+    eventName: "visible_plus_hidden",
+    properties: [
+      ...Array.from({ length: clientPropertyLimit }, (_, index) => ({ name: `visible${index}` })),
+      { name: "hiddenNumber", type: "number" },
+    ],
+    hiddenPropertyNames: ["hiddenNumber"],
+  }, definitionContext).ok,
+  true,
+  "hidden typed definitions should not consume one of the 20 active property slots",
+);
 
 const normalizedDefinition = normalizeEventDefinition({
   eventName: "Weapon_Equipped",
-  keyMode: "manual",
   properties: [
     { name: "weapon.name", type: "string" },
     { name: "damage", type: "number" },
     { name: "critical", type: "boolean" },
   ],
+  hiddenPropertyNames: ["critical", "server.secret"],
 }, definitionContext);
 assert.equal(normalizedDefinition.ok, true);
 assert.equal(normalizedDefinition.value.eventName, "weapon_equipped", "event names should normalize to lowercase");
@@ -299,97 +421,89 @@ assert.deepEqual(
   "configured example types should be retained",
 );
 
-const manualDefinition = serializeEventDefinition({
+const mergedDefinition = serializeEventDefinition({
   ...normalizedDefinition.value,
-  discoveredPropertyNames: ["weapon.name", "damage", "critical", "unexpected"],
+  discoveredPropertyNames: ["weapon.name", "region", "server.secret"],
 });
 assert.deepEqual(
-  manualDefinition.effectiveProperties.map((property) => property.name),
-  ["weapon.name", "damage", "critical"],
-  "Manual mode should expose only preset properties",
+  mergedDefinition.effectiveProperties.map((property) => property.name),
+  ["weapon.name", "damage", "region"],
+  "configured properties should lead the active list before visible discoveries",
 );
-assert.deepEqual(manualDefinition.unexpectedPropertyNames, ["unexpected"], "Manual mode should flag but retain unknown keys");
+assert.deepEqual(
+  mergedDefinition.effectiveProperties.map((property) => property.type),
+  ["string", "number", "string"],
+  "configured example types should survive the configured-first merge",
+);
+assert.deepEqual(
+  mergedDefinition.hiddenPropertyNames,
+  ["critical", "server.secret"],
+  "explicitly hidden configured and discovered properties should remain excluded",
+);
+assert.equal(
+  mergedDefinition.properties.find((property) => property.name === "critical")?.type,
+  "boolean",
+  "hidden configured properties should retain their example type for later restoration",
+);
+assert.equal(
+  mergedDefinition.effectiveProperties.some((property) => ["critical", "server.secret"].includes(property.name)),
+  false,
+  "hidden properties must not enter the active property list",
+);
+assert.equal(Object.hasOwn(mergedDefinition, "keyMode"), false, "serialized definitions should omit legacy keyMode");
 
-const autoDefinition = serializeEventDefinition({
+const cappedDefinition = serializeEventDefinition({
   ...normalizedDefinition.value,
-  keyMode: "auto",
   properties: [{ name: "preset", type: "number" }],
+  hiddenPropertyNames: [],
   discoveredPropertyNames: Array.from({ length: clientPropertyLimit + 5 }, (_, index) => `observed${index}`),
 });
 assert.equal(
-  autoDefinition.effectiveProperties.length,
+  cappedDefinition.effectiveProperties.length,
   clientPropertyLimit,
-  "Auto mode should remain capped at the configured property limit",
+  "the active configured-plus-discovered list should remain capped at 20",
 );
-assert.equal(autoDefinition.effectiveProperties[0].name, "preset", "preset properties should stay first");
+assert.equal(cappedDefinition.effectiveProperties[0].name, "preset", "configured properties should stay first at the cap");
 
-const normalizeEditorStart = appSource.indexOf("function normalizeEventDefinitionEditorProperties(");
-const normalizeEditorEnd = appSource.indexOf("\nfunction setEventDefinitionBuilderVisible(", normalizeEditorStart);
-const keyModeStart = appSource.indexOf("function getSelectedEventDefinitionKeyMode(");
-const keyModeEnd = appSource.indexOf("\nfunction renderEventDefinitionPropertyEditor(", keyModeStart);
-assert.ok(
-  normalizeEditorStart >= 0
-    && normalizeEditorEnd > normalizeEditorStart
-    && keyModeStart >= 0
-    && keyModeEnd > keyModeStart,
-  "Manual-to-Auto editor helpers should remain extractable",
+const legacyAutoDefinition = serializeEventDefinition({
+  id: "legacy-auto",
+  universeId: 123,
+  eventName: "legacy_auto",
+  keyMode: "auto",
+  properties: [{ name: "preset", type: "number" }],
+  discoveredPropertyNames: ["preset", "autoDiscovered"],
+});
+assert.deepEqual(
+  legacyAutoDefinition.effectiveProperties.map((property) => property.name),
+  ["preset", "autoDiscovered"],
+  "legacy Auto definitions should migrate with discovered properties visible",
 );
-const manualDefinitionForPreview = {
+assert.deepEqual(legacyAutoDefinition.hiddenPropertyNames, [], "legacy Auto migration should not hide discoveries");
+assert.equal(Object.hasOwn(legacyAutoDefinition, "keyMode"), false, "legacy Auto serialization should drop keyMode");
+
+const legacyManualDefinition = serializeEventDefinition({
+  id: "legacy-manual",
+  universeId: 123,
+  eventName: "legacy_manual",
   keyMode: "manual",
   properties: [{ name: "preset", type: "string" }],
-  effectiveProperties: [{ name: "preset", type: "string" }],
-  discoveredPropertyNames: ["preset", "definitionOnly", "sharedObserved"],
-};
-const { switchManualDefinitionToAuto } = Function(
-  `"use strict";
-  const MAX_EVENT_DEFINITION_PROPERTIES = ${clientPropertyLimit};
-  let isEditingEventDefinition = true;
-  let eventDefinitionIsDirty = false;
-  let eventDefinitionProperties = [{ name: "preset", type: "string", discovered: false }];
-  const eventKeyModeManual = { checked: false };
-  const currentSelectedEvent = {
-    name: "weapon_equipped",
-    definition: ${JSON.stringify(manualDefinitionForPreview)},
-    properties: [
-      {
-        name: "preset",
-        type: "category",
-        topValues: [{ valueType: "string" }],
-      },
-      {
-        name: "sharedObserved",
-        type: "number",
-        topValues: [{ valueType: "number" }],
-      },
-    ],
-    observedPropertyNames: ["preset", "sharedObserved", "responseOnly"],
-  };
-  const getSelectedEventCatalogItem = () => ({ definition: currentSelectedEvent.definition });
-  const renderEventDefinitionPropertyEditor = () => {};
-  let previewPropertyNames = [];
-  const renderEventDefinitionCodePreviews = () => {
-    previewPropertyNames = eventDefinitionProperties.map((property) => property.name);
-  };
-  ${appSource.slice(observedTypeStart, observedTypeEnd)}
-  ${appSource.slice(normalizeEditorStart, normalizeEditorEnd)}
-  ${appSource.slice(keyModeStart, keyModeEnd)}
-  return {
-    switchManualDefinitionToAuto() {
-      handleEventDefinitionModeChange();
-      return previewPropertyNames;
-    },
-  };`,
-)();
+  discoveredPropertyNames: ["preset", "manualDiscovered", "manualExtra"],
+});
 assert.deepEqual(
-  new Set(switchManualDefinitionToAuto()),
-  new Set(["preset", "definitionOnly", "sharedObserved", "responseOnly"]),
-  "switching Manual to Auto should include every definition and response-discovered key in the preview",
+  legacyManualDefinition.effectiveProperties.map((property) => property.name),
+  ["preset"],
+  "legacy Manual definitions should keep only configured properties visible",
+);
+assert.deepEqual(
+  legacyManualDefinition.hiddenPropertyNames,
+  ["manualDiscovered", "manualExtra"],
+  "legacy Manual discoveries that were not configured should migrate to hidden properties",
 );
 
 assert.match(serverSource, /url\.pathname === "\/api\/event-definitions" && req\.method === "GET"/, "definitions should have an authenticated GET route");
 assert.match(serverSource, /url\.pathname === "\/api\/event-definitions" && req\.method === "POST"/, "definitions should have an authenticated save route");
 assert.match(serverSource, /eventDefinitionMatch && req\.method === "DELETE"/, "definitions should have an authenticated delete route");
-assert.match(serverSource, /remainingSlots = Math\.max\(MAX_EVENT_DEFINITIONS_PER_UNIVERSE/, "Mongo Auto discovery should enforce the definition cap");
+assert.match(serverSource, /remainingSlots = Math\.max\(MAX_EVENT_DEFINITIONS_PER_UNIVERSE/, "Mongo schema discovery should enforce the definition cap");
 assert.match(
   serverSource,
   /discoverEventDefinitionsFromPresence\(presence\.value\)\.catch\(/,
@@ -397,22 +511,47 @@ assert.match(
 );
 const discoveryStart = serverSource.indexOf("async function discoverEventDefinitionsFromPresence(");
 const discoveryEnd = serverSource.indexOf("\nasync function readEventDefinitions(", discoveryStart);
-assert.ok(discoveryStart >= 0 && discoveryEnd > discoveryStart, "Auto discovery should remain extractable");
+assert.ok(discoveryStart >= 0 && discoveryEnd > discoveryStart, "schema discovery should remain extractable");
 const discoverySource = serverSource.slice(discoveryStart, discoveryEnd);
 assert.match(
   discoverySource,
   /const deletionCutoffs = await getCustomEventDeletionCutoffs\(universeId\);[\s\S]*occurredAt <= deletedAt\) continue;/,
-  "Auto discovery should ignore delayed event payloads at or before a durable deletion cutoff",
+  "schema discovery should ignore delayed event payloads at or before a durable deletion cutoff",
 );
 assert.match(
   discoverySource,
   /withEventDefinitionMutationLock\(ownerUserId,\s*universeId,[\s\S]*currentDeletionCutoffs = await getCustomEventDeletionCutoffs\(universeId\);[\s\S]*buildEventDefinitionDiscoveries\(incomingEvents,\s*currentDeletionCutoffs\)/,
-  "Mongo Auto discovery should revalidate deletion cutoffs after acquiring its mutation lock",
+  "Mongo schema discovery should revalidate deletion cutoffs after acquiring its mutation lock",
 );
 assert.match(
   discoverySource,
   /withLocalEventDefinitionStoreLock\([\s\S]*currentDeletionCutoffs = await getCustomEventDeletionCutoffs\(universeId\);[\s\S]*buildEventDefinitionDiscoveries\(incomingEvents,\s*currentDeletionCutoffs\)/,
-  "local Auto discovery should revalidate deletion cutoffs after acquiring its store lock",
+  "local schema discovery should revalidate deletion cutoffs after acquiring its store lock",
+);
+assert.match(
+  discoverySource,
+  /hiddenPropertyNames:\s*\{[\s\S]*\$isArray:\s*"\$hiddenPropertyNames"[\s\S]*existingState\.hiddenPropertyNames/,
+  "Mongo discovery should preserve explicit hidden names and legacy migrated hidden names",
+);
+assert.match(
+  discoverySource,
+  /\$reduce:\s*\{[\s\S]*\$concatArrays:[\s\S]*\$in:\s*\["\$\$this",\s*"\$\$value"\]/,
+  "Mongo discovery should append and deduplicate names while preserving first-seen order",
+);
+assert.doesNotMatch(
+  discoverySource,
+  /\$setUnion/,
+  "Mongo discovery must not use order-undefined set union before applying the known-name cap",
+);
+assert.match(
+  discoverySource,
+  /\{\s*\$unset:\s*"keyMode"\s*\}/,
+  "Mongo discovery should remove the legacy keyMode field",
+);
+assert.match(
+  discoverySource,
+  /definition\.hiddenPropertyNames = propertyState\.hiddenPropertyNames;[\s\S]*delete definition\.keyMode;/,
+  "local discovery should preserve hidden names while removing legacy keyMode",
 );
 assert.match(
   serverSource,
@@ -434,14 +573,29 @@ assert.ok(eventDetailStart >= 0 && eventDetailEnd > eventDetailStart, "the event
 let capturedAllowedPropertyNames = [];
 const { buildCustomEventDetail } = Function(
   `"use strict";
+  const MAX_CUSTOM_EVENT_PROPERTIES = ${serverPropertyLimit};
+  const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = ${serverKnownPropertyLimit};
+  const MAX_EVENT_DEFINITION_STORED_PROPERTIES =
+    MAX_EVENT_DEFINITION_KNOWN_PROPERTIES + MAX_CUSTOM_EVENT_PROPERTIES;
   const MAX_CUSTOM_EVENT_RECENT_RESPONSE = 100;
   const MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE = 100;
+  const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
+  const SYSTEM_ANALYTICS_EVENT_NAMES = new Set(["player_died", "player_left", "chat_message"]);
+  const crypto = { randomUUID: () => "event-test-id" };
   const cleanInteger = (value) => Math.trunc(Number(value) || 0);
   const cleanString = (value, maxLength = 1000) => String(value ?? "").slice(0, maxLength);
-  const serializeEventDefinition = (definition) => definition;
-  const getDiscoveredPropertyNamesFromEvents = (events) => [
-    ...new Set(events.flatMap((event) => Object.keys(event.properties || {}))),
-  ];
+  const cleanTimestampMs = (value) => Math.max(0, Math.trunc(Number(value) || 0));
+  const normalizeCustomEventName = (value) => {
+    const eventName = cleanString(value, 64).trim().toLowerCase();
+    return /^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName) ? eventName : "";
+  };
+  const isValidCustomEventPropertyPath = (value) => (
+    typeof value === "string"
+    && value.length > 0
+    && value.length <= 96
+    && /^[A-Za-z][A-Za-z0-9_:-]*(?:\\[\\])?(?:\\.[A-Za-z][A-Za-z0-9_:-]*(?:\\[\\])?)*$/.test(value)
+  );
+  ${serverSource.slice(definitionHelpersStart, definitionHelpersEnd)}
   const buildCustomEventSeries = () => ({
     bucketMs: 60_000,
     availableIntervals: ["1m"],
@@ -465,34 +619,46 @@ const { buildCustomEventDetail } = Function(
     },
   };`,
 )();
-const rawManualEvent = {
+const rawEventWithHiddenProperty = {
   id: "event-1",
   userId: 1,
   sessionId: "session-1",
   occurredAt: 1_000,
-  properties: { preset: "Shotgun", unexpected: true },
+  properties: {
+    preset: "Shotgun",
+    visibleObserved: "Arena",
+    hiddenDebug: true,
+  },
 };
-const manualDetailRun = buildCustomEventDetail("weapon_equipped", [rawManualEvent], {
+const hiddenDetailRun = buildCustomEventDetail("weapon_equipped", [rawEventWithHiddenProperty], {
   definition: {
-    keyMode: "manual",
     properties: [{ name: "preset", type: "string" }],
-    effectiveProperties: [{ name: "preset", type: "string" }],
-    unexpectedPropertyNames: ["unexpected"],
+    discoveredPropertyNames: ["preset", "visibleObserved", "hiddenDebug"],
+    hiddenPropertyNames: ["hiddenDebug"],
   },
   recentLimit: 7,
   propertyValueLimit: 4,
 });
-capturedAllowedPropertyNames = manualDetailRun.getAllowedNames();
-assert.deepEqual(capturedAllowedPropertyNames, ["preset"], "Manual mode should summarize only preset property keys");
+capturedAllowedPropertyNames = hiddenDetailRun.getAllowedNames();
 assert.deepEqual(
-  manualDetailRun.result.properties.map((property) => property.name),
-  ["preset"],
-  "Manual mode should exclude unknown keys from property breakdowns",
+  capturedAllowedPropertyNames,
+  ["preset", "visibleObserved"],
+  "property breakdowns should allow configured fields and visible discoveries only",
+);
+assert.deepEqual(
+  hiddenDetailRun.result.properties.map((property) => property.name),
+  ["preset", "visibleObserved"],
+  "hidden fields should be excluded from property breakdowns",
+);
+assert.deepEqual(
+  hiddenDetailRun.result.observedPropertyNames,
+  ["preset", "visibleObserved"],
+  "hidden fields should be excluded from observedPropertyNames",
 );
 assert.equal(
-  manualDetailRun.result.recentEvents[0].properties.unexpected,
+  hiddenDetailRun.result.recentEvents[0].properties.hiddenDebug,
   true,
-  "Manual display filtering should leave unknown keys in raw recent records",
+  "display filtering should retain hidden fields in raw recent event records",
 );
 
 const analyticsRecordsStart = serverSource.indexOf("async function getAnalyticsEventRecords(");
@@ -557,10 +723,20 @@ assert.ok(
   "the editable and insert-only definition fields should be separate",
 );
 const editableSetSource = saveDefinitionSource.slice(editableSetStart, setOnInsertStart);
+assert.match(
+  editableSetSource,
+  /hiddenPropertyNames:\s*savedDefinition\.hiddenPropertyNames/,
+  "editing a Mongo definition should persist its user-owned hidden property names",
+);
 assert.doesNotMatch(
   editableSetSource,
   /discoveredPropertyNames/,
   "editing a definition must not place discovered property names in the overwritable $set block",
+);
+assert.match(
+  saveDefinitionSource,
+  /\$unset:\s*\{\s*keyMode:\s*"",?\s*\}/,
+  "saving a Mongo definition should remove its legacy keyMode field",
 );
 const deleteDefinitionByNameStart = serverSource.indexOf("async function deleteEventDefinitionByName(");
 const deleteDefinitionByNameEnd = serverSource.indexOf("\nfunction createEventDefinitionLimitError(", deleteDefinitionByNameStart);
@@ -581,8 +757,9 @@ assert.doesNotMatch(
 );
 
 console.log("Event definition workflow tests passed.", {
-  controls: 12,
+  controls: 13,
   generatedFormats: ["luau"],
-  modes: ["auto", "manual"],
-  propertyLimit: clientPropertyLimit,
+  propertyModel: "configured + discovered - hidden",
+  activePropertyLimit: clientPropertyLimit,
+  knownPropertyLimit: serverKnownPropertyLimit,
 });

@@ -108,12 +108,11 @@ const eventAnalyticsView = document.querySelector("#eventAnalyticsView");
 const eventDefinitionForm = document.querySelector("#eventDefinitionForm");
 const eventDefinitionId = document.querySelector("#eventDefinitionId");
 const eventDefinitionName = document.querySelector("#eventDefinitionName");
-const eventKeyModeAuto = document.querySelector("#eventKeyModeAuto");
-const eventKeyModeManual = document.querySelector("#eventKeyModeManual");
 const eventDefinitionPropertyEditor = document.querySelector("#eventDefinitionPropertyEditor");
 const eventDefinitionPropertyCount = document.querySelector("#eventDefinitionPropertyCount");
-const eventDefinitionPropertiesHint = document.querySelector("#eventDefinitionPropertiesHint");
 const addEventDefinitionPropertyButton = document.querySelector("#addEventDefinitionPropertyButton");
+const eventDefinitionHiddenProperties = document.querySelector("#eventDefinitionHiddenProperties");
+const eventDefinitionHiddenPropertyList = document.querySelector("#eventDefinitionHiddenPropertyList");
 const eventDefinitionBuilderTitle = document.querySelector("#eventDefinitionBuilderTitle");
 const cancelEventDefinitionEditButton = document.querySelector("#cancelEventDefinitionEditButton");
 const cancelEventDefinitionButton = document.querySelector("#cancelEventDefinitionButton");
@@ -245,6 +244,10 @@ let selectedEventInterval = "auto";
 let recentEventsExpanded = false;
 let isEditingEventDefinition = false;
 let eventDefinitionProperties = [];
+let eventDefinitionHiddenPropertyNames = new Set();
+let eventDefinitionHiddenPropertyTypes = new Map();
+let eventDefinitionObservedPropertyNames = new Set();
+let eventDefinitionConfiguredPropertyNames = new Set();
 let eventDefinitionReturnFocus = null;
 let eventDefinitionIsDirty = false;
 let eventDefinitionNameLocked = false;
@@ -269,7 +272,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-22";
+const DASHBOARD_ASSET_VERSION = "20260724-23";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
@@ -496,12 +499,11 @@ function bindEvents() {
       renderEventDefinitionCodePreviews();
     }
   });
-  eventKeyModeAuto?.addEventListener("change", handleEventDefinitionModeChange);
-  eventKeyModeManual?.addEventListener("change", handleEventDefinitionModeChange);
   addEventDefinitionPropertyButton?.addEventListener("click", () => addEventDefinitionProperty());
   eventDefinitionPropertyEditor?.addEventListener("input", handleEventDefinitionPropertyInput);
   eventDefinitionPropertyEditor?.addEventListener("change", handleEventDefinitionPropertyInput);
   eventDefinitionPropertyEditor?.addEventListener("click", handleEventDefinitionPropertyAction);
+  eventDefinitionHiddenPropertyList?.addEventListener("click", handleEventDefinitionHiddenPropertyAction);
   copyEventCodeButton?.addEventListener("click", copyEventDefinitionCode);
   eventConfirmCancelButton?.addEventListener("click", () => resolveEventConfirmation(false));
   eventConfirmActionButton?.addEventListener("click", () => resolveEventConfirmation(true));
@@ -2439,6 +2441,10 @@ async function selectUniverse(value) {
   recentEventsExpanded = false;
   isEditingEventDefinition = false;
   eventDefinitionProperties = [];
+  eventDefinitionHiddenPropertyNames = new Set();
+  eventDefinitionHiddenPropertyTypes = new Map();
+  eventDefinitionObservedPropertyNames = new Set();
+  eventDefinitionConfiguredPropertyNames = new Set();
   eventDefinitionNameLocked = false;
   setEventDefinitionBuilderVisible(false);
   currentEventReleaseVersions = [];
@@ -3222,14 +3228,16 @@ function startNewEventDefinition() {
   eventDefinitionReturnFocus = document.activeElement;
   eventDefinitionIsDirty = false;
   eventDefinitionProperties = [];
+  eventDefinitionHiddenPropertyNames = new Set();
+  eventDefinitionHiddenPropertyTypes = new Map();
+  eventDefinitionObservedPropertyNames = new Set();
+  eventDefinitionConfiguredPropertyNames = new Set();
   eventDefinitionNameLocked = false;
   if (eventDefinitionId) eventDefinitionId.value = "";
   if (eventDefinitionName) {
     eventDefinitionName.value = "";
     eventDefinitionName.disabled = false;
   }
-  if (eventKeyModeAuto) eventKeyModeAuto.checked = true;
-  if (eventKeyModeManual) eventKeyModeManual.checked = false;
   if (eventDefinitionBuilderTitle) eventDefinitionBuilderTitle.textContent = "Create event";
   if (selectedEventTitle) selectedEventTitle.textContent = "New event";
   if (saveEventDefinitionButton) saveEventDefinitionButton.textContent = "Create event";
@@ -3268,21 +3276,47 @@ function editSelectedEventDefinition() {
       getObservedEventDefinitionPropertyType(property),
     ]),
   );
-  const discoveredPropertyNames = new Set(definition?.discoveredPropertyNames || []);
-  const sourceProperties = definition?.keyMode === "manual"
-    ? definition.properties || []
-    : [
-      ...(definition?.effectiveProperties || definition?.properties || []).map((property) => ({
-        ...property,
-        discovered: Boolean(property.discovered || discoveredPropertyNames.has(property.name)),
-      })),
-      ...(selected.properties || []).map((property) => ({
-        name: property.name,
-        type: getObservedEventDefinitionPropertyType(property),
-        discovered: true,
-      })),
-      ...(selected.observedPropertyNames || []).map((name) => ({ name, discovered: true })),
-    ];
+  eventDefinitionHiddenPropertyNames = new Set(
+    (definition?.hiddenPropertyNames || [])
+      .map((name) => String(name || "").trim())
+      .filter(Boolean),
+  );
+  eventDefinitionHiddenPropertyTypes = new Map(
+    [...eventDefinitionHiddenPropertyNames].map((name) => {
+      const configuredProperty = (definition?.properties || [])
+        .find((property) => String(property?.name || "").trim() === name);
+      const type = String(configuredProperty?.type || "string").toLowerCase();
+      return [name, ["string", "number", "boolean"].includes(type) ? type : "string"];
+    }),
+  );
+  eventDefinitionConfiguredPropertyNames = new Set(
+    (definition?.properties || [])
+      .map((property) => String(property?.name || "").trim())
+      .filter(Boolean),
+  );
+  eventDefinitionObservedPropertyNames = new Set([
+    ...(definition?.discoveredPropertyNames || []),
+    ...(definition?.effectiveProperties || []).map((property) => property?.name),
+    ...(selected.properties || []).map((property) => property.name),
+    ...(selected.observedPropertyNames || []),
+    ...eventDefinitionHiddenPropertyNames,
+  ].map((name) => String(name || "").trim()).filter(Boolean));
+  const sourceProperties = [
+    ...(definition?.properties || []),
+    ...(definition?.effectiveProperties || []),
+    ...(definition?.discoveredPropertyNames || []).map((name) => ({
+      name,
+      type: propertyTypesByName.get(name) || "string",
+    })),
+    ...(selected.properties || []).map((property) => ({
+      name: property.name,
+      type: getObservedEventDefinitionPropertyType(property),
+    })),
+    ...(selected.observedPropertyNames || []).map((name) => ({
+      name,
+      type: propertyTypesByName.get(name) || "string",
+    })),
+  ].filter((property) => !eventDefinitionHiddenPropertyNames.has(String(property?.name || "").trim()));
   eventDefinitionProperties = normalizeEventDefinitionEditorProperties(sourceProperties, propertyTypesByName);
 
   if (eventDefinitionId) eventDefinitionId.value = definition?.id || "";
@@ -3290,25 +3324,19 @@ function editSelectedEventDefinition() {
     eventDefinitionName.value = selected.name;
     eventDefinitionName.disabled = true;
   }
-  const keyMode = definition?.keyMode === "manual" ? "manual" : "auto";
-  if (eventKeyModeAuto) eventKeyModeAuto.checked = keyMode === "auto";
-  if (eventKeyModeManual) eventKeyModeManual.checked = keyMode === "manual";
   if (eventDefinitionBuilderTitle) eventDefinitionBuilderTitle.textContent = `Edit ${formatEventName(selected.name)}`;
   if (selectedEventTitle) selectedEventTitle.textContent = `Edit ${formatEventName(selected.name)}`;
   if (saveEventDefinitionButton) saveEventDefinitionButton.textContent = "Save changes";
-  if (eventDefinitionStatus) {
-    const unexpectedCount = Number(selected.unexpectedPropertyNames?.length) || 0;
-    eventDefinitionStatus.textContent = unexpectedCount
-      ? `${formatCompactNumber(unexpectedCount)} unlisted ${unexpectedCount === 1 ? "key has" : "keys have"} arrived and remain available in raw records.`
-      : "";
-  }
+  if (eventDefinitionStatus) eventDefinitionStatus.textContent = "";
   if (eventCodeStatus) eventCodeStatus.textContent = "";
   renderEventDefinitionPropertyEditor();
   renderEventDefinitionCodePreviews();
   setEventDefinitionBuilderVisible(true);
   window.requestAnimationFrame(() => {
-    eventDefinitionPropertyEditor?.querySelector("input")?.focus()
-      || cancelEventDefinitionEditButton?.focus();
+    const firstPropertyInput = eventDefinitionPropertyEditor?.querySelector("input");
+    if (firstPropertyInput) firstPropertyInput.focus();
+    else if (addEventDefinitionPropertyButton) addEventDefinitionPropertyButton.focus();
+    else cancelEventDefinitionEditButton?.focus();
   });
 }
 
@@ -3321,14 +3349,13 @@ function normalizeEventDefinitionEditorProperties(properties, inferredTypes = ne
     names.add(name);
     const inferredType = inferredTypes.get(name);
     const requestedType = String(
-      property?.discovered && inferredType
-        ? inferredType
-        : property?.type || inferredType || "string",
+      eventDefinitionConfiguredPropertyNames.has(name)
+        ? property?.type || inferredType || "string"
+        : inferredType || property?.type || "string",
     ).toLowerCase();
     normalized.push({
       name,
       type: ["string", "number", "boolean"].includes(requestedType) ? requestedType : "string",
-      discovered: Boolean(property?.discovered),
     });
     if (normalized.length >= MAX_EVENT_DEFINITION_PROPERTIES) break;
   }
@@ -3368,7 +3395,7 @@ function confirmUnsavedEventDefinition() {
   if (!eventDefinitionIsDirty) return Promise.resolve(true);
   return showEventConfirmation({
     title: "Discard unsaved changes?",
-    description: "Your event name, key mode, and property edits have not been saved.",
+    description: "Your event name and property edits have not been saved.",
     confirmLabel: "Discard changes",
     danger: true,
   });
@@ -3463,68 +3490,8 @@ function restoreEventDefinitionViewFocus() {
   window.requestAnimationFrame(() => target?.focus());
 }
 
-function getSelectedEventDefinitionKeyMode() {
-  return eventKeyModeManual?.checked ? "manual" : "auto";
-}
-
-function handleEventDefinitionModeChange() {
-  if (!isEditingEventDefinition) return;
-  eventDefinitionIsDirty = true;
-  const mode = getSelectedEventDefinitionKeyMode();
-  if (mode === "manual" && !eventDefinitionProperties.length) {
-    eventDefinitionProperties = normalizeEventDefinitionEditorProperties(
-      (currentSelectedEvent?.properties || []).map((property) => ({
-        name: property.name,
-        type: getObservedEventDefinitionPropertyType(property),
-        discovered: true,
-      })),
-    );
-  } else if (mode === "auto" && currentSelectedEvent?.name) {
-    const definition = currentSelectedEvent.definition || getSelectedEventCatalogItem()?.definition || null;
-    const inferredTypes = new Map(
-      (currentSelectedEvent.properties || []).map((property) => [
-        property.name,
-        getObservedEventDefinitionPropertyType(property),
-      ]),
-    );
-    const discoveredNames = new Set([
-      ...(definition?.discoveredPropertyNames || []),
-      ...(currentSelectedEvent.observedPropertyNames || []),
-      ...(currentSelectedEvent.properties || []).map((property) => property.name),
-    ]);
-    eventDefinitionProperties = normalizeEventDefinitionEditorProperties([
-      ...eventDefinitionProperties.map((property) => ({
-        ...property,
-        discovered: Boolean(property.discovered || discoveredNames.has(property.name)),
-      })),
-      ...(definition?.effectiveProperties || []).map((property) => ({
-        ...property,
-        discovered: Boolean(property.discovered || discoveredNames.has(property.name)),
-      })),
-      ...(currentSelectedEvent.properties || []).map((property) => ({
-        name: property.name,
-        type: getObservedEventDefinitionPropertyType(property),
-        discovered: true,
-      })),
-      ...[...discoveredNames].map((name) => ({
-        name,
-        type: inferredTypes.get(name) || "string",
-        discovered: true,
-      })),
-    ], inferredTypes);
-  }
-  renderEventDefinitionPropertyEditor();
-  renderEventDefinitionCodePreviews();
-}
-
 function renderEventDefinitionPropertyEditor(options = {}) {
   if (!eventDefinitionPropertyEditor) return;
-  const mode = getSelectedEventDefinitionKeyMode();
-  if (eventDefinitionPropertiesHint) {
-    eventDefinitionPropertiesHint.textContent = mode === "manual"
-      ? "Only these keys appear as expected property breakdowns. Raw unlisted keys are still retained."
-      : "Optional starting keys. New keys are added automatically when Roblox sends them.";
-  }
   if (eventDefinitionPropertyCount) {
     eventDefinitionPropertyCount.textContent = `${eventDefinitionProperties.length} / ${MAX_EVENT_DEFINITION_PROPERTIES}`;
   }
@@ -3534,13 +3501,14 @@ function renderEventDefinitionPropertyEditor(options = {}) {
 
   eventDefinitionPropertyEditor.innerHTML = eventDefinitionProperties.length
     ? eventDefinitionProperties.map((property, index) => {
-      const autoDiscovered = mode === "auto" && property.discovered;
+      const observed = eventDefinitionObservedPropertyNames.has(property.name);
+      const propertyLabel = property.name || `property ${index + 1}`;
       return `
-      <div class="eventDefinitionPropertyRow ${autoDiscovered ? "autoDiscovered" : ""}" data-event-definition-property-index="${index}" data-event-definition-property-discovered="${property.discovered ? "true" : "false"}">
+      <div class="eventDefinitionPropertyRow" data-event-definition-property-index="${index}" data-event-definition-property-observed="${observed ? "true" : "false"}">
         <span class="eventDefinitionPropertyIndex" aria-hidden="true">${index + 1}</span>
         <label>
           <span>Property name</span>
-          <input type="text" value="${escapeHtml(property.name)}" maxlength="96" placeholder="weapon.name" spellcheck="false" data-event-definition-property-name="${index}" aria-label="Property ${index + 1} name" ${autoDiscovered ? 'readonly title="Auto-discovered keys remain while Auto discover is selected"' : ""}>
+          <input type="text" value="${escapeHtml(property.name)}" maxlength="96" placeholder="weapon.name" spellcheck="false" data-event-definition-property-name="${index}" aria-label="Property ${index + 1} name" ${observed ? 'readonly title="This property name comes from incoming Roblox events"' : ""}>
         </label>
         <label>
           <span>Example type</span>
@@ -3550,9 +3518,11 @@ function renderEventDefinitionPropertyEditor(options = {}) {
             <option value="boolean" ${property.type === "boolean" ? "selected" : ""}>True / false</option>
           </select>
         </label>
-        ${autoDiscovered
-          ? '<span class="eventDefinitionPropertySource" title="Switch to Manual keys to exclude this property">Auto</span>'
-          : `<button class="eventDefinitionRemovePropertyButton" type="button" data-event-definition-property-action="remove" data-event-definition-property-index="${index}" aria-label="Remove ${escapeHtml(property.name || `property ${index + 1}`)}" title="Remove property">
+        ${observed
+          ? `<button class="eventDefinitionRemovePropertyButton hideAction" type="button" data-event-definition-property-action="hide" data-event-definition-property-index="${index}" aria-label="Hide ${escapeHtml(propertyLabel)}" title="Hide property">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18" /><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" /><path d="M9.9 4.2A9.8 9.8 0 0 1 12 4c5 0 9 8 9 8a17.8 17.8 0 0 1-2.2 3.2" /><path d="M6.6 6.6C4.6 8 3 12 3 12s4 8 9 8a9.7 9.7 0 0 0 3.4-.6" /></svg>
+            </button>`
+          : `<button class="eventDefinitionRemovePropertyButton" type="button" data-event-definition-property-action="remove" data-event-definition-property-index="${index}" aria-label="Remove ${escapeHtml(propertyLabel)}" title="Remove property">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
             </button>`}
       </div>
@@ -3561,17 +3531,35 @@ function renderEventDefinitionPropertyEditor(options = {}) {
     : `
       <div class="eventDefinitionPropertiesEmpty">
         <strong>No properties yet</strong>
-        <span>${mode === "auto" ? "That is okay—keys can be discovered from the first incoming event." : "This will be a count-only event with no property breakdowns."}</span>
+        <span>Add one now, or send the first event from Roblox to discover it.</span>
       </div>
     `;
 
+  renderEventDefinitionHiddenProperties();
   if (Number.isInteger(options.focusIndex)) {
     window.requestAnimationFrame(() => {
       eventDefinitionPropertyEditor
         ?.querySelector(`[data-event-definition-property-name="${options.focusIndex}"]`)
         ?.focus();
     });
+  } else if (options.focusAdd) {
+    window.requestAnimationFrame(() => addEventDefinitionPropertyButton?.focus());
   }
+}
+
+function renderEventDefinitionHiddenProperties() {
+  if (!eventDefinitionHiddenProperties || !eventDefinitionHiddenPropertyList) return;
+  const hiddenNames = [...eventDefinitionHiddenPropertyNames]
+    .map((name) => String(name || "").trim())
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right));
+  eventDefinitionHiddenProperties.hidden = hiddenNames.length === 0;
+  eventDefinitionHiddenPropertyList.innerHTML = hiddenNames.map((name) => `
+    <div class="eventDefinitionHiddenPropertyItem" role="listitem">
+      <span title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+      <button type="button" data-event-definition-hidden-property-name="${escapeHtml(name)}" aria-label="Restore ${escapeHtml(name)}">Restore</button>
+    </div>
+  `).join("");
 }
 
 function syncEventDefinitionPropertiesFromEditor() {
@@ -3580,7 +3568,6 @@ function syncEventDefinitionPropertiesFromEditor() {
     properties.push({
       name: String(row.querySelector("[data-event-definition-property-name]")?.value || "").trim(),
       type: String(row.querySelector("[data-event-definition-property-type]")?.value || "string"),
-      discovered: row.dataset.eventDefinitionPropertyDiscovered === "true",
     });
   }
   eventDefinitionProperties = properties.slice(0, MAX_EVENT_DEFINITION_PROPERTIES);
@@ -3601,11 +3588,69 @@ function handleEventDefinitionPropertyAction(event) {
   syncEventDefinitionPropertiesFromEditor();
   const index = Number(button.dataset.eventDefinitionPropertyIndex);
   if (!Number.isInteger(index) || index < 0 || index >= eventDefinitionProperties.length) return;
+  const property = eventDefinitionProperties[index];
+  if (button.dataset.eventDefinitionPropertyAction === "hide" && property.name) {
+    eventDefinitionHiddenPropertyNames.add(property.name);
+    eventDefinitionHiddenPropertyTypes.set(
+      property.name,
+      ["string", "number", "boolean"].includes(property.type) ? property.type : "string",
+    );
+    eventDefinitionObservedPropertyNames.add(property.name);
+    if (eventDefinitionStatus) {
+      eventDefinitionStatus.textContent = `${formatEventPropertyName(property.name)} hidden. Save changes to keep it hidden.`;
+    }
+  }
   eventDefinitionProperties.splice(index, 1);
   eventDefinitionIsDirty = true;
   renderEventDefinitionPropertyEditor({
     focusIndex: eventDefinitionProperties.length ? Math.min(index, eventDefinitionProperties.length - 1) : undefined,
+    focusAdd: eventDefinitionProperties.length === 0,
   });
+  renderEventDefinitionCodePreviews();
+}
+
+function handleEventDefinitionHiddenPropertyAction(event) {
+  const button = event.target.closest("[data-event-definition-hidden-property-name]");
+  if (!button) return;
+  syncEventDefinitionPropertiesFromEditor();
+  const name = String(button.dataset.eventDefinitionHiddenPropertyName || "").trim();
+  if (!name || !eventDefinitionHiddenPropertyNames.has(name)) return;
+
+  let restoredIndex = eventDefinitionProperties.findIndex((property) => property.name === name);
+  const alreadyVisible = restoredIndex >= 0;
+  if (!alreadyVisible && eventDefinitionProperties.length >= MAX_EVENT_DEFINITION_PROPERTIES) {
+    if (eventDefinitionStatus) {
+      eventDefinitionStatus.textContent = `Hide or remove another property before restoring ${formatEventPropertyName(name)}.`;
+    }
+    window.requestAnimationFrame(() => button.focus());
+    return;
+  }
+
+  const hiddenType = eventDefinitionHiddenPropertyTypes.get(name);
+  eventDefinitionHiddenPropertyNames.delete(name);
+  eventDefinitionHiddenPropertyTypes.delete(name);
+  eventDefinitionObservedPropertyNames.add(name);
+  if (!alreadyVisible) {
+    const selectedProperty = (currentSelectedEvent?.properties || []).find((property) => property.name === name);
+    const definition = currentSelectedEvent?.definition || getSelectedEventCatalogItem()?.definition || null;
+    const definedProperty = [
+      ...(definition?.properties || []),
+      ...(definition?.effectiveProperties || []),
+    ].find((property) => property?.name === name);
+    eventDefinitionProperties.push({
+      name,
+      type: hiddenType || (selectedProperty
+        ? getObservedEventDefinitionPropertyType(selectedProperty)
+        : (definedProperty?.type || "string")),
+    });
+    restoredIndex = eventDefinitionProperties.length - 1;
+  }
+
+  eventDefinitionIsDirty = true;
+  if (eventDefinitionStatus) {
+    eventDefinitionStatus.textContent = `${formatEventPropertyName(name)} restored. Save changes to keep it visible.`;
+  }
+  renderEventDefinitionPropertyEditor({ focusIndex: restoredIndex });
   renderEventDefinitionCodePreviews();
 }
 
@@ -3686,6 +3731,15 @@ async function copyEventDefinitionCode() {
   }
 }
 
+function isValidEventDefinitionPropertyPath(value) {
+  const propertyName = String(value || "");
+  const isCanonicalPath = /^[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?)*$/.test(propertyName);
+  const isLegacyFlatKey = propertyName.length <= 48 && /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(propertyName);
+  return propertyName.length > 0
+    && propertyName.length <= 96
+    && (isCanonicalPath || isLegacyFlatKey);
+}
+
 function validateEventDefinitionForm() {
   const eventName = String(eventDefinitionName?.value || "").trim().toLowerCase();
   if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(eventName)) {
@@ -3700,7 +3754,7 @@ function validateEventDefinitionForm() {
   for (const property of eventDefinitionProperties) {
     const propertyName = String(property.name || "").trim();
     if (!propertyName) return { error: "Name or remove every property row." };
-    if (!/^[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9_:-]*(?:\[\])?)*$/.test(propertyName) || propertyName.length > 96) {
+    if (!isValidEventDefinitionPropertyPath(propertyName)) {
       return { error: `"${propertyName}" is not a valid property path.` };
     }
     if (names.has(propertyName)) return { error: `Property names must be unique: ${propertyName}` };
@@ -3710,7 +3764,19 @@ function validateEventDefinitionForm() {
       type: ["string", "number", "boolean"].includes(property.type) ? property.type : "string",
     });
   }
-  return { eventName, properties };
+  const hiddenPropertyNames = [...eventDefinitionHiddenPropertyNames]
+    .filter((name) => !names.has(name))
+    .sort((left, right) => left.localeCompare(right));
+  eventDefinitionHiddenPropertyNames = new Set(hiddenPropertyNames);
+  for (const visibleName of names) eventDefinitionHiddenPropertyTypes.delete(visibleName);
+  for (const hiddenName of hiddenPropertyNames) {
+    properties.push({
+      name: hiddenName,
+      type: eventDefinitionHiddenPropertyTypes.get(hiddenName) || "string",
+    });
+  }
+  renderEventDefinitionHiddenProperties();
+  return { eventName, properties, hiddenPropertyNames };
 }
 
 async function saveEventDefinition() {
@@ -3731,8 +3797,8 @@ async function saveEventDefinition() {
         id: eventDefinitionId?.value || undefined,
         universeId: Number(selectedUniverseId),
         eventName: validated.eventName,
-        keyMode: getSelectedEventDefinitionKeyMode(),
         properties: validated.properties,
+        hiddenPropertyNames: validated.hiddenPropertyNames,
       }),
     });
     selectedCustomEventName = payload.definition?.eventName || validated.eventName;

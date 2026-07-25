@@ -7644,8 +7644,7 @@ body[data-active-view="funnels"] #pageSubtitle {
   gap: 8px;
 }
 
-.eventDefinitionNameField > span,
-.eventKeyModeFieldset legend {
+.eventDefinitionNameField > span {
   color: #bac4e4;
   font-size: 11px;
   font-weight: 850;
@@ -7679,71 +7678,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 .eventDefinitionNameField small {
   font-size: 11px;
   line-height: 1.45;
-}
-
-.eventKeyModeFieldset {
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
-}
-
-.eventKeyModeFieldset legend {
-  margin-bottom: 9px;
-}
-
-.eventKeyModeOptions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.eventKeyModeOption {
-  position: relative;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  min-height: 82px;
-  border: 1px solid rgba(78, 96, 148, 0.42);
-  border-radius: 10px;
-  background: rgba(7, 15, 32, 0.68);
-  padding: 13px;
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
-}
-
-.eventKeyModeOption:hover {
-  border-color: rgba(130, 94, 220, 0.58);
-}
-
-.eventKeyModeOption:has(input:checked) {
-  border-color: rgba(154, 104, 255, 0.78);
-  background: linear-gradient(145deg, rgba(96, 50, 190, 0.22), rgba(16, 24, 54, 0.78));
-  box-shadow: inset 0 0 0 1px rgba(154, 104, 255, 0.12);
-}
-
-.eventKeyModeOption input {
-  width: 16px;
-  height: 16px;
-  margin: 3px 0 0;
-  accent-color: #9664ff;
-}
-
-.eventKeyModeOption > span {
-  display: grid;
-  gap: 5px;
-}
-
-.eventKeyModeOption strong {
-  color: #f4f6ff;
-  font-size: 13px;
-}
-
-.eventKeyModeOption small {
-  color: #929fbe;
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 .eventDefinitionProperties {
@@ -7799,10 +7733,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   border-radius: 10px;
   background: rgba(5, 12, 27, 0.66);
   padding: 10px;
-}
-
-.eventDefinitionPropertyRow.autoDiscovered {
-  border-color: rgba(45, 212, 191, 0.3);
 }
 
 .eventDefinitionPropertyIndex {
@@ -7870,27 +7800,19 @@ body[data-active-view="funnels"] #pageSubtitle {
   cursor: pointer;
 }
 
-.eventDefinitionPropertySource {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 40px;
-  border: 1px solid rgba(45, 212, 191, 0.34);
-  border-radius: 8px;
-  background: rgba(45, 212, 191, 0.09);
-  color: #67e8d4;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .eventDefinitionRemovePropertyButton:hover,
 .eventDefinitionRemovePropertyButton:focus-visible {
   border-color: rgba(251, 113, 133, 0.58);
   background: rgba(127, 29, 29, 0.14);
   color: #fb7185;
   outline: none;
+}
+
+.eventDefinitionRemovePropertyButton.hideAction:hover,
+.eventDefinitionRemovePropertyButton.hideAction:focus-visible {
+  border-color: rgba(154, 104, 255, 0.72);
+  background: rgba(124, 60, 255, 0.14);
+  color: #c4b5fd;
 }
 
 .eventDefinitionRemovePropertyButton svg,
@@ -7952,6 +7874,94 @@ body[data-active-view="funnels"] #pageSubtitle {
 .eventDefinitionAddPropertyButton:disabled {
   cursor: default;
   opacity: 0.4;
+}
+
+.eventDefinitionHiddenProperties {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(86, 101, 149, 0.4);
+  border-radius: 11px;
+  background:
+    linear-gradient(145deg, rgba(17, 25, 48, 0.84), rgba(8, 15, 31, 0.78));
+  padding: 13px;
+}
+
+.eventDefinitionHiddenProperties[hidden] {
+  display: none;
+}
+
+.eventDefinitionHiddenPropertiesHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eventDefinitionHiddenPropertiesHeader > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.eventDefinitionHiddenPropertiesHeader h3 {
+  margin: 0;
+  color: #dce2f6;
+  font-size: 13px;
+}
+
+.eventDefinitionHiddenPropertiesHeader p {
+  color: #8793b2;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.eventDefinitionHiddenPropertyList {
+  display: grid;
+  gap: 6px;
+}
+
+.eventDefinitionHiddenPropertyItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid rgba(72, 88, 134, 0.34);
+  border-radius: 8px;
+  background: rgba(5, 12, 27, 0.56);
+  padding: 6px 7px 6px 11px;
+}
+
+.eventDefinitionHiddenPropertyItem > span {
+  min-width: 0;
+  overflow: hidden;
+  color: #aeb8d2;
+  font-size: 11px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventDefinitionHiddenPropertyItem > button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  border: 1px solid rgba(139, 91, 240, 0.44);
+  border-radius: 7px;
+  background: rgba(124, 60, 255, 0.1);
+  color: #bda5f8;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.eventDefinitionHiddenPropertyItem > button:hover,
+.eventDefinitionHiddenPropertyItem > button:focus-visible {
+  border-color: rgba(154, 104, 255, 0.82);
+  background: rgba(124, 60, 255, 0.18);
+  color: #fff;
+  outline: none;
 }
 
 .eventCodePreview {
@@ -8403,10 +8413,6 @@ body.hasEventConfirmDialog {
     padding: 18px;
   }
 
-  .eventKeyModeOptions {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .heatmapToolbar {
     width: auto;
     justify-content: flex-start;
@@ -8834,11 +8840,6 @@ body.hasEventConfirmDialog {
   }
 
   .eventDefinitionRemovePropertyButton {
-    grid-column: 3;
-    grid-row: 1;
-  }
-
-  .eventDefinitionPropertySource {
     grid-column: 3;
     grid-row: 1;
   }

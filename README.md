@@ -127,9 +127,9 @@ Logger.Log("weapon_equipped", {
 
 The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. The logger adds player session, server time, universe, place, `game.PlaceVersion`, production/studio environment, and character position. See `roblox-presence/README.md` for naming, property limits, and server-only requirements.
 
-The **Events** page also includes an event builder. Select **New event** to name an event, choose **Auto discover** or **Manual keys**, and define up to 20 starting properties. Auto discover adds new property paths as Roblox sends them. Manual keys keeps every raw event but limits the expected breakdowns to the preset paths. The builder generates a copyable Roblox Luau `Logger.Log(...)` example; saved definitions are immediately available to Funnels even before their first record arrives.
+The **Events** page also includes an event builder. Select **New event** to name an event and define up to 20 properties before writing the Roblox code. New property paths are added automatically when Roblox sends them. Unwanted properties can be hidden from breakdowns without deleting their raw values, then restored later. The builder generates a copyable Roblox Luau `Logger.Log(...)` example; saved definitions are immediately available to Funnels even before their first record arrives.
 
-Custom events can be reopened to edit their key mode, property list, and generated Luau. Deleting an event removes its definition and stored dashboard history. A later Roblox log with the same name is treated as new activity and can create the event again.
+Custom events can be reopened to edit their visible or hidden properties and generated Luau. Deleting an event removes its definition and stored dashboard history. A later Roblox log with the same name is treated as new activity and can create the event again.
 
 Authenticated projects can verify release tagging with `GET /api/version-health?universeId={id}`. It reports production coverage, unversioned history, studio observations, the latest production version per place, and counts for every observed version.
 

@@ -78,7 +78,9 @@ const MAX_CUSTOM_EVENT_HEATMAP_RESPONSE = 5000;
 const MAX_CUSTOM_EVENT_SERIES_BUCKETS = 240;
 const EVENT_PROPERTY_TIMELINE_SERIES_LIMIT = 4;
 const MAX_EVENT_DEFINITIONS_PER_UNIVERSE = 200;
-const EVENT_DEFINITION_KEY_MODES = new Set(["auto", "manual"]);
+const MAX_EVENT_DEFINITION_KNOWN_PROPERTIES = 200;
+const MAX_EVENT_DEFINITION_STORED_PROPERTIES =
+  MAX_EVENT_DEFINITION_KNOWN_PROPERTIES + MAX_CUSTOM_EVENT_PROPERTIES;
 const EVENT_DEFINITION_PROPERTY_TYPES = new Set(["string", "number", "boolean"]);
 const RELEASE_COHORT_MIN_SESSIONS = 20;
 const SYSTEM_ANALYTICS_EVENT_DEFINITIONS = Object.freeze([
@@ -658,7 +660,10 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         universeId,
         definitions: definitions.map(serializeEventDefinition),
-        limits: { properties: MAX_CUSTOM_EVENT_PROPERTIES },
+        limits: {
+          properties: MAX_CUSTOM_EVENT_PROPERTIES,
+          knownProperties: MAX_EVENT_DEFINITION_KNOWN_PROPERTIES,
+        },
       });
     }
 
@@ -4621,7 +4626,7 @@ async function getRobloxHeatmapFromQuery(searchParams) {
 async function handleEventDefinitionSave(req, res, auth) {
   let body;
   try {
-    body = await readJsonBody(req, 48 * 1024);
+    body = await readJsonBody(req, 96 * 1024);
   } catch (error) {
     return sendJson(res, 400, { error: error.message });
   }
@@ -4638,7 +4643,7 @@ async function handleEventDefinitionSave(req, res, auth) {
   if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
 
   try {
-    const definition = await saveEventDefinition(normalized.value);
+    const definition = await saveEventDefinition(normalized.value, normalized.metadata);
     invalidateAnalyticsResponses(universeId);
     return sendJson(res, 200, {
       ok: true,
@@ -4681,10 +4686,28 @@ function normalizeEventDefinition(value, context) {
     return { ok: false, error: "Automatic system event names cannot be configured" };
   }
 
-  const keyMode = EVENT_DEFINITION_KEY_MODES.has(value?.keyMode) ? value.keyMode : "auto";
   const rawProperties = Array.isArray(value?.properties) ? value.properties : [];
-  if (rawProperties.length > MAX_CUSTOM_EVENT_PROPERTIES) {
-    return { ok: false, error: `Events can define up to ${MAX_CUSTOM_EVENT_PROPERTIES} properties` };
+  if (rawProperties.length > MAX_EVENT_DEFINITION_STORED_PROPERTIES) {
+    return {
+      ok: false,
+      error: `Events can retain up to ${MAX_EVENT_DEFINITION_STORED_PROPERTIES} visible and hidden property definitions`,
+    };
+  }
+  const hasExplicitHiddenPropertyNames = Object.prototype.hasOwnProperty.call(
+    value && typeof value === "object" ? value : {},
+    "hiddenPropertyNames",
+  );
+  if (hasExplicitHiddenPropertyNames && !Array.isArray(value.hiddenPropertyNames)) {
+    return { ok: false, error: "hiddenPropertyNames must be an array" };
+  }
+  const rawHiddenPropertyNames = Array.isArray(value?.hiddenPropertyNames)
+    ? value.hiddenPropertyNames
+    : [];
+  if (rawHiddenPropertyNames.length > MAX_EVENT_DEFINITION_KNOWN_PROPERTIES) {
+    return {
+      ok: false,
+      error: `Events can hide up to ${MAX_EVENT_DEFINITION_KNOWN_PROPERTIES} property names`,
+    };
   }
 
   const properties = [];
@@ -4709,6 +4732,24 @@ function normalizeEventDefinition(value, context) {
     });
   }
 
+  const hiddenPropertyNames = [];
+  const hiddenNames = new Set();
+  for (const rawName of rawHiddenPropertyNames) {
+    const name = String(rawName || "").trim();
+    if (!isValidCustomEventPropertyPath(name)) {
+      return { ok: false, error: `"${name || "Unnamed property"}" is not a valid hidden property name` };
+    }
+    if (hiddenNames.has(name)) continue;
+    hiddenNames.add(name);
+    hiddenPropertyNames.push(name);
+  }
+  const visiblePropertyCount = properties
+    .filter((property) => !hiddenNames.has(property.name))
+    .length;
+  if (visiblePropertyCount > MAX_CUSTOM_EVENT_PROPERTIES) {
+    return { ok: false, error: `Events can define up to ${MAX_CUSTOM_EVENT_PROPERTIES} visible properties` };
+  }
+
   const now = Date.now();
   return {
     ok: true,
@@ -4717,42 +4758,58 @@ function normalizeEventDefinition(value, context) {
       ownerUserId: cleanString(context?.ownerUserId, 120),
       universeId: cleanInteger(context?.universeId),
       eventName,
-      keyMode,
       properties,
+      hiddenPropertyNames,
       discoveredPropertyNames: [],
       createdAt: cleanTimestampMs(value?.createdAt) || now,
       updatedAt: now,
       firstSeenAt: cleanTimestampMs(value?.firstSeenAt) || null,
       lastSeenAt: cleanTimestampMs(value?.lastSeenAt) || null,
     },
+    metadata: {
+      hasExplicitHiddenPropertyNames,
+      legacyKeyMode: value?.keyMode === "manual"
+        ? "manual"
+        : (value?.keyMode === "auto" ? "auto" : ""),
+    },
   };
 }
 
 function serializeEventDefinition(definition) {
-  const keyMode = EVENT_DEFINITION_KEY_MODES.has(definition?.keyMode) ? definition.keyMode : "auto";
-  const properties = normalizeEventDefinitionProperties(definition?.properties);
-  const discoveredPropertyNames = normalizeDiscoveredEventPropertyNames(definition?.discoveredPropertyNames);
-  const configuredNames = new Set(properties.map((property) => property.name));
-  const effectiveProperties = keyMode === "auto"
-    ? [
-      ...properties,
-      ...discoveredPropertyNames
-        .filter((name) => !configuredNames.has(name))
-        .map((name) => ({ name, type: "string", discovered: true })),
-    ].slice(0, MAX_CUSTOM_EVENT_PROPERTIES)
-    : properties;
+  const {
+    properties,
+    discoveredPropertyNames,
+    hiddenPropertyNames,
+  } = getEventDefinitionPropertyState(definition);
+  const hiddenNames = new Set(hiddenPropertyNames);
+  const effectiveProperties = [];
+  const effectiveNames = new Set();
+  const addEffectiveProperty = (property) => {
+    const name = String(property?.name || "").trim();
+    if (
+      effectiveProperties.length >= MAX_CUSTOM_EVENT_PROPERTIES
+      || !isValidCustomEventPropertyPath(name)
+      || hiddenNames.has(name)
+      || effectiveNames.has(name)
+    ) {
+      return;
+    }
+    effectiveNames.add(name);
+    effectiveProperties.push({
+      name,
+      type: EVENT_DEFINITION_PROPERTY_TYPES.has(property?.type) ? property.type : "string",
+    });
+  };
+  for (const property of properties) addEffectiveProperty(property);
+  for (const name of discoveredPropertyNames) addEffectiveProperty({ name, type: "string" });
 
   return {
     id: cleanString(definition?.id, 120),
     universeId: cleanInteger(definition?.universeId),
     eventName: normalizeCustomEventName(definition?.eventName),
-    keyMode,
     properties,
-    discoveredPropertyNames,
+    hiddenPropertyNames,
     effectiveProperties,
-    unexpectedPropertyNames: keyMode === "manual"
-      ? discoveredPropertyNames.filter((name) => !configuredNames.has(name))
-      : [],
     createdAt: cleanTimestampMs(definition?.createdAt) || null,
     updatedAt: cleanTimestampMs(definition?.updatedAt) || null,
     firstSeenAt: cleanTimestampMs(definition?.firstSeenAt) || null,
@@ -4772,12 +4829,20 @@ function normalizeEventDefinitionProperties(value) {
       name,
       type: EVENT_DEFINITION_PROPERTY_TYPES.has(requestedType) ? requestedType : "string",
     });
-    if (properties.length >= MAX_CUSTOM_EVENT_PROPERTIES) break;
+    if (properties.length >= MAX_EVENT_DEFINITION_STORED_PROPERTIES) break;
   }
   return properties;
 }
 
 function normalizeDiscoveredEventPropertyNames(value) {
+  return normalizeKnownEventPropertyNames(value);
+}
+
+function normalizeHiddenEventPropertyNames(value) {
+  return normalizeKnownEventPropertyNames(value);
+}
+
+function normalizeKnownEventPropertyNames(value) {
   const names = [];
   const seen = new Set();
   for (const rawName of Array.isArray(value) ? value : []) {
@@ -4785,9 +4850,58 @@ function normalizeDiscoveredEventPropertyNames(value) {
     if (!isValidCustomEventPropertyPath(name) || seen.has(name)) continue;
     seen.add(name);
     names.push(name);
-    if (names.length >= MAX_CUSTOM_EVENT_PROPERTIES) break;
+    if (names.length >= MAX_EVENT_DEFINITION_KNOWN_PROPERTIES) break;
   }
   return names;
+}
+
+function getEventDefinitionPropertyState(definition) {
+  const properties = normalizeEventDefinitionProperties(definition?.properties);
+  const discoveredPropertyNames = normalizeDiscoveredEventPropertyNames(
+    definition?.discoveredPropertyNames,
+  );
+  const hasExplicitHiddenPropertyNames = Array.isArray(definition?.hiddenPropertyNames);
+  let hiddenPropertyNames = normalizeHiddenEventPropertyNames(definition?.hiddenPropertyNames);
+  if (!hasExplicitHiddenPropertyNames && definition?.keyMode === "manual") {
+    const configuredNames = new Set(properties.map((property) => property.name));
+    hiddenPropertyNames = normalizeHiddenEventPropertyNames([
+      ...hiddenPropertyNames,
+      ...discoveredPropertyNames.filter((name) => !configuredNames.has(name)),
+    ]);
+  }
+  return {
+    properties,
+    discoveredPropertyNames,
+    hiddenPropertyNames,
+    hasExplicitHiddenPropertyNames,
+  };
+}
+
+function resolveSavedEventDefinitionHiddenPropertyNames(definition, existing, metadata = {}) {
+  if (metadata.hasExplicitHiddenPropertyNames) {
+    return normalizeHiddenEventPropertyNames(definition?.hiddenPropertyNames);
+  }
+
+  const existingState = getEventDefinitionPropertyState(existing);
+  if (!existing) {
+    return normalizeHiddenEventPropertyNames(definition?.hiddenPropertyNames);
+  }
+  if (existingState.hasExplicitHiddenPropertyNames) {
+    return existingState.hiddenPropertyNames;
+  }
+  if (metadata.legacyKeyMode === "auto") {
+    return [];
+  }
+  if (metadata.legacyKeyMode === "manual") {
+    const configuredNames = new Set(
+      normalizeEventDefinitionProperties(definition?.properties)
+        .map((property) => property.name),
+    );
+    return normalizeHiddenEventPropertyNames(
+      existingState.discoveredPropertyNames.filter((name) => !configuredNames.has(name)),
+    );
+  }
+  return existingState.hiddenPropertyNames;
 }
 
 function getDiscoveredPropertyNamesFromEvents(events) {
@@ -4798,7 +4912,7 @@ function getDiscoveredPropertyNamesFromEvents(events) {
       if (!isValidCustomEventPropertyPath(name) || seen.has(name)) continue;
       seen.add(name);
       names.push(name);
-      if (names.length >= MAX_CUSTOM_EVENT_PROPERTIES) return names;
+      if (names.length >= MAX_EVENT_DEFINITION_KNOWN_PROPERTIES) return names;
     }
   }
   return names;
@@ -4835,10 +4949,14 @@ async function discoverEventDefinitionsFromPresence(presence) {
       const existingDefinitions = await collection
         .find(
           { ownerUserId, universeId },
-          { projection: { _id: 0, eventName: 1 } },
+          { projection: { _id: 0 } },
         )
         .limit(MAX_EVENT_DEFINITIONS_PER_UNIVERSE)
         .toArray();
+      const existingDefinitionsByName = new Map(existingDefinitions.map((definition) => [
+        normalizeCustomEventName(definition.eventName),
+        definition,
+      ]));
       const existingNames = new Set(
         existingDefinitions.map((definition) => normalizeCustomEventName(definition.eventName)).filter(Boolean),
       );
@@ -4852,43 +4970,75 @@ async function discoverEventDefinitionsFromPresence(presence) {
       });
       if (!allowedDiscoveries.length) return 0;
 
-      const operations = allowedDiscoveries.map((discovery) => ({
-        updateOne: {
-          filter: { ownerUserId, universeId, eventName: discovery.eventName },
-          update: [{
-            $set: {
-              id: { $ifNull: ["$id", getAutoEventDefinitionId(ownerUserId, universeId, discovery.eventName)] },
-              ownerUserId,
-              universeId,
-              eventName: discovery.eventName,
-              keyMode: { $ifNull: ["$keyMode", "auto"] },
-              properties: { $ifNull: ["$properties", []] },
-              discoveredPropertyNames: {
-                $slice: [
-                  {
-                    $setUnion: [
-                      { $ifNull: ["$discoveredPropertyNames", []] },
-                      [...discovery.propertyNames],
+      const operations = allowedDiscoveries.map((discovery) => {
+        const existingState = getEventDefinitionPropertyState(
+          existingDefinitionsByName.get(discovery.eventName),
+        );
+        return {
+          updateOne: {
+            filter: { ownerUserId, universeId, eventName: discovery.eventName },
+            update: [
+              {
+                $set: {
+                  id: { $ifNull: ["$id", getAutoEventDefinitionId(ownerUserId, universeId, discovery.eventName)] },
+                  ownerUserId,
+                  universeId,
+                  eventName: discovery.eventName,
+                  properties: { $ifNull: ["$properties", []] },
+                  hiddenPropertyNames: {
+                    $cond: [
+                      { $isArray: "$hiddenPropertyNames" },
+                      { $slice: ["$hiddenPropertyNames", MAX_EVENT_DEFINITION_KNOWN_PROPERTIES] },
+                      existingState.hiddenPropertyNames,
                     ],
                   },
-                  MAX_CUSTOM_EVENT_PROPERTIES,
-                ],
+                  discoveredPropertyNames: {
+                    $slice: [
+                      {
+                        $reduce: {
+                          input: {
+                            $concatArrays: [
+                              {
+                                $cond: [
+                                  { $isArray: "$discoveredPropertyNames" },
+                                  "$discoveredPropertyNames",
+                                  [],
+                                ],
+                              },
+                              [...discovery.propertyNames],
+                            ],
+                          },
+                          initialValue: [],
+                          in: {
+                            $cond: [
+                              { $in: ["$$this", "$$value"] },
+                              "$$value",
+                              { $concatArrays: ["$$value", ["$$this"]] },
+                            ],
+                          },
+                        },
+                      },
+                      MAX_EVENT_DEFINITION_KNOWN_PROPERTIES,
+                    ],
+                  },
+                  createdAt: { $ifNull: ["$createdAt", now] },
+                  updatedAt: now,
+                  firstSeenAt: {
+                    $cond: [
+                      { $or: [{ $eq: [{ $type: "$firstSeenAt" }, "missing"] }, { $eq: ["$firstSeenAt", null] }] },
+                      discovery.firstSeenAt,
+                      { $min: ["$firstSeenAt", discovery.firstSeenAt] },
+                    ],
+                  },
+                  lastSeenAt: { $max: [{ $ifNull: ["$lastSeenAt", 0] }, discovery.lastSeenAt] },
+                },
               },
-              createdAt: { $ifNull: ["$createdAt", now] },
-              updatedAt: now,
-              firstSeenAt: {
-                $cond: [
-                  { $or: [{ $eq: [{ $type: "$firstSeenAt" }, "missing"] }, { $eq: ["$firstSeenAt", null] }] },
-                  discovery.firstSeenAt,
-                  { $min: ["$firstSeenAt", discovery.firstSeenAt] },
-                ],
-              },
-              lastSeenAt: { $max: [{ $ifNull: ["$lastSeenAt", 0] }, discovery.lastSeenAt] },
-            },
-          }],
-          upsert: true,
-        },
-      }));
+              { $unset: "keyMode" },
+            ],
+            upsert: true,
+          },
+        };
+      });
 
       try {
         await collection.bulkWrite(operations, { ordered: false });
@@ -4926,15 +5076,19 @@ async function discoverEventDefinitionsFromPresence(presence) {
           ownerUserId,
           universeId,
           eventName: discovery.eventName,
-          keyMode: "auto",
           properties: [],
+          hiddenPropertyNames: [],
           discoveredPropertyNames: [],
           createdAt: now,
           firstSeenAt: discovery.firstSeenAt,
         };
         definitions.push(definition);
       }
-      const previousNames = normalizeDiscoveredEventPropertyNames(definition.discoveredPropertyNames);
+      const propertyState = getEventDefinitionPropertyState(definition);
+      definition.properties = propertyState.properties;
+      definition.hiddenPropertyNames = propertyState.hiddenPropertyNames;
+      delete definition.keyMode;
+      const previousNames = propertyState.discoveredPropertyNames;
       definition.discoveredPropertyNames = normalizeDiscoveredEventPropertyNames([
         ...previousNames,
         ...discovery.propertyNames,
@@ -5003,7 +5157,7 @@ async function readEventDefinitions(ownerUserId, universeId) {
     .slice(0, MAX_EVENT_DEFINITIONS_PER_UNIVERSE);
 }
 
-async function saveEventDefinition(definition) {
+async function saveEventDefinition(definition, metadata = {}) {
   const db = await getMongoDb();
   if (db) {
     return withEventDefinitionMutationLock(definition.ownerUserId, definition.universeId, async () => {
@@ -5039,10 +5193,17 @@ async function saveEventDefinition(definition) {
       }
 
       const existing = existingById || existingByName;
+      const hiddenPropertyNames = resolveSavedEventDefinitionHiddenPropertyNames(
+        definition,
+        existing,
+        metadata,
+      );
       const savedDefinition = {
         ...definition,
         id: existing?.id || definition.id,
         createdAt: cleanTimestampMs(existing?.createdAt) || definition.createdAt,
+        properties: normalizeEventDefinitionProperties(definition.properties),
+        hiddenPropertyNames,
         discoveredPropertyNames: normalizeDiscoveredEventPropertyNames(existing?.discoveredPropertyNames),
         firstSeenAt: cleanTimestampMs(existing?.firstSeenAt) || definition.firstSeenAt,
         lastSeenAt: cleanTimestampMs(existing?.lastSeenAt) || definition.lastSeenAt,
@@ -5059,9 +5220,12 @@ async function saveEventDefinition(definition) {
             ownerUserId: savedDefinition.ownerUserId,
             universeId: savedDefinition.universeId,
             eventName: savedDefinition.eventName,
-            keyMode: savedDefinition.keyMode,
             properties: savedDefinition.properties,
+            hiddenPropertyNames: savedDefinition.hiddenPropertyNames,
             updatedAt: savedDefinition.updatedAt,
+          },
+          $unset: {
+            keyMode: "",
           },
           $setOnInsert: {
             discoveredPropertyNames: savedDefinition.discoveredPropertyNames,
@@ -5102,24 +5266,36 @@ async function saveEventDefinition(definition) {
       throw error;
     }
     const existingIndex = indexById >= 0 ? indexById : indexByName;
+    const existing = existingIndex >= 0 ? definitions[existingIndex] : null;
+    const savedDefinition = {
+      ...definition,
+      id: existing?.id || definition.id,
+      createdAt: cleanTimestampMs(existing?.createdAt) || definition.createdAt,
+      properties: normalizeEventDefinitionProperties(definition.properties),
+      hiddenPropertyNames: resolveSavedEventDefinitionHiddenPropertyNames(
+        definition,
+        existing,
+        metadata,
+      ),
+      discoveredPropertyNames: normalizeDiscoveredEventPropertyNames(
+        existing?.discoveredPropertyNames,
+      ),
+      firstSeenAt: cleanTimestampMs(existing?.firstSeenAt) || definition.firstSeenAt,
+      lastSeenAt: cleanTimestampMs(existing?.lastSeenAt) || definition.lastSeenAt,
+    };
+    delete savedDefinition.keyMode;
     if (existingIndex >= 0) {
-      const existing = definitions[existingIndex];
-      definition.id = existing.id;
-      definition.createdAt = cleanTimestampMs(existing.createdAt) || definition.createdAt;
-      definition.discoveredPropertyNames = normalizeDiscoveredEventPropertyNames(existing.discoveredPropertyNames);
-      definition.firstSeenAt = cleanTimestampMs(existing.firstSeenAt) || definition.firstSeenAt;
-      definition.lastSeenAt = cleanTimestampMs(existing.lastSeenAt) || definition.lastSeenAt;
-      definitions[existingIndex] = definition;
+      definitions[existingIndex] = savedDefinition;
     } else {
       const count = definitions.filter((entry) => (
         entry.ownerUserId === definition.ownerUserId
         && cleanInteger(entry.universeId) === definition.universeId
       )).length;
       if (count >= MAX_EVENT_DEFINITIONS_PER_UNIVERSE) throw createEventDefinitionLimitError();
-      definitions.push(definition);
+      definitions.push(savedDefinition);
     }
     await writeLocalEventDefinitionStore(definitions);
-    return definition;
+    return savedDefinition;
   });
 }
 
@@ -5369,6 +5545,7 @@ async function getCustomEventsFromQuery(ownerUserId, searchParams) {
     limits: {
       eventDefinitions: MAX_EVENT_DEFINITIONS_PER_UNIVERSE,
       propertiesPerEvent: MAX_CUSTOM_EVENT_PROPERTIES,
+      knownPropertiesPerEvent: MAX_EVENT_DEFINITION_KNOWN_PROPERTIES,
     },
   };
 }
@@ -5758,15 +5935,26 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
   const propertyValueLimit = Math.min(cleanInteger(filters.propertyValueLimit) || 4, MAX_CUSTOM_EVENT_PROPERTY_VALUES_RESPONSE);
   const serializedDefinition = filters.definition ? serializeEventDefinition(filters.definition) : null;
   const allObservedPropertyNames = getDiscoveredPropertyNamesFromEvents(events);
-  const configuredPropertyNames = new Set(
-    serializedDefinition?.properties?.map((property) => property.name) || [],
-  );
-  const allowedPropertyNames = serializedDefinition?.keyMode === "manual"
-    ? configuredPropertyNames
-    : new Set(
-      serializedDefinition?.effectiveProperties?.map((property) => property.name)
-      || allObservedPropertyNames,
-    );
+  const hiddenPropertyNames = new Set(serializedDefinition?.hiddenPropertyNames || []);
+  const visiblePropertyNames = [];
+  const allowedPropertyNames = new Set();
+  const addVisiblePropertyName = (rawName) => {
+    const name = String(rawName || "").trim();
+    if (
+      visiblePropertyNames.length >= MAX_CUSTOM_EVENT_PROPERTIES
+      || !isValidCustomEventPropertyPath(name)
+      || hiddenPropertyNames.has(name)
+      || allowedPropertyNames.has(name)
+    ) {
+      return;
+    }
+    allowedPropertyNames.add(name);
+    visiblePropertyNames.push(name);
+  };
+  for (const property of serializedDefinition?.effectiveProperties || []) {
+    addVisiblePropertyName(property?.name);
+  }
+  for (const name of allObservedPropertyNames) addVisiblePropertyName(name);
   const observedProperties = summarizeCustomEventProperties(events, propertyValueLimit, filters.selectedPropertyName, {
     bucketMs: eventSeries.bucketMs,
     bucketStarts: eventSeries.buckets.map((bucket) => bucket.start),
@@ -5776,16 +5964,8 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     allowedPropertyNames,
   });
   const properties = observedProperties;
-  const observedPropertyNames = new Set(allObservedPropertyNames);
-  const unexpectedPropertyNames = serializedDefinition?.keyMode === "manual"
-    ? [
-      ...new Set([
-        ...(serializedDefinition.unexpectedPropertyNames || []),
-        ...allObservedPropertyNames
-          .filter((name) => !configuredPropertyNames.has(name)),
-      ]),
-    ]
-    : [];
+  const observedPropertyNames = allObservedPropertyNames
+    .filter((name) => allowedPropertyNames.has(name) && !hiddenPropertyNames.has(name));
   return {
     name: eventName,
     sourceType: events[0]?.sourceType || filters.sourceType || "custom",
@@ -5799,8 +5979,7 @@ function buildCustomEventDetail(eventName, events, filters = {}) {
     selectedInterval: eventSeries.selectedInterval,
     series: eventSeries.buckets,
     properties,
-    observedPropertyNames: [...observedPropertyNames],
-    unexpectedPropertyNames,
+    observedPropertyNames,
     definition: serializedDefinition,
     truncatedPropertyEvents,
     recentEvents: events.slice(0, recentLimit),
