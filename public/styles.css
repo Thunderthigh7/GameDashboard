@@ -24,7 +24,6 @@
   --nav-text: #d2d8ee;
   --placeholder: #7d889c;
   --sidebar-width: 252px;
-  --chat-panel-width: 316px;
   --live-badge-bg: rgba(53, 208, 131, 0.14);
   --placeholder-badge-bg: rgba(154, 167, 189, 0.14);
   --overlay-shadow: 0 20px 50px rgba(0, 0, 0, 0.36);
@@ -279,6 +278,61 @@ body.isResizingLayout {
 
 .sideNav a > span:last-child {
   flex: 1;
+}
+
+.sideNav a.aiFeaturesNavLink > .aiFeaturesNavLabel {
+  flex: 1;
+}
+
+.sideNav a.aiFeaturesNavLink > .aiFeaturesAdminBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(156, 119, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(124, 60, 255, 0.12);
+  color: #c5adff;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.aiFeaturesAdminBadge svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.aiFeaturesAdminBadge b {
+  font: inherit;
+}
+
+.sideNav a.aiFeaturesNavLink.isAdminLocked {
+  border-color: rgba(102, 113, 151, 0.18);
+  background: rgba(8, 14, 30, 0.42);
+  color: #7f8aa8;
+  cursor: not-allowed;
+}
+
+.sideNav a.aiFeaturesNavLink.isAdminLocked .navIconTile {
+  border-color: rgba(102, 113, 151, 0.14);
+  background: rgba(13, 20, 43, 0.58);
+  color: #707b99;
+  box-shadow: none;
+}
+
+.sideNav a.aiFeaturesNavLink.isAdminLocked .aiFeaturesAdminBadge {
+  border-color: rgba(117, 128, 164, 0.26);
+  background: rgba(91, 101, 132, 0.1);
+  color: #929db9;
 }
 
 .navIconTile {
@@ -2171,8 +2225,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .overviewHeroGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, var(--chat-panel-width));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: stretch;
   height: 100%;
   min-height: 560px;
@@ -2214,15 +2268,20 @@ body[data-active-view="connect"] .topbar > div:first-child {
   }
 }
 
-.aiCardRow {
+.aiFeaturesTopGrid {
   display: grid;
-  grid-template-columns: minmax(260px, 380px);
+  grid-template-columns: minmax(280px, 380px) minmax(420px, 1fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
-.aiRunsPage .aiCardRow {
-  grid-template-columns: minmax(280px, 380px);
+.aiFeaturesTopGrid .aiRunControls {
+  height: 100%;
+}
+
+.aiFeaturesChatPanel {
+  height: min(640px, calc(100vh - 190px));
+  min-height: 520px;
 }
 
 .mapPanel {
@@ -3202,13 +3261,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
   height: 100%;
   min-height: 0;
   padding: 20px;
-}
-
-.chatPanelResizeHandle {
-  top: 0;
-  left: -10px;
-  width: 14px;
-  height: 100%;
 }
 
 .chatBotHeader {
@@ -8702,6 +8754,20 @@ body.hasEventConfirmDialog {
   }
 }
 
+@media (max-width: 1180px) {
+  .aiFeaturesTopGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aiFeaturesTopGrid .aiRunControls {
+    height: auto;
+  }
+
+  .aiFeaturesChatPanel {
+    height: 600px;
+  }
+}
+
 @media (max-width: 860px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -8829,7 +8895,7 @@ body.hasEventConfirmDialog {
   .setupChecklist,
   .overviewHeroGrid,
   .topbarFilters,
-  .aiCardRow,
+  .aiFeaturesTopGrid,
   .heatmapFilters {
     grid-template-columns: 1fr;
   }

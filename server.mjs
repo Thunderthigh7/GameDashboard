@@ -112,6 +112,15 @@ const MAX_FUNNEL_STEPS = 10;
 const MAX_FUNNEL_MAP_CLUSTERS = 180;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_AI_ANALYSIS_AREAS = 5;
+const ADMIN_ONLY_AI_DASHBOARD_PATHS = new Set([
+  "/api/chat-insights",
+  "/api/ai-insights/reports",
+  "/api/ai-insights/report",
+  "/api/ai-insights/settings",
+  "/api/ai-insights/analyze",
+  "/api/chat-insights/analyze",
+  "/api/ai-chat",
+]);
 const AI_ANALYSIS_CLUSTER_RADIUS = 44;
 const AI_AREA_OUTCOME_WINDOW_MS = 60 * 1000;
 const MAX_MAP_PARTS_PER_CHUNK = 1000;
@@ -469,6 +478,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     const auth = getDashboardAuth(req);
+
+    if (ADMIN_ONLY_AI_DASHBOARD_PATHS.has(url.pathname)) {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) return sendJson(res, 403, { error: "Admin access required" });
+    }
 
     if (url.pathname === "/api/health/admin" && req.method === "GET") {
       const user = await findUserById(auth.userId);

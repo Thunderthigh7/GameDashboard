@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-47/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-48/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -79,13 +79,17 @@
                 </span>
                 <span>Chats</span>
               </a>
-              <a href="#ai-runs" data-dashboard-view="ai-runs">
+              <a class="aiFeaturesNavLink" href="#ai-runs" data-dashboard-view="ai-runs" id="aiFeaturesNavLink" aria-label="AI Features, admin only">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
                     <path d="M12 3c.8 4.6 3.4 7.2 8 8-4.6.8-7.2 3.4-8 8-.8-4.6-3.4-7.2-8-8 4.6-.8 7.2-3.4 8-8Z" />
                   </svg>
                 </span>
-                <span>AI Runs</span>
+                <span class="aiFeaturesNavLabel">AI Features</span>
+                <span class="aiFeaturesAdminBadge">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" /><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" /></svg>
+                  <b>Admin</b>
+                </span>
               </a>
             </div>
           </section>
@@ -597,39 +601,13 @@
                   </div>
                 </section>
 
-                <article class="panel chatInsights chatBotPanel">
-                  <button class="layoutResizeHandle chatPanelResizeHandle" id="chatPanelResizeHandle" type="button" aria-label="Resize chat analysis panel"></button>
-                  <div class="chatBotHeader">
-                    <div>
-                      <h2>Chat Analysis</h2>
-                      <p><span></span>Live</p>
-                    </div>
-                  </div>
-                  <p class="status" id="chatInsightsStatus">Checking analytics data...</p>
-                  <div class="chatBotMessages" id="aiChatMessages">
-                    <article class="botMessage assistantMessage">
-                      <span aria-hidden="true"></span>
-                      <div>
-                        <strong>RoAnalytics AI <small>Ready</small></strong>
-                        <p>Welcome. Ask me anything about player behavior, traffic patterns, or game insights.</p>
-                      </div>
-                    </article>
-                    <div class="typingDots" id="aiChatTyping" aria-hidden="true" hidden><span></span><span></span><span></span></div>
-                  </div>
-                  <div class="chatComposer">
-                    <input id="aiChatInput" type="text" value="" maxlength="800" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
-                    <button id="aiChatSendButton" type="button" aria-label="Send chat prompt"></button>
-                  </div>
-                  <small>AI responses may not always be accurate.</small>
-                  <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
-                </article>
               </div>
             </div>
           </div>
         </section>
 
         <section class="viewPage aiRunsPage" data-view-panel="ai-runs" hidden>
-          <div class="aiCardRow">
+          <div class="aiFeaturesTopGrid">
             <article class="panel aiRunControls">
               <div class="sectionHeader">
                 <div>
@@ -652,6 +630,32 @@
                   <option value="">Latest saved report</option>
                 </select>
               </div>
+            </article>
+
+            <article class="panel chatInsights chatBotPanel aiFeaturesChatPanel">
+              <div class="chatBotHeader">
+                <div>
+                  <h2>AI Chat</h2>
+                  <p><span></span>Live</p>
+                </div>
+              </div>
+              <p class="status" id="chatInsightsStatus">Checking analytics data...</p>
+              <div class="chatBotMessages" id="aiChatMessages">
+                <article class="botMessage assistantMessage">
+                  <span aria-hidden="true"></span>
+                  <div>
+                    <strong>RoAnalytics AI <small>Ready</small></strong>
+                    <p>Welcome. Ask me anything about player behavior, traffic patterns, or game insights.</p>
+                  </div>
+                </article>
+                <div class="typingDots" id="aiChatTyping" aria-hidden="true" hidden><span></span><span></span><span></span></div>
+              </div>
+              <div class="chatComposer">
+                <input id="aiChatInput" type="text" value="" maxlength="800" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
+                <button id="aiChatSendButton" type="button" aria-label="Send chat prompt"></button>
+              </div>
+              <small>AI responses may not always be accurate.</small>
+              <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
             </article>
           </div>
 
@@ -1327,6 +1331,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-47/app.js"></script>
+    <script defer src="/assets/20260725-48/app.js"></script>
   </body>
 </html>

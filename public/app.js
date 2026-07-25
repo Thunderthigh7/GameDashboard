@@ -190,7 +190,6 @@ const aiAutomationStatus = document.querySelector("#aiAutomationStatus");
 const aiReportSelect = document.querySelector("#aiReportSelect");
 const commonQuestionList = document.querySelector("#commonQuestionList");
 const sidebarResizeHandle = document.querySelector("#sidebarResizeHandle");
-const chatPanelResizeHandle = document.querySelector("#chatPanelResizeHandle");
 const movementFromFilter = document.querySelector("#movementFromFilter");
 const movementToFilter = document.querySelector("#movementToFilter");
 const movementFromDisplay = document.querySelector("#movementFromDisplay");
@@ -301,7 +300,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-47";
+const DASHBOARD_ASSET_VERSION = "20260725-48";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -366,12 +365,10 @@ const RECENT_CHAT_LIMIT = 100;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat"]);
+const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
-const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
 const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
-const CHAT_PANEL_WIDTH_MIN = 300;
-const CHAT_PANEL_WIDTH_MAX = 560;
 const DASHBOARD_SESSION_CACHE_PREFIX = "roanalytics.dashboard.v2";
 const UNIVERSE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const USAGE_CACHE_FRESH_MS = 30 * 1000;
@@ -642,13 +639,6 @@ function bindEvents() {
     max: SIDEBAR_WIDTH_MAX,
     getWidth: (event) => event.clientX,
   });
-  bindLayoutResizer(chatPanelResizeHandle, {
-    storageKey: CHAT_PANEL_WIDTH_STORAGE_KEY,
-    cssVariable: "--chat-panel-width",
-    min: CHAT_PANEL_WIDTH_MIN,
-    max: CHAT_PANEL_WIDTH_MAX,
-    getWidth: (event) => window.innerWidth - event.clientX,
-  });
   adminUserList?.addEventListener("click", (event) => {
     const resetButton = event.target.closest("[data-reset-usage-user]");
     if (resetButton) {
@@ -680,6 +670,10 @@ function bindEvents() {
     link.addEventListener("click", async (event) => {
       event.preventDefault();
       const nextView = link.dataset.dashboardView || "overview";
+      if (ADMIN_ONLY_VIEWS.has(nextView) && !authenticatedUser?.isAdmin) {
+        link.focus();
+        return;
+      }
       if (!await confirmEventDefinitionDiscard(nextView)) return;
       eventDefinitionIsDirty = false;
       setActiveView(nextView, { updateHash: true });
@@ -749,7 +743,6 @@ function handleDashboardVisibilityChange() {
 
 function applyStoredLayoutSizes() {
   applyStoredLayoutSize(SIDEBAR_WIDTH_STORAGE_KEY, "--sidebar-width", SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX);
-  applyStoredLayoutSize(CHAT_PANEL_WIDTH_STORAGE_KEY, "--chat-panel-width", CHAT_PANEL_WIDTH_MIN, CHAT_PANEL_WIDTH_MAX);
 }
 
 function applyStoredLayoutSize(storageKey, cssVariable, min, max) {
@@ -911,9 +904,11 @@ function setAuthenticated(value, user = null) {
   const previousCacheScope = resolveDashboardCacheScope();
   authenticated = value;
   authenticatedUser = authenticated ? user : null;
-  if (authenticated && activeView === "admin" && !authenticatedUser?.isAdmin) {
+  if (ADMIN_ONLY_VIEWS.has(activeView) && !authenticatedUser?.isAdmin) {
     activeView = "overview";
-    if (window.location.hash === "#admin") window.history.replaceState(null, "", "#overview");
+    if (window.location.hash === "#admin" || window.location.hash === "#ai-runs") {
+      window.history.replaceState(null, "", "#overview");
+    }
   }
   loadedViews.clear();
   document.body.classList.toggle("isLocked", !authenticated);
@@ -922,7 +917,8 @@ function setAuthenticated(value, user = null) {
   updateDemoUniverseControl();
   loginPanel.hidden = authenticated;
   authControls.hidden = !authenticated;
-  runChatInsightsButton.hidden = !authenticated;
+  runChatInsightsButton.hidden = !authenticatedUser?.isAdmin;
+  setAiChatBusy(false);
   for (const panel of protectedDashboardPanels) {
     panel.hidden = !authenticated;
   }
@@ -1033,7 +1029,11 @@ function getViewFromHash() {
 function setActiveView(view, options = {}) {
   const previousView = activeView;
   const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
-  activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
+  const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
+  activeView = lacksAdminAccess ? "overview" : requestedView;
+  if (lacksAdminAccess && (window.location.hash === "#admin" || window.location.hash === "#ai-runs")) {
+    window.history.replaceState(null, "", "#overview");
+  }
   if (previousView !== activeView) closeDateRangePicker();
   if (activeView !== "funnels") {
     closeFunnelMoreMenu();
@@ -1082,6 +1082,12 @@ function renderActiveView(options = {}) {
     if (link.dataset.dashboardView === "admin") {
       link.hidden = !authenticatedUser?.isAdmin;
     }
+    if (link.dataset.dashboardView === "ai-runs") {
+      const isAdminLocked = !authenticatedUser?.isAdmin;
+      link.classList.toggle("isAdminLocked", isAdminLocked);
+      link.setAttribute("aria-disabled", String(isAdminLocked));
+      link.title = isAdminLocked ? "Admin access required" : "Admin-only AI features";
+    }
     const isActive = link.dataset.dashboardView === activeView;
     link.classList.toggle("active", isActive);
     link.setAttribute("aria-current", isActive ? "page" : "false");
@@ -1101,8 +1107,8 @@ function renderActiveView(options = {}) {
       subtitle: "Understand player progression and conversion across key moments.",
     },
     "ai-runs": {
-      title: "AI Runs",
-      subtitle: "Automation and saved analysis history.",
+      title: "AI Features",
+      subtitle: "Admin-only AI chat, analysis, and saved runs.",
     },
     chat: {
       title: "Chats",
@@ -1159,6 +1165,7 @@ function updateViewRefreshTimers() {
 
 function loadActiveViewData(view, options = {}) {
   if (!authenticated) return;
+  if (ADMIN_ONLY_VIEWS.has(view) && !authenticatedUser?.isAdmin) return;
   if (!selectedUniverseId && UNIVERSE_SCOPED_VIEWS.has(view)) return;
   if (!options.force && loadedViews.has(view)) {
     if (view === "ai-runs") {
@@ -6509,6 +6516,7 @@ async function saveAiAutomationSettings() {
 }
 
 async function runChatInsightsAnalysis() {
+  if (!authenticatedUser?.isAdmin) return;
   runChatInsightsButton.disabled = true;
   chatInsightsMode.textContent = "Running AI";
   chatInsightsStatus.textContent = "Running AI across movement, death, leave, and chat samples...";
@@ -6563,6 +6571,10 @@ function buildAiInsightsQuery() {
 
 async function sendAiChatPrompt() {
   if (!aiChatInput || !aiChatSendButton || aiChatBusy) return;
+  if (!authenticatedUser?.isAdmin) {
+    chatInsightsStatus.textContent = "Admin access required.";
+    return;
+  }
 
   const prompt = aiChatInput.value.trim().slice(0, MAX_AI_CHAT_PROMPT_CHARS);
   if (!prompt) return;
@@ -6771,8 +6783,8 @@ function limitAiChatMessage(value, maxChars = MAX_AI_CHAT_RENDER_CHARS) {
 
 function setAiChatBusy(isBusy) {
   aiChatBusy = Boolean(isBusy);
-  if (aiChatSendButton) aiChatSendButton.disabled = aiChatBusy;
-  if (aiChatInput) aiChatInput.disabled = aiChatBusy || !authenticated;
+  if (aiChatSendButton) aiChatSendButton.disabled = aiChatBusy || !authenticatedUser?.isAdmin;
+  if (aiChatInput) aiChatInput.disabled = aiChatBusy || !authenticatedUser?.isAdmin;
   if (aiChatTyping) aiChatTyping.hidden = !aiChatBusy;
 }
 
@@ -6791,6 +6803,10 @@ function updateAiReadinessStatus() {
   if (!chatInsightsStatus) return;
   if (!authenticated) {
     chatInsightsStatus.textContent = "Sign in to use AI analysis.";
+    return;
+  }
+  if (!authenticatedUser?.isAdmin) {
+    chatInsightsStatus.textContent = "Admin access required.";
     return;
   }
   if (!selectedUniverseId) {
