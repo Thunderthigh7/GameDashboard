@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  calculateFunnelStepChanges,
   calculateFunnelTimelineAnalytics,
   groupCustomEventsBySession,
 } from "../lib/funnels.mjs";
@@ -52,66 +51,6 @@ assert.ok(
   "empty cohorts should remain no-data instead of becoming a misleading zero-percent line",
 );
 
-function buildComparisonCohort({
-  userOffset,
-  sessionPrefix,
-  entryTime,
-  entries,
-  stepTwo,
-  stepThree,
-  stepFour,
-}) {
-  return Array.from({ length: entries }, (_, index) => {
-    const sessionId = `${sessionPrefix}-${index}`;
-    const userId = userOffset + index;
-    return [
-      event(userId, sessionId, "round_started", entryTime + index),
-      ...(index < stepTwo ? [event(userId, sessionId, "checkpoint_reached", entryTime + index + 1000)] : []),
-      ...(index < stepThree ? [event(userId, sessionId, "round_completed", entryTime + index + 2000)] : []),
-      ...(index < stepFour ? [event(userId, sessionId, "reward_claimed", entryTime + index + 3000)] : []),
-    ];
-  }).flat();
-}
-
-const comparisonDefinition = {
-  conversionWindowMinutes: 30,
-  steps: ["round_started", "checkpoint_reached", "round_completed", "reward_claimed"],
-};
-const previousStart = base + 10 * hour;
-const currentStart = base + 20 * hour;
-const comparisonSessions = groupCustomEventsBySession([
-  ...buildComparisonCohort({
-    userOffset: 1000,
-    sessionPrefix: "previous",
-    entryTime: 10 * hour,
-    entries: 200,
-    stepTwo: 180,
-    stepThree: 144,
-    stepFour: 101,
-  }),
-  ...buildComparisonCohort({
-    userOffset: 2000,
-    sessionPrefix: "current",
-    entryTime: 20 * hour,
-    entries: 200,
-    stepTwo: 140,
-    stepThree: 112,
-    stepFour: 101,
-  }),
-]);
-const stepChanges = calculateFunnelStepChanges(
-  comparisonDefinition,
-  comparisonSessions,
-  {
-    previous: { start: previousStart, endExclusive: previousStart + hour },
-    current: { start: currentStart, endExclusive: currentStart + hour },
-  },
-);
-assert.equal(stepChanges.steps[1].signal, "declined", "a strong step-to-step regression should be called out");
-assert.equal(stepChanges.steps[1].changePercentagePoints, -20, "changes should use percentage points");
-assert.equal(stepChanges.steps[2].signal, "stable", "downstream reach should not repeat an earlier decline when its own transition is unchanged");
-assert.equal(stepChanges.steps[3].signal, "improved", "a strong step-to-step gain should be called out");
-
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
@@ -121,16 +60,20 @@ assert.match(indexSource, /id="funnelIntervalButton"[^>]*aria-haspopup="listbox"
 assert.match(indexSource, /id="funnelTimelineStepPickerButton"/, "Funnels should have a step visibility control");
 assert.match(indexSource, /id="funnelTimelineChart"/, "Funnels should include the step conversion line chart");
 assert.match(indexSource, /id="funnelStepChangesTable"/, "Funnels should include the step change comparison below the main table");
-assert.doesNotMatch(indexSource, /funnelStepChangeHighlights|Mature cohorts only/, "the step comparison should not include extra callout cards or cohort terminology");
+assert.match(indexSource, />Step-to-step conversion</, "the comparison should retain its direct title");
+assert.doesNotMatch(indexSource, /funnelStepChangesPeriod|change vs prior period|Mature cohorts only/, "the comparison should not include explanatory subtext or prior-period terminology");
 assert.match(appSource, /params\.set\("funnelId", selectedFunnelId\)/, "the selected Funnel should request its timeline");
 assert.match(appSource, /params\.set\("interval", selectedFunnelInterval\)/, "Funnel interval changes should reach the API");
 assert.match(appSource, /function renderFunnelTimeline\(funnel\)/, "the Funnel timeline renderer should be present");
 assert.match(appSource, /function renderFunnelStepChanges\(funnel\)/, "the Funnel step comparison renderer should be present");
 assert.match(appSource, /funnelStepChangeDelta">\(\$\{formatFunnelPercentagePointChange/, "the change should sit directly beside its current percentage");
+assert.match(appSource, /End \(change from start\)/, "the value column should make the start-to-end comparison explicit");
+assert.match(appSource, /function getFunnelBucketStepConversion\(bucket, stepIndex\)/, "the comparison should calculate each bucket's step-to-step conversion");
+assert.match(appSource, /const startBucket = completedBuckets\[0\]/, "the comparison should use the first completed populated timeline bucket");
+assert.match(appSource, /const endBucket = completedBuckets\[completedBuckets\.length - 1\]/, "the comparison should use the last completed populated timeline bucket");
 assert.match(appSource, /const selectedFunnelTimelineSteps = new Map\(\)/, "step visibility should be retained independently by Funnel");
 assert.match(serverSource, /calculateFunnelTimelineAnalytics\(\s*definition,\s*sessions,\s*timelineScaffold\.buckets,/s, "the API should calculate the selected Funnel timeline");
-assert.match(serverSource, /now - conversionWindowMs/, "unfinished current cohorts should be excluded from comparisons");
-assert.match(serverSource, /calculateFunnelStepChanges\(/, "the API should calculate previous-period step changes");
+assert.doesNotMatch(serverSource, /calculateFunnelStepChanges|getFunnelStepChangesForRange/, "the API should not fetch or calculate a separate previous period");
 assert.match(styleSource, /\.funnelTimelinePanel\s*\{/, "the Funnel chart should use a dedicated themed panel");
 assert.match(styleSource, /\.funnelTimelineStepMenu\s*\{/, "the step selector should use a themed menu");
 assert.match(styleSource, /\.funnelStepChangesPanel\s*\{/, "the step changes should use a dedicated scannable panel");

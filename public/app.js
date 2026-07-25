@@ -165,7 +165,6 @@ const funnelTimelineLegend = document.querySelector("#funnelTimelineLegend");
 const funnelTimelineStepPickerButton = document.querySelector("#funnelTimelineStepPickerButton");
 const funnelTimelineStepPickerLabel = document.querySelector("#funnelTimelineStepPickerLabel");
 const funnelTimelineStepMenu = document.querySelector("#funnelTimelineStepMenu");
-const funnelStepChangesPeriod = document.querySelector("#funnelStepChangesPeriod");
 const funnelStepChangesTable = document.querySelector("#funnelStepChangesTable");
 const funnelIntervalSelect = document.querySelector("#funnelIntervalSelect");
 const funnelIntervalButton = document.querySelector("#funnelIntervalButton");
@@ -291,7 +290,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-39";
+const DASHBOARD_ASSET_VERSION = "20260725-40";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -5649,29 +5648,47 @@ function renderFunnelTimeline(funnel) {
 }
 
 function renderFunnelStepChanges(funnel) {
-  if (!funnelStepChangesTable || !funnelStepChangesPeriod) return;
-  const comparison = funnel?.stepChanges;
+  if (!funnelStepChangesTable) return;
   if (!funnel) {
-    funnelStepChangesPeriod.textContent = "Current percentage; change vs prior period.";
     funnelStepChangesTable.innerHTML = '<p class="status">No funnel selected.</p>';
     return;
   }
-  if (!comparison) {
-    funnelStepChangesPeriod.textContent = "Current percentage; change vs prior period.";
-    funnelStepChangesTable.innerHTML = '<p class="status">No completed cohorts are available for comparison yet.</p>';
+  if (!funnel.timeline) {
+    funnelStepChangesTable.innerHTML = '<p class="status">Loading this Funnel timeline...</p>';
     return;
   }
 
-  const previousRangeLabel = formatFunnelComparisonRange(comparison.previous);
-  funnelStepChangesPeriod.textContent = `Current percentage; change vs ${previousRangeLabel}`;
-  const steps = (Array.isArray(comparison.steps) ? comparison.steps : [])
-    .filter((step) => Number(step.index) > 1);
+  const conversionWindowMs = Math.max(Number(funnel.conversionWindowMinutes) || 30, 1) * 60 * 1000;
+  const completedBefore = Date.now() - conversionWindowMs;
+  const completedBuckets = (Array.isArray(funnel.timeline.buckets) ? funnel.timeline.buckets : [])
+    .filter((bucket) => Number(bucket?.entrySessions) > 0 && Number(bucket?.end) <= completedBefore);
+  const startBucket = completedBuckets[0];
+  const endBucket = completedBuckets[completedBuckets.length - 1];
+  if (!startBucket || !endBucket) {
+    funnelStepChangesTable.innerHTML = '<p class="status">No completed Funnel buckets are available yet.</p>';
+    return;
+  }
+
+  const steps = getFunnelTimelineSteps(funnel)
+    .filter((step) => Number(step.index) > 1)
+    .map((step) => {
+      const startConversion = getFunnelBucketStepConversion(startBucket, step.index);
+      const endConversion = getFunnelBucketStepConversion(endBucket, step.index);
+      const changePercentagePoints = startConversion === null || endConversion === null
+        ? null
+        : Math.round((endConversion - startConversion) * 10) / 10;
+      return {
+        ...step,
+        endConversion,
+        changePercentagePoints,
+      };
+    });
 
   funnelStepChangesTable.innerHTML = steps.length
     ? `
       <div class="funnelStepChangesColumnHeader" aria-hidden="true">
         <span>Step</span>
-        <span>Conversion</span>
+        <span>End (change from start)</span>
       </div>
       ${steps.map(renderFunnelStepChangeRow).join("")}
     `
@@ -5680,9 +5697,11 @@ function renderFunnelStepChanges(funnel) {
 
 function renderFunnelStepChangeRow(step) {
   const index = Number(step.index) || 0;
-  const signal = ["improved", "declined"].includes(step.signal)
-    ? step.signal
-    : "stable";
+  const signal = Number(step.changePercentagePoints) > 0
+    ? "improved"
+    : Number(step.changePercentagePoints) < 0
+      ? "declined"
+      : "stable";
   const change = step.changePercentagePoints === null || step.changePercentagePoints === undefined
     ? ""
     : `<span class="funnelStepChangeDelta">(${formatFunnelPercentagePointChange(step.changePercentagePoints)})</span>`;
@@ -5696,26 +5715,24 @@ function renderFunnelStepChangeRow(step) {
         </div>
       </div>
       <div class="funnelStepChangeValue">
-        <strong>${formatFunnelPercentage(step.currentConversion)} ${change}</strong>
+        <strong>${formatFunnelPercentage(step.endConversion)} ${change}</strong>
       </div>
     </article>`;
+}
+
+function getFunnelBucketStepConversion(bucket, stepIndex) {
+  const steps = Array.isArray(bucket?.steps) ? bucket.steps : [];
+  const currentStep = steps.find((step) => Number(step.index) === Number(stepIndex));
+  const previousStep = steps.find((step) => Number(step.index) === Number(stepIndex) - 1);
+  const eligibleSessions = Number(previousStep?.sessions) || 0;
+  if (!currentStep || eligibleSessions <= 0) return null;
+  return Math.round(((Number(currentStep.sessions) || 0) / eligibleSessions) * 1000) / 10;
 }
 
 function formatFunnelPercentagePointChange(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
   const difference = Number(value);
   return `${difference > 0 ? "+" : ""}${formatEventNumber(difference)} pp`;
-}
-
-function formatFunnelComparisonRange(range = {}) {
-  const start = new Date(Number(range.start));
-  const end = new Date(Number(range.end));
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return "No period";
-  const spanMs = Math.max(end.getTime() - start.getTime(), 0);
-  const options = spanMs < 2 * 24 * 60 * 60 * 1000
-    ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
-    : { month: "short", day: "numeric", year: "numeric" };
-  return `${start.toLocaleString([], options)} - ${end.toLocaleString([], options)}`;
 }
 
 function renderFunnelResults(funnel) {

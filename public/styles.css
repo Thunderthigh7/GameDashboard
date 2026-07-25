@@ -6910,28 +6910,14 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelStepChangesHeader {
-  display: grid;
-  gap: 4px;
   min-width: 0;
 }
 
-.funnelStepChangesHeader h3,
-.funnelStepChangesHeader p {
-  margin: 0;
-}
-
 .funnelStepChangesHeader h3 {
+  margin: 0;
   color: #f7f8ff;
   font-size: 17px;
   font-weight: 850;
-}
-
-.funnelStepChangesHeader p {
-  overflow: hidden;
-  color: #8f9bb9;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .funnelStepChangesTable {
@@ -8706,12 +8692,6 @@ body.hasEventConfirmDialog {
   .funnelTimelineHeader {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .funnelStepChangesHeader p {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
   }
 
   .funnelTimelineStepPicker,
