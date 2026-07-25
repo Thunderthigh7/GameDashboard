@@ -925,7 +925,7 @@ const playerWeightedPropertySummary = summarizeCustomEventProperties(
     { userId: 1, occurredAt: 1_200, properties: { weapon: "Shotgun" } },
     { userId: 1, occurredAt: 1_300, properties: { weapon: "Shotgun" } },
     { userId: 1, occurredAt: 1_400, properties: { weapon: "Rifle" } },
-    { userId: 2, occurredAt: 1_500, properties: { weapon: "Rifle" } },
+    { userId: 2, occurredAt: 2_100, properties: { weapon: "Rifle" } },
   ],
   serverActiveValueLimit,
   "weapon",
@@ -966,6 +966,21 @@ assert.equal(
   shotgunPlayerMetrics.averagePlayerShare + riflePlayerMetrics.averagePlayerShare,
   100,
   "average player shares should total 100 percent when all visible values are represented",
+);
+assert.deepEqual(
+  shotgunPlayerMetrics.points.map((point) => point.percentPlayers),
+  [100, 0],
+  "timeline points should report per-interval player reach for inline changes",
+);
+assert.deepEqual(
+  shotgunPlayerMetrics.points.map((point) => point.averagePlayerShare),
+  [75, 0],
+  "timeline points should report per-interval average player share for inline changes",
+);
+assert.deepEqual(
+  riflePlayerMetrics.points.map((point) => point.averagePlayerShare),
+  [25, 100],
+  "per-interval preference should be calculated independently for each value",
 );
 
 const analyticsRecordsStart = serverSource.indexOf("async function getAnalyticsEventRecords(");

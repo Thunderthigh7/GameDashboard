@@ -286,7 +286,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-32";
+const DASHBOARD_ASSET_VERSION = "20260725-33";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -4916,6 +4916,13 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
     const playerCount = Math.max(0, Math.round(Number(entry.playerCount) || 0));
     const percentPlayers = Math.max(0, Math.min(Number(entry.percentPlayers) || 0, 100));
     const averagePlayerShare = Math.max(0, Math.min(Number(entry.averagePlayerShare) || 0, 100));
+    const eventPercentChange = renderEventPropertyMetricChange(entry.points, "percent", "Event share");
+    const playerPercentChange = renderEventPropertyMetricChange(entry.points, "percentPlayers", "Player reach");
+    const averagePlayerShareChange = renderEventPropertyMetricChange(
+      entry.points,
+      "averagePlayerShare",
+      "Average player share",
+    );
     return `
       <div class="eventPropertyRankedRow" role="row">
         <span class="eventPropertyRankedPosition" role="cell">${index + 1}</span>
@@ -4924,9 +4931,9 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <strong>${escapeHtml(value)}</strong>
         </span>
         <b class="eventPropertyRankedEvents" role="cell" title="${formatEventNumber(eventCount)} events">${formatCompactNumber(eventCount)}</b>
-        <b role="cell">${formatEventNumber(percent)}%</b>
-        <b role="cell" title="${formatEventNumber(playerCount)} players">${formatEventNumber(percentPlayers)}%</b>
-        <b role="cell">${formatEventNumber(averagePlayerShare)}%</b>
+        <b class="eventPropertyRankedMetric" role="cell">${formatEventNumber(percent)}%${eventPercentChange}</b>
+        <b class="eventPropertyRankedMetric" role="cell" title="${formatEventNumber(playerCount)} players">${formatEventNumber(percentPlayers)}%${playerPercentChange}</b>
+        <b class="eventPropertyRankedMetric" role="cell">${formatEventNumber(averagePlayerShare)}%${averagePlayerShareChange}</b>
       </div>`;
   }).join("");
 
@@ -4940,9 +4947,9 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <span role="columnheader">#</span>
           <span role="columnheader">Value</span>
           <span role="columnheader">Events</span>
-          <span role="columnheader">% of Events (Activity)</span>
-          <span role="columnheader">% of Players (Reach)</span>
-          <span role="columnheader">Avg Player Share (Preference)</span>
+          <span role="columnheader">% of Events</span>
+          <span role="columnheader">% of Players</span>
+          <span role="columnheader">Avg Player Share</span>
         </div>
         <div class="eventPropertyRankedRows" role="rowgroup">${rows}</div>
       </div>
@@ -4960,9 +4967,9 @@ function renderEmptyEventPropertyRankedBreakdown(propertyName = "Property") {
           <span role="columnheader">#</span>
           <span role="columnheader">Value</span>
           <span role="columnheader">Events</span>
-          <span role="columnheader">% of Events (Activity)</span>
-          <span role="columnheader">% of Players (Reach)</span>
-          <span role="columnheader">Avg Player Share (Preference)</span>
+          <span role="columnheader">% of Events</span>
+          <span role="columnheader">% of Players</span>
+          <span role="columnheader">Avg Player Share</span>
         </div>
         <div class="eventPropertyRankedRows eventPropertyRankedEmptyRows" role="rowgroup">
           <div class="eventPropertyRankedEmptyRow" role="row">
@@ -4971,6 +4978,27 @@ function renderEmptyEventPropertyRankedBreakdown(propertyName = "Property") {
         </div>
       </div>
     </aside>`;
+}
+
+function getEventPropertySeriesMetricChange(points = [], metricName = "percent") {
+  const observedPercents = (Array.isArray(points) ? points : [])
+    .map((point) => point?.[metricName])
+    .filter((percent) => percent !== null && percent !== undefined && Number.isFinite(Number(percent)))
+    .map(Number);
+  if (observedPercents.length < 2) return 0;
+  return observedPercents.at(-1) - observedPercents[0];
+}
+
+function renderEventPropertyMetricChange(points = [], metricName = "percent", label = "Share") {
+  const change = getEventPropertySeriesMetricChange(points, metricName);
+  const direction = change > 0.049 ? "positive" : change < -0.049 ? "negative" : "neutral";
+  const arrow = direction === "positive" ? "↑" : direction === "negative" ? "↓" : "→";
+  const changeText = `${change > 0 ? "+" : ""}${formatEventNumber(change)}%`;
+  return `
+    <small class="eventPropertyMetricChange eventPropertyMetricChange-${direction}"
+      aria-label="${escapeHtml(label)} change ${escapeHtml(changeText)}">
+      (<span aria-hidden="true">${arrow}</span>${changeText})
+    </small>`;
 }
 
 function renderCustomEventPropertyChart(container, property = {}, releaseMarkers = []) {

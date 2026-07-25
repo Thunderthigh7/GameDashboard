@@ -105,13 +105,10 @@ assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend s
 assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should not render average badges");
 assert.match(appSource, /class="eventPropertyRanked"/, "each property graph should include a ranked breakdown panel");
 assert.match(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should show raw event counts");
-assert.match(appSource, /<span role="columnheader">% of Events \(Activity\)<\/span>/, "event percentage should be labeled as activity");
-assert.match(appSource, /<span role="columnheader">% of Players \(Reach\)<\/span>/, "player percentage should be labeled as reach");
-assert.match(
-  appSource,
-  /<span role="columnheader">Avg Player Share \(Preference\)<\/span>/,
-  "equal-player share should be labeled as preference",
-);
+assert.match(appSource, /<span role="columnheader">% of Events<\/span>/, "event percentage should keep a direct header");
+assert.match(appSource, /<span role="columnheader">% of Players<\/span>/, "player percentage should keep a direct header");
+assert.match(appSource, /<span role="columnheader">Avg Player Share<\/span>/, "equal-player share should keep a direct header");
+assert.doesNotMatch(appSource, /\((?:Activity|Reach|Preference)\)<\/span>/, "metric headers should remove explanatory parentheticals");
 assert.doesNotMatch(appSource, /<span role="columnheader">Change<\/span>/, "ranked breakdowns should remove the confusing Change column");
 assert.match(
   appSource,
@@ -123,10 +120,20 @@ assert.match(
   /const percentPlayers = Math\.max\([\s\S]*Number\(entry\.percentPlayers\)[\s\S]*const averagePlayerShare = Math\.max\([\s\S]*Number\(entry\.averagePlayerShare\)/,
   "ranked breakdowns should render backend-calculated player reach and average player share",
 );
+assert.match(
+  appSource,
+  /renderEventPropertyMetricChange\(entry\.points, "percent"[\s\S]*renderEventPropertyMetricChange\(entry\.points, "percentPlayers"[\s\S]*"averagePlayerShare"/,
+  "each percentage should render its own timeline change",
+);
+assert.match(
+  appSource,
+  /class="eventPropertyMetricChange eventPropertyMetricChange-\$\{direction\}"[\s\S]*\(<span aria-hidden="true">\$\{arrow\}<\/span>\$\{changeText\}\)/,
+  "inline changes should render in parentheses beside their percentage",
+);
 assert.match(appSource, /aria-colspan="6">No data yet/, "empty ranked breakdowns should span all six columns");
 assert.match(
   styleSource,
-  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(220px, 1fr\)\s+minmax\(100px, 0\.18fr\)\s+minmax\(160px, 0\.3fr\)\s+minmax\(165px, 0\.3fr\)\s+minmax\(205px, 0\.38fr\);[^}]*gap:\s*18px;[^}]*min-width:\s*1000px;/,
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(220px, 1fr\)\s+minmax\(100px, 0\.18fr\)\s+minmax\(205px, 0\.34fr\)\s+minmax\(205px, 0\.34fr\)\s+minmax\(235px, 0\.4fr\);[^}]*gap:\s*18px;[^}]*min-width:\s*1120px;/,
   "full-width ranked breakdowns should reserve a clearly spaced six-column layout",
 );
 assert.match(
@@ -135,6 +142,8 @@ assert.match(
   "ranked breakdown event and player metrics should remain prominent",
 );
 assert.doesNotMatch(styleSource, /\.eventPropertyChange/, "removed Change cells should not retain dead styling");
+assert.match(styleSource, /\.eventPropertyMetricChange-positive\s*\{[^}]*color:\s*#48d597;/, "increases should render green");
+assert.match(styleSource, /\.eventPropertyMetricChange-negative\s*\{[^}]*color:\s*#fb7185;/, "decreases should render red");
 assert.match(
   serverSource,
   /\^\\\/assets\\\/\[A-Za-z0-9\._-\]\+\\\/\(app\\\.js\|styles\\\.css\|heatmap\\\.js\)\$/,
@@ -303,7 +312,27 @@ assert.doesNotMatch(
   /formatEventChartLabel\(index === bucketCount - 1 \? timelineEnd : start/,
   "the exact End label should not replace or crowd the final incremental axis label",
 );
-assert.doesNotMatch(appSource, /function getEventPropertySeriesChange\(/, "removed Change UI should not retain dead calculation code");
+const metricChangeHelperStart = appSource.indexOf("function getEventPropertySeriesMetricChange(");
+const metricChangeHelperEnd = appSource.indexOf("\nfunction renderEventPropertyMetricChange(", metricChangeHelperStart);
+assert.ok(
+  metricChangeHelperStart >= 0 && metricChangeHelperEnd > metricChangeHelperStart,
+  "inline metric change helper should remain available",
+);
+const { getEventPropertySeriesMetricChange } = Function(
+  `"use strict";\n${appSource.slice(metricChangeHelperStart, metricChangeHelperEnd)}\nreturn { getEventPropertySeriesMetricChange };`,
+)();
+const metricChangePoints = [
+  { percent: 20, percentPlayers: 50, averagePlayerShare: 60 },
+  { percent: null, percentPlayers: 75, averagePlayerShare: null },
+  { percent: 35, percentPlayers: 40, averagePlayerShare: 25 },
+];
+assert.equal(getEventPropertySeriesMetricChange(metricChangePoints, "percent"), 15, "event share change should follow the timeline");
+assert.equal(getEventPropertySeriesMetricChange(metricChangePoints, "percentPlayers"), -10, "player reach change should follow its own timeline");
+assert.equal(
+  getEventPropertySeriesMetricChange(metricChangePoints, "averagePlayerShare"),
+  -35,
+  "average player share change should follow its own timeline",
+);
 const releaseMarkerHelperStart = appSource.indexOf("function buildEventPropertyReleaseMarkers(");
 const releaseMarkerHelperEnd = appSource.indexOf("\nfunction buildRoundedEventPropertyPath(", releaseMarkerHelperStart);
 assert.ok(

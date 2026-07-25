@@ -6420,6 +6420,8 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
     end: bucketEnds[index] || Math.min(start + bucketMs, rangeEnd),
     observationCount: 0,
     counts: new Map(),
+    playerObservationCounts: new Map(),
+    playerSeriesCounts: new Map(),
   }));
   const playerObservationCounts = new Map();
   const playerSeriesCounts = new Map();
@@ -6456,6 +6458,10 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
         const seriesCounts = playerSeriesCounts.get(userId) || new Map();
         seriesCounts.set(seriesId, (seriesCounts.get(seriesId) || 0) + 1);
         playerSeriesCounts.set(userId, seriesCounts);
+        bucket.playerObservationCounts.set(userId, (bucket.playerObservationCounts.get(userId) || 0) + 1);
+        const bucketSeriesCounts = bucket.playerSeriesCounts.get(userId) || new Map();
+        bucketSeriesCounts.set(seriesId, (bucketSeriesCounts.get(seriesId) || 0) + 1);
+        bucket.playerSeriesCounts.set(userId, bucketSeriesCounts);
       }
     }
   }
@@ -6495,12 +6501,27 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
           : 0,
         points: buckets.map((bucket) => {
           const pointCount = bucket.counts.get(series.id) || 0;
+          const pointParticipatingPlayerCount = bucket.playerObservationCounts.size;
+          let pointPlayerCount = 0;
+          let pointPlayerShareTotal = 0;
+          for (const [userId, playerObservationCount] of bucket.playerObservationCounts) {
+            const playerSeriesCount = bucket.playerSeriesCounts.get(userId)?.get(series.id) || 0;
+            if (playerSeriesCount > 0) pointPlayerCount += 1;
+            pointPlayerShareTotal += playerSeriesCount / playerObservationCount;
+          }
           return {
             start: bucket.start,
             end: bucket.end,
             count: pointCount,
             percent: bucket.observationCount
               ? (pointCount / bucket.observationCount) * 100
+              : null,
+            playerCount: pointPlayerCount,
+            percentPlayers: pointParticipatingPlayerCount
+              ? (pointPlayerCount / pointParticipatingPlayerCount) * 100
+              : null,
+            averagePlayerShare: pointParticipatingPlayerCount
+              ? (pointPlayerShareTotal / pointParticipatingPlayerCount) * 100
               : null,
           };
         }),
