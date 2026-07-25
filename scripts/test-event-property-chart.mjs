@@ -105,10 +105,14 @@ assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend s
 assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should not render average badges");
 assert.match(appSource, /class="eventPropertyRanked"/, "each property graph should include a ranked breakdown panel");
 assert.match(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should show raw event counts");
-assert.match(appSource, /<span role="columnheader">% of Events<\/span>/, "ranked breakdowns should show event percentage");
-assert.match(appSource, /<span role="columnheader">% of Players<\/span>/, "ranked breakdowns should show player reach");
-assert.match(appSource, /<span role="columnheader">Avg Player Share<\/span>/, "ranked breakdowns should show equal-player preference");
-assert.match(appSource, /<span role="columnheader">Change<\/span>/, "ranked breakdowns should label trend movement as Change");
+assert.match(appSource, /<span role="columnheader">% of Events \(Activity\)<\/span>/, "event percentage should be labeled as activity");
+assert.match(appSource, /<span role="columnheader">% of Players \(Reach\)<\/span>/, "player percentage should be labeled as reach");
+assert.match(
+  appSource,
+  /<span role="columnheader">Avg Player Share \(Preference\)<\/span>/,
+  "equal-player share should be labeled as preference",
+);
+assert.doesNotMatch(appSource, /<span role="columnheader">Change<\/span>/, "ranked breakdowns should remove the confusing Change column");
 assert.match(
   appSource,
   /const eventCount = Math\.max\(0, Math\.round\(Number\(entry\.count\) \|\| 0\)\);[\s\S]*class="eventPropertyRankedEvents"/,
@@ -119,17 +123,18 @@ assert.match(
   /const percentPlayers = Math\.max\([\s\S]*Number\(entry\.percentPlayers\)[\s\S]*const averagePlayerShare = Math\.max\([\s\S]*Number\(entry\.averagePlayerShare\)/,
   "ranked breakdowns should render backend-calculated player reach and average player share",
 );
-assert.match(appSource, /aria-colspan="7">No data yet/, "empty ranked breakdowns should span all seven columns");
+assert.match(appSource, /aria-colspan="6">No data yet/, "empty ranked breakdowns should span all six columns");
 assert.match(
   styleSource,
-  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(200px, 1fr\)\s+minmax\(88px, 0\.18fr\)\s+minmax\(110px, 0\.22fr\)\s+minmax\(110px, 0\.22fr\)\s+minmax\(145px, 0\.3fr\)\s+minmax\(110px, 0\.22fr\);/,
-  "full-width ranked breakdowns should reserve a readable seven-column layout",
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(220px, 1fr\)\s+minmax\(100px, 0\.18fr\)\s+minmax\(160px, 0\.3fr\)\s+minmax\(165px, 0\.3fr\)\s+minmax\(205px, 0\.38fr\);[^}]*gap:\s*18px;[^}]*min-width:\s*1000px;/,
+  "full-width ranked breakdowns should reserve a clearly spaced six-column layout",
 );
 assert.match(
   styleSource,
-  /\.eventPropertyRankedRow > b,\s*\.eventPropertyChange\s*\{[^}]*font-size:\s*15px;/,
-  "ranked breakdown event and player metrics plus Change should remain prominent",
+  /\.eventPropertyRankedRow > b\s*\{[^}]*font-size:\s*15px;/,
+  "ranked breakdown event and player metrics should remain prominent",
 );
+assert.doesNotMatch(styleSource, /\.eventPropertyChange/, "removed Change cells should not retain dead styling");
 assert.match(
   serverSource,
   /\^\\\/assets\\\/\[A-Za-z0-9\._-\]\+\\\/\(app\\\.js\|styles\\\.css\|heatmap\\\.js\)\$/,
@@ -298,23 +303,7 @@ assert.doesNotMatch(
   /formatEventChartLabel\(index === bucketCount - 1 \? timelineEnd : start/,
   "the exact End label should not replace or crowd the final incremental axis label",
 );
-const changeHelperStart = appSource.indexOf("function getEventPropertySeriesChange(");
-const changeHelperEnd = appSource.indexOf("\nfunction renderCustomEventPropertyChart(", changeHelperStart);
-assert.ok(changeHelperStart >= 0 && changeHelperEnd > changeHelperStart, "ranked breakdown change helper should remain available");
-const { getEventPropertySeriesChange } = Function(
-  `"use strict";\n${appSource.slice(changeHelperStart, changeHelperEnd)}\nreturn { getEventPropertySeriesChange };`,
-)();
-assert.equal(
-  getEventPropertySeriesChange([{ percent: 20 }, { percent: null }, { percent: 35 }]),
-  15,
-  "Change should compare the first and latest observed shares",
-);
-assert.equal(
-  getEventPropertySeriesChange([{ percent: 35 }, { percent: 20 }]),
-  -15,
-  "Change should retain negative movement",
-);
-assert.equal(getEventPropertySeriesChange([{ percent: 35 }]), 0, "a single observed share should have neutral change");
+assert.doesNotMatch(appSource, /function getEventPropertySeriesChange\(/, "removed Change UI should not retain dead calculation code");
 const releaseMarkerHelperStart = appSource.indexOf("function buildEventPropertyReleaseMarkers(");
 const releaseMarkerHelperEnd = appSource.indexOf("\nfunction buildRoundedEventPropertyPath(", releaseMarkerHelperStart);
 assert.ok(

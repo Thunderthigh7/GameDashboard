@@ -5612,15 +5612,14 @@ body[data-active-view="events"] #pageSubtitle {
   display: grid;
   grid-template-columns:
     42px
-    minmax(200px, 1fr)
-    minmax(88px, 0.18fr)
-    minmax(110px, 0.22fr)
-    minmax(110px, 0.22fr)
-    minmax(145px, 0.3fr)
-    minmax(110px, 0.22fr);
+    minmax(220px, 1fr)
+    minmax(100px, 0.18fr)
+    minmax(160px, 0.3fr)
+    minmax(165px, 0.3fr)
+    minmax(205px, 0.38fr);
   align-items: center;
-  gap: 12px;
-  min-width: 1020px;
+  gap: 18px;
+  min-width: 1000px;
   padding-inline: 8px;
 }
 
@@ -5628,8 +5627,9 @@ body[data-active-view="events"] #pageSubtitle {
   min-height: 48px;
   border-bottom: 1px solid rgba(80, 99, 150, 0.28);
   color: #a7b3cd;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 850;
+  white-space: nowrap;
 }
 
 .eventPropertyRankedTableHeader span:nth-child(n + 3) {
@@ -5699,36 +5699,11 @@ body[data-active-view="events"] #pageSubtitle {
   white-space: nowrap;
 }
 
-.eventPropertyRankedRow > b,
-.eventPropertyChange {
+.eventPropertyRankedRow > b {
+  color: var(--text);
   font-size: 15px;
   font-weight: 900;
   text-align: right;
-}
-
-.eventPropertyRankedRow > b {
-  color: var(--text);
-}
-
-.eventPropertyChange {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  font-style: normal;
-  white-space: nowrap;
-}
-
-.eventPropertyChange-positive {
-  color: #48d597;
-}
-
-.eventPropertyChange-negative {
-  color: #fb7185;
-}
-
-.eventPropertyChange-neutral {
-  color: var(--muted);
 }
 
 .eventLiveBadge {
