@@ -101,7 +101,6 @@ const newEventButton = document.querySelector("#newEventButton");
 const selectedEventTitle = document.querySelector("#selectedEventTitle");
 const eventDefinitionModeBadge = document.querySelector("#eventDefinitionModeBadge");
 const eventSelectionActions = document.querySelector("#eventSelectionActions");
-const viewEventJsonButton = document.querySelector("#viewEventJsonButton");
 const editEventButton = document.querySelector("#editEventButton");
 const eventMoreButton = document.querySelector("#eventMoreButton");
 const eventMorePopover = document.querySelector("#eventMorePopover");
@@ -121,12 +120,8 @@ const cancelEventDefinitionEditButton = document.querySelector("#cancelEventDefi
 const cancelEventDefinitionButton = document.querySelector("#cancelEventDefinitionButton");
 const saveEventDefinitionButton = document.querySelector("#saveEventDefinitionButton");
 const eventDefinitionStatus = document.querySelector("#eventDefinitionStatus");
-const eventJsonTab = document.querySelector("#eventJsonTab");
-const eventLuauTab = document.querySelector("#eventLuauTab");
-const eventJsonPreview = document.querySelector("#eventJsonPreview");
 const eventLuauPreview = document.querySelector("#eventLuauPreview");
 const copyEventCodeButton = document.querySelector("#copyEventCodeButton");
-const downloadEventJsonButton = document.querySelector("#downloadEventJsonButton");
 const eventCodeStatus = document.querySelector("#eventCodeStatus");
 const eventConfirmDialog = document.querySelector("#eventConfirmDialog");
 const eventConfirmIcon = document.querySelector("#eventConfirmIcon");
@@ -251,7 +246,6 @@ let selectedEventInterval = "auto";
 let recentEventsExpanded = false;
 let isEditingEventDefinition = false;
 let eventDefinitionProperties = [];
-let eventDefinitionPreviewMode = "json";
 let eventDefinitionReturnFocus = null;
 let eventDefinitionIsDirty = false;
 let eventDefinitionNameLocked = false;
@@ -276,7 +270,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-19";
+const DASHBOARD_ASSET_VERSION = "20260724-21";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
@@ -477,7 +471,6 @@ function bindEvents() {
   });
   newEventButton?.addEventListener("click", startNewEventDefinition);
   editEventButton?.addEventListener("click", () => editSelectedEventDefinition());
-  viewEventJsonButton?.addEventListener("click", () => editSelectedEventDefinition({ focusPreview: true }));
   eventMoreButton?.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleEventMoreMenu();
@@ -510,12 +503,7 @@ function bindEvents() {
   eventDefinitionPropertyEditor?.addEventListener("input", handleEventDefinitionPropertyInput);
   eventDefinitionPropertyEditor?.addEventListener("change", handleEventDefinitionPropertyInput);
   eventDefinitionPropertyEditor?.addEventListener("click", handleEventDefinitionPropertyAction);
-  eventJsonTab?.addEventListener("click", () => setEventDefinitionPreviewMode("json"));
-  eventLuauTab?.addEventListener("click", () => setEventDefinitionPreviewMode("luau"));
-  eventJsonTab?.addEventListener("keydown", handleEventDefinitionTabKeydown);
-  eventLuauTab?.addEventListener("keydown", handleEventDefinitionTabKeydown);
   copyEventCodeButton?.addEventListener("click", copyEventDefinitionCode);
-  downloadEventJsonButton?.addEventListener("click", downloadEventDefinitionJson);
   eventConfirmCancelButton?.addEventListener("click", () => resolveEventConfirmation(false));
   eventConfirmActionButton?.addEventListener("click", () => resolveEventConfirmation(true));
   eventConfirmDialog?.addEventListener("pointerdown", (event) => {
@@ -3245,7 +3233,6 @@ function updateSelectedEventDefinitionActions(selectedEvent) {
     eventDefinitionModeBadge.classList.toggle("unconfigured", !definition);
   }
   if (editEventButton) editEventButton.disabled = !isCustomEvent;
-  if (viewEventJsonButton) viewEventJsonButton.disabled = !isCustomEvent;
   if (eventMoreButton) eventMoreButton.disabled = !isCustomEvent;
 }
 
@@ -3268,7 +3255,6 @@ function startNewEventDefinition() {
   if (saveEventDefinitionButton) saveEventDefinitionButton.textContent = "Create event";
   if (eventDefinitionStatus) eventDefinitionStatus.textContent = "";
   if (eventCodeStatus) eventCodeStatus.textContent = "";
-  setEventDefinitionPreviewMode("json");
   renderEventDefinitionPropertyEditor();
   renderEventDefinitionCodePreviews();
   setEventDefinitionBuilderVisible(true);
@@ -3286,7 +3272,7 @@ function getObservedEventDefinitionPropertyType(property = {}) {
   return "string";
 }
 
-function editSelectedEventDefinition(options = {}) {
+function editSelectedEventDefinition() {
   const selected = currentSelectedEvent;
   const catalogItem = getSelectedEventCatalogItem();
   if (!selected?.name || !catalogItem || catalogItem.sourceType === "system" || !eventDefinitionForm) return;
@@ -3337,18 +3323,12 @@ function editSelectedEventDefinition(options = {}) {
       : "";
   }
   if (eventCodeStatus) eventCodeStatus.textContent = "";
-  setEventDefinitionPreviewMode("json");
   renderEventDefinitionPropertyEditor();
   renderEventDefinitionCodePreviews();
   setEventDefinitionBuilderVisible(true);
   window.requestAnimationFrame(() => {
-    if (options.focusPreview) {
-      eventJsonTab?.focus();
-      document.querySelector("#eventCodePreview")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      eventDefinitionPropertyEditor?.querySelector("input")?.focus()
-        || cancelEventDefinitionEditButton?.focus();
-    }
+    eventDefinitionPropertyEditor?.querySelector("input")?.focus()
+      || cancelEventDefinitionEditButton?.focus();
   });
 }
 
@@ -3592,8 +3572,8 @@ function renderEventDefinitionPropertyEditor(options = {}) {
         </label>
         ${autoDiscovered
           ? '<span class="eventDefinitionPropertySource" title="Switch to Manual keys to exclude this property">Auto</span>'
-          : `<button class="eventDefinitionRemovePropertyButton" type="button" data-event-definition-property-action="remove" data-event-definition-property-index="${index}" aria-label="Remove ${escapeHtml(property.name || `property ${index + 1}`)}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          : `<button class="eventDefinitionRemovePropertyButton" type="button" data-event-definition-property-action="remove" data-event-definition-property-index="${index}" aria-label="Remove ${escapeHtml(property.name || `property ${index + 1}`)}" title="Remove property">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
             </button>`}
       </div>
     `;
@@ -3616,7 +3596,7 @@ function renderEventDefinitionPropertyEditor(options = {}) {
 
 function syncEventDefinitionPropertiesFromEditor() {
   const properties = [];
-  for (const row of eventDefinitionPropertyEditor?.querySelectorAll("[data-event-definition-property-index]") || []) {
+  for (const row of eventDefinitionPropertyEditor?.querySelectorAll(".eventDefinitionPropertyRow[data-event-definition-property-index]") || []) {
     properties.push({
       name: String(row.querySelector("[data-event-definition-property-name]")?.value || "").trim(),
       type: String(row.querySelector("[data-event-definition-property-type]")?.value || "string"),
@@ -3680,24 +3660,6 @@ function getEventDefinitionPreviewProperties() {
   return properties;
 }
 
-function getEventDefinitionExampleValue(type) {
-  if (type === "number") return 0;
-  if (type === "boolean") return false;
-  return "Example";
-}
-
-function buildEventDefinitionJsonTemplate() {
-  return {
-    eventName: getEventDefinitionPreviewName(),
-    properties: Object.fromEntries(
-      getEventDefinitionPreviewProperties().map((property) => [
-        property.name,
-        getEventDefinitionExampleValue(property.type),
-      ]),
-    ),
-  };
-}
-
 function formatLuauString(value) {
   return JSON.stringify(String(value));
 }
@@ -3729,59 +3691,19 @@ function buildEventDefinitionLuauTemplate() {
 }
 
 function renderEventDefinitionCodePreviews() {
-  const jsonCode = JSON.stringify(buildEventDefinitionJsonTemplate(), null, 2);
   const luauCode = buildEventDefinitionLuauTemplate();
-  const jsonCodeNode = eventJsonPreview?.querySelector("code");
   const luauCodeNode = eventLuauPreview?.querySelector("code");
-  if (jsonCodeNode) jsonCodeNode.textContent = jsonCode;
   if (luauCodeNode) luauCodeNode.textContent = luauCode;
 }
 
-function setEventDefinitionPreviewMode(mode) {
-  eventDefinitionPreviewMode = mode === "luau" ? "luau" : "json";
-  if (eventJsonPreview) eventJsonPreview.hidden = eventDefinitionPreviewMode !== "json";
-  if (eventLuauPreview) eventLuauPreview.hidden = eventDefinitionPreviewMode !== "luau";
-  eventJsonTab?.setAttribute("aria-selected", String(eventDefinitionPreviewMode === "json"));
-  eventLuauTab?.setAttribute("aria-selected", String(eventDefinitionPreviewMode === "luau"));
-  if (eventJsonTab) eventJsonTab.tabIndex = eventDefinitionPreviewMode === "json" ? 0 : -1;
-  if (eventLuauTab) eventLuauTab.tabIndex = eventDefinitionPreviewMode === "luau" ? 0 : -1;
-  if (copyEventCodeButton) copyEventCodeButton.textContent = eventDefinitionPreviewMode === "json" ? "Copy JSON" : "Copy Luau";
-  if (downloadEventJsonButton) downloadEventJsonButton.hidden = eventDefinitionPreviewMode !== "json";
-  if (eventCodeStatus) eventCodeStatus.textContent = "";
-}
-
-function handleEventDefinitionTabKeydown(event) {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  event.preventDefault();
-  const nextMode = event.key === "ArrowLeft" || event.key === "Home" ? "json" : "luau";
-  setEventDefinitionPreviewMode(nextMode);
-  (nextMode === "json" ? eventJsonTab : eventLuauTab)?.focus();
-}
-
 async function copyEventDefinitionCode() {
-  const code = eventDefinitionPreviewMode === "luau"
-    ? buildEventDefinitionLuauTemplate()
-    : JSON.stringify(buildEventDefinitionJsonTemplate(), null, 2);
+  const code = buildEventDefinitionLuauTemplate();
   try {
     await navigator.clipboard.writeText(code);
-    if (eventCodeStatus) eventCodeStatus.textContent = eventDefinitionPreviewMode === "luau" ? "Luau copied." : "JSON copied.";
+    if (eventCodeStatus) eventCodeStatus.textContent = "Luau copied.";
   } catch {
     if (eventCodeStatus) eventCodeStatus.textContent = "Copy failed. Select the code above and copy it manually.";
   }
-}
-
-function downloadEventDefinitionJson() {
-  const json = JSON.stringify(buildEventDefinitionJsonTemplate(), null, 2);
-  const filename = `${getEventDefinitionPreviewName().replace(/[^a-z0-9_.-]+/gi, "-") || "event"}.json`;
-  const objectUrl = URL.createObjectURL(new Blob([`${json}\n`], { type: "application/json" }));
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-  if (eventCodeStatus) eventCodeStatus.textContent = `${filename} downloaded.`;
 }
 
 function validateEventDefinitionForm() {

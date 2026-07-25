@@ -4305,7 +4305,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .eventsLayout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
   min-width: 0;
@@ -4578,7 +4578,6 @@ body[data-active-view="events"] .eventTopbarSelection {
   flex: 0 0 auto;
 }
 
-.eventJsonAction,
 .eventEditButton {
   display: inline-flex;
   align-items: center;
@@ -4595,8 +4594,6 @@ body[data-active-view="events"] .eventTopbarSelection {
   cursor: pointer;
 }
 
-.eventJsonAction:hover:not(:disabled),
-.eventJsonAction:focus-visible,
 .eventEditButton:hover:not(:disabled),
 .eventEditButton:focus-visible {
   border-color: rgba(151, 102, 255, 0.68);
@@ -4605,13 +4602,11 @@ body[data-active-view="events"] .eventTopbarSelection {
   outline: none;
 }
 
-.eventJsonAction:disabled,
 .eventEditButton:disabled {
   cursor: default;
   opacity: 0.45;
 }
 
-.eventJsonAction svg,
 .eventEditButton svg {
   width: 16px;
   height: 16px;
@@ -6779,7 +6774,7 @@ body[data-active-view="funnels"] #pageSubtitle {
     grid-template-areas:
       "event-catalog event-topbar"
       "event-catalog event-content";
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     align-items: start;
     column-gap: 18px;
@@ -8034,38 +8029,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   font-size: 16px;
 }
 
-.eventCodeTabs {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  border: 1px solid rgba(87, 104, 153, 0.44);
-  border-radius: 8px;
-  background: rgba(4, 10, 22, 0.74);
-  padding: 3px;
-}
-
-.eventCodeTabs button {
-  min-height: 30px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #8f9bb8;
-  padding: 0 9px;
-  font-size: 10px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.eventCodeTabs button[aria-selected="true"] {
-  background: rgba(124, 60, 255, 0.28);
-  color: #fff;
-}
-
-.eventCodeTabs button:focus-visible {
-  outline: 2px solid rgba(183, 156, 255, 0.8);
-  outline-offset: 1px;
-}
-
 .eventCodeBlock {
   min-height: 270px;
   max-height: 440px;
@@ -8092,7 +8055,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .eventCodeActions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -8923,13 +8886,8 @@ body.hasEventConfirmDialog {
     flex-direction: column;
   }
 
-  .eventCodeTabs,
   .eventCodeActions {
     width: 100%;
-  }
-
-  .eventCodeTabs button {
-    flex: 1 1 0;
   }
 
   .eventDefinitionFormActions {

@@ -42,10 +42,8 @@ for (const id of [
   "eventKeyModeManual",
   "eventDefinitionPropertyEditor",
   "addEventDefinitionPropertyButton",
-  "eventJsonPreview",
   "eventLuauPreview",
   "copyEventCodeButton",
-  "downloadEventJsonButton",
   "saveEventDefinitionButton",
   "editEventButton",
   "deleteSelectedEventButton",
@@ -53,6 +51,19 @@ for (const id of [
 ]) {
   assert.match(indexSource, new RegExp(`id="${id}"`), `${id} should exist in the Events workflow`);
 }
+for (const removedId of [
+  "viewEventJsonButton",
+  "eventJsonTab",
+  "eventJsonPreview",
+  "downloadEventJsonButton",
+]) {
+  assert.doesNotMatch(
+    indexSource,
+    new RegExp(`id="${removedId}"`),
+    `${removedId} should not appear in the Luau-only Events workflow`,
+  );
+}
+assert.match(indexSource, /id="eventCodePreviewTitle">Roblox Luau</, "the generated-code panel should be explicitly Luau");
 
 assert.match(
   styleSource,
@@ -139,10 +150,10 @@ assert.match(
   "Auto-discovered keys should explain how to exclude them",
 );
 
-const generatorStart = appSource.indexOf("function getEventDefinitionExampleValue(");
+const generatorStart = appSource.indexOf("function formatLuauString(");
 const generatorEnd = appSource.indexOf("\nfunction renderEventDefinitionCodePreviews(", generatorStart);
 assert.ok(generatorStart >= 0 && generatorEnd > generatorStart, "event payload generators should remain extractable");
-const { buildEventDefinitionJsonTemplate, buildEventDefinitionLuauTemplate } = Function(
+const { buildEventDefinitionLuauTemplate } = Function(
   `"use strict";
   const getEventDefinitionPreviewName = () => "weapon_equipped";
   const getEventDefinitionPreviewProperties = () => [
@@ -151,20 +162,8 @@ const { buildEventDefinitionJsonTemplate, buildEventDefinitionLuauTemplate } = F
     { name: "isCritical", type: "boolean" },
   ];
   ${appSource.slice(generatorStart, generatorEnd)}
-  return { buildEventDefinitionJsonTemplate, buildEventDefinitionLuauTemplate };`,
+  return { buildEventDefinitionLuauTemplate };`,
 )();
-assert.deepEqual(
-  buildEventDefinitionJsonTemplate(),
-  {
-    eventName: "weapon_equipped",
-    properties: {
-      "weapon.name": "Example",
-      damage: 0,
-      isCritical: false,
-    },
-  },
-  "the JSON preview should preserve property names and example types",
-);
 const luauTemplate = buildEventDefinitionLuauTemplate();
 assert.match(
   luauTemplate,
@@ -175,6 +174,54 @@ assert.match(luauTemplate, /\["weapon\.name"\] = "Example"/, "nested paths shoul
 assert.match(luauTemplate, /damage = 0/, "numeric properties should use numeric Luau examples");
 assert.match(luauTemplate, /isCritical = false/, "boolean properties should use boolean Luau examples");
 assert.match(luauTemplate, /Logger\.Log\("weapon_equipped",[\s\S]*, player\)/, "the generated code should log the event for a player");
+
+const syncPropertiesStart = appSource.indexOf("function syncEventDefinitionPropertiesFromEditor(");
+const syncPropertiesEnd = appSource.indexOf("\nfunction handleEventDefinitionPropertyInput(", syncPropertiesStart);
+assert.ok(syncPropertiesStart >= 0 && syncPropertiesEnd > syncPropertiesStart, "property synchronization should remain extractable");
+const { syncOnePropertyRow } = Function(
+  `"use strict";
+  const MAX_EVENT_DEFINITION_PROPERTIES = ${clientPropertyLimit};
+  let eventDefinitionProperties = [];
+  let selectorUsed = "";
+  const propertyRow = {
+    dataset: { eventDefinitionPropertyDiscovered: "false" },
+    querySelector(selector) {
+      if (selector === "[data-event-definition-property-name]") return { value: "weapon.name" };
+      if (selector === "[data-event-definition-property-type]") return { value: "string" };
+      return null;
+    },
+  };
+  const removeButton = {
+    dataset: {},
+    querySelector() { return null; },
+  };
+  const eventDefinitionPropertyEditor = {
+    querySelectorAll(selector) {
+      selectorUsed = selector;
+      return selector === ".eventDefinitionPropertyRow[data-event-definition-property-index]"
+        ? [propertyRow]
+        : [propertyRow, removeButton];
+    },
+  };
+  ${appSource.slice(syncPropertiesStart, syncPropertiesEnd)}
+  return {
+    syncOnePropertyRow() {
+      syncEventDefinitionPropertiesFromEditor();
+      return { selectorUsed, properties: eventDefinitionProperties };
+    },
+  };`,
+)();
+const synchronizedPropertyRows = syncOnePropertyRow();
+assert.equal(
+  synchronizedPropertyRows.selectorUsed,
+  ".eventDefinitionPropertyRow[data-event-definition-property-index]",
+  "property synchronization should select rows without also counting their remove buttons",
+);
+assert.equal(
+  synchronizedPropertyRows.properties.length,
+  1,
+  "one visible property row should synchronize as exactly one property",
+);
 
 const definitionHelpersStart = serverSource.indexOf("function normalizeEventDefinition(");
 const definitionHelpersEnd = serverSource.indexOf("\nfunction getAutoEventDefinitionId(", definitionHelpersStart);
@@ -528,8 +575,8 @@ assert.doesNotMatch(
 );
 
 console.log("Event definition workflow tests passed.", {
-  controls: 14,
-  generatedFormats: ["json", "luau"],
+  controls: 12,
+  generatedFormats: ["luau"],
   modes: ["auto", "manual"],
   propertyLimit: clientPropertyLimit,
 });

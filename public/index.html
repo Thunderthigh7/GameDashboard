@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260724-19/styles.css">
+    <link rel="stylesheet" href="/assets/20260724-21/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -168,10 +168,6 @@
                 <span class="eventDefinitionModeBadge" id="eventDefinitionModeBadge" hidden></span>
               </div>
               <div class="eventSelectionActions" id="eventSelectionActions" hidden>
-                <button class="eventJsonAction" id="viewEventJsonButton" type="button">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H5a2 2 0 0 0-2 2v3M16 4h3a2 2 0 0 1 2 2v3M8 20H5a2 2 0 0 1-2-2v-3M16 20h3a2 2 0 0 0 2-2v-3M10 8 7 12l3 4M14 8l3 4-3 4" /></svg>
-                  <span>JSON</span>
-                </button>
                 <button class="eventEditButton" id="editEventButton" type="button">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.8 4.8L8 20l10.5-10.5-4-4L4 16Z" /><path d="m12.8 7.2 4 4" /></svg>
                   <span>Edit event</span>
@@ -783,20 +779,14 @@
                   <aside class="eventCodePreview" id="eventCodePreview" aria-labelledby="eventCodePreviewTitle">
                     <header>
                       <div>
-                        <span>Generated format</span>
-                        <h3 id="eventCodePreviewTitle">Ready for Roblox</h3>
-                      </div>
-                      <div class="eventCodeTabs" role="tablist" aria-label="Generated event format">
-                        <button id="eventJsonTab" type="button" role="tab" aria-selected="true" aria-controls="eventJsonPreview" tabindex="0">JSON</button>
-                        <button id="eventLuauTab" type="button" role="tab" aria-selected="false" aria-controls="eventLuauPreview" tabindex="-1">Roblox Luau</button>
+                        <span>Generated code</span>
+                        <h3 id="eventCodePreviewTitle">Roblox Luau</h3>
                       </div>
                     </header>
-                    <pre class="eventCodeBlock" id="eventJsonPreview" role="tabpanel" aria-labelledby="eventJsonTab"><code>{}</code></pre>
-                    <pre class="eventCodeBlock" id="eventLuauPreview" role="tabpanel" aria-labelledby="eventLuauTab" hidden><code>Logger.Log("event_name", {}, player)</code></pre>
-                    <p class="eventCodeNote">Paste the Luau call into a server script. RoAnalytics sends the matching JSON payload automatically.</p>
+                    <pre class="eventCodeBlock" id="eventLuauPreview" aria-labelledby="eventCodePreviewTitle"><code>Logger.Log("event_name", {}, player)</code></pre>
+                    <p class="eventCodeNote">Paste this into a server script, then replace the example values where the event happens.</p>
                     <div class="eventCodeActions">
-                      <button class="button secondary compact" id="copyEventCodeButton" type="button">Copy JSON</button>
-                      <button class="button secondary compact" id="downloadEventJsonButton" type="button">Download JSON</button>
+                      <button class="button secondary compact" id="copyEventCodeButton" type="button">Copy Luau</button>
                     </div>
                     <p class="status eventCodeStatus" id="eventCodeStatus" aria-live="polite"></p>
                   </aside>
@@ -1262,6 +1252,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260724-19/app.js"></script>
+    <script defer src="/assets/20260724-21/app.js"></script>
   </body>
 </html>

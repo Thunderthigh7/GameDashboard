@@ -68,7 +68,7 @@ Event names must start with a letter and may contain letters, numbers, `_`, `.`,
 
 Property leaves must be strings, finite numbers, or booleans. Nested tables are flattened into stable paths such as `weapon.name` and `weapon.stats.damage`; arrays become repeated values such as `tags[]`. The Events page discovers every path automatically and lets you switch between their breakdowns.
 
-You can define the same shape before writing code from **Events → New event**. **Auto discover** keeps adding valid paths received from this logger. **Manual keys** limits dashboard breakdowns to your preset paths without discarding unlisted values from the raw event record. The builder's **Roblox Luau** tab is the code to paste into a server script; its **JSON** tab shows the normalized payload shape that RoAnalytics will receive.
+You can define the same shape before writing code from **Events → New event**. **Auto discover** keeps adding valid paths received from this logger. **Manual keys** limits dashboard breakdowns to your preset paths without discarding unlisted values from the raw event record. The generated Roblox Luau is ready to copy into a server script.
 
 To keep analytics payloads bounded, one event accepts up to 20 property paths, 3 nested levels, 10 items from an array, and 40 total values. Strings are limited to 240 characters. The event is still logged if a value is unsupported or exceeds a limit, and Data Health reports that some properties were omitted. For item-level relationships inside a large array, log one event per item instead of sending a large inventory table.
 
