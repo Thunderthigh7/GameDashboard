@@ -272,7 +272,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-24";
+const DASHBOARD_ASSET_VERSION = "20260724-25";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
@@ -3149,6 +3149,7 @@ function renderCustomEvents(payload = {}) {
   renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || [], {
     showCreatedPlaceholder: shouldRenderCreatedEventPlaceholder(selected),
     definition: selected?.definition || null,
+    selectedEvent: selected,
   });
   renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
 
@@ -4091,6 +4092,9 @@ function renderCustomEventProperties(properties, releaseMarkers = [], options = 
   if (!cleanProperties.length) {
     if (options.showCreatedPlaceholder) {
       eventPropertyList.innerHTML = renderCreatedEventPropertyPlaceholders(options.definition);
+      for (const chart of eventPropertyList.querySelectorAll("[data-event-property-empty-chart]")) {
+        renderEmptyCustomEventPropertyChart(chart, options.selectedEvent, releaseMarkers);
+      }
       return;
     }
     eventPropertyList.innerHTML = '<p class="status eventPropertyEmptyRow">No properties were sent with this event.</p>';
@@ -4128,12 +4132,7 @@ function renderCreatedEventPropertyPlaceholder(propertyName = "Event activity") 
             <h3>${escapeHtml(formattedPropertyName)}</h3>
           </div>
         </header>
-        <div class="eventPropertyTimeline eventPropertyTimelinePlaceholder" role="img" aria-label="${escapeHtml(formattedPropertyName)} timeline has no data yet">
-          <div class="eventPropertyPlaceholderMessage">
-            <span>Event created</span>
-            <strong>Waiting for first event</strong>
-          </div>
-        </div>
+        <div class="eventPropertyTimeline" data-event-property-empty-chart data-event-property-name="${escapeHtml(propertyName)}" aria-label="${escapeHtml(formattedPropertyName)} timeline has no data yet"></div>
       </div>
       ${renderEmptyEventPropertyRankedBreakdown(propertyName)}
     </section>`;
@@ -4371,6 +4370,85 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
         ${releaseMarkerMarkup}
         <text class="eventPropertyChartYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Share of values</text>
         ${lines}
+        ${xLabels}
+      </svg>
+    </div>
+  `;
+}
+
+function renderEmptyCustomEventPropertyChart(container, selectedEvent = {}, releaseMarkers = []) {
+  const eventBuckets = (Array.isArray(selectedEvent?.series) ? selectedEvent.series : [])
+    .filter((bucket) => Number(bucket?.start) > 0)
+    .sort((leftValue, rightValue) => Number(leftValue.start) - Number(rightValue.start));
+  const fallbackEnd = Date.now();
+  const fallbackStart = fallbackEnd - (24 * 60 * 60 * 1000);
+  const bucketMs = Math.max(
+    Number(selectedEvent?.bucketMs)
+      || getSeriesBucketMs(eventBuckets)
+      || 60 * 60 * 1000,
+    1,
+  );
+  const buckets = eventBuckets.length
+    ? eventBuckets
+    : Array.from({ length: 7 }, (_, index) => ({
+        start: fallbackStart + (index * ((fallbackEnd - fallbackStart) / 6)),
+        end: fallbackStart + ((index + 1) * ((fallbackEnd - fallbackStart) / 6)),
+      }));
+  const bucketStarts = buckets.map((bucket) => Number(bucket.start));
+  const bucketCount = bucketStarts.length;
+  const timelineStart = bucketStarts[0];
+  const timelineEnd = Math.max(
+    Number(buckets.at(-1)?.end) || (bucketStarts.at(-1) + bucketMs),
+    timelineStart + 1,
+  );
+  const chartSpanMs = Math.max(timelineEnd - timelineStart, bucketMs);
+  const chartWidth = getEventChartWidth(container.clientWidth, bucketCount, 116, 10);
+  const chartHeight = 326;
+  const left = 54;
+  const right = 24;
+  const top = 58;
+  const bottom = 46;
+  const plotWidth = chartWidth - left - right;
+  const plotBottom = chartHeight - bottom;
+  const plotHeight = plotBottom - top;
+  const labelStep = Math.max(1, Math.ceil(bucketCount / 10));
+  const xForStart = (start) => (
+    left + (((start - timelineStart) / Math.max(timelineEnd - timelineStart, 1)) * plotWidth)
+  );
+  const yForPercent = (percent) => (
+    top + (plotHeight - ((percent / 100) * plotHeight))
+  );
+  const grid = [100, 75, 50, 25, 0].map((percent) => {
+    const y = yForPercent(percent);
+    return `
+      <line x1="${left}" y1="${y}" x2="${chartWidth - right}" y2="${y}" />
+      <text x="${left - 10}" y="${y + 4}" text-anchor="end">${percent}%</text>
+    `;
+  }).join("");
+  const xLabels = bucketStarts.map((start, index) => (
+    index === 0 || index === bucketCount - 1 || index % labelStep === 0
+      ? `<text class="eventPropertyChartXLabel" x="${xForStart(start)}" y="${chartHeight - 16}" text-anchor="${index === 0 ? "start" : index === bucketCount - 1 ? "end" : "middle"}">${escapeHtml(formatEventChartLabel(start, bucketMs, chartSpanMs))}</text>`
+      : ""
+  )).join("");
+  const releaseMarkerMarkup = buildEventPropertyReleaseMarkers({
+    releaseMarkers,
+    bucketStarts,
+    bucketMs,
+    rangeStart: timelineStart,
+    rangeEnd: timelineEnd,
+    chartWidth,
+    left,
+    right,
+    top,
+    plotBottom,
+  });
+  const propertyName = formatEventPropertyName(container.dataset.eventPropertyName || "Event activity");
+  container.innerHTML = `
+    <div class="eventPropertyChartScroller">
+      <svg class="eventPropertyChartSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="${escapeHtml(propertyName)} percentage by value over time; no data yet">
+        <g class="eventPropertyChartGrid">${grid}</g>
+        ${releaseMarkerMarkup}
+        <text class="eventPropertyChartYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Share of values</text>
         ${xLabels}
       </svg>
     </div>

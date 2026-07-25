@@ -85,8 +85,24 @@ assert.equal(
   false,
   "an event response containing data should not be treated as awaiting its first event",
 );
-assert.match(appSource, /Event created/, "the placeholder graph should confirm that the event was created");
-assert.match(appSource, /Waiting for first event/, "the placeholder graph should state what it is waiting for");
+assert.match(
+  appSource,
+  /function renderEmptyCustomEventPropertyChart\([\s\S]*eventPropertyChartXLabel[\s\S]*eventPropertyChartGrid/,
+  "an event awaiting data should render the normal chart axes and selected timeline",
+);
+assert.doesNotMatch(
+  appSource,
+  /Event created|Waiting for first event|eventPropertyPlaceholderMessage/,
+  "the empty chart should not cover the normal graph with placeholder messaging",
+);
+const createdPlaceholderCardStart = appSource.indexOf("function renderCreatedEventPropertyPlaceholder(");
+const createdPlaceholderCardEnd = appSource.indexOf("\nfunction ", createdPlaceholderCardStart + 1);
+const createdPlaceholderCardSource = appSource.slice(createdPlaceholderCardStart, createdPlaceholderCardEnd);
+assert.doesNotMatch(
+  createdPlaceholderCardSource,
+  /renderEventPropertyAverageLegend|eventPropertyAverageLegend/,
+  "an event with no received property values should not render legend keys",
+);
 assert.match(appSource, /eventPropertyRankedEmptyRow[\s\S]*No data yet/, "the empty ranked breakdown should remain visible");
 
 const eventExitIndex = indexSource.indexOf('id="eventExitButton"');
