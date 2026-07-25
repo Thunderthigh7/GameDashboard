@@ -5208,13 +5208,155 @@ body[data-active-view="events"] #pageSubtitle {
   gap: 14px;
 }
 
+.eventPropertyTabs {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  border-bottom: 1px solid rgba(87, 102, 145, 0.38);
+  padding: 0 2px;
+}
+
+.eventPropertyTabList {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.eventPropertyTabList::-webkit-scrollbar {
+  display: none;
+}
+
+.eventPropertyTab,
+.eventPropertyMoreButton {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 48px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #aab5d0;
+  padding: 0 17px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.eventPropertyTab:hover,
+.eventPropertyTab:focus-visible,
+.eventPropertyMoreButton:hover,
+.eventPropertyMoreButton:focus-visible {
+  background: linear-gradient(180deg, transparent, rgba(124, 60, 255, 0.08));
+  color: #f3f5ff;
+  outline: none;
+}
+
+.eventPropertyTab.active,
+.eventPropertyMoreButton.active {
+  border-bottom-color: #a78bfa;
+  color: #fff;
+}
+
+.eventPropertyMore {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+}
+
+.eventPropertyMore > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  list-style: none;
+}
+
+.eventPropertyMore > summary::-webkit-details-marker {
+  display: none;
+}
+
+.eventPropertyMoreButton svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 140ms ease;
+}
+
+.eventPropertyMoreButton span {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eventPropertyMore[open] .eventPropertyMoreButton svg {
+  transform: rotate(180deg);
+}
+
+.eventPropertyMoreMenu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  width: min(260px, calc(100vw - 36px));
+  max-height: 310px;
+  overflow-y: auto;
+  border: 1px solid rgba(102, 120, 174, 0.46);
+  border-radius: 10px;
+  background: rgba(8, 15, 33, 0.99);
+  box-shadow: 0 18px 42px rgba(2, 6, 18, 0.5);
+  padding: 6px;
+}
+
+.eventPropertyMoreMenu button {
+  overflow: hidden;
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #b5bfd8;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eventPropertyMoreMenu button:hover,
+.eventPropertyMoreMenu button:focus-visible {
+  background: rgba(124, 60, 255, 0.13);
+  color: #fff;
+  outline: none;
+}
+
+.eventPropertyMoreMenu button.active {
+  background: rgba(124, 60, 255, 0.2);
+  color: #fff;
+}
+
+.eventPropertyWorkspace {
+  display: grid;
+  min-width: 0;
+}
+
 .eventPropertyBreakdown {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   gap: 14px;
   min-width: 0;
-  min-height: 370px;
 }
 
 .eventPropertyChartPane,
@@ -5229,7 +5371,7 @@ body[data-active-view="events"] #pageSubtitle {
 
 .eventPropertyChartPane {
   display: flex;
-  min-height: 370px;
+  min-height: 450px;
   flex-direction: column;
 }
 
@@ -5304,7 +5446,7 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyTimeline {
   display: grid;
   min-width: 0;
-  min-height: 326px;
+  min-height: 400px;
   align-content: start;
 }
 
@@ -5429,18 +5571,18 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyRankedTableHeader,
 .eventPropertyRankedRow {
   display: grid;
-  grid-template-columns: 22px minmax(92px, 1fr) 64px 82px 92px;
+  grid-template-columns: 42px minmax(220px, 1fr) minmax(100px, 0.24fr) minmax(120px, 0.28fr) minmax(120px, 0.28fr);
   align-items: center;
-  gap: 8px;
-  min-width: 386px;
-  padding-inline: 3px;
+  gap: 14px;
+  min-width: 680px;
+  padding-inline: 8px;
 }
 
 .eventPropertyRankedTableHeader {
-  min-height: 44px;
+  min-height: 48px;
   border-bottom: 1px solid rgba(80, 99, 150, 0.28);
   color: #a7b3cd;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 850;
 }
 
@@ -5472,7 +5614,7 @@ body[data-active-view="events"] #pageSubtitle {
 }
 
 .eventPropertyRankedRow {
-  min-height: 58px;
+  min-height: 62px;
   border-bottom: 1px solid rgba(80, 99, 150, 0.22);
 }
 
@@ -5482,7 +5624,7 @@ body[data-active-view="events"] #pageSubtitle {
 
 .eventPropertyRankedPosition {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   text-align: center;
 }
@@ -5505,7 +5647,7 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyRankedValue strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5513,7 +5655,7 @@ body[data-active-view="events"] #pageSubtitle {
 
 .eventPropertyRankedRow > b,
 .eventPropertyChange {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
   text-align: right;
 }

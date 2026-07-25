@@ -114,12 +114,12 @@ assert.match(
 );
 assert.match(
   styleSource,
-  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*22px minmax\(92px, 1fr\) 64px 82px 92px;/,
-  "ranked breakdowns should reserve a readable five-column layout",
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px minmax\(220px, 1fr\) minmax\(100px, 0\.24fr\) minmax\(120px, 0\.28fr\) minmax\(120px, 0\.28fr\);/,
+  "full-width ranked breakdowns should reserve a readable five-column layout",
 );
 assert.match(
   styleSource,
-  /\.eventPropertyRankedRow > b,\s*\.eventPropertyChange\s*\{[^}]*font-size:\s*14px;/,
+  /\.eventPropertyRankedRow > b,\s*\.eventPropertyChange\s*\{[^}]*font-size:\s*15px;/,
   "ranked breakdown Events, percent, and Change values should remain prominent",
 );
 assert.match(
@@ -129,8 +129,27 @@ assert.match(
 );
 assert.match(
   styleSource,
-  /\.eventPropertyBreakdown\s*\{[^}]*grid-template-columns:\s*minmax\(0, 3fr\) minmax\(320px, 2fr\);/,
-  "property cards should reserve roughly 60 percent for the graph and 40 percent for the ranked panel",
+  /\.eventPropertyBreakdown\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
+  "the property graph and ranked breakdown should stack at full width",
+);
+assert.match(appSource, /function renderEventPropertyTabs\(/, "properties should render as a focused tab bar");
+assert.match(appSource, /role="tablist"/, "the property navigation should expose tab semantics");
+assert.match(appSource, /EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;/, "large property sets should move excess tabs into More");
+assert.match(appSource, /class="eventPropertyMoreMenu"/, "overflow properties should remain available from a More menu");
+assert.match(
+  appSource,
+  /selectedEventPropertyName = selectedProperty\.name;[\s\S]*renderEventPropertyTabs\(visibleProperties, selectedProperty\.name\)[\s\S]*renderCustomEventPropertyCard\(selectedProperty, selectedPropertyIndex\)/,
+  "the property workspace should render only the active property's graph and breakdown",
+);
+assert.match(
+  appSource,
+  /if \(selectedEventPropertyEventName !== nextSelectedEventName\) \{[\s\S]*selectedEventPropertyName = "";/,
+  "property selection should reset only when the selected event changes",
+);
+assert.match(
+  styleSource,
+  /\.eventPropertyChartPane\s*\{[^}]*min-height:\s*450px;/,
+  "the full-width property graph should use the larger chart height",
 );
 assert.match(
   styleSource,

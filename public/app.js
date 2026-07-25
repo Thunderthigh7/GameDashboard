@@ -241,6 +241,8 @@ let selectedCustomEventName = "";
 let currentEventCatalog = [];
 let currentSelectedEvent = null;
 let selectedEventInterval = "auto";
+let selectedEventPropertyName = "";
+let selectedEventPropertyEventName = "";
 let recentEventsExpanded = false;
 let isEditingEventDefinition = false;
 let eventDefinitionProperties = [];
@@ -272,8 +274,9 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-25";
+const DASHBOARD_ASSET_VERSION = "20260724-26";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
+const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
 const RECENT_EVENT_LIMIT = 7;
@@ -522,6 +525,9 @@ function bindEvents() {
   eventIntervalMenu?.addEventListener("keydown", handleEventIntervalMenuKeydown);
   document.addEventListener("pointerdown", handleEventIntervalOutsidePointer);
   syncEventIntervalDropdown();
+  eventPropertyList?.addEventListener("click", handleEventPropertyTabClick);
+  eventPropertyList?.addEventListener("keydown", handleEventPropertyTabKeydown);
+  document.addEventListener("pointerdown", handleEventPropertyMoreOutsidePointer);
   viewAllRecentEventsButton?.addEventListener("click", () => {
     recentEventsExpanded = !recentEventsExpanded;
     loadCustomEvents({ force: true });
@@ -3116,6 +3122,11 @@ function renderCustomEventSelectionError() {
 function renderCustomEvents(payload = {}) {
   const catalog = Array.isArray(payload.events) ? payload.events : [];
   const selected = payload.selectedEvent || null;
+  const nextSelectedEventName = String(selected?.name || "");
+  if (selectedEventPropertyEventName !== nextSelectedEventName) {
+    selectedEventPropertyEventName = nextSelectedEventName;
+    selectedEventPropertyName = "";
+  }
   currentEventCatalog = catalog;
   currentSelectedEvent = selected;
   const previousEventName = selectedCustomEventName;
@@ -4088,38 +4099,177 @@ function renderCustomEventProperties(properties, releaseMarkers = [], options = 
     .sort((left, right) => getEventPropertyPriority(left, selectedCustomEventName) - getEventPropertyPriority(right, selectedCustomEventName)
       || (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0)
       || String(left.name).localeCompare(String(right.name)));
+  const isCreatedPlaceholder = !cleanProperties.length && options.showCreatedPlaceholder;
+  const visibleProperties = isCreatedPlaceholder
+    ? getCreatedEventPlaceholderProperties(options.definition)
+    : cleanProperties;
 
-  if (!cleanProperties.length) {
-    if (options.showCreatedPlaceholder) {
-      eventPropertyList.innerHTML = renderCreatedEventPropertyPlaceholders(options.definition);
-      for (const chart of eventPropertyList.querySelectorAll("[data-event-property-empty-chart]")) {
-        renderEmptyCustomEventPropertyChart(chart, options.selectedEvent, releaseMarkers);
-      }
-      return;
-    }
+  if (!visibleProperties.length) {
     eventPropertyList.innerHTML = '<p class="status eventPropertyEmptyRow">No properties were sent with this event.</p>';
     return;
   }
 
-  eventPropertyList.innerHTML = cleanProperties
-    .map((property, index) => renderCustomEventPropertyCard(property, index))
-    .join("");
-  for (const chart of eventPropertyList.querySelectorAll("[data-event-property-chart-index]")) {
-    const property = cleanProperties[Number(chart.dataset.eventPropertyChartIndex)];
-    if (property) renderCustomEventPropertyChart(chart, property, releaseMarkers);
+  let selectedPropertyIndex = visibleProperties
+    .findIndex((property) => property.name === selectedEventPropertyName);
+  if (selectedPropertyIndex < 0) selectedPropertyIndex = 0;
+  const selectedProperty = visibleProperties[selectedPropertyIndex];
+  selectedEventPropertyName = selectedProperty.name;
+
+  eventPropertyList.innerHTML = `
+    ${renderEventPropertyTabs(visibleProperties, selectedProperty.name)}
+    <div class="eventPropertyWorkspace">
+      ${isCreatedPlaceholder
+        ? renderCreatedEventPropertyPlaceholder(selectedProperty.name)
+        : renderCustomEventPropertyCard(selectedProperty, selectedPropertyIndex)}
+    </div>
+  `;
+
+  const emptyChart = eventPropertyList.querySelector("[data-event-property-empty-chart]");
+  if (emptyChart) {
+    renderEmptyCustomEventPropertyChart(emptyChart, options.selectedEvent, releaseMarkers);
+    return;
   }
+
+  const chart = eventPropertyList.querySelector("[data-event-property-chart-index]");
+  if (chart) renderCustomEventPropertyChart(chart, selectedProperty, releaseMarkers);
 }
 
-function renderCreatedEventPropertyPlaceholders(definition = {}) {
+function getCreatedEventPlaceholderProperties(definition = {}) {
   const propertyNames = [...new Set(
     (Array.isArray(definition?.effectiveProperties) ? definition.effectiveProperties : [])
       .map((property) => String(property?.name || "").trim())
       .filter(Boolean),
   )];
   const visiblePropertyNames = propertyNames.length ? propertyNames : ["Event activity"];
-  return visiblePropertyNames
-    .map((propertyName) => renderCreatedEventPropertyPlaceholder(propertyName))
+  return visiblePropertyNames.map((name) => ({ name }));
+}
+
+function renderEventPropertyTabs(properties = [], activePropertyName = "") {
+  const primaryProperties = properties.slice(0, EVENT_PROPERTY_PRIMARY_TAB_LIMIT);
+  const overflowProperties = properties.slice(EVENT_PROPERTY_PRIMARY_TAB_LIMIT);
+  const activeOverflowProperty = overflowProperties
+    .find((property) => property.name === activePropertyName);
+  const primaryTabs = primaryProperties
+    .map((property) => renderEventPropertyTab(property, activePropertyName))
     .join("");
+  const overflowMenu = overflowProperties.length
+    ? `
+      <details class="eventPropertyMore">
+        <summary class="eventPropertyMoreButton ${activeOverflowProperty ? "active" : ""}">
+          <span>${escapeHtml(activeOverflowProperty ? formatEventPropertyName(activeOverflowProperty.name) : "More")}</span>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
+        </summary>
+        <div class="eventPropertyMoreMenu" role="menu" aria-label="More properties">
+          ${overflowProperties.map((property) => {
+            const isActive = property.name === activePropertyName;
+            return `
+              <button type="button" role="menuitemradio" aria-checked="${isActive}" class="${isActive ? "active" : ""}" data-event-property-tab="${escapeHtml(property.name)}">
+                ${escapeHtml(formatEventPropertyName(property.name))}
+              </button>`;
+          }).join("")}
+        </div>
+      </details>`
+    : "";
+
+  return `
+    <nav class="eventPropertyTabs" aria-label="Event properties">
+      <div class="eventPropertyTabList" role="tablist" aria-label="Choose a property">
+        ${primaryTabs}
+      </div>
+      ${overflowMenu}
+    </nav>`;
+}
+
+function renderEventPropertyTab(property = {}, activePropertyName = "") {
+  const propertyName = String(property.name || "Property");
+  const isActive = propertyName === activePropertyName;
+  return `
+    <button
+      type="button"
+      role="tab"
+      class="eventPropertyTab ${isActive ? "active" : ""}"
+      aria-selected="${isActive}"
+      tabindex="${isActive ? "0" : "-1"}"
+      data-event-property-tab="${escapeHtml(propertyName)}"
+    >${escapeHtml(formatEventPropertyName(propertyName))}</button>`;
+}
+
+function handleEventPropertyTabClick(event) {
+  const button = event.target.closest("[data-event-property-tab]");
+  if (!button || !eventPropertyList?.contains(button)) return;
+  selectEventPropertyTab(button.dataset.eventPropertyTab || "");
+}
+
+function handleEventPropertyTabKeydown(event) {
+  if (event.key === "Escape") {
+    const more = eventPropertyList?.querySelector(".eventPropertyMore[open]");
+    if (more) {
+      event.preventDefault();
+      more.removeAttribute("open");
+      more.querySelector("summary")?.focus({ preventScroll: true });
+    }
+    return;
+  }
+  if (!event.target.closest("[data-event-property-tab]")) return;
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const propertyNames = getCurrentEventPropertyNames();
+  if (!propertyNames.length) return;
+  const currentIndex = Math.max(propertyNames.indexOf(selectedEventPropertyName), 0);
+  const nextIndex = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? propertyNames.length - 1
+      : event.key === "ArrowLeft"
+        ? (currentIndex - 1 + propertyNames.length) % propertyNames.length
+        : (currentIndex + 1) % propertyNames.length;
+  event.preventDefault();
+  selectEventPropertyTab(propertyNames[nextIndex], { focus: true });
+}
+
+function handleEventPropertyMoreOutsidePointer(event) {
+  const more = eventPropertyList?.querySelector(".eventPropertyMore[open]");
+  if (!more || more.contains(event.target)) return;
+  more.removeAttribute("open");
+}
+
+function getCurrentEventPropertyNames() {
+  const observedProperties = (Array.isArray(currentSelectedEvent?.properties)
+    ? currentSelectedEvent.properties
+    : [])
+    .filter((property) => property?.name)
+    .sort((left, right) => getEventPropertyPriority(left, selectedCustomEventName) - getEventPropertyPriority(right, selectedCustomEventName)
+      || (Number(right.eventCount ?? right.count) || 0) - (Number(left.eventCount ?? left.count) || 0)
+      || String(left.name).localeCompare(String(right.name)));
+  const properties = observedProperties.length
+    ? observedProperties
+    : shouldRenderCreatedEventPlaceholder(currentSelectedEvent)
+      ? getCreatedEventPlaceholderProperties(currentSelectedEvent?.definition)
+      : [];
+  return properties.map((property) => property.name);
+}
+
+function selectEventPropertyTab(propertyName, options = {}) {
+  const cleanPropertyName = String(propertyName || "");
+  if (!cleanPropertyName || !getCurrentEventPropertyNames().includes(cleanPropertyName)) return;
+  selectedEventPropertyName = cleanPropertyName;
+  renderCustomEventProperties(
+    currentSelectedEvent?.properties || [],
+    currentSelectedEvent?.releaseMarkers || [],
+    {
+      showCreatedPlaceholder: shouldRenderCreatedEventPlaceholder(currentSelectedEvent),
+      definition: currentSelectedEvent?.definition || null,
+      selectedEvent: currentSelectedEvent,
+    },
+  );
+  if (!options.focus) return;
+  requestAnimationFrame(() => {
+    const tab = [...eventPropertyList.querySelectorAll("[data-event-property-tab]")]
+      .find((button) => button.dataset.eventPropertyTab === cleanPropertyName);
+    const focusTarget = tab?.closest(".eventPropertyMore")
+      ? eventPropertyList.querySelector(".eventPropertyMoreButton")
+      : tab;
+    focusTarget?.focus({ preventScroll: true });
+  });
 }
 
 function renderCreatedEventPropertyPlaceholder(propertyName = "Event activity") {
@@ -4290,7 +4440,7 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
   );
   const chartSpanMs = Math.max(timelineEnd - timelineStart, bucketMs);
   const chartWidth = getEventChartWidth(container.clientWidth, bucketCount, 116, 10);
-  const chartHeight = 326;
+  const chartHeight = 400;
   const left = 54;
   const right = 24;
   const top = 58;
@@ -4403,7 +4553,7 @@ function renderEmptyCustomEventPropertyChart(container, selectedEvent = {}, rele
   );
   const chartSpanMs = Math.max(timelineEnd - timelineStart, bucketMs);
   const chartWidth = getEventChartWidth(container.clientWidth, bucketCount, 116, 10);
-  const chartHeight = 326;
+  const chartHeight = 400;
   const left = 54;
   const right = 24;
   const top = 58;
