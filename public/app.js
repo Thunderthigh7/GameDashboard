@@ -286,7 +286,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-30";
+const DASHBOARD_ASSET_VERSION = "20260724-31";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -4914,6 +4914,9 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
     const value = String(entry.displayName || "").trim() || formatEventPropertyValue(entry.value);
     const eventCount = Math.max(0, Math.round(Number(entry.count) || 0));
     const percent = Math.max(0, Math.min(Number(entry.percent) || 0, 100));
+    const playerCount = Math.max(0, Math.round(Number(entry.playerCount) || 0));
+    const percentPlayers = Math.max(0, Math.min(Number(entry.percentPlayers) || 0, 100));
+    const averagePlayerShare = Math.max(0, Math.min(Number(entry.averagePlayerShare) || 0, 100));
     const change = Number(entry.change) || 0;
     const direction = change > 0.049 ? "positive" : change < -0.049 ? "negative" : "neutral";
     const arrow = direction === "positive" ? "↑" : direction === "negative" ? "↓" : "→";
@@ -4927,6 +4930,8 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
         </span>
         <b class="eventPropertyRankedEvents" role="cell" title="${formatEventNumber(eventCount)} events">${formatCompactNumber(eventCount)}</b>
         <b role="cell">${formatEventNumber(percent)}%</b>
+        <b role="cell" title="${formatEventNumber(playerCount)} players">${formatEventNumber(percentPlayers)}%</b>
+        <b role="cell">${formatEventNumber(averagePlayerShare)}%</b>
         <em class="eventPropertyChange eventPropertyChange-${direction}" role="cell" aria-label="Change ${changeText}">
           <span aria-hidden="true">${arrow}</span>${changeText}
         </em>
@@ -4944,6 +4949,8 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <span role="columnheader">Value</span>
           <span role="columnheader">Events</span>
           <span role="columnheader">% of Events</span>
+          <span role="columnheader">% of Players</span>
+          <span role="columnheader">Avg Player Share</span>
           <span role="columnheader">Change</span>
         </div>
         <div class="eventPropertyRankedRows" role="rowgroup">${rows}</div>
@@ -4963,11 +4970,13 @@ function renderEmptyEventPropertyRankedBreakdown(propertyName = "Property") {
           <span role="columnheader">Value</span>
           <span role="columnheader">Events</span>
           <span role="columnheader">% of Events</span>
+          <span role="columnheader">% of Players</span>
+          <span role="columnheader">Avg Player Share</span>
           <span role="columnheader">Change</span>
         </div>
         <div class="eventPropertyRankedRows eventPropertyRankedEmptyRows" role="rowgroup">
           <div class="eventPropertyRankedEmptyRow" role="row">
-            <span role="cell" aria-colspan="5">No data yet</span>
+            <span role="cell" aria-colspan="7">No data yet</span>
           </div>
         </div>
       </div>

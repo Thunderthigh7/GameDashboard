@@ -5610,10 +5610,17 @@ body[data-active-view="events"] #pageSubtitle {
 .eventPropertyRankedTableHeader,
 .eventPropertyRankedRow {
   display: grid;
-  grid-template-columns: 42px minmax(220px, 1fr) minmax(100px, 0.24fr) minmax(120px, 0.28fr) minmax(120px, 0.28fr);
+  grid-template-columns:
+    42px
+    minmax(200px, 1fr)
+    minmax(88px, 0.18fr)
+    minmax(110px, 0.22fr)
+    minmax(110px, 0.22fr)
+    minmax(145px, 0.3fr)
+    minmax(110px, 0.22fr);
   align-items: center;
-  gap: 14px;
-  min-width: 680px;
+  gap: 12px;
+  min-width: 1020px;
   padding-inline: 8px;
 }
 

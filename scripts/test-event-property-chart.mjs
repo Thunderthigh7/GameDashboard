@@ -106,6 +106,8 @@ assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should no
 assert.match(appSource, /class="eventPropertyRanked"/, "each property graph should include a ranked breakdown panel");
 assert.match(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should show raw event counts");
 assert.match(appSource, /<span role="columnheader">% of Events<\/span>/, "ranked breakdowns should show event percentage");
+assert.match(appSource, /<span role="columnheader">% of Players<\/span>/, "ranked breakdowns should show player reach");
+assert.match(appSource, /<span role="columnheader">Avg Player Share<\/span>/, "ranked breakdowns should show equal-player preference");
 assert.match(appSource, /<span role="columnheader">Change<\/span>/, "ranked breakdowns should label trend movement as Change");
 assert.match(
   appSource,
@@ -113,14 +115,20 @@ assert.match(
   "ranked breakdown event totals should use the real series count",
 );
 assert.match(
+  appSource,
+  /const percentPlayers = Math\.max\([\s\S]*Number\(entry\.percentPlayers\)[\s\S]*const averagePlayerShare = Math\.max\([\s\S]*Number\(entry\.averagePlayerShare\)/,
+  "ranked breakdowns should render backend-calculated player reach and average player share",
+);
+assert.match(appSource, /aria-colspan="7">No data yet/, "empty ranked breakdowns should span all seven columns");
+assert.match(
   styleSource,
-  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px minmax\(220px, 1fr\) minmax\(100px, 0\.24fr\) minmax\(120px, 0\.28fr\) minmax\(120px, 0\.28fr\);/,
-  "full-width ranked breakdowns should reserve a readable five-column layout",
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(200px, 1fr\)\s+minmax\(88px, 0\.18fr\)\s+minmax\(110px, 0\.22fr\)\s+minmax\(110px, 0\.22fr\)\s+minmax\(145px, 0\.3fr\)\s+minmax\(110px, 0\.22fr\);/,
+  "full-width ranked breakdowns should reserve a readable seven-column layout",
 );
 assert.match(
   styleSource,
   /\.eventPropertyRankedRow > b,\s*\.eventPropertyChange\s*\{[^}]*font-size:\s*15px;/,
-  "ranked breakdown Events, percent, and Change values should remain prominent",
+  "ranked breakdown event and player metrics plus Change should remain prominent",
 );
 assert.match(
   serverSource,

@@ -6421,6 +6421,8 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
     observationCount: 0,
     counts: new Map(),
   }));
+  const playerObservationCounts = new Map();
+  const playerSeriesCounts = new Map();
   for (const event of events) {
     const occurredAt = cleanTimestampMs(event?.occurredAt) || cleanTimestampMs(event?.receivedAt);
     if (!occurredAt) continue;
@@ -6433,6 +6435,7 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
     );
     const bucket = buckets[bucketIndex];
     if (!bucket) continue;
+    const userId = cleanInteger(event?.userId);
     const observations = getCustomEventPropertyObservations(event, property.name)
       .filter((observation) => !hiddenValueKeys.has(getCustomEventPropertyValueKey(observation)));
     for (const observation of observations) {
@@ -6448,18 +6451,33 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
       if (!seriesId) continue;
       bucket.observationCount += 1;
       bucket.counts.set(seriesId, (bucket.counts.get(seriesId) || 0) + 1);
+      if (userId > 0) {
+        playerObservationCounts.set(userId, (playerObservationCounts.get(userId) || 0) + 1);
+        const seriesCounts = playerSeriesCounts.get(userId) || new Map();
+        seriesCounts.set(seriesId, (seriesCounts.get(seriesId) || 0) + 1);
+        playerSeriesCounts.set(userId, seriesCounts);
+      }
     }
   }
 
   const totalObservations = buckets.reduce((total, bucket) => total + bucket.observationCount, 0);
+  const participatingPlayerCount = playerObservationCounts.size;
   return {
     bucketMs,
     start: rangeStart,
     end: rangeEnd,
     axisMaxPercent: 100,
     observationCount: totalObservations,
+    uniquePlayers: participatingPlayerCount,
     series: trackedSeries.map((series) => {
       const count = buckets.reduce((total, bucket) => total + (bucket.counts.get(series.id) || 0), 0);
+      let playerCount = 0;
+      let playerShareTotal = 0;
+      for (const [userId, playerObservationCount] of playerObservationCounts) {
+        const playerSeriesCount = playerSeriesCounts.get(userId)?.get(series.id) || 0;
+        if (playerSeriesCount > 0) playerCount += 1;
+        playerShareTotal += playerSeriesCount / playerObservationCount;
+      }
       return {
         value: series.value,
         valueType: series.valueType,
@@ -6470,6 +6488,11 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
         manual: Boolean(series.manual),
         count,
         percent: totalObservations ? (count / totalObservations) * 100 : 0,
+        playerCount,
+        percentPlayers: participatingPlayerCount ? (playerCount / participatingPlayerCount) * 100 : 0,
+        averagePlayerShare: participatingPlayerCount
+          ? (playerShareTotal / participatingPlayerCount) * 100
+          : 0,
         points: buckets.map((bucket) => {
           const pointCount = bucket.counts.get(series.id) || 0;
           return {

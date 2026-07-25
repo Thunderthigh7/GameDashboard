@@ -919,6 +919,55 @@ assert.equal(
   "suppressed values should not distort visible-value percentages",
 );
 
+const playerWeightedPropertySummary = summarizeCustomEventProperties(
+  [
+    { userId: 1, occurredAt: 1_100, properties: { weapon: "Shotgun" } },
+    { userId: 1, occurredAt: 1_200, properties: { weapon: "Shotgun" } },
+    { userId: 1, occurredAt: 1_300, properties: { weapon: "Shotgun" } },
+    { userId: 1, occurredAt: 1_400, properties: { weapon: "Rifle" } },
+    { userId: 2, occurredAt: 1_500, properties: { weapon: "Rifle" } },
+  ],
+  serverActiveValueLimit,
+  "weapon",
+  {
+    allowedPropertyNames: new Set(["weapon"]),
+    propertyDefinitions: [{ name: "weapon", type: "string" }],
+    bucketMs: 1_000,
+    bucketStarts: [1_000, 2_000],
+    bucketEnds: [2_000, 3_000],
+    rangeStart: 1_000,
+    rangeEnd: 3_000,
+  },
+)[0];
+const shotgunPlayerMetrics = playerWeightedPropertySummary.timeline.series
+  .find((series) => series.value === "Shotgun");
+const riflePlayerMetrics = playerWeightedPropertySummary.timeline.series
+  .find((series) => series.value === "Rifle");
+assert.equal(
+  playerWeightedPropertySummary.timeline.uniquePlayers,
+  2,
+  "property player metrics should use players with a visible value as the denominator",
+);
+assert.equal(shotgunPlayerMetrics.playerCount, 1, "value reach should count each matching player once");
+assert.equal(shotgunPlayerMetrics.percentPlayers, 50, "value reach should report the percentage of participating players");
+assert.equal(
+  shotgunPlayerMetrics.averagePlayerShare,
+  37.5,
+  "average player share should give the heavy and light player equal influence",
+);
+assert.equal(riflePlayerMetrics.playerCount, 2, "a value used by every participating player should reach every player");
+assert.equal(riflePlayerMetrics.percentPlayers, 100, "full player reach should report 100 percent");
+assert.equal(
+  riflePlayerMetrics.averagePlayerShare,
+  62.5,
+  "average player share should average each player's personal distribution",
+);
+assert.equal(
+  shotgunPlayerMetrics.averagePlayerShare + riflePlayerMetrics.averagePlayerShare,
+  100,
+  "average player shares should total 100 percent when all visible values are represented",
+);
+
 const analyticsRecordsStart = serverSource.indexOf("async function getAnalyticsEventRecords(");
 const analyticsRecordsEnd = serverSource.indexOf("\nfunction createVisitAnalyticsEvent(", analyticsRecordsStart);
 assert.ok(
