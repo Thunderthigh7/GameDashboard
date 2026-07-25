@@ -286,7 +286,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-28";
+const DASHBOARD_ASSET_VERSION = "20260724-29";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -4436,6 +4436,7 @@ function getCurrentEventPropertyValueRows() {
       persisted: Boolean(savedSetting),
       originalValue: series.value,
       originalValueType: valueType,
+      rawEditorOpen: false,
     });
   }
   for (const setting of selectedSettings) {
@@ -4452,6 +4453,7 @@ function getCurrentEventPropertyValueRows() {
       persisted: true,
       originalValue: setting.value,
       originalValueType: setting.valueType,
+      rawEditorOpen: false,
     });
   }
   return [...rowsByIdentity.values()];
@@ -4530,38 +4532,58 @@ function renderEventValueManagerRow(row, index) {
   const color = /^#[0-9a-f]{6}$/i.test(String(row.color || ""))
     ? String(row.color).toLowerCase()
     : getEventPropertySeriesColor(row, selectedEventPropertyName);
-  const valueControl = row.manual
-    ? row.valueType === "boolean"
-      ? `
-        <select data-event-value-input="${index}" aria-label="Value ${index + 1}">
-          <option value="true" ${row.value === true || row.value === "true" ? "selected" : ""}>True</option>
-          <option value="false" ${row.value === false || row.value === "false" ? "selected" : ""}>False</option>
-        </select>`
-      : `
-        <input
-          data-event-value-input="${index}"
-          type="${row.valueType === "number" ? "number" : "text"}"
-          ${row.valueType === "number" ? 'step="any"' : 'maxlength="240"'}
-          value="${escapeHtml(String(row.value ?? ""))}"
-          placeholder="Value name"
-          aria-label="Value ${index + 1}"
-        >`
+  const displayName = getEventValueManagerDisplayName(row);
+  const rawValueControl = row.valueType === "boolean"
+    ? `
+      <select data-event-value-input="${index}" aria-label="Real Roblox value ${index + 1}">
+        <option value="true" ${row.value === true || row.value === "true" ? "selected" : ""}>True</option>
+        <option value="false" ${row.value === false || row.value === "false" ? "selected" : ""}>False</option>
+      </select>`
     : `
       <input
-        data-event-value-display-name="${index}"
-        type="text"
-        value="${escapeHtml(row.displayName || formatEventPropertyValue(row.value))}"
-        maxlength="80"
-        aria-label="Display name for automatic value ${index + 1}"
-        title="Display name; Roblox still matches the original value ${escapeHtml(formatEventPropertyValue(row.value))}"
+        data-event-value-input="${index}"
+        type="${row.valueType === "number" ? "number" : "text"}"
+        ${row.valueType === "number" ? 'step="any"' : 'maxlength="240"'}
+        value="${escapeHtml(String(row.value ?? ""))}"
+        placeholder="Real value sent by Roblox"
+        aria-label="Real Roblox value ${index + 1}"
       >`;
+  const rawValueLine = row.rawEditorOpen
+    ? `
+      <div class="eventValueManagerRawEditor" title="Changing this value changes which Roblox data the row matches.">
+        <span>(Real value sent:</span>
+        ${rawValueControl}
+        <span>)</span>
+      </div>`
+    : `
+      <button
+        class="eventValueManagerRawSummary"
+        type="button"
+        data-event-value-action="edit-raw"
+        data-event-value-index="${index}"
+        title="Edit the real value sent by Roblox"
+        aria-label="Edit real Roblox value ${index + 1}"
+      >(${escapeHtml(getEventValueManagerRawSummary(row))})</button>`;
   return `
     <div class="eventValueManagerRow" data-event-value-row="${index}">
       <label class="eventValueManagerColor" title="Choose color">
         <input type="color" value="${color}" data-event-value-color="${index}" aria-label="Color for ${escapeHtml(formatEventPropertyValue(row.value))}">
         <span style="background:${color}" aria-hidden="true"></span>
       </label>
-      <div class="eventValueManagerValue">${valueControl}</div>
+      <div class="eventValueManagerValue">
+        <label class="eventValueManagerValueLabel">
+          <span>Display name</span>
+          <input
+            data-event-value-display-name="${index}"
+            type="text"
+            value="${escapeHtml(displayName)}"
+            maxlength="80"
+            placeholder="Display name"
+            aria-label="Display name ${index + 1}"
+          >
+        </label>
+        ${rawValueLine}
+      </div>
       <label class="eventValueManagerHex">
         <span>Color</span>
         <input type="text" value="${color}" maxlength="7" spellcheck="false" data-event-value-color-text="${index}" aria-label="Hex color for ${escapeHtml(formatEventPropertyValue(row.value))}">
@@ -4570,6 +4592,24 @@ function renderEventValueManagerRow(row, index) {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
       </button>
     </div>`;
+}
+
+function getEventValueManagerDisplayName(row = {}) {
+  const savedDisplayName = String(row.displayName || "").trim();
+  if (savedDisplayName) return savedDisplayName;
+  return row.value === "" || row.value === null || row.value === undefined
+    ? ""
+    : formatEventPropertyValue(row.value);
+}
+
+function getEventValueManagerRawSummary(row = {}) {
+  const rawValue = row.value === "" || row.value === null || row.value === undefined
+    ? "Not set"
+    : formatEventPropertyValue(row.value);
+  const savedDisplayName = String(row.displayName || "").trim();
+  return !savedDisplayName || savedDisplayName === rawValue
+    ? "N/A"
+    : `Real value sent: ${rawValue}`;
 }
 
 function addEventValueManagerRow() {
@@ -4595,6 +4635,7 @@ function addEventValueManagerRow() {
     persisted: false,
     originalValue: value,
     originalValueType: valueType,
+    rawEditorOpen: true,
   });
   eventValueManagerDirty = true;
   if (eventValueManagerStatus) eventValueManagerStatus.textContent = "";
@@ -4611,9 +4652,19 @@ function handleEventValueManagerInput(event) {
   if (!Number.isInteger(valueIndex) || !eventValueManagerRows[valueIndex]) return;
   const row = eventValueManagerRows[valueIndex];
   if (event.target.matches("[data-event-value-input]")) {
-    row.value = event.target.value;
+    row.value = row.valueType === "boolean"
+      ? event.target.value === "true"
+      : event.target.value;
+    if (!String(row.displayName || "").trim()) {
+      const displayNameInput = eventValueManagerList
+        ?.querySelector(`[data-event-value-display-name="${valueIndex}"]`);
+      if (displayNameInput) displayNameInput.value = getEventValueManagerDisplayName(row);
+    }
   } else if (event.target.matches("[data-event-value-display-name]")) {
     row.displayName = String(event.target.value || "").slice(0, 80);
+    const summary = eventValueManagerList
+      ?.querySelector(`[data-event-value-row="${valueIndex}"] .eventValueManagerRawSummary`);
+    if (summary) summary.textContent = `(${getEventValueManagerRawSummary(row)})`;
   } else if (event.target.matches("[data-event-value-color]")) {
     row.color = event.target.value.toLowerCase();
     const textInput = eventValueManagerList?.querySelector(`[data-event-value-color-text="${valueIndex}"]`);
@@ -4640,7 +4691,10 @@ function handleEventValueManagerAction(event) {
   const index = Number(button.dataset.eventValueIndex);
   const row = eventValueManagerRows[index];
   if (!row) return;
-  if (button.dataset.eventValueAction === "delete") {
+  if (button.dataset.eventValueAction === "edit-raw") {
+    row.rawEditorOpen = true;
+    renderEventValueManagerRows({ focusIndex: index });
+  } else if (button.dataset.eventValueAction === "delete") {
     if (row.manual && !row.observed && !row.persisted) {
       eventValueManagerRows.splice(index, 1);
     } else {

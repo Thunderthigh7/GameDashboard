@@ -8395,7 +8395,7 @@ body.hasEventValueManager {
 .eventValueManagerRow {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) 105px 36px;
-  align-items: end;
+  align-items: center;
   gap: 9px;
   border: 1px solid rgba(80, 99, 150, 0.32);
   border-radius: 10px;
@@ -8452,9 +8452,68 @@ body.hasEventValueManager {
   font-weight: 750;
 }
 
-.eventValueManagerValue input[readonly] {
-  color: #bbc5dc;
-  cursor: default;
+.eventValueManagerValue {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.eventValueManagerValueLabel {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.eventValueManagerValueLabel > span,
+.eventValueManagerHex > span {
+  color: #8f9bb7;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eventValueManagerRawSummary {
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: #8896b5;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eventValueManagerRawSummary:hover,
+.eventValueManagerRawSummary:focus-visible {
+  color: #cfc4ff;
+  outline: none;
+}
+
+.eventValueManagerRawEditor {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: #8896b5;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.eventValueManagerRawEditor input,
+.eventValueManagerRawEditor select {
+  min-width: 90px;
+  height: 28px;
+  padding: 0 7px;
+  font-size: 11px;
 }
 
 .eventValueManagerValue input:focus,
@@ -8468,14 +8527,6 @@ body.hasEventValueManager {
 .eventValueManagerHex {
   display: grid;
   gap: 5px;
-}
-
-.eventValueManagerHex > span {
-  color: #8f9bb7;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .eventValueManagerHex input {

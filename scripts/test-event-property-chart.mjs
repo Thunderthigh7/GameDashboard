@@ -184,8 +184,49 @@ assert.match(
 );
 assert.match(
   appSource,
+  /getEventValueManagerRawSummary[\s\S]*\?\s*"N\/A"[\s\S]*Real value sent:/,
+  "managed values should show the real Roblox value beneath an alias and N/A when both names match",
+);
+assert.match(
+  appSource,
+  /data-event-value-action="edit-raw"/,
+  "managed values should allow the real Roblox value to be edited separately from its display name",
+);
+assert.match(appSource, /data-event-value-input=/, "the real Roblox value editor should remain editable");
+assert.match(
+  appSource,
   /entry\.displayName[\s\S]*formatEventPropertyValue\(entry\.value\)/,
   "charts and breakdowns should prefer a saved display name while retaining the raw value",
+);
+const valueManagerHelperStart = appSource.indexOf("function getEventValueManagerDisplayName(");
+const valueManagerHelperEnd = appSource.indexOf("\nfunction addEventValueManagerRow(", valueManagerHelperStart);
+assert.ok(
+  valueManagerHelperStart >= 0 && valueManagerHelperEnd > valueManagerHelperStart,
+  "the display and raw value helpers should remain extractable",
+);
+const {
+  getEventValueManagerDisplayName,
+  getEventValueManagerRawSummary,
+} = Function(
+  `"use strict";
+  const formatEventPropertyValue = (value) => String(value);
+  ${appSource.slice(valueManagerHelperStart, valueManagerHelperEnd)}
+  return { getEventValueManagerDisplayName, getEventValueManagerRawSummary };`,
+)();
+assert.equal(
+  getEventValueManagerDisplayName({ value: "Shotgun", displayName: "" }),
+  "Shotgun",
+  "an unset display name should visibly fall back to the real Roblox value",
+);
+assert.equal(
+  getEventValueManagerRawSummary({ value: "Shotgun", displayName: "" }),
+  "N/A",
+  "matching display and real values should use the compact N/A indicator",
+);
+assert.equal(
+  getEventValueManagerRawSummary({ value: "Shotgun", displayName: "Pump Shotgun" }),
+  "Real value sent: Shotgun",
+  "an alias should expose its matching real Roblox value underneath",
 );
 assert.match(
   serverSource,
