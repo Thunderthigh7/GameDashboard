@@ -509,6 +509,7 @@ const normalizedDefinition = normalizeEventDefinition({
       value: "Shotgun",
       valueType: "string",
       color: "#9B6DFF",
+      displayName: "Pump Shotgun",
       manual: true,
     },
     {
@@ -536,6 +537,7 @@ assert.deepEqual(
       color: "#9b6dff",
       manual: true,
       hidden: false,
+      displayName: "Pump Shotgun",
     },
     {
       propertyName: "weapon.name",
@@ -880,7 +882,7 @@ const managedPropertySummary = summarizeCustomEventProperties(
     allowedPropertyNames: new Set(["weapon"]),
     propertyDefinitions: [{ name: "weapon", type: "string" }],
     valueSettings: [
-      { propertyName: "weapon", value: "Shotgun", valueType: "string", color: "#123456" },
+      { propertyName: "weapon", value: "Shotgun", valueType: "string", color: "#123456", displayName: "Pump Shotgun" },
       { propertyName: "weapon", value: "SMG", valueType: "string", color: "#abcdef", manual: true },
       { propertyName: "weapon", value: "Sniper", valueType: "string", hidden: true },
     ],
@@ -900,6 +902,11 @@ assert.equal(
   managedPropertySummary.timeline.series[0].color,
   "#123456",
   "saved colors should be returned with their matching timeline series",
+);
+assert.equal(
+  managedPropertySummary.timeline.series[0].displayName,
+  "Pump Shotgun",
+  "saved display names should be returned without changing the underlying Roblox value",
 );
 assert.equal(
   managedPropertySummary.timeline.series[1].managed,

@@ -286,7 +286,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-27";
+const DASHBOARD_ASSET_VERSION = "20260724-28";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -4429,6 +4429,7 @@ function getCurrentEventPropertyValueRows() {
       value: series.value,
       valueType,
       color: savedSetting?.color || getEventPropertySeriesColor(series, propertyName),
+      displayName: savedSetting?.displayName || series.displayName || "",
       manual: Boolean(savedSetting?.manual),
       hidden: false,
       observed: Number(series.count) > 0 || !savedSetting?.manual,
@@ -4444,6 +4445,7 @@ function getCurrentEventPropertyValueRows() {
       value: setting.value,
       valueType: setting.valueType,
       color: setting.color || getEventPropertySeriesColor(setting, propertyName),
+      displayName: setting.displayName || "",
       manual: Boolean(setting.manual),
       hidden: Boolean(setting.hidden),
       observed: !setting.manual,
@@ -4546,11 +4548,12 @@ function renderEventValueManagerRow(row, index) {
         >`
     : `
       <input
+        data-event-value-display-name="${index}"
         type="text"
-        value="${escapeHtml(formatEventPropertyValue(row.value))}"
-        aria-label="Automatic value ${index + 1}"
-        title="Automatically discovered from Roblox"
-        readonly
+        value="${escapeHtml(row.displayName || formatEventPropertyValue(row.value))}"
+        maxlength="80"
+        aria-label="Display name for automatic value ${index + 1}"
+        title="Display name; Roblox still matches the original value ${escapeHtml(formatEventPropertyValue(row.value))}"
       >`;
   return `
     <div class="eventValueManagerRow" data-event-value-row="${index}">
@@ -4585,6 +4588,7 @@ function addEventValueManagerRow() {
     value,
     valueType,
     color,
+    displayName: "",
     manual: true,
     hidden: false,
     observed: false,
@@ -4600,6 +4604,7 @@ function addEventValueManagerRow() {
 function handleEventValueManagerInput(event) {
   const valueIndex = Number(
     event.target.dataset.eventValueInput
+    ?? event.target.dataset.eventValueDisplayName
     ?? event.target.dataset.eventValueColor
     ?? event.target.dataset.eventValueColorText,
   );
@@ -4607,6 +4612,8 @@ function handleEventValueManagerInput(event) {
   const row = eventValueManagerRows[valueIndex];
   if (event.target.matches("[data-event-value-input]")) {
     row.value = event.target.value;
+  } else if (event.target.matches("[data-event-value-display-name]")) {
+    row.displayName = String(event.target.value || "").slice(0, 80);
   } else if (event.target.matches("[data-event-value-color]")) {
     row.color = event.target.value.toLowerCase();
     const textInput = eventValueManagerList?.querySelector(`[data-event-value-color-text="${valueIndex}"]`);
@@ -4668,6 +4675,10 @@ function buildSavedEventValueSettings() {
       color,
       manual: Boolean(row.manual),
       hidden: false,
+      ...(String(row.displayName || "").trim()
+        && String(row.displayName || "").trim() !== formatEventPropertyValue(normalized.value)
+        ? { displayName: String(row.displayName).trim() }
+        : {}),
     });
     const originalIdentity = getEventPropertyValueIdentity(row.originalValue, row.originalValueType);
     if (row.persisted && originalIdentity && originalIdentity !== identity) {
@@ -4842,7 +4853,7 @@ function renderEventPropertyAverageLegend(property = {}) {
   if (!series.length) return "";
   const items = series.map((entry) => {
     const color = getEventPropertySeriesColor(entry, property.name);
-    const value = formatEventPropertyValue(entry.value);
+    const value = String(entry.displayName || "").trim() || formatEventPropertyValue(entry.value);
     return `
       <span class="eventPropertyAverageItem" title="${escapeHtml(value)}" aria-label="${escapeHtml(value)}">
         <span class="eventPropertyAverageKey">
@@ -4868,7 +4879,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
   if (!rankedSeries.length) return "";
 
   const rows = rankedSeries.map((entry, index) => {
-    const value = formatEventPropertyValue(entry.value);
+    const value = String(entry.displayName || "").trim() || formatEventPropertyValue(entry.value);
     const eventCount = Math.max(0, Math.round(Number(entry.count) || 0));
     const percent = Math.max(0, Math.min(Number(entry.percent) || 0, 100));
     const change = Number(entry.change) || 0;
@@ -5026,7 +5037,7 @@ function renderCustomEventPropertyChart(container, property = {}, releaseMarkers
     );
     const dots = chartPoints.map((point) => {
       if (point.y === null) return "";
-      const label = formatEventPropertyValue(entry.value);
+      const label = String(entry.displayName || "").trim() || formatEventPropertyValue(entry.value);
       const pointStartLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
       const pointEndLabel = formatEventChartLabel(point.end, bucketMs, chartSpanMs, { detailed: true });
       const dateLabel = point.end > point.start ? `${pointStartLabel} – ${pointEndLabel}` : pointStartLabel;

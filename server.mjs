@@ -4933,6 +4933,7 @@ function normalizeEventDefinitionValueSetting(rawSetting) {
 
   const requestedColor = cleanString(rawSetting?.color, 16).toLowerCase();
   if (requestedColor && !/^#[0-9a-f]{6}$/.test(requestedColor)) return null;
+  const displayName = cleanString(rawSetting?.displayName, 80);
   return {
     propertyName,
     value: settingValue,
@@ -4940,6 +4941,7 @@ function normalizeEventDefinitionValueSetting(rawSetting) {
     color: requestedColor,
     manual: Boolean(rawSetting?.manual),
     hidden: Boolean(rawSetting?.hidden),
+    ...(displayName ? { displayName } : {}),
   };
 }
 
@@ -6304,6 +6306,7 @@ function summarizeCustomEventProperties(events, valueLimit = 4, selectedProperty
           count: summary.valueEventCounts.get(valueKey) || 0,
           occurrences: trackedValue.occurrences,
           color: setting?.color || "",
+          displayName: setting?.displayName || "",
           managed: Boolean(setting),
           manual: Boolean(setting?.manual),
         };
@@ -6394,6 +6397,7 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
       valueType: entry.valueType || typeof entry.value,
       isOther: false,
       color: entry.color || "",
+      displayName: entry.displayName || "",
       managed: Boolean(entry.managed),
       manual: Boolean(entry.manual),
     }));
@@ -6461,6 +6465,7 @@ function buildCustomEventPropertyTimeline(events, property = {}, options = {}) {
         valueType: series.valueType,
         isOther: series.isOther,
         color: series.color || "",
+        displayName: series.displayName || "",
         managed: Boolean(series.managed),
         manual: Boolean(series.manual),
         count,

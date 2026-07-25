@@ -178,6 +178,16 @@ assert.match(
   "saving the value manager should persist its names, colors, and deletions on the event definition",
 );
 assert.match(
+  appSource,
+  /data-event-value-display-name=/,
+  "automatically discovered values should support editable display names",
+);
+assert.match(
+  appSource,
+  /entry\.displayName[\s\S]*formatEventPropertyValue\(entry\.value\)/,
+  "charts and breakdowns should prefer a saved display name while retaining the raw value",
+);
+assert.match(
   serverSource,
   /filter\(\(observation\) => !hiddenValueKeys\.has\(getCustomEventPropertyValueKey\(observation\)\)\)/,
   "deleted automatic values should remain suppressed when new events contain them",
