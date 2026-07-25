@@ -79,22 +79,6 @@ const chatLogList = document.querySelector("#chatLogList");
 const chatMessageCount = document.querySelector("#chatMessageCount");
 const chatPlayerCount = document.querySelector("#chatPlayerCount");
 const chatLiveBadge = document.querySelector("#chatLiveBadge");
-const releaseStatus = document.querySelector("#releaseStatus");
-const releaseComparisonContent = document.querySelector("#releaseComparisonContent");
-const releasePlaceSelect = document.querySelector("#releasePlaceSelect");
-const releasePlaceField = document.querySelector(".releasePlaceField");
-const releaseBeforeVersionButton = document.querySelector("#releaseBeforeVersionButton");
-const releaseAfterVersionButton = document.querySelector("#releaseAfterVersionButton");
-const releaseBeforeVersionLabel = document.querySelector("#releaseBeforeVersionLabel");
-const releaseAfterVersionLabel = document.querySelector("#releaseAfterVersionLabel");
-const releaseBeforeVersionMenu = document.querySelector("#releaseBeforeVersionMenu");
-const releaseAfterVersionMenu = document.querySelector("#releaseAfterVersionMenu");
-const releaseBeforeDateRange = document.querySelector("#releaseBeforeDateRange");
-const releaseAfterDateRange = document.querySelector("#releaseAfterDateRange");
-const releaseVersionPair = document.querySelector(".releaseVersionPair");
-const releaseFunnelPicker = document.querySelector(".releaseFunnelPicker");
-const releaseFunnelPickerButton = document.querySelector("#releaseFunnelPickerButton");
-const releaseFunnelMenu = document.querySelector("#releaseFunnelMenu");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
 const newEventButton = document.querySelector("#newEventButton");
@@ -241,9 +225,6 @@ let aiAutomationSettingsRequestSequence = 0;
 let usageRequestSequence = 0;
 let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
-let releaseRequestSequence = 0;
-let currentReleasePayload = null;
-let releaseSelection = createEmptyReleaseSelection();
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -286,7 +267,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-33";
+const DASHBOARD_ASSET_VERSION = "20260725-34";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -350,7 +331,7 @@ const CHAT_REFRESH_MS = 5000;
 const RECENT_CHAT_LIMIT = 100;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "releases", "ai-runs", "chat"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const CHAT_PANEL_WIDTH_STORAGE_KEY = "roanalytics.chatPanelWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -452,33 +433,6 @@ function bindEvents() {
   document.addEventListener("pointerdown", handleUniverseDropdownOutsidePointer);
   window.addEventListener("resize", positionUniverseDropdown);
   window.addEventListener("scroll", positionUniverseDropdown, true);
-  releasePlaceSelect?.addEventListener("change", () => {
-    releaseSelection.placeId = releasePlaceSelect.value || "";
-    releaseSelection.beforeVersion = "";
-    releaseSelection.afterVersion = "";
-    closeReleaseFunnelMenu();
-    loadReleases();
-  });
-  releaseBeforeVersionButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleReleaseVersionMenu("before");
-  });
-  releaseAfterVersionButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleReleaseVersionMenu("after");
-  });
-  releaseBeforeVersionMenu?.addEventListener("click", handleReleaseVersionMenuClick);
-  releaseAfterVersionMenu?.addEventListener("click", handleReleaseVersionMenuClick);
-  releaseFunnelPickerButton?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    closeReleaseVersionMenus();
-    toggleReleaseFunnelMenu();
-  });
-  releaseFunnelMenu?.addEventListener("click", handleReleaseFunnelMenuClick);
-  releaseFunnelMenu?.addEventListener("change", handleReleaseFunnelSelectionChange);
-  document.addEventListener("pointerdown", handleReleaseFunnelOutsidePointer);
-  document.addEventListener("pointerdown", handleReleaseVersionOutsidePointer);
-  document.addEventListener("keydown", handleReleaseControlEscape);
   eventCatalog?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-event-name]");
     const eventName = button?.dataset.eventName || "";
@@ -716,7 +670,6 @@ function handleDashboardVisibilityChange() {
       if (activeView === "chat") loadChatLogs({ includeInsights: false });
       if (activeView === "events") loadCustomEvents();
       if (activeView === "funnels") loadFunnels();
-      if (activeView === "releases") loadReleases();
     }
   }
 
@@ -870,7 +823,6 @@ function abortActiveDashboardRequests() {
   usageRequestSequence += 1;
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
-  releaseRequestSequence += 1;
   customEventsRequestSequence += 1;
   funnelRequestSequence += 1;
   aiReportPayloadCache.clear();
@@ -999,7 +951,6 @@ function notifyAnalyticsReady() {
 function getViewFromHash() {
   if (window.location.hash === "#events") return "events";
   if (window.location.hash === "#funnels") return "funnels";
-  if (window.location.hash === "#releases") return "releases";
   if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#usage") return "usage";
@@ -1009,7 +960,7 @@ function getViewFromHash() {
 }
 
 function setActiveView(view, options = {}) {
-  const requestedView = view === "events" || view === "funnels" || view === "releases" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   activeView = requestedView === "admin" && !authenticatedUser?.isAdmin ? "overview" : requestedView;
   if (activeView !== "funnels") closeFunnelMoreMenu();
   if (activeView !== "events") {
@@ -1025,19 +976,17 @@ function setActiveView(view, options = {}) {
         ? "#events"
         : activeView === "funnels"
           ? "#funnels"
-          : activeView === "releases"
-            ? "#releases"
-            : activeView === "ai-runs"
-              ? "#ai-runs"
-              : activeView === "chat"
-                ? "#chat"
-                : activeView === "usage"
-                  ? "#usage"
-                  : activeView === "connect"
-                    ? "#connect"
-                    : activeView === "admin"
-                      ? "#admin"
-                      : "#overview";
+          : activeView === "ai-runs"
+            ? "#ai-runs"
+            : activeView === "chat"
+              ? "#chat"
+              : activeView === "usage"
+                ? "#usage"
+                : activeView === "connect"
+                  ? "#connect"
+                  : activeView === "admin"
+                    ? "#admin"
+                    : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -1074,10 +1023,6 @@ function renderActiveView(options = {}) {
     funnels: {
       title: "Funnels",
       subtitle: "Understand player progression and conversion across key moments.",
-    },
-    releases: {
-      title: "Releases",
-      subtitle: "",
     },
     "ai-runs": {
       title: "AI Runs",
@@ -1147,8 +1092,6 @@ function loadActiveViewData(view, options = {}) {
       loadCustomEvents();
     } else if (view === "funnels") {
       loadFunnels();
-    } else if (view === "releases") {
-      loadReleases();
     } else if (view === "chat") {
       loadChatLogs({ includeInsights: true });
     }
@@ -1160,8 +1103,6 @@ function loadActiveViewData(view, options = {}) {
     loadCustomEvents();
   } else if (view === "funnels") {
     loadFunnels();
-  } else if (view === "releases") {
-    loadReleases();
   } else if (view === "ai-runs") {
     loadAiAutomationSettings();
     loadAiReportHistory();
@@ -2505,8 +2446,6 @@ async function selectUniverse(value) {
   selectedFunnelId = "";
   currentFunnels = [];
   currentFunnelEventNames = [];
-  currentReleasePayload = null;
-  releaseSelection = createEmptyReleaseSelection();
   isCreatingFunnel = false;
   setFunnelBuilderVisible(false);
   renderChatSummary();
@@ -2524,495 +2463,6 @@ async function selectUniverse(value) {
     detail: { universeId: selectedUniverseId },
   }));
   return true;
-}
-
-function createEmptyReleaseSelection() {
-  return {
-    placeId: "",
-    beforeVersion: "",
-    afterVersion: "",
-    funnelIds: [],
-    funnelSelectionInitialized: false,
-  };
-}
-
-async function loadReleases(options = {}) {
-  if (!authenticated || !releaseStatus || !releaseComparisonContent) return false;
-  const requestSequence = ++releaseRequestSequence;
-  const universeId = selectedUniverseId;
-
-  if (!universeId) {
-    renderReleases({ places: [], coverage: {} });
-    releaseStatus.textContent = "Connect or select a Roblox game to inspect releases.";
-    return false;
-  }
-
-  releaseStatus.textContent = "Building version comparison...";
-  releaseComparisonContent.setAttribute("aria-busy", "true");
-  const params = new URLSearchParams({ universeId });
-  if (releaseSelection.placeId) params.set("placeId", releaseSelection.placeId);
-  if (releaseSelection.beforeVersion) params.set("beforeVersion", releaseSelection.beforeVersion);
-  if (releaseSelection.afterVersion) params.set("afterVersion", releaseSelection.afterVersion);
-  if (releaseSelection.funnelSelectionInitialized) {
-    params.set("funnelIds", releaseSelection.funnelIds.length ? releaseSelection.funnelIds.join(",") : "none");
-  }
-  if (options.force) params.set("fresh", "1");
-
-  try {
-    const payload = await request(`/api/releases?${params.toString()}`, { dedupe: !options.force });
-    if (requestSequence !== releaseRequestSequence || universeId !== selectedUniverseId) return false;
-    renderReleases(payload);
-    const selectedComparison = payload.selectedComparison || null;
-    const comparison = selectedComparison?.comparison || null;
-    const findings = comparison?.findings || {};
-    const matchedSessions = Math.min(
-      Number(comparison?.trafficAdjustment?.samples?.before?.sessions) || 0,
-      Number(comparison?.trafficAdjustment?.samples?.after?.sessions) || 0,
-    );
-    const truncationWarning = payload.versionRollupsTruncated
-      ? ` Older version history was capped; ${formatCompactNumber(payload.droppedVersionCount)} version${Number(payload.droppedVersionCount) === 1 ? "" : "s"} omitted.`
-      : "";
-    const comparisonReady = comparison?.status === "ready" && comparison?.trafficAdjustment?.status === "ready";
-    releaseStatus.textContent = !selectedComparison?.before
-      ? "At least two production versions are required for a comparison."
-      : comparisonReady
-        ? `v${formatReleaseVersion(selectedComparison.previousPlaceVersion)} vs v${formatReleaseVersion(selectedComparison.placeVersion)} · ${formatCompactNumber(matchedSessions)} matched sessions per side · ${formatCompactNumber((findings.items || []).length)} supported finding${Number((findings.items || []).length) === 1 ? "" : "s"}.`
-        : `v${formatReleaseVersion(selectedComparison.previousPlaceVersion)} vs v${formatReleaseVersion(selectedComparison.placeVersion)} is still collecting enough comparable sessions.`;
-    releaseStatus.textContent += truncationWarning;
-    return true;
-  } catch (error) {
-    if (requestSequence !== releaseRequestSequence) return false;
-    handleAuthError(error);
-    if (authenticated) releaseStatus.textContent = formatRequestError(error);
-    return false;
-  } finally {
-    if (requestSequence === releaseRequestSequence) {
-      releaseComparisonContent.setAttribute("aria-busy", "false");
-    }
-  }
-}
-
-function renderReleases(payload = {}) {
-  const places = Array.isArray(payload.places) ? payload.places : [];
-  const selection = payload.selection || {};
-  currentReleasePayload = payload;
-  releaseSelection.placeId = selection.placeId ? String(selection.placeId) : "";
-  releaseSelection.beforeVersion = selection.beforeVersion ? String(selection.beforeVersion) : "";
-  releaseSelection.afterVersion = selection.afterVersion ? String(selection.afterVersion) : "";
-  releaseSelection.funnelIds = Array.isArray(selection.funnelIds) ? selection.funnelIds.map(String) : [];
-  releaseSelection.funnelSelectionInitialized = true;
-  renderReleaseComparisonControls(payload);
-  if (!releaseComparisonContent) return;
-
-  if (!places.length) {
-    releaseComparisonContent.innerHTML = `
-      <article class="panel releaseEmptyState">
-        <strong>No production versions yet.</strong>
-        <p>Install the current Roblox analytics script and join a published server. Studio observations stay separate and will not create a release.</p>
-      </article>
-    `;
-    placeReleaseVersionPair(false);
-    placeReleaseFunnelPicker();
-    return;
-  }
-
-  if (!payload.selectedComparison?.before) {
-    releaseComparisonContent.innerHTML = `
-      <article class="panel releaseEmptyState">
-        <strong>Two versions are needed.</strong>
-        <p>Keep the Roblox analytics script installed through another published update. Once both PlaceVersions have sessions, you can compare them here.</p>
-      </article>
-    `;
-    placeReleaseVersionPair(false);
-    placeReleaseFunnelPicker();
-    return;
-  }
-
-  releaseComparisonContent.innerHTML = renderReleaseComparison(payload.selectedComparison, {
-    hasAvailableFunnels: Array.isArray(payload.availableFunnels) && payload.availableFunnels.length > 0,
-  });
-  placeReleaseVersionPair(true);
-  placeReleaseFunnelPicker();
-}
-
-function placeReleaseVersionPair(visible) {
-  if (!releaseVersionPair) return;
-  const slot = document.querySelector("[data-release-version-pair-slot]");
-  releaseVersionPair.hidden = !visible || !slot;
-  if (visible && slot && releaseVersionPair.parentElement !== slot) slot.append(releaseVersionPair);
-}
-
-function placeReleaseFunnelPicker() {
-  if (!releaseFunnelPicker || !releaseComparisonContent) return;
-  const slot = releaseComparisonContent.querySelector("[data-release-funnel-picker-slot]");
-  releaseFunnelPicker.hidden = !slot;
-  if (slot) slot.replaceWith(releaseFunnelPicker);
-}
-
-function renderReleaseComparisonControls(payload = {}) {
-  const places = Array.isArray(payload.places) ? payload.places : [];
-  const selectedPlace = places.find((place) => String(place.placeId) === releaseSelection.placeId) || places[0] || null;
-  const versions = (selectedPlace?.releases || []).map((release) => release.after).filter(Boolean);
-  const selectedBeforeVersion = versions.find((version) => String(version.placeVersion) === releaseSelection.beforeVersion) || null;
-  const selectedAfterVersion = versions.find((version) => String(version.placeVersion) === releaseSelection.afterVersion) || null;
-  const funnels = Array.isArray(payload.availableFunnels) ? payload.availableFunnels : [];
-  const selectedFunnelIds = new Set(releaseSelection.funnelIds);
-
-  if (releasePlaceField) releasePlaceField.hidden = places.length <= 1;
-  if (releasePlaceSelect) {
-    releasePlaceSelect.disabled = !places.length;
-    releasePlaceSelect.innerHTML = places.map((place) => `
-      <option value="${escapeHtml(String(place.placeId))}" ${String(place.placeId) === releaseSelection.placeId ? "selected" : ""}>Place ${escapeHtml(String(place.placeId))} · current v${escapeHtml(formatReleaseVersion(place.currentVersion))}</option>
-    `).join("");
-  }
-
-  renderReleaseVersionSelect({
-    button: releaseBeforeVersionButton,
-    label: releaseBeforeVersionLabel,
-    menu: releaseBeforeVersionMenu,
-    side: "before",
-    versions,
-    selectedVersion: releaseSelection.beforeVersion,
-    unavailableVersion: releaseSelection.afterVersion,
-    placeholder: "Choose version",
-  });
-  renderReleaseVersionSelect({
-    button: releaseAfterVersionButton,
-    label: releaseAfterVersionLabel,
-    menu: releaseAfterVersionMenu,
-    side: "after",
-    versions,
-    selectedVersion: releaseSelection.afterVersion,
-    unavailableVersion: releaseSelection.beforeVersion,
-    placeholder: "Choose version",
-  });
-  if (releaseBeforeDateRange) releaseBeforeDateRange.textContent = formatReleaseVersionDateRange(selectedBeforeVersion);
-  if (releaseAfterDateRange) releaseAfterDateRange.textContent = formatReleaseVersionDateRange(selectedAfterVersion);
-
-  if (releaseFunnelPickerButton) {
-    const label = !funnels.length
-      ? "No saved funnels"
-      : selectedFunnelIds.size === funnels.length
-        ? `All funnels (${funnels.length})`
-        : selectedFunnelIds.size
-          ? `${selectedFunnelIds.size} of ${funnels.length} funnels`
-          : "Events only";
-    releaseFunnelPickerButton.disabled = !funnels.length;
-    const labelNode = releaseFunnelPickerButton.querySelector("strong");
-    if (labelNode) labelNode.textContent = label;
-  }
-
-  if (releaseFunnelMenu) {
-    releaseFunnelMenu.innerHTML = funnels.length ? `
-      <header><strong>Funnels in this comparison</strong><span>Findings recalculate from this selection.</span></header>
-      <div class="releaseFunnelMenuActions">
-        <button type="button" data-release-funnel-action="all">Select all</button>
-        <button type="button" data-release-funnel-action="none">Clear</button>
-      </div>
-      <div class="releaseFunnelOptions">
-        ${funnels.map((funnel) => `
-          <label>
-            <input type="checkbox" value="${escapeHtml(String(funnel.id || ""))}" ${selectedFunnelIds.has(String(funnel.id || "")) ? "checked" : ""}>
-            <span><strong>${escapeHtml(funnel.name || "Untitled funnel")}</strong><small>${escapeHtml((funnel.steps || []).join(" → ") || "No steps")}</small></span>
-          </label>
-        `).join("")}
-      </div>
-    ` : "";
-  }
-}
-
-function renderReleaseVersionSelect({ button, label, menu, side, versions = [], selectedVersion, unavailableVersion, placeholder }) {
-  const disabled = versions.length < 2;
-  const selected = versions.find((version) => String(version.placeVersion || "") === String(selectedVersion || "")) || null;
-  if (button) button.disabled = disabled;
-  if (label) label.textContent = selected ? `v${formatReleaseVersion(selected.placeVersion)}` : placeholder;
-  if (!menu) return;
-  menu.innerHTML = versions.map((version) => {
-    const value = String(version.placeVersion || "");
-    const isSelected = value === String(selectedVersion || "");
-    const isUnavailable = value === String(unavailableVersion || "");
-    return `
-      <button type="button" class="releaseVersionOption" role="option" data-release-version-side="${escapeHtml(side)}" data-release-version-value="${escapeHtml(value)}" aria-selected="${isSelected}" ${isUnavailable ? "disabled" : ""}>
-        <span><strong>v${escapeHtml(formatReleaseVersion(value))}</strong>${isSelected ? "<b>Selected</b>" : ""}</span>
-        <small>${escapeHtml(formatReleaseVersionDateRange(version))}</small>
-      </button>
-    `;
-  }).join("");
-}
-
-function formatReleaseVersionDateRange(version) {
-  const firstSeenAt = Number(version?.firstSeenAt) || 0;
-  const lastSeenAt = Number(version?.lastSeenAt) || 0;
-  if (!firstSeenAt || !lastSeenAt) return "No observed date range";
-  const start = new Date(firstSeenAt);
-  const end = new Date(lastSeenAt);
-  const startLabel = start.toLocaleDateString([], { month: "short", day: "numeric" });
-  const endLabel = end.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-  return `${startLabel} – ${endLabel}`;
-}
-
-function getReleaseVersionMenuElements(side) {
-  return side === "before"
-    ? { button: releaseBeforeVersionButton, menu: releaseBeforeVersionMenu }
-    : { button: releaseAfterVersionButton, menu: releaseAfterVersionMenu };
-}
-
-function toggleReleaseVersionMenu(side) {
-  const { button, menu } = getReleaseVersionMenuElements(side);
-  if (!button || !menu || button.disabled) return;
-  const shouldOpen = menu.hidden;
-  closeReleaseVersionMenus();
-  closeReleaseFunnelMenu();
-  menu.hidden = !shouldOpen;
-  button.setAttribute("aria-expanded", String(shouldOpen));
-}
-
-function closeReleaseVersionMenus() {
-  for (const { button, menu } of [
-    { button: releaseBeforeVersionButton, menu: releaseBeforeVersionMenu },
-    { button: releaseAfterVersionButton, menu: releaseAfterVersionMenu },
-  ]) {
-    if (menu) menu.hidden = true;
-    if (button) button.setAttribute("aria-expanded", "false");
-  }
-}
-
-function handleReleaseVersionMenuClick(event) {
-  event.stopPropagation();
-  const option = event.target.closest("[data-release-version-value]");
-  if (!option || option.disabled) return;
-  const side = option.dataset.releaseVersionSide === "before" ? "before" : "after";
-  const value = option.dataset.releaseVersionValue || "";
-  if (side === "before") releaseSelection.beforeVersion = value;
-  else releaseSelection.afterVersion = value;
-  closeReleaseVersionMenus();
-  loadReleases();
-}
-
-function handleReleaseVersionOutsidePointer(event) {
-  if (releaseBeforeVersionMenu?.contains(event.target) || releaseBeforeVersionButton?.contains(event.target)) return;
-  if (releaseAfterVersionMenu?.contains(event.target) || releaseAfterVersionButton?.contains(event.target)) return;
-  closeReleaseVersionMenus();
-}
-
-function toggleReleaseFunnelMenu(forceOpen) {
-  if (!releaseFunnelMenu || !releaseFunnelPickerButton || releaseFunnelPickerButton.disabled) return;
-  const shouldOpen = forceOpen === undefined ? releaseFunnelMenu.hidden : Boolean(forceOpen);
-  releaseFunnelMenu.hidden = !shouldOpen;
-  releaseFunnelPickerButton.setAttribute("aria-expanded", String(shouldOpen));
-}
-
-function closeReleaseFunnelMenu() {
-  if (!releaseFunnelMenu || !releaseFunnelPickerButton) return;
-  releaseFunnelMenu.hidden = true;
-  releaseFunnelPickerButton.setAttribute("aria-expanded", "false");
-}
-
-function handleReleaseFunnelMenuClick(event) {
-  event.stopPropagation();
-  const actionButton = event.target.closest("[data-release-funnel-action]");
-  if (!actionButton) return;
-  const funnels = Array.isArray(currentReleasePayload?.availableFunnels) ? currentReleasePayload.availableFunnels : [];
-  releaseSelection.funnelIds = actionButton.dataset.releaseFunnelAction === "all"
-    ? funnels.map((funnel) => String(funnel.id || "")).filter(Boolean)
-    : [];
-  releaseSelection.funnelSelectionInitialized = true;
-  closeReleaseFunnelMenu();
-  loadReleases();
-}
-
-function handleReleaseFunnelSelectionChange(event) {
-  if (!event.target.matches('input[type="checkbox"]')) return;
-  releaseSelection.funnelIds = [...releaseFunnelMenu.querySelectorAll('input[type="checkbox"]:checked')]
-    .map((input) => input.value)
-    .filter(Boolean);
-  releaseSelection.funnelSelectionInitialized = true;
-  closeReleaseFunnelMenu();
-  loadReleases();
-}
-
-function handleReleaseFunnelOutsidePointer(event) {
-  if (releaseFunnelMenu?.hidden) return;
-  if (releaseFunnelMenu?.contains(event.target) || releaseFunnelPickerButton?.contains(event.target)) return;
-  closeReleaseFunnelMenu();
-}
-
-function handleReleaseControlEscape(event) {
-  if (event.key !== "Escape") return;
-  closeReleaseVersionMenus();
-  closeReleaseFunnelMenu();
-}
-
-function renderReleaseComparison(release = {}, options = {}) {
-  const allowedReadiness = new Set(["ready", "no_baseline", "collecting_both", "collecting_baseline", "collecting_release", "collecting_matched"]);
-  const readiness = allowedReadiness.has(release.readiness) ? release.readiness : "collecting_both";
-  const minimumSessions = Math.max(Number(release.minimumSessionsPerCohort) || 20, 1);
-
-  return `
-    ${renderReleaseAnalysis(release.comparison, options)}
-    ${readiness === "ready" ? "" : `<p class="releaseComparisonNotice">A finding needs at least ${escapeHtml(formatCompactNumber(minimumSessions))} usable sessions on both sides. Values can appear earlier, but no conclusion is made.</p>`}
-  `;
-}
-
-function renderReleaseAnalysis(comparison = null, options = {}) {
-  if (!comparison) return "";
-  const trafficAdjustment = comparison.trafficAdjustment || {};
-  const trafficReady = trafficAdjustment.status === "ready";
-  const coreMetrics = trafficReady && Array.isArray(trafficAdjustment.coreMetrics)
-    ? trafficAdjustment.coreMetrics
-    : (Array.isArray(comparison.coreMetrics) ? comparison.coreMetrics : []);
-  const funnels = trafficReady && Array.isArray(trafficAdjustment.funnels)
-    ? trafficAdjustment.funnels
-    : (Array.isArray(comparison.funnels) ? comparison.funnels : []);
-  const events = trafficReady && Array.isArray(trafficAdjustment.events)
-    ? trafficAdjustment.events
-    : (Array.isArray(comparison.events) ? comparison.events : []);
-  const eventMetrics = getReleaseEventOutcomeMetrics(coreMetrics, events);
-  const beforeVersion = comparison.samples?.before?.placeVersion;
-  const afterVersion = comparison.samples?.after?.placeVersion;
-
-  return `
-    <section class="releaseAnalysis">
-      <div class="releaseAnalysisBody">
-        ${options.hasAvailableFunnels ? renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) : ""}
-        ${eventMetrics.length ? renderReleaseEventComparisons(eventMetrics) : ""}
-        <p class="releaseMethodNote">Only rates and conversion are shown. Record volume is excluded because a larger event count alone does not establish a release change.</p>
-      </div>
-    </section>
-  `;
-}
-
-function getReleaseEventOutcomeMetrics(coreMetrics, events) {
-  const purchaseEventNames = new Set([
-    "item_purchased", "product_purchased", "gamepass_purchased", "purchase_completed",
-    "purchase_succeeded", "checkout_completed", "transaction_completed",
-  ]);
-  const coreOutcomes = coreMetrics
-    .filter((metric) => metric.id === "death_session_rate" || metric.id === "purchase_session_rate")
-    .map((metric) => ({
-      eventName: metric.id === "death_session_rate" ? "player_died" : "purchase_completed",
-      label: metric.id === "death_session_rate" ? "Sessions with a death" : "Purchase session rate",
-      metric,
-      sampleKind: "sessions",
-      codeLabel: false,
-    }));
-  const customOutcomes = events
-    .filter((event) => !purchaseEventNames.has(String(event.eventName || "").toLowerCase()))
-    .filter((event) => {
-      const metric = event.metric || {};
-      return metric.available
-        && Number(metric.before?.denominator) >= 20
-        && Number(metric.after?.denominator) >= 20
-        && Number(metric.before?.numerator || 0) + Number(metric.after?.numerator || 0) >= 20;
-    })
-    .sort((left, right) => (
-      Math.abs(Number(right.metric?.relativeDeltaPercent) || Number(right.metric?.delta) || 0)
-      - Math.abs(Number(left.metric?.relativeDeltaPercent) || Number(left.metric?.delta) || 0)
-    ))
-    .slice(0, 8)
-    .map((event) => ({ ...event, label: event.eventName, sampleKind: "players", codeLabel: true }));
-  return [...coreOutcomes, ...customOutcomes];
-}
-
-function renderReleaseFunnelComparisons(funnels, beforeVersion, afterVersion) {
-  return `
-    <section class="releaseAnalysisSection releaseFunnelImpactSection">
-      <header><div><strong>Funnel conversion</strong><span>Conversion rate changes for the selected funnels</span></div><div class="releaseFunnelPickerSlot" data-release-funnel-picker-slot></div></header>
-      ${funnels.length ? `<div class="releaseFunnelImpactList">${funnels.map((funnel) => renderReleaseFunnelImpact(funnel, beforeVersion, afterVersion)).join("")}</div>` : ""}
-    </section>
-  `;
-}
-
-function renderReleaseFunnelImpact(funnel = {}, beforeVersion, afterVersion) {
-  const metric = funnel.metric || {};
-  const tone = getReleaseMetricTone(metric);
-  const beforeWidth = getReleaseBarWidth(metric.before?.value);
-  const afterWidth = getReleaseBarWidth(metric.after?.value);
-  return `
-    <article class="releaseFunnelImpact ${tone}">
-      <header>
-        <div><strong>${escapeHtml(funnel.name || "Funnel")}</strong><span>${escapeHtml(formatCompactNumber(funnel.before?.entrySessions))} / ${escapeHtml(formatCompactNumber(funnel.after?.entrySessions))} entering sessions</span></div>
-        <b>${escapeHtml(formatReleaseMetricDifference(metric))}</b>
-      </header>
-      <div class="releaseFunnelBarRow">
-        <span>v${escapeHtml(formatReleaseVersion(beforeVersion))}</span>
-        <div><i style="width:${beforeWidth}%"></i></div>
-        <strong>${escapeHtml(formatReleaseMetricValue(metric, metric.before))}</strong>
-      </div>
-      <div class="releaseFunnelBarRow after">
-        <span>v${escapeHtml(formatReleaseVersion(afterVersion))}</span>
-        <div><i style="width:${afterWidth}%"></i></div>
-        <strong>${escapeHtml(formatReleaseMetricValue(metric, metric.after))}</strong>
-      </div>
-    </article>
-  `;
-}
-
-function getReleaseBarWidth(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return 0;
-  return Math.max(2, Math.min(100, number));
-}
-
-function renderReleaseEventComparisons(events) {
-  return `
-    <section class="releaseAnalysisSection releaseComparisonTableSection">
-      <header><div><strong>Event rate changes</strong><span>Player and session rates; raw event volume is excluded</span></div></header>
-      <div class="releaseComparisonTable" role="table" aria-label="Event rate release comparisons">
-        <div class="releaseComparisonTableHeader" role="row"><span>Event outcome</span><span>Before</span><span>After</span><span>Difference</span><span>Evidence</span></div>
-        ${events.map((event) => renderReleaseComparisonRow(
-          event.label || event.eventName || "event",
-          event.metric,
-          `${formatCompactNumber(event.metric?.before?.denominator)} / ${formatCompactNumber(event.metric?.after?.denominator)} ${event.sampleKind || "players"}`,
-          Boolean(event.codeLabel),
-        )).join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderReleaseComparisonRow(label, metric = {}, sampleText = "--", codeLabel = false) {
-  const tone = getReleaseMetricTone(metric);
-  return `
-    <div class="releaseComparisonTableRow ${tone}" role="row">
-      <strong${codeLabel ? ' class="releaseCodeLabel"' : ""}>${escapeHtml(label)}</strong>
-      <span>${escapeHtml(formatReleaseMetricValue(metric, metric.before))}</span>
-      <span>${escapeHtml(formatReleaseMetricValue(metric, metric.after))}</span>
-      <span class="releaseTableDelta">${escapeHtml(formatReleaseMetricDifference(metric))}</span>
-      <small>${escapeHtml(sampleText)}</small>
-    </div>
-  `;
-}
-
-function formatReleaseMetricValue(metric = {}, value = {}) {
-  if (value?.value === null || value?.value === undefined || !Number.isFinite(Number(value.value))) return "--";
-  const number = Number(value.value);
-  if (metric.unit === "percent") return `${formatEventNumber(number)}%`;
-  if (metric.unit === "minutes") return `${formatEventNumber(number)}m`;
-  return formatEventNumber(number);
-}
-
-function formatReleaseMetricDelta(metric = {}) {
-  if (metric.delta === null || metric.delta === undefined || !Number.isFinite(Number(metric.delta))) return "No comparison";
-  const delta = Number(metric.delta);
-  const sign = delta > 0 ? "+" : "";
-  if (metric.unit === "percent") return `${sign}${formatEventNumber(delta)} pp`;
-  if (metric.unit === "minutes") return `${sign}${formatEventNumber(delta)}m`;
-  return `${sign}${formatEventNumber(delta)}`;
-}
-
-function formatReleaseMetricDifference(metric = {}) {
-  const direction = getReleaseMetricTone(metric);
-  if (direction === "unchanged") {
-    return metric.available ? "Unchanged" : "No comparison";
-  }
-  return `${direction === "increase" ? "Increased" : "Decreased"} ${formatReleaseMetricDelta(metric)}`;
-}
-
-function getReleaseMetricTone(metric = {}) {
-  const delta = Number(metric.delta);
-  if (!metric.available || !Number.isFinite(delta) || Math.abs(delta) < 0.0001) return "unchanged";
-  return delta > 0 ? "increase" : "decrease";
 }
 
 function formatReleaseVersion(value) {

@@ -40,10 +40,15 @@ assert.match(
 assert.ok(
   topbarFiltersIndex >= 0
     && intervalControlIndex > topbarFiltersIndex
-    && dateControlIndex > intervalControlIndex
-    && dateControlIndex < releaseControlsIndex,
+    && dateControlIndex > intervalControlIndex,
   "the event interval selector should precede the shared date filter cluster",
 );
+assert.equal(releaseControlsIndex, -1, "the removed Releases page should not leave topbar controls behind");
+assert.doesNotMatch(indexSource, /data-dashboard-view="releases"/, "the Releases navigation tab should be removed");
+assert.doesNotMatch(indexSource, /data-view-panel="releases"/, "the Releases page panel should be removed");
+assert.doesNotMatch(appSource, /window\.location\.hash === "#releases"/, "the removed Releases route should fall back to Overview");
+assert.doesNotMatch(appSource, /function loadReleases\(/, "the removed Releases page loader should not remain");
+assert.doesNotMatch(styleSource, /\.releaseTopbarControls/, "the removed Releases controls should not retain dead styles");
 assert.doesNotMatch(indexSource, /allDataFilter|allDataToggle/, "the removed All data control should not remain in the topbar");
 assert.doesNotMatch(
   indexSource,
