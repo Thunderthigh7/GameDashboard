@@ -292,7 +292,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-37";
+const DASHBOARD_ASSET_VERSION = "20260725-38";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -5713,16 +5713,14 @@ function renderFunnelStepChangeHighlight(step, signal, label) {
 
 function renderFunnelStepChangeRow(step) {
   const index = Number(step.index) || 0;
-  const signal = ["improved", "declined", "low-data"].includes(step.signal)
+  const signal = ["improved", "declined"].includes(step.signal)
     ? step.signal
     : "stable";
   const signalLabel = signal === "improved"
     ? "Improved"
     : signal === "declined"
       ? "Declined"
-      : signal === "low-data"
-        ? "Low data"
-        : "No clear change";
+      : "No clear change";
   return `
     <article class="funnelStepChangeRow ${signal}">
       <div class="funnelStepChangeIdentity">

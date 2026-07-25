@@ -7175,10 +7175,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   color: #ff6f82;
 }
 
-.funnelStepChangeRow.low-data .funnelStepChangeDelta {
-  opacity: 0.72;
-}
-
 .funnelResultSteps {
   gap: 0;
   overflow-x: auto;
