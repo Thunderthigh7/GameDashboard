@@ -7040,7 +7040,11 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelResultSteps {
   gap: 0;
   overflow-x: auto;
-  padding: 0;
+  border: 1px solid rgba(59, 77, 122, 0.72);
+  border-radius: 12px;
+  background: rgba(8, 16, 35, 0.88);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.14);
+  padding: 0 18px 8px;
 }
 
 .funnelResultsColumnHeader,
@@ -7081,6 +7085,10 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelResultStep {
   min-height: 76px;
   border-bottom: 1px solid rgba(47, 61, 96, 0.56);
+}
+
+.funnelResultStep:last-child {
+  border-bottom: 0;
 }
 
 .funnelStepIdentity {
