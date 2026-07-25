@@ -5314,6 +5314,66 @@ body[data-active-view="events"] #pageSubtitle {
   margin: auto;
 }
 
+.eventPropertyTimelinePlaceholder {
+  position: relative;
+  min-height: 326px;
+  place-items: center;
+  overflow: hidden;
+}
+
+.eventPropertyTimelinePlaceholder::before {
+  position: absolute;
+  inset: 28px 20px 42px 48px;
+  border-bottom: 1px solid rgba(84, 101, 149, 0.32);
+  border-left: 1px solid rgba(84, 101, 149, 0.32);
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(84, 101, 149, 0.24) 0,
+      rgba(84, 101, 149, 0.24) 1px,
+      transparent 1px,
+      transparent 25%
+    ),
+    repeating-linear-gradient(
+      to right,
+      rgba(84, 101, 149, 0.12) 0,
+      rgba(84, 101, 149, 0.12) 1px,
+      transparent 1px,
+      transparent 20%
+    );
+  content: "";
+}
+
+.eventPropertyPlaceholderMessage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  border: 1px solid rgba(124, 60, 255, 0.3);
+  border-radius: 10px;
+  background: rgba(8, 15, 35, 0.9);
+  box-shadow: 0 12px 28px rgba(2, 6, 18, 0.28);
+  padding: 13px 18px;
+  text-align: center;
+}
+
+.eventPropertyPlaceholderMessage span {
+  color: #bca8ff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.eventPropertyPlaceholderMessage strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
 .eventPropertyChartScroller {
   width: 100%;
   min-width: 0;
@@ -5450,6 +5510,25 @@ body[data-active-view="events"] #pageSubtitle {
 
 .eventPropertyRankedRows {
   display: grid;
+}
+
+.eventPropertyRankedEmptyRows {
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+
+.eventPropertyRankedEmptyRow {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.eventPropertyRankedEmptyRow > span {
+  grid-column: 1 / -1;
 }
 
 .eventPropertyRankedRow {

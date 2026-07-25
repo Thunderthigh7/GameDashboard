@@ -272,7 +272,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260724-23";
+const DASHBOARD_ASSET_VERSION = "20260724-24";
 const EVENT_PROPERTY_VALUE_LIMIT = 4;
 const MAX_EVENT_DEFINITION_PROPERTIES = 20;
 const EVENT_PROPERTY_SERIES_COLORS = ["#9b6dff", "#2dd4bf", "#f5b942", "#fb7185", "#60a5fa"];
@@ -3146,7 +3146,10 @@ function renderCustomEvents(payload = {}) {
   updateSelectedEventDefinitionActions(selected);
   updateEventPropertyHeaderMetrics(selected);
   updateEventIntervalControl(selected);
-  renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || []);
+  renderCustomEventProperties(selected?.properties || [], selected?.releaseMarkers || [], {
+    showCreatedPlaceholder: shouldRenderCreatedEventPlaceholder(selected),
+    definition: selected?.definition || null,
+  });
   renderRecentCustomEvents(selected?.recentEvents || [], selected?.properties || []);
 
   const recentTotal = Number(selected?.recentEventsTotal) || 0;
@@ -3156,6 +3159,17 @@ function renderCustomEvents(payload = {}) {
       ? 'Show fewer events <span aria-hidden="true">↑</span>'
       : `View all events <span aria-hidden="true">→</span>`;
   }
+}
+
+function shouldRenderCreatedEventPlaceholder(selectedEvent = {}) {
+  return Boolean(
+    selectedEvent?.name
+    && selectedEvent.sourceType === "custom"
+    && selectedEvent.definition
+    && (Number(selectedEvent.count) || 0) === 0
+    && !Number(selectedEvent.definition.firstSeenAt)
+    && !Number(selectedEvent.definition.lastSeenAt)
+  );
 }
 
 function updateEventPropertyHeaderMetrics(selectedEvent, options = {}) {
@@ -4066,7 +4080,7 @@ function formatEventInterval(value) {
   return `${Math.max(1, Math.round(milliseconds / minute))}m`;
 }
 
-function renderCustomEventProperties(properties, releaseMarkers = []) {
+function renderCustomEventProperties(properties, releaseMarkers = [], options = {}) {
   if (!eventPropertyList) return;
   const cleanProperties = (Array.isArray(properties) ? properties : [])
     .filter((property) => property?.name)
@@ -4075,6 +4089,10 @@ function renderCustomEventProperties(properties, releaseMarkers = []) {
       || String(left.name).localeCompare(String(right.name)));
 
   if (!cleanProperties.length) {
+    if (options.showCreatedPlaceholder) {
+      eventPropertyList.innerHTML = renderCreatedEventPropertyPlaceholders(options.definition);
+      return;
+    }
     eventPropertyList.innerHTML = '<p class="status eventPropertyEmptyRow">No properties were sent with this event.</p>';
     return;
   }
@@ -4086,6 +4104,39 @@ function renderCustomEventProperties(properties, releaseMarkers = []) {
     const property = cleanProperties[Number(chart.dataset.eventPropertyChartIndex)];
     if (property) renderCustomEventPropertyChart(chart, property, releaseMarkers);
   }
+}
+
+function renderCreatedEventPropertyPlaceholders(definition = {}) {
+  const propertyNames = [...new Set(
+    (Array.isArray(definition?.effectiveProperties) ? definition.effectiveProperties : [])
+      .map((property) => String(property?.name || "").trim())
+      .filter(Boolean),
+  )];
+  const visiblePropertyNames = propertyNames.length ? propertyNames : ["Event activity"];
+  return visiblePropertyNames
+    .map((propertyName) => renderCreatedEventPropertyPlaceholder(propertyName))
+    .join("");
+}
+
+function renderCreatedEventPropertyPlaceholder(propertyName = "Event activity") {
+  const formattedPropertyName = formatEventPropertyName(propertyName);
+  return `
+    <section class="eventPropertyBreakdown eventPropertyBreakdownPlaceholder" aria-label="${escapeHtml(formattedPropertyName)} breakdown awaiting data">
+      <div class="eventPropertyChartPane">
+        <header class="eventPropertyBreakdownHeader">
+          <div class="eventPropertyBreakdownTitle">
+            <h3>${escapeHtml(formattedPropertyName)}</h3>
+          </div>
+        </header>
+        <div class="eventPropertyTimeline eventPropertyTimelinePlaceholder" role="img" aria-label="${escapeHtml(formattedPropertyName)} timeline has no data yet">
+          <div class="eventPropertyPlaceholderMessage">
+            <span>Event created</span>
+            <strong>Waiting for first event</strong>
+          </div>
+        </div>
+      </div>
+      ${renderEmptyEventPropertyRankedBreakdown(propertyName)}
+    </section>`;
 }
 
 function renderCustomEventPropertyCard(property, propertyIndex) {
@@ -4178,6 +4229,29 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <span role="columnheader">Change</span>
         </div>
         <div class="eventPropertyRankedRows" role="rowgroup">${rows}</div>
+      </div>
+    </aside>`;
+}
+
+function renderEmptyEventPropertyRankedBreakdown(propertyName = "Property") {
+  return `
+    <aside class="eventPropertyRanked eventPropertyRankedPlaceholder" aria-label="${escapeHtml(formatEventPropertyName(propertyName))} ranked breakdown with no data">
+      <header class="eventPropertyRankedHeader">
+        <h4>${escapeHtml(formatEventPropertyName(propertyName))} Breakdown <span>(Ranked)</span></h4>
+      </header>
+      <div class="eventPropertyRankedTable" role="table">
+        <div class="eventPropertyRankedTableHeader" role="row">
+          <span role="columnheader">#</span>
+          <span role="columnheader">Value</span>
+          <span role="columnheader">Events</span>
+          <span role="columnheader">% of Events</span>
+          <span role="columnheader">Change</span>
+        </div>
+        <div class="eventPropertyRankedRows eventPropertyRankedEmptyRows" role="rowgroup">
+          <div class="eventPropertyRankedEmptyRow" role="row">
+            <span role="cell" aria-colspan="5">No data yet</span>
+          </div>
+        </div>
       </div>
     </aside>`;
 }

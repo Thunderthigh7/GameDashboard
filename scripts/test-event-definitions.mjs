@@ -37,6 +37,58 @@ const ids = [...indexSource.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]
 const duplicateIds = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
 assert.deepEqual(duplicateIds, [], "event-builder markup must not introduce duplicate IDs");
 
+const createdPlaceholderPredicateStart = appSource.indexOf("function shouldRenderCreatedEventPlaceholder(");
+const createdPlaceholderPredicateEnd = appSource.indexOf(
+  "\nfunction ",
+  createdPlaceholderPredicateStart + 1,
+);
+assert.ok(
+  createdPlaceholderPredicateStart >= 0 && createdPlaceholderPredicateEnd > createdPlaceholderPredicateStart,
+  "the newly created event placeholder predicate should remain extractable",
+);
+const createdPlaceholderPredicateSource = appSource.slice(
+  createdPlaceholderPredicateStart,
+  createdPlaceholderPredicateEnd,
+);
+const { shouldRenderCreatedEventPlaceholder } = Function(
+  `"use strict";
+  ${createdPlaceholderPredicateSource}
+  return { shouldRenderCreatedEventPlaceholder };`,
+)();
+assert.equal(
+  shouldRenderCreatedEventPlaceholder({
+    name: "weapon_equipped",
+    sourceType: "custom",
+    count: 0,
+    definition: { firstSeenAt: null, lastSeenAt: null },
+  }),
+  true,
+  "a saved custom event that has never received data should render analytics placeholders",
+);
+assert.equal(
+  shouldRenderCreatedEventPlaceholder({
+    name: "weapon_equipped",
+    sourceType: "custom",
+    count: 0,
+    definition: { firstSeenAt: 1000, lastSeenAt: 2000 },
+  }),
+  false,
+  "an older event with no data in the selected range should retain the normal empty-range state",
+);
+assert.equal(
+  shouldRenderCreatedEventPlaceholder({
+    name: "weapon_equipped",
+    sourceType: "custom",
+    count: 1,
+    definition: { firstSeenAt: null, lastSeenAt: null },
+  }),
+  false,
+  "an event response containing data should not be treated as awaiting its first event",
+);
+assert.match(appSource, /Event created/, "the placeholder graph should confirm that the event was created");
+assert.match(appSource, /Waiting for first event/, "the placeholder graph should state what it is waiting for");
+assert.match(appSource, /eventPropertyRankedEmptyRow[\s\S]*No data yet/, "the empty ranked breakdown should remain visible");
+
 const eventExitIndex = indexSource.indexOf('id="eventExitButton"');
 const newEventIndex = indexSource.indexOf('id="newEventButton"');
 const trackedEventsIndex = indexSource.indexOf("<h2>Tracked events</h2>");
