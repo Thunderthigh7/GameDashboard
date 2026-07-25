@@ -111,8 +111,6 @@ assert.equal(stepChanges.steps[1].signal, "declined", "a strong step-to-step reg
 assert.equal(stepChanges.steps[1].changePercentagePoints, -20, "changes should use percentage points");
 assert.equal(stepChanges.steps[2].signal, "stable", "downstream reach should not repeat an earlier decline when its own transition is unchanged");
 assert.equal(stepChanges.steps[3].signal, "improved", "a strong step-to-step gain should be called out");
-assert.equal(stepChanges.largestDeclineStepIndex, 2, "the largest decline should identify its target step");
-assert.equal(stepChanges.largestImprovementStepIndex, 4, "the largest improvement should identify its target step");
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
@@ -123,10 +121,12 @@ assert.match(indexSource, /id="funnelIntervalButton"[^>]*aria-haspopup="listbox"
 assert.match(indexSource, /id="funnelTimelineStepPickerButton"/, "Funnels should have a step visibility control");
 assert.match(indexSource, /id="funnelTimelineChart"/, "Funnels should include the step conversion line chart");
 assert.match(indexSource, /id="funnelStepChangesTable"/, "Funnels should include the step change comparison below the main table");
+assert.doesNotMatch(indexSource, /funnelStepChangeHighlights|Mature cohorts only/, "the step comparison should not include extra callout cards or cohort terminology");
 assert.match(appSource, /params\.set\("funnelId", selectedFunnelId\)/, "the selected Funnel should request its timeline");
 assert.match(appSource, /params\.set\("interval", selectedFunnelInterval\)/, "Funnel interval changes should reach the API");
 assert.match(appSource, /function renderFunnelTimeline\(funnel\)/, "the Funnel timeline renderer should be present");
 assert.match(appSource, /function renderFunnelStepChanges\(funnel\)/, "the Funnel step comparison renderer should be present");
+assert.match(appSource, /funnelStepChangeDelta">\(\$\{formatFunnelPercentagePointChange/, "the change should sit directly beside its current percentage");
 assert.match(appSource, /const selectedFunnelTimelineSteps = new Map\(\)/, "step visibility should be retained independently by Funnel");
 assert.match(serverSource, /calculateFunnelTimelineAnalytics\(\s*definition,\s*sessions,\s*timelineScaffold\.buckets,/s, "the API should calculate the selected Funnel timeline");
 assert.match(serverSource, /now - conversionWindowMs/, "unfinished current cohorts should be excluded from comparisons");

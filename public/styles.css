@@ -6910,14 +6910,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelStepChangesHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 0;
-}
-
-.funnelStepChangesHeader > div {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -6942,106 +6934,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   white-space: nowrap;
 }
 
-.funnelStepChangesHeader > span {
-  flex: 0 0 auto;
-  border: 1px solid rgba(91, 108, 158, 0.48);
-  border-radius: 999px;
-  background: rgba(14, 24, 48, 0.86);
-  color: #aeb9d4;
-  padding: 6px 9px;
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.funnelStepChangeHighlights {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.funnelStepChangeHighlights.single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.funnelStepChangeHighlights[hidden] {
-  display: none;
-}
-
-.funnelStepChangeHighlight {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-  min-height: 65px;
-  border: 1px solid rgba(81, 98, 145, 0.48);
-  border-radius: 9px;
-  background: rgba(11, 21, 43, 0.82);
-  padding: 10px 12px;
-}
-
-.funnelStepChangeHighlight > span {
-  display: grid;
-  place-items: center;
-  min-width: 106px;
-  min-height: 28px;
-  border-radius: 6px;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.funnelStepChangeHighlight.declined > span {
-  background: rgba(255, 91, 111, 0.12);
-  color: #ff8291;
-}
-
-.funnelStepChangeHighlight.improved > span {
-  background: rgba(45, 212, 162, 0.11);
-  color: #4de2aa;
-}
-
-.funnelStepChangeHighlight > div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.funnelStepChangeHighlight strong,
-.funnelStepChangeHighlight small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.funnelStepChangeHighlight strong {
-  color: #f3f5ff;
-  font-size: 12px;
-}
-
-.funnelStepChangeHighlight small {
-  color: #8f9bb9;
-  font-size: 10px;
-}
-
-.funnelStepChangeHighlight em {
-  font-size: 18px;
-  font-style: normal;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.funnelStepChangeHighlight.declined em {
-  color: #ff6f82;
-}
-
-.funnelStepChangeHighlight.improved em {
-  color: #42dca3;
-}
-
 .funnelStepChangesTable {
   display: grid;
   min-width: 0;
@@ -7057,10 +6949,10 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelStepChangesColumnHeader,
 .funnelStepChangeRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.45fr) minmax(130px, 0.45fr) minmax(130px, 0.42fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.8fr);
   align-items: center;
-  gap: 16px;
-  min-width: 720px;
+  gap: 20px;
+  min-width: 480px;
 }
 
 .funnelStepChangesColumnHeader {
@@ -7073,8 +6965,8 @@ body[data-active-view="funnels"] #pageSubtitle {
   text-transform: uppercase;
 }
 
-.funnelStepChangesColumnHeader span:nth-child(n + 2) {
-  text-align: center;
+.funnelStepChangesColumnHeader span:last-child {
+  text-align: right;
 }
 
 .funnelStepChangeRow {
@@ -7108,8 +7000,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelStepChangeIdentity > div,
-.funnelStepChangeRate,
-.funnelStepChangeDelta {
+.funnelStepChangeValue {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -7117,10 +7008,8 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelStepChangeIdentity strong,
 .funnelStepChangeIdentity small,
-.funnelStepChangeRate strong,
-.funnelStepChangeRate small,
-.funnelStepChangeDelta strong,
-.funnelStepChangeDelta small {
+.funnelStepChangeValue strong,
+.funnelStepChangeDelta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7131,47 +7020,34 @@ body[data-active-view="funnels"] #pageSubtitle {
   font-size: 13px;
 }
 
-.funnelStepChangeCellLabel {
-  display: none;
-  color: #8995b2;
-  font-size: 8px;
-  font-weight: 850;
-  letter-spacing: 0.045em;
-  text-transform: uppercase;
-}
-
-.funnelStepChangeIdentity small,
-.funnelStepChangeRate small,
-.funnelStepChangeDelta small {
+.funnelStepChangeIdentity small {
   color: #828eaa;
   font-size: 9px;
 }
 
-.funnelStepChangeRate,
-.funnelStepChangeDelta {
-  justify-items: center;
-  text-align: center;
+.funnelStepChangeValue {
+  justify-items: end;
+  text-align: right;
 }
 
-.funnelStepChangeRate strong {
+.funnelStepChangeValue strong {
   color: #f6f7ff;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
 }
 
-.funnelStepChangeDelta strong {
+.funnelStepChangeDelta {
+  margin-left: 7px;
   color: #aeb8d1;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 900;
 }
 
-.funnelStepChangeRow.improved .funnelStepChangeDelta strong,
-.funnelStepChangeRow.improved .funnelStepChangeDelta small {
+.funnelStepChangeRow.improved .funnelStepChangeDelta {
   color: #42dca3;
 }
 
-.funnelStepChangeRow.declined .funnelStepChangeDelta strong,
-.funnelStepChangeRow.declined .funnelStepChangeDelta small {
+.funnelStepChangeRow.declined .funnelStepChangeDelta {
   color: #ff6f82;
 }
 
@@ -8832,11 +8708,6 @@ body.hasEventConfirmDialog {
     flex-direction: column;
   }
 
-  .funnelStepChangesHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .funnelStepChangesHeader p {
     overflow: visible;
     text-overflow: clip;
@@ -9396,40 +9267,24 @@ body.hasEventConfirmDialog {
     text-align: left;
   }
 
-  .funnelStepChangeHighlights {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .funnelStepChangesColumnHeader {
-    display: none;
-  }
-
   .funnelStepChangesTable {
     gap: 0;
     overflow-x: visible;
   }
 
+  .funnelStepChangesColumnHeader,
   .funnelStepChangeRow {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px 8px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
     min-width: 0;
+  }
+
+  .funnelStepChangeRow {
     padding: 14px 0;
   }
 
-  .funnelStepChangeIdentity {
-    grid-column: 1 / -1;
-  }
-
-  .funnelStepChangeRate,
-  .funnelStepChangeDelta {
-    justify-items: start;
-    border-left: 1px solid rgba(47, 61, 96, 0.56);
-    padding-left: 9px;
-    text-align: left;
-  }
-
-  .funnelStepChangeCellLabel {
-    display: block;
+  .funnelStepChangesColumnHeader span:last-child {
+    max-width: 170px;
   }
 }
 
