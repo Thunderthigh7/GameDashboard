@@ -8,7 +8,7 @@ const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "ut
 const intervalControlMatches = indexSource.match(/id="eventIntervalSelect"/g) || [];
 const stylesheetAssetVersion = indexSource.match(/\/assets\/([^/"]+)\/styles\.css/)?.[1] || "";
 const appAssetVersion = indexSource.match(/\/assets\/([^/"]+)\/app\.js/)?.[1] || "";
-const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters"');
+const topbarFiltersIndex = indexSource.indexOf('<div class="topbarFilters eventTopbarFilters"');
 const intervalControlIndex = indexSource.indexOf('class="eventIntervalTopbarControl"');
 const dateControlIndex = indexSource.indexOf('class="dateFilterCluster"');
 const releaseControlsIndex = indexSource.indexOf('class="releaseTopbarControls"');
@@ -58,6 +58,9 @@ assert.doesNotMatch(
 assert.doesNotMatch(indexSource, /id="dateVersionPickerButton"/, "the standalone Versions button should be removed");
 assert.match(indexSource, /id="movementFromPickerButton"/, "Start should open the themed date picker");
 assert.match(indexSource, /id="movementToPickerButton"/, "End should open the themed date picker");
+assert.match(indexSource, /id="funnelFromPickerButton"[^>]*data-date-range-context="funnels"/, "Funnels should have an independent Start picker");
+assert.match(indexSource, /id="funnelToPickerButton"[^>]*data-date-range-context="funnels"/, "Funnels should have an independent End picker");
+assert.equal((indexSource.match(/id="dateRangePickerPanel"/g) || []).length, 1, "Events and Funnels should reuse one themed picker panel");
 assert.match(indexSource, /id="dateRangePickerPanel"/, "Start and End should share the themed date and time panel");
 assert.match(indexSource, /class="dateRangeCalendarGrid"/, "the themed picker should include its own calendar");
 assert.match(indexSource, /class="dateRangeVersionSection"/, "the themed picker should include a dedicated Versions section");
@@ -76,8 +79,36 @@ assert.match(
 );
 assert.match(
   appSource,
-  /input\.value = inputValue;[\s\S]*selectedDateReleaseVersions\[dateRangePickerSide\] = \{[\s\S]*publishedAt,/,
+  /input\.value = inputValue;[\s\S]*elements\.selectedReleases\[dateRangePickerSide\] = \{[\s\S]*publishedAt,/,
   "selecting a version should only set the chosen date boundary and its release metadata",
+);
+assert.match(
+  appSource,
+  /const selectedDateReleaseVersions = \{ from: null, to: null \};\s*const selectedFunnelDateReleaseVersions = \{ from: null, to: null \};/,
+  "Events and Funnels should retain separate date-range release selections",
+);
+assert.match(
+  appSource,
+  /const from = getDashboardDateFilterMs\(funnelFromFilter\);\s*const to = getDashboardDateFilterMs\(funnelToFilter\);[\s\S]*request\(`\/api\/funnels\?/,
+  "Funnel analytics should query with the Funnel-specific date range",
+);
+assert.match(
+  appSource,
+  /activeCluster\.append\(dateRangePickerPanel\);/,
+  "the shared date picker should open beside the active Events or Funnels date control",
+);
+assert.match(indexSource, /id="funnelExitButton"[^>]*data-dashboard-view="overview"/, "the Funnel catalog should include a dashboard back button");
+assert.match(indexSource, /class="eventCatalogTitle funnelCatalogTitle">Funnels</, "the Funnel catalog should replace the main sidebar title");
+assert.match(
+  indexSource,
+  /class="funnelTopbarSelection"[\s\S]*id="funnelResultsTitle"[\s\S]*id="editFunnelButton"[\s\S]*id="funnelMoreButton"/,
+  "the selected Funnel title, Edit steps, and overflow menu should share the topbar",
+);
+assert.doesNotMatch(indexSource, /class="funnelResultsHeader"/, "Funnel actions should no longer remain above the results");
+assert.match(
+  styleSource,
+  /body\[data-active-view="funnels"\]:not\(\.isLocked\) \.sidebar\s*\{[^}]*display:\s*none;/,
+  "entering Funnels should hide the main dashboard sidebar",
 );
 assert.doesNotMatch(appSource, /showDateFilterPicker/, "the removed native date picker should not retain event wiring");
 assert.match(

@@ -124,11 +124,13 @@ small,
   padding: 56px 24px;
 }
 
-body[data-active-view="events"]:not(.isLocked) .appShell {
+body[data-active-view="events"]:not(.isLocked) .appShell,
+body[data-active-view="funnels"]:not(.isLocked) .appShell {
   grid-template-columns: minmax(0, 1fr);
 }
 
-body[data-active-view="events"]:not(.isLocked) .sidebar {
+body[data-active-view="events"]:not(.isLocked) .sidebar,
+body[data-active-view="funnels"]:not(.isLocked) .sidebar {
   display: none;
 }
 
@@ -4509,7 +4511,19 @@ body[data-active-view="connect"] .topbar > div:first-child {
   min-width: 0;
 }
 
+.funnelTopbarSelection,
+.funnelTopbarFilters {
+  display: none;
+  min-width: 0;
+}
+
 body[data-active-view="events"] .eventTopbarSelection {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+body[data-active-view="funnels"] .funnelTopbarSelection {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -4705,7 +4719,8 @@ body[data-active-view="events"] .eventIntervalButton:focus-visible {
   opacity: 1;
 }
 
-.eventTopbarSelection h2 {
+.eventTopbarSelection h2,
+.funnelTopbarSelection h2 {
   overflow: hidden;
   font-size: 24px;
   text-overflow: ellipsis;
@@ -6064,6 +6079,28 @@ body[data-active-view="events"] #pageSubtitle {
 }
 
 body[data-active-view="funnels"] .topbarActions {
+  display: flex;
+  flex: 1 1 760px;
+}
+
+body[data-active-view="funnels"] .eventTopbarFilters {
+  display: none;
+}
+
+body[data-active-view="funnels"] .funnelTopbarFilters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 1 760px;
+}
+
+body[data-active-view="funnels"] .funnelTopbarFilters .dateFilterCluster {
+  flex: 1 1 620px;
+  max-width: 760px;
+}
+
+body[data-active-view="funnels"].isEditingFunnelDefinition .funnelTopbarFilters,
+body[data-active-view="funnels"].isEditingFunnelDefinition .funnelSelectionActions {
   display: none;
 }
 
@@ -6071,18 +6108,12 @@ body[data-active-view="funnels"] #pageSubtitle {
   display: none;
 }
 
-.funnelNewButton,
-.funnelEditButton,
-.funnelIconButton,
 .funnelBackButton,
 .funnelAddStepButton,
 .funnelCatalogItem {
   font: inherit;
 }
 
-.funnelNewButton svg,
-.funnelEditButton svg,
-.funnelIconButton svg,
 .funnelBackButton svg,
 .funnelAddStepButton svg,
 .funnelBuilderNote svg,
@@ -6094,25 +6125,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.funnelNewButton {
-  width: 100%;
-  gap: 8px;
-  justify-content: flex-start;
-  min-height: 44px;
-  border: 1px solid rgba(159, 104, 255, 0.55);
-  border-radius: 9px;
-  background: linear-gradient(135deg, #8046e8, #4d23a9);
-  box-shadow: 0 10px 28px rgba(88, 37, 190, 0.26);
-  padding: 0 11px;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.funnelNewButton:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 
 .funnelsPage {
@@ -6146,20 +6158,16 @@ body[data-active-view="funnels"] #pageSubtitle {
   position: sticky;
   top: 8px;
   align-self: start;
-  grid-template-areas:
-    "catalog-header"
-    "catalog-list"
-    "catalog-action";
-  grid-template-rows: auto minmax(0, max-content) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   align-content: start;
   gap: 8px;
-  min-height: calc(100vh - 16px);
-  max-height: calc(100vh - 16px);
+  min-height: calc(100vh - 44px);
+  max-height: calc(100vh - 44px);
   overflow: hidden;
   border: 0;
   background: transparent;
   box-shadow: none;
-  padding: 8px 4px 18px 0;
+  padding: 0 4px 18px 0;
 }
 
 @media (min-width: 1181px) {
@@ -6226,9 +6234,9 @@ body[data-active-view="funnels"] #pageSubtitle {
   body[data-active-view="funnels"] .dashboardMain {
     display: grid;
     grid-template-areas:
-      "funnel-title funnel-content"
-      "saved-funnels funnel-content";
-    grid-template-columns: 220px minmax(0, 1fr);
+      "funnel-catalog funnel-topbar"
+      "funnel-catalog funnel-content";
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     align-items: start;
     column-gap: 18px;
@@ -6241,9 +6249,25 @@ body[data-active-view="funnels"] #pageSubtitle {
   }
 
   body[data-active-view="funnels"] .topbar > div:first-child {
-    grid-area: funnel-title;
+    display: none;
+  }
+
+  body[data-active-view="funnels"] .topbarActions {
+    grid-area: funnel-topbar;
     align-self: start;
-    padding: 0 12px 5px;
+    justify-content: space-between;
+    min-width: 0;
+    padding-bottom: 12px;
+  }
+
+  body[data-active-view="funnels"] .funnelTopbarSelection {
+    align-self: center;
+    flex: 1 1 300px;
+  }
+
+  body[data-active-view="funnels"] .funnelTopbarFilters {
+    flex: 0 1 auto;
+    justify-content: flex-end;
   }
 
   body[data-active-view="funnels"] .funnelsPage,
@@ -6252,9 +6276,11 @@ body[data-active-view="funnels"] #pageSubtitle {
   }
 
   body[data-active-view="funnels"] .funnelCatalogPanel {
-    grid-area: saved-funnels;
-    min-height: calc(100vh - 56px);
-    max-height: calc(100vh - 56px);
+    grid-area: funnel-catalog;
+  }
+
+  body[data-active-view="funnels"] .funnelCatalogTitle {
+    display: block;
   }
 
   body[data-active-view="funnels"] .funnelDetailColumn {
@@ -6267,7 +6293,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelCatalogHeader {
-  grid-area: catalog-header;
   min-width: 0;
 }
 
@@ -6287,16 +6312,10 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelCatalogAction {
   display: grid;
-  grid-area: catalog-action;
   justify-self: stretch;
   width: 100%;
   min-width: 0;
   padding-right: 3px;
-}
-
-.funnelCatalogAction .funnelNewButton {
-  width: 100%;
-  min-width: 0;
 }
 
 .funnelCatalogHeader h2::after {
@@ -6309,7 +6328,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelCatalog {
   display: grid;
-  grid-area: catalog-list;
   align-content: start;
   gap: 6px;
   min-height: 0;
@@ -6318,15 +6336,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   padding-right: 3px;
   scrollbar-color: rgba(124, 60, 255, 0.42) transparent;
   scrollbar-width: thin;
-}
-
-.funnelCatalogPanel.hasManyFunnels {
-  grid-template-areas:
-    "catalog-header"
-    "catalog-action"
-    "catalog-list";
-  grid-template-rows: auto auto minmax(0, 1fr);
-  align-content: stretch;
 }
 
 .funnelCatalogItem {
@@ -6372,7 +6381,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   opacity: 0.56;
 }
 
-.funnelIconButton,
 .funnelBackButton {
   display: grid;
   place-items: center;
@@ -6385,37 +6393,8 @@ body[data-active-view="funnels"] #pageSubtitle {
   cursor: pointer;
 }
 
-.funnelIconButton:hover:not(:disabled),
-.funnelIconButton:focus-visible,
 .funnelBackButton:hover,
 .funnelBackButton:focus-visible {
-  border-color: rgba(124, 60, 255, 0.72);
-  color: var(--text);
-  outline: none;
-}
-
-.funnelIconButton:disabled,
-.funnelEditButton:disabled {
-  cursor: default;
-  opacity: 0.42;
-}
-
-.funnelEditButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--control-bg);
-  color: var(--nav-text);
-  padding: 0 14px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.funnelEditButton:hover:not(:disabled),
-.funnelEditButton:focus-visible {
   border-color: rgba(124, 60, 255, 0.72);
   color: var(--text);
   outline: none;
@@ -6466,36 +6445,6 @@ body[data-active-view="funnels"] #pageSubtitle {
   overflow: visible;
   padding: 0;
   container-type: inline-size;
-}
-
-.funnelResultsHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 4px 0 0;
-}
-
-.funnelResultsHeader > div:first-child {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.funnelResultsActions {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex: 0 0 auto;
-}
-
-.funnelResultsHeader h2 {
-  font-size: 24px;
-}
-
-.funnelResultsHeader p {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .funnelInlineMetrics {
@@ -8155,10 +8104,6 @@ body.hasEventConfirmDialog {
     width: 100%;
   }
 
-  .funnelNewButton {
-    width: 100%;
-  }
-
   .topbarButtonGroup {
     align-items: stretch;
     flex-direction: column;
@@ -8684,20 +8629,6 @@ body.hasEventConfirmDialog {
 
   .funnelCatalog {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .funnelEditButton {
-    justify-content: center;
-  }
-
-  .funnelResultsHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .funnelResultsActions {
-    justify-content: flex-end;
-    width: 100%;
   }
 
   .funnelStepRow {

@@ -178,13 +178,13 @@ assert.doesNotMatch(eventCatalogRendererSource, /<small>|Auto keys|Manual keys|N
 
 assert.match(
   styleSource,
-  /body\[data-active-view="events"\]:not\(\.isLocked\) \.sidebar\s*\{[^}]*display:\s*none;/,
-  "the global sidebar should collapse only while Events is active",
+  /body\[data-active-view="events"\]:not\(\.isLocked\) \.sidebar,\s*body\[data-active-view="funnels"\]:not\(\.isLocked\) \.sidebar\s*\{[^}]*display:\s*none;/,
+  "the global sidebar should collapse while Events or Funnels owns the workspace rail",
 );
 assert.match(
   styleSource,
-  /body\[data-active-view="events"\]:not\(\.isLocked\) \.appShell\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
-  "Events should reclaim the collapsed sidebar space",
+  /body\[data-active-view="events"\]:not\(\.isLocked\) \.appShell,\s*body\[data-active-view="funnels"\]:not\(\.isLocked\) \.appShell\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+  "Events and Funnels should reclaim the collapsed sidebar space",
 );
 assert.match(styleSource, /\.eventConfirmBackdrop\s*\{[^}]*position:\s*fixed;/, "destructive actions should use a themed modal");
 const compact1180Start = styleSource.indexOf("@media (max-width: 1180px)");
