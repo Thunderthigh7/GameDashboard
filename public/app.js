@@ -301,7 +301,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-45";
+const DASHBOARD_ASSET_VERSION = "20260725-47";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -1105,8 +1105,8 @@ function renderActiveView(options = {}) {
       subtitle: "Automation and saved analysis history.",
     },
     chat: {
-      title: "Chat Analysis",
-      subtitle: "Player messages and grouped question insights.",
+      title: "Chats",
+      subtitle: "",
     },
     usage: {
       title: "Usage",
@@ -1164,12 +1164,13 @@ function loadActiveViewData(view, options = {}) {
     if (view === "ai-runs") {
       loadAiAutomationSettings();
       loadAiReportHistory();
+      loadSelectedAiReport();
     } else if (view === "events") {
       loadCustomEvents();
     } else if (view === "funnels") {
       loadFunnels();
     } else if (view === "chat") {
-      loadChatLogs({ includeInsights: true });
+      loadChatLogs({ includeInsights: false });
     }
     return;
   }
@@ -1182,8 +1183,9 @@ function loadActiveViewData(view, options = {}) {
   } else if (view === "ai-runs") {
     loadAiAutomationSettings();
     loadAiReportHistory();
+    loadSelectedAiReport();
   } else if (view === "chat") {
-    loadChatLogs();
+    loadChatLogs({ includeInsights: false });
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -4568,6 +4570,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
     const playerCount = Math.max(0, Math.round(Number(entry.playerCount) || 0));
     const percentPlayers = Math.max(0, Math.min(Number(entry.percentPlayers) || 0, 100));
     const averagePlayerShare = Math.max(0, Math.min(Number(entry.averagePlayerShare) || 0, 100));
+    const currentPercent = getEventPropertyCurrentMetric(entry.points, "percent");
     const eventPercentChange = renderEventPropertyMetricChange(entry.points, "percent", "Event share");
     const playerPercentChange = renderEventPropertyMetricChange(entry.points, "percentPlayers", "Player reach");
     const averagePlayerShareChange = renderEventPropertyMetricChange(
@@ -4583,6 +4586,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <strong>${escapeHtml(value)}</strong>
         </span>
         <b class="eventPropertyRankedEvents" role="cell" title="${formatEventNumber(eventCount)} events">${formatCompactNumber(eventCount)}</b>
+        <b class="eventPropertyRankedMetric eventPropertyRankedCurrent" role="cell" title="Latest observed event share">${currentPercent === null ? "—" : `${formatEventNumber(currentPercent)}%`}</b>
         <b class="eventPropertyRankedMetric" role="cell">${formatEventNumber(percent)}%${eventPercentChange}</b>
         <b class="eventPropertyRankedMetric" role="cell" title="${formatEventNumber(playerCount)} players">${formatEventNumber(percentPlayers)}%${playerPercentChange}</b>
         <b class="eventPropertyRankedMetric" role="cell">${formatEventNumber(averagePlayerShare)}%${averagePlayerShareChange}</b>
@@ -4599,6 +4603,7 @@ function renderEventPropertyRankedBreakdown(property = {}, propertyName = "Prope
           <span role="columnheader">#</span>
           <span role="columnheader">Value</span>
           <span role="columnheader">Events</span>
+          <span role="columnheader">Current</span>
           <span role="columnheader">% of Events</span>
           <span role="columnheader">% of Players</span>
           <span role="columnheader">Avg Player Share</span>
@@ -4619,17 +4624,26 @@ function renderEmptyEventPropertyRankedBreakdown(propertyName = "Property") {
           <span role="columnheader">#</span>
           <span role="columnheader">Value</span>
           <span role="columnheader">Events</span>
+          <span role="columnheader">Current</span>
           <span role="columnheader">% of Events</span>
           <span role="columnheader">% of Players</span>
           <span role="columnheader">Avg Player Share</span>
         </div>
         <div class="eventPropertyRankedRows eventPropertyRankedEmptyRows" role="rowgroup">
           <div class="eventPropertyRankedEmptyRow" role="row">
-            <span role="cell" aria-colspan="6">No data yet</span>
+            <span role="cell" aria-colspan="7">No data yet</span>
           </div>
         </div>
       </div>
     </aside>`;
+}
+
+function getEventPropertyCurrentMetric(points = [], metricName = "percent") {
+  const observedValues = (Array.isArray(points) ? points : [])
+    .map((point) => point?.[metricName])
+    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+    .map(Number);
+  return observedValues.length ? observedValues.at(-1) : null;
 }
 
 function getEventPropertySeriesMetricChange(points = [], metricName = "percent") {
@@ -6857,7 +6871,7 @@ function handleDateFilterChange(context = dateRangePickerContext) {
     loadCustomEvents({ force: true });
   }
   if (cleanContext === "funnels" && activeView === "funnels") loadFunnels({ force: true });
-  if (cleanContext === "events" && activeView === "chat") loadChatLogs({ includeInsights: true });
+  if (cleanContext === "events" && activeView === "chat") loadChatLogs({ includeInsights: false });
 }
 
 function getDateRangeInput(side, context = dateRangePickerContext) {

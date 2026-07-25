@@ -14,6 +14,7 @@
     "test:event-definitions": "node scripts/test-event-definitions.mjs",
     "test:events": "node scripts/test-event-property-chart.mjs",
     "test:funnels": "node scripts/test-funnel-timeline.mjs",
+    "test:chat": "node scripts/test-chat-ui.mjs",
     "test:releases": "node scripts/test-release-comparisons.mjs"
   },
   "dependencies": {

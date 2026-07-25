@@ -141,6 +141,7 @@ assert.match(appSource, /class="eventPropertyAverageKey"/, "the average legend s
 assert.doesNotMatch(appSource, /<small><b>AVG<\/b>/, "property legends should not render average badges");
 assert.match(appSource, /class="eventPropertyRanked"/, "each property graph should include a ranked breakdown panel");
 assert.match(appSource, /<span role="columnheader">Events<\/span>/, "ranked breakdowns should show raw event counts");
+assert.match(appSource, /<span role="columnheader">Current<\/span>/, "ranked breakdowns should show the latest observed event share");
 assert.match(appSource, /<span role="columnheader">% of Events<\/span>/, "event percentage should keep a direct header");
 assert.match(appSource, /<span role="columnheader">% of Players<\/span>/, "player percentage should keep a direct header");
 assert.match(appSource, /<span role="columnheader">Avg Player Share<\/span>/, "equal-player share should keep a direct header");
@@ -150,6 +151,33 @@ assert.match(
   appSource,
   /const eventCount = Math\.max\(0, Math\.round\(Number\(entry\.count\) \|\| 0\)\);[\s\S]*class="eventPropertyRankedEvents"/,
   "ranked breakdown event totals should use the real series count",
+);
+assert.match(
+  appSource,
+  /const currentPercent = getEventPropertyCurrentMetric\(entry\.points, "percent"\);[\s\S]*class="eventPropertyRankedMetric eventPropertyRankedCurrent"[\s\S]*currentPercent === null \? "—" : `\$\{formatEventNumber\(currentPercent\)\}%`/,
+  "ranked breakdown current values should use the latest observed event share",
+);
+assert.match(
+  appSource,
+  /function getEventPropertyCurrentMetric\(points = \[\], metricName = "percent"\)[\s\S]*filter\(\(value\) => value !== null && value !== undefined && Number\.isFinite\(Number\(value\)\)\)[\s\S]*observedValues\.at\(-1\)/,
+  "current event share should ignore empty trailing buckets without discarding a real zero",
+);
+const currentMetricFunctionSource = appSource.match(
+  /function getEventPropertyCurrentMetric\(points = \[\], metricName = "percent"\) \{[\s\S]*?\n\}/,
+)?.[0];
+assert.ok(currentMetricFunctionSource, "current event share helper should be available for behavior checks");
+const getCurrentMetric = Function(
+  `"use strict"; ${currentMetricFunctionSource}; return getEventPropertyCurrentMetric;`,
+)();
+assert.equal(
+  getCurrentMetric([{ percent: 24 }, { percent: 0 }, { percent: null }]),
+  0,
+  "a real latest 0% should remain the current value",
+);
+assert.equal(
+  getCurrentMetric([{ percent: 24 }, { percent: 31 }, { percent: null }]),
+  31,
+  "an empty trailing bucket should fall back to the latest observed share",
 );
 assert.match(
   appSource,
@@ -166,11 +194,11 @@ assert.match(
   /class="eventPropertyMetricChange eventPropertyMetricChange-\$\{direction\}"[\s\S]*\(<span aria-hidden="true">\$\{arrow\}<\/span>\$\{changeText\}\)/,
   "inline changes should render in parentheses beside their percentage",
 );
-assert.match(appSource, /aria-colspan="6">No data yet/, "empty ranked breakdowns should span all six columns");
+assert.match(appSource, /aria-colspan="7">No data yet/, "empty ranked breakdowns should span all seven columns");
 assert.match(
   styleSource,
-  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(220px, 1fr\)\s+minmax\(100px, 0\.18fr\)\s+minmax\(205px, 0\.34fr\)\s+minmax\(205px, 0\.34fr\)\s+minmax\(235px, 0\.4fr\);[^}]*gap:\s*18px;[^}]*min-width:\s*1120px;/,
-  "full-width ranked breakdowns should reserve a clearly spaced six-column layout",
+  /\.eventPropertyRankedTableHeader,\s*\.eventPropertyRankedRow\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(220px, 1fr\)\s+minmax\(100px, 0\.18fr\)\s+minmax\(120px, 0\.2fr\)\s+minmax\(205px, 0\.34fr\)\s+minmax\(205px, 0\.34fr\)\s+minmax\(235px, 0\.4fr\);[^}]*gap:\s*18px;[^}]*min-width:\s*1260px;/,
+  "full-width ranked breakdowns should reserve a clearly spaced seven-column layout",
 );
 assert.match(
   styleSource,

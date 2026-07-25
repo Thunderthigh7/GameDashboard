@@ -3854,22 +3854,26 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .chatMetricGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
 .chatMetricCard {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: 54px max-content;
   align-items: center;
   gap: 14px;
-  min-width: 0;
-  min-height: 104px;
+  flex: 0 1 auto;
+  width: max-content;
+  min-width: 220px;
+  max-width: 100%;
+  min-height: 94px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: linear-gradient(145deg, rgba(13, 20, 43, 0.96), rgba(9, 15, 31, 0.88));
-  padding: 15px 17px;
+  padding: 15px 18px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
@@ -3880,24 +3884,25 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .chatMetricCard > div > span {
-  color: #b7c2e2;
-  font-size: 11px;
-  font-weight: 800;
+  color: #cbd4ee;
+  font-size: 12px;
+  font-weight: 850;
   letter-spacing: 0.035em;
   text-transform: uppercase;
 }
 
 .chatMetricCard > div > strong {
-  color: var(--text);
-  font-size: clamp(27px, 2vw, 34px);
+  color: #fff;
+  font-size: 30px;
+  font-weight: 900;
   line-height: 1;
 }
 
 .chatMetricIcon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 54px;
+  height: 54px;
   border: 1px solid rgba(142, 91, 255, 0.34);
   border-radius: 14px;
   color: #b68cff;
@@ -3905,8 +3910,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .chatMetricIcon svg,
 .chatRecentEmptyIcon svg {
-  width: 27px;
-  height: 27px;
+  width: 29px;
+  height: 29px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -3933,6 +3938,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
   background: linear-gradient(145deg, rgba(12, 20, 43, 0.95), rgba(8, 15, 31, 0.9));
 }
 
+.aiRunsQuestionPanel {
+  width: 100%;
+}
+
 .chatSectionHeader {
   display: flex;
   align-items: center;
@@ -3945,13 +3954,14 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .chatSectionHeader h2 {
   margin: 0;
   color: var(--text);
-  font-size: 16px;
+  font-size: 20px;
+  font-weight: 850;
 }
 
 .chatSectionHeader p {
   margin: 4px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .chatQuestionTableHeader,
@@ -3965,13 +3975,13 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .chatQuestionTableHeader,
 .chatLogTableHeader {
-  min-height: 34px;
+  min-height: 42px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: rgba(8, 14, 30, 0.48);
   color: #8592b4;
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 850;
   letter-spacing: 0.035em;
   text-transform: uppercase;
 }
@@ -3980,14 +3990,14 @@ body[data-active-view="connect"] .topbar > div:first-child {
   padding: 0 18px;
 }
 
-.chatAnalysisPage .commonQuestionList,
+.chatQuestionPanel .commonQuestionList,
 .chatAnalysisPage .chatLogList {
   gap: 0;
   margin: 0;
 }
 
 .chatQuestionRow {
-  min-height: 70px;
+  min-height: 76px;
   border-bottom: 1px solid rgba(103, 121, 164, 0.16);
   padding: 11px 18px;
 }
@@ -3999,14 +4009,14 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .chatQuestionRow .questionRank {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border: 1px solid rgba(158, 112, 255, 0.5);
   border-radius: 999px;
   background: linear-gradient(145deg, rgba(124, 60, 255, 0.74), rgba(77, 39, 168, 0.72));
   color: #fff;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 850;
   box-shadow: 0 0 14px rgba(124, 60, 255, 0.14);
 }
 
@@ -4019,20 +4029,22 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .chatQuestionRow .questionBody > strong {
   overflow-wrap: anywhere;
   color: #edf1ff;
-  font-size: 13px;
+  font-size: 16px;
+  font-weight: 850;
 }
 
 .chatQuestionRow .questionBody > small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .chatQuestionCount {
-  color: #dce3fb;
-  font-size: 12px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
 }
 
 .chatQuestionEmpty {
@@ -4045,12 +4057,12 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .chatQuestionEmpty strong {
   color: #dce3fb;
-  font-size: 12px;
+  font-size: 15px;
 }
 
 .chatQuestionEmpty span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .chatQuestionPlaceholder {
@@ -4153,7 +4165,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .chatAnalysisPage .chatLogItem {
-  min-height: 58px;
+  min-height: 68px;
   border: 0;
   border-bottom: 1px solid rgba(103, 121, 164, 0.15);
   border-radius: 0;
@@ -4193,7 +4205,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .chatLogPlayer strong {
   overflow: hidden;
   color: #dce3fb;
-  font-size: 12px;
+  font-size: 15px;
+  font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4202,13 +4215,13 @@ body[data-active-view="connect"] .topbar > div:first-child {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border: 1px solid rgba(130, 91, 239, 0.38);
   border-radius: 999px;
   background: linear-gradient(145deg, rgba(92, 62, 171, 0.7), rgba(37, 68, 136, 0.68));
   color: #efeaff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -4217,7 +4230,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
   margin: 0;
   overflow: hidden;
   color: #cbd4ee;
-  font-size: 12px;
+  font-size: 15px;
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4225,7 +4238,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .chatLogItem time {
   color: #8f9cbd;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 750;
   text-align: right;
   white-space: nowrap;
 }
@@ -5631,12 +5645,13 @@ body[data-active-view="events"] #pageSubtitle {
     42px
     minmax(220px, 1fr)
     minmax(100px, 0.18fr)
+    minmax(120px, 0.2fr)
     minmax(205px, 0.34fr)
     minmax(205px, 0.34fr)
     minmax(235px, 0.4fr);
   align-items: center;
   gap: 18px;
-  min-width: 1120px;
+  min-width: 1260px;
   padding-inline: 8px;
 }
 
@@ -6186,6 +6201,30 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 @media (min-width: 1181px) {
+  body[data-active-view="chat"] .topbar {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(560px, 760px) minmax(120px, 1fr);
+    align-items: center;
+  }
+
+  body[data-active-view="chat"] .topbar > div:first-child {
+    min-width: 0;
+  }
+
+  body[data-active-view="chat"] .topbarActions {
+    grid-column: 2;
+    width: 100%;
+    flex: none;
+    justify-content: center;
+  }
+
+  body[data-active-view="chat"] .eventTopbarFilters,
+  body[data-active-view="chat"] .eventTopbarFilters .dateFilterCluster,
+  body[data-active-view="chat"] #dateRangeControl {
+    width: 100%;
+    max-width: 760px;
+  }
+
   body[data-active-view="events"] .dashboardMain {
     display: grid;
     grid-template-areas:
@@ -9447,10 +9486,6 @@ body.hasEventConfirmDialog {
 }
 
 @media (max-width: 940px) {
-  .chatMetricGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .chatQuestionTableHeader,
   .chatLogTableHeader {
     display: none;
@@ -9480,7 +9515,7 @@ body.hasEventConfirmDialog {
     align-items: center;
     gap: 5px;
     margin-top: 9px;
-    font-size: 11px;
+    font-size: 14px;
   }
 
   .chatQuestionCount::before {
@@ -9518,10 +9553,13 @@ body.hasEventConfirmDialog {
 
 @media (max-width: 520px) {
   .chatMetricGrid {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
 
   .chatMetricCard {
+    width: 100%;
+    min-width: 0;
     min-height: 94px;
   }
 
