@@ -290,7 +290,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-41";
+const DASHBOARD_ASSET_VERSION = "20260725-43";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -5542,12 +5542,10 @@ function renderFunnelTimeline(funnel) {
     ? visibleSteps.map((step) => {
       const index = Number(step.index);
       const color = EVENT_PROPERTY_SERIES_COLORS[(index - 1) % EVENT_PROPERTY_SERIES_COLORS.length];
-      const aggregateStep = funnel?.analytics?.steps?.find((entry) => Number(entry.index) === index);
       return `
         <button type="button" data-funnel-timeline-legend-step="${index}" title="Hide Step ${index}">
           <i style="--funnel-step-color:${color}" aria-hidden="true"></i>
           <span><strong>Step ${index}</strong> ${escapeHtml(formatEventName(step.eventName))}</span>
-          <em>${formatFunnelPercentage(aggregateStep?.conversionFromStart)}</em>
         </button>`;
     }).join("")
     : '<span class="funnelTimelineLegendEmpty">Choose at least one step to draw its line.</span>';
@@ -5672,6 +5670,7 @@ function renderFunnelStepChanges(funnel) {
   const steps = getFunnelTimelineSteps(funnel)
     .filter((step) => Number(step.index) > 1)
     .map((step) => {
+      const averageConversion = getFunnelAverageStepConversion(completedBuckets, step.index);
       const startConversion = getFunnelBucketStepConversion(startBucket, step.index);
       const endConversion = getFunnelBucketStepConversion(endBucket, step.index);
       const changePercentagePoints = startConversion === null || endConversion === null
@@ -5679,6 +5678,7 @@ function renderFunnelStepChanges(funnel) {
         : Math.round((endConversion - startConversion) * 10) / 10;
       return {
         ...step,
+        averageConversion,
         endConversion,
         changePercentagePoints,
       };
@@ -5688,6 +5688,7 @@ function renderFunnelStepChanges(funnel) {
     ? `
       <div class="funnelStepChangesColumnHeader" aria-hidden="true">
         <span>Step</span>
+        <span>Average</span>
         <span>End (change from start)</span>
       </div>
       ${steps.map(renderFunnelStepChangeRow).join("")}
@@ -5714,10 +5715,27 @@ function renderFunnelStepChangeRow(step) {
           <small>After step ${Math.max(index - 1, 1)}</small>
         </div>
       </div>
+      <div class="funnelStepChangeAverage">
+        <strong>${formatFunnelPercentage(step.averageConversion)}</strong>
+      </div>
       <div class="funnelStepChangeValue">
         <strong>${formatFunnelPercentage(step.endConversion)} ${change}</strong>
       </div>
     </article>`;
+}
+
+function getFunnelAverageStepConversion(buckets, stepIndex) {
+  let reachedSessions = 0;
+  let eligibleSessions = 0;
+  for (const bucket of Array.isArray(buckets) ? buckets : []) {
+    const steps = Array.isArray(bucket?.steps) ? bucket.steps : [];
+    const currentStep = steps.find((step) => Number(step.index) === Number(stepIndex));
+    const previousStep = steps.find((step) => Number(step.index) === Number(stepIndex) - 1);
+    reachedSessions += Number(currentStep?.sessions) || 0;
+    eligibleSessions += Number(previousStep?.sessions) || 0;
+  }
+  if (eligibleSessions <= 0) return null;
+  return Math.round((reachedSessions / eligibleSessions) * 1000) / 10;
 }
 
 function getFunnelBucketStepConversion(bucket, stepIndex) {
@@ -5789,7 +5807,7 @@ function renderFunnelResults(funnel) {
             </div>
             <div class="funnelDropCell ${dropOff ? "hasDrop" : ""}">
               <strong>${step.index < steps.length ? formatCompactNumber(dropOff) : "--"}</strong>
-              <small>${step.index < steps.length ? `${formatEventNumber(dropOffRate)}%` : "final step"}</small>
+              <small class="${step.index < steps.length ? "funnelDropRate" : ""}">${step.index < steps.length ? `${formatEventNumber(dropOffRate)}%` : "final step"}</small>
             </div>
           </article>
         `;

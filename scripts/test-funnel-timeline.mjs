@@ -67,6 +67,9 @@ assert.match(appSource, /params\.set\("interval", selectedFunnelInterval\)/, "Fu
 assert.match(appSource, /function renderFunnelTimeline\(funnel\)/, "the Funnel timeline renderer should be present");
 assert.match(appSource, /function renderFunnelStepChanges\(funnel\)/, "the Funnel step comparison renderer should be present");
 assert.match(appSource, /funnelStepChangeDelta">\(\$\{formatFunnelPercentagePointChange/, "the change should sit directly beside its current percentage");
+assert.match(appSource, /<span>Average<\/span>/, "the step-to-step table should show an explicit average column");
+assert.match(appSource, /function getFunnelAverageStepConversion\(buckets, stepIndex\)/, "the Funnel average should be weighted from completed timeline buckets");
+assert.doesNotMatch(appSource, /formatFunnelPercentage\(aggregateStep\?\.conversionFromStart\)/, "the Funnel legend should not display the aggregate percentage");
 assert.match(appSource, /End \(change from start\)/, "the value column should make the start-to-end comparison explicit");
 assert.match(appSource, /function getFunnelBucketStepConversion\(bucket, stepIndex\)/, "the comparison should calculate each bucket's step-to-step conversion");
 assert.match(appSource, /const startBucket = completedBuckets\[0\]/, "the comparison should use the first completed populated timeline bucket");
@@ -77,6 +80,7 @@ assert.doesNotMatch(serverSource, /calculateFunnelStepChanges|getFunnelStepChang
 assert.match(styleSource, /\.funnelTimelinePanel\s*\{/, "the Funnel chart should use a dedicated themed panel");
 assert.match(styleSource, /\.funnelTimelineStepMenu\s*\{/, "the step selector should use a themed menu");
 assert.match(styleSource, /\.funnelResultSteps\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?border-radius:\s*12px/, "the main Funnel step table should use a themed container");
+assert.match(styleSource, /\.funnelStepPlayerCount,[\s\S]*?\.funnelDropCell strong\s*\{[\s\S]*?font-size:\s*18px/, "the main Funnel table values should use the larger scannable number size");
 assert.match(styleSource, /\.funnelStepChangesPanel\s*\{/, "the step changes should use a dedicated scannable panel");
 
 console.log("Funnel timeline assertions passed.");

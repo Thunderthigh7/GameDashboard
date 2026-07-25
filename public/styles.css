@@ -6853,7 +6853,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelTimelineLegend button {
   display: grid;
-  grid-template-columns: 10px minmax(0, auto) auto;
+  grid-template-columns: 10px minmax(0, auto);
   align-items: center;
   gap: 7px;
   min-height: 30px;
@@ -6884,12 +6884,6 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelTimelineLegend button strong {
   color: #fff;
-}
-
-.funnelTimelineLegend button em {
-  color: #b8c3dd;
-  font-style: normal;
-  font-weight: 850;
 }
 
 .funnelTimelineLegendEmpty {
@@ -6935,10 +6929,10 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelStepChangesColumnHeader,
 .funnelStepChangeRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.8fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.38fr) minmax(220px, 0.72fr);
   align-items: center;
   gap: 20px;
-  min-width: 480px;
+  min-width: 650px;
 }
 
 .funnelStepChangesColumnHeader {
@@ -6951,7 +6945,7 @@ body[data-active-view="funnels"] #pageSubtitle {
   text-transform: uppercase;
 }
 
-.funnelStepChangesColumnHeader span:last-child {
+.funnelStepChangesColumnHeader span:nth-child(n + 2) {
   text-align: right;
 }
 
@@ -6986,6 +6980,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelStepChangeIdentity > div,
+.funnelStepChangeAverage,
 .funnelStepChangeValue {
   display: grid;
   gap: 3px;
@@ -6994,6 +6989,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelStepChangeIdentity strong,
 .funnelStepChangeIdentity small,
+.funnelStepChangeAverage strong,
 .funnelStepChangeValue strong,
 .funnelStepChangeDelta {
   overflow: hidden;
@@ -7011,11 +7007,13 @@ body[data-active-view="funnels"] #pageSubtitle {
   font-size: 9px;
 }
 
+.funnelStepChangeAverage,
 .funnelStepChangeValue {
   justify-items: end;
   text-align: right;
 }
 
+.funnelStepChangeAverage strong,
 .funnelStepChangeValue strong {
   color: #f6f7ff;
   font-size: 18px;
@@ -7083,7 +7081,7 @@ body[data-active-view="funnels"] #pageSubtitle {
 }
 
 .funnelResultStep {
-  min-height: 76px;
+  min-height: 82px;
   border-bottom: 1px solid rgba(47, 61, 96, 0.56);
 }
 
@@ -7108,7 +7106,7 @@ body[data-active-view="funnels"] #pageSubtitle {
   border-radius: 50%;
   background: linear-gradient(135deg, #8046e8, #4e279e);
   color: #fff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   box-shadow: 0 5px 14px rgba(99, 49, 201, 0.24);
 }
@@ -7128,12 +7126,12 @@ body[data-active-view="funnels"] #pageSubtitle {
 
 .funnelStepIdentity strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .funnelStepIdentity small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .funnelStepBarCell {
@@ -7188,13 +7186,20 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelTimeCell strong,
 .funnelDropCell strong {
   color: #e9edff;
-  font-size: 13px;
+  font-size: 18px;
+  font-weight: 900;
 }
 
 .funnelTimeCell small,
 .funnelDropCell small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
+}
+
+.funnelDropCell .funnelDropRate {
+  color: #cbd3ee;
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .funnelDropCell.hasDrop strong {
@@ -9262,17 +9267,55 @@ body.hasEventConfirmDialog {
 
   .funnelStepChangesColumnHeader,
   .funnelStepChangeRow {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.3fr);
     gap: 12px;
     min-width: 0;
   }
 
+  .funnelStepChangesColumnHeader {
+    display: none;
+  }
+
   .funnelStepChangeRow {
+    grid-template-areas:
+      "step step"
+      "average end";
     padding: 14px 0;
   }
 
-  .funnelStepChangesColumnHeader span:last-child {
-    max-width: 170px;
+  .funnelStepChangeIdentity {
+    grid-area: step;
+  }
+
+  .funnelStepChangeAverage,
+  .funnelStepChangeValue {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .funnelStepChangeAverage {
+    grid-area: average;
+  }
+
+  .funnelStepChangeValue {
+    grid-area: end;
+  }
+
+  .funnelStepChangeAverage::before,
+  .funnelStepChangeValue::before {
+    color: #8995b2;
+    font-size: 8px;
+    font-weight: 850;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+  }
+
+  .funnelStepChangeAverage::before {
+    content: "Average";
+  }
+
+  .funnelStepChangeValue::before {
+    content: "End (change from start)";
   }
 }
 
