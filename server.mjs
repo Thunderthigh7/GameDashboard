@@ -17,6 +17,7 @@ import {
 import {
   calculateFunnelAnalytics,
   calculateFunnelMapSamples,
+  calculateFunnelStepChanges,
   calculateFunnelTimelineAnalytics,
   groupCustomEventsBySession,
 } from "./lib/funnels.mjs";
@@ -6600,6 +6601,14 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
     toMs,
     interval: requestedInterval,
   });
+  const selectedStepChanges = selectedTimelineDefinition
+    ? await getFunnelStepChangesForRange(
+      universeId,
+      selectedTimelineDefinition,
+      fromMs,
+      toMs,
+    )
+    : null;
 
   return {
     universeId,
@@ -6629,10 +6638,51 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
               timelineScaffold.buckets,
             ),
           },
+          stepChanges: selectedStepChanges,
         }
         : {}),
     })),
   };
+}
+
+async function getFunnelStepChangesForRange(universeId, definition, fromMs, toMs) {
+  const rangeStart = cleanTimestampMs(fromMs);
+  const now = Date.now();
+  const requestedEnd = Math.min(cleanTimestampMs(toMs) || now, now);
+  const conversionWindowMs = Math.max(cleanInteger(definition?.conversionWindowMinutes), 1) * 60 * 1000;
+  const matureRangeEnd = Math.min(requestedEnd, now - conversionWindowMs);
+  if (!rangeStart || matureRangeEnd < rangeStart) return null;
+
+  const currentEndExclusive = matureRangeEnd + 1;
+  const rangeDurationMs = currentEndExclusive - rangeStart;
+  const previousEndExclusive = rangeStart;
+  const previousStart = previousEndExclusive - rangeDurationMs;
+  if (previousStart <= 0) return null;
+
+  const eventFetchEnd = Math.min(
+    now,
+    Math.max(currentEndExclusive + conversionWindowMs, previousEndExclusive + conversionWindowMs),
+  );
+  const comparisonRecords = await getAnalyticsEventRecords({
+    universeId,
+    fromMs: previousStart,
+    toMs: eventFetchEnd,
+  });
+  const comparisonSessions = groupCustomEventsBySession(comparisonRecords.events);
+  return calculateFunnelStepChanges(
+    definition,
+    comparisonSessions,
+    {
+      current: {
+        start: rangeStart,
+        endExclusive: currentEndExclusive,
+      },
+      previous: {
+        start: previousStart,
+        endExclusive: previousEndExclusive,
+      },
+    },
+  );
 }
 
 async function getFunnelDefinitionFromQuery(ownerUserId, searchParams) {

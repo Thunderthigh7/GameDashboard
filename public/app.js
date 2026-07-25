@@ -165,6 +165,9 @@ const funnelTimelineLegend = document.querySelector("#funnelTimelineLegend");
 const funnelTimelineStepPickerButton = document.querySelector("#funnelTimelineStepPickerButton");
 const funnelTimelineStepPickerLabel = document.querySelector("#funnelTimelineStepPickerLabel");
 const funnelTimelineStepMenu = document.querySelector("#funnelTimelineStepMenu");
+const funnelStepChangesPeriod = document.querySelector("#funnelStepChangesPeriod");
+const funnelStepChangeHighlights = document.querySelector("#funnelStepChangeHighlights");
+const funnelStepChangesTable = document.querySelector("#funnelStepChangesTable");
 const funnelIntervalSelect = document.querySelector("#funnelIntervalSelect");
 const funnelIntervalButton = document.querySelector("#funnelIntervalButton");
 const funnelIntervalButtonLabel = document.querySelector("#funnelIntervalButtonLabel");
@@ -289,7 +292,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-36";
+const DASHBOARD_ASSET_VERSION = "20260725-37";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -5646,6 +5649,125 @@ function renderFunnelTimeline(funnel) {
     </div>`;
 }
 
+function renderFunnelStepChanges(funnel) {
+  if (!funnelStepChangesTable || !funnelStepChangeHighlights || !funnelStepChangesPeriod) return;
+  const comparison = funnel?.stepChanges;
+  if (!funnel) {
+    funnelStepChangesPeriod.textContent = "Current range compared with the previous equal period.";
+    funnelStepChangeHighlights.hidden = true;
+    funnelStepChangeHighlights.innerHTML = "";
+    funnelStepChangesTable.innerHTML = '<p class="status">No funnel selected.</p>';
+    return;
+  }
+  if (!comparison) {
+    funnelStepChangesPeriod.textContent = "Current range compared with the previous equal period.";
+    funnelStepChangeHighlights.hidden = true;
+    funnelStepChangeHighlights.innerHTML = "";
+    funnelStepChangesTable.innerHTML = '<p class="status">No completed cohorts are available for comparison yet.</p>';
+    return;
+  }
+
+  const currentRangeLabel = formatFunnelComparisonRange(comparison.current);
+  const previousRangeLabel = formatFunnelComparisonRange(comparison.previous);
+  funnelStepChangesPeriod.textContent = `${currentRangeLabel} vs ${previousRangeLabel}`;
+  const steps = (Array.isArray(comparison.steps) ? comparison.steps : [])
+    .filter((step) => Number(step.index) > 1);
+  const largestDecline = steps.find((step) => (
+    Number(step.index) === Number(comparison.largestDeclineStepIndex)
+  ));
+  const largestImprovement = steps.find((step) => (
+    Number(step.index) === Number(comparison.largestImprovementStepIndex)
+  ));
+  const highlights = [
+    largestDecline ? renderFunnelStepChangeHighlight(largestDecline, "declined", "Largest decline") : "",
+    largestImprovement ? renderFunnelStepChangeHighlight(largestImprovement, "improved", "Largest improvement") : "",
+  ].filter(Boolean);
+  funnelStepChangeHighlights.classList.toggle("single", highlights.length === 1);
+  funnelStepChangeHighlights.hidden = !highlights.length;
+  funnelStepChangeHighlights.innerHTML = highlights.join("");
+
+  funnelStepChangesTable.innerHTML = steps.length
+    ? `
+      <div class="funnelStepChangesColumnHeader" aria-hidden="true">
+        <span>Step transition</span>
+        <span>Current</span>
+        <span>Previous</span>
+        <span>Change</span>
+      </div>
+      ${steps.map(renderFunnelStepChangeRow).join("")}
+    `
+    : '<p class="status">Add a second Funnel step to compare conversion.</p>';
+}
+
+function renderFunnelStepChangeHighlight(step, signal, label) {
+  return `
+    <article class="funnelStepChangeHighlight ${signal}">
+      <span>${label}</span>
+      <div>
+        <strong>Step ${Number(step.index) - 1} to ${Number(step.index)}</strong>
+        <small>${escapeHtml(formatEventName(step.eventName))}</small>
+      </div>
+      <em>${formatFunnelPercentagePointChange(step.changePercentagePoints)}</em>
+    </article>`;
+}
+
+function renderFunnelStepChangeRow(step) {
+  const index = Number(step.index) || 0;
+  const signal = ["improved", "declined", "low-data"].includes(step.signal)
+    ? step.signal
+    : "stable";
+  const signalLabel = signal === "improved"
+    ? "Improved"
+    : signal === "declined"
+      ? "Declined"
+      : signal === "low-data"
+        ? "Low data"
+        : "No clear change";
+  return `
+    <article class="funnelStepChangeRow ${signal}">
+      <div class="funnelStepChangeIdentity">
+        <span>${index}</span>
+        <div>
+          <strong>${escapeHtml(formatEventName(step.eventName))}</strong>
+          <small>Step ${Math.max(index - 1, 1)} to ${index}</small>
+        </div>
+      </div>
+      ${renderFunnelStepChangeRate("Current", step.currentConversion, step.currentReachedSessions, step.currentEligibleSessions)}
+      ${renderFunnelStepChangeRate("Previous", step.previousConversion, step.previousReachedSessions, step.previousEligibleSessions)}
+      <div class="funnelStepChangeDelta">
+        <span class="funnelStepChangeCellLabel">Change</span>
+        <strong>${formatFunnelPercentagePointChange(step.changePercentagePoints)}</strong>
+        <small>${signalLabel}</small>
+      </div>
+    </article>`;
+}
+
+function renderFunnelStepChangeRate(label, rate, reachedSessions, eligibleSessions) {
+  return `
+    <div class="funnelStepChangeRate">
+      <span class="funnelStepChangeCellLabel">${label}</span>
+      <strong>${formatFunnelPercentage(rate)}</strong>
+      <small>${formatCompactNumber(reachedSessions)} of ${formatCompactNumber(eligibleSessions)} sessions</small>
+    </div>`;
+}
+
+function formatFunnelPercentagePointChange(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
+  const difference = Number(value);
+  return `${difference > 0 ? "+" : ""}${formatEventNumber(difference)} pp`;
+}
+
+function formatFunnelComparisonRange(range = {}) {
+  const start = new Date(Number(range.start));
+  const end = new Date(Number(range.end));
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return "No period";
+  const spanMs = Math.max(end.getTime() - start.getTime(), 0);
+  const options = spanMs < 2 * 24 * 60 * 60 * 1000
+    ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+    : { month: "short", day: "numeric", year: "numeric" };
+  return `${start.toLocaleString([], options)} - ${end.toLocaleString([], options)}`;
+}
+
 function renderFunnelResults(funnel) {
   const analytics = funnel?.analytics;
   if (funnelResultsTitle) funnelResultsTitle.textContent = funnel?.name || "Funnel steps";
@@ -5662,6 +5784,7 @@ function renderFunnelResults(funnel) {
   if (funnelMedianTime) funnelMedianTime.textContent = medianText;
   updateFunnelIntervalControl(funnel);
   renderFunnelTimeline(funnel);
+  renderFunnelStepChanges(funnel);
   if (!funnelResultSteps) return;
 
   const steps = analytics?.steps || [];

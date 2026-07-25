@@ -6897,6 +6897,288 @@ body[data-active-view="funnels"] #pageSubtitle {
   font-size: 11px;
 }
 
+.funnelStepChangesPanel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(59, 77, 122, 0.72);
+  border-radius: 12px;
+  background: rgba(8, 16, 35, 0.88);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.14);
+  padding: 17px 18px 8px;
+}
+
+.funnelStepChangesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.funnelStepChangesHeader > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.funnelStepChangesHeader h3,
+.funnelStepChangesHeader p {
+  margin: 0;
+}
+
+.funnelStepChangesHeader h3 {
+  color: #f7f8ff;
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.funnelStepChangesHeader p {
+  overflow: hidden;
+  color: #8f9bb9;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelStepChangesHeader > span {
+  flex: 0 0 auto;
+  border: 1px solid rgba(91, 108, 158, 0.48);
+  border-radius: 999px;
+  background: rgba(14, 24, 48, 0.86);
+  color: #aeb9d4;
+  padding: 6px 9px;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.funnelStepChangeHighlights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.funnelStepChangeHighlights.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.funnelStepChangeHighlights[hidden] {
+  display: none;
+}
+
+.funnelStepChangeHighlight {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  min-height: 65px;
+  border: 1px solid rgba(81, 98, 145, 0.48);
+  border-radius: 9px;
+  background: rgba(11, 21, 43, 0.82);
+  padding: 10px 12px;
+}
+
+.funnelStepChangeHighlight > span {
+  display: grid;
+  place-items: center;
+  min-width: 106px;
+  min-height: 28px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.funnelStepChangeHighlight.declined > span {
+  background: rgba(255, 91, 111, 0.12);
+  color: #ff8291;
+}
+
+.funnelStepChangeHighlight.improved > span {
+  background: rgba(45, 212, 162, 0.11);
+  color: #4de2aa;
+}
+
+.funnelStepChangeHighlight > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.funnelStepChangeHighlight strong,
+.funnelStepChangeHighlight small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelStepChangeHighlight strong {
+  color: #f3f5ff;
+  font-size: 12px;
+}
+
+.funnelStepChangeHighlight small {
+  color: #8f9bb9;
+  font-size: 10px;
+}
+
+.funnelStepChangeHighlight em {
+  font-size: 18px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.funnelStepChangeHighlight.declined em {
+  color: #ff6f82;
+}
+
+.funnelStepChangeHighlight.improved em {
+  color: #42dca3;
+}
+
+.funnelStepChangesTable {
+  display: grid;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.funnelStepChangesTable > .status {
+  margin: 0;
+  padding: 24px 12px 28px;
+  text-align: center;
+}
+
+.funnelStepChangesColumnHeader,
+.funnelStepChangeRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.45fr) minmax(130px, 0.45fr) minmax(130px, 0.42fr);
+  align-items: center;
+  gap: 16px;
+  min-width: 720px;
+}
+
+.funnelStepChangesColumnHeader {
+  min-height: 39px;
+  border-bottom: 1px solid rgba(47, 61, 96, 0.72);
+  color: #8995b2;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.funnelStepChangesColumnHeader span:nth-child(n + 2) {
+  text-align: center;
+}
+
+.funnelStepChangeRow {
+  min-height: 74px;
+  border-bottom: 1px solid rgba(47, 61, 96, 0.56);
+}
+
+.funnelStepChangeRow:last-child {
+  border-bottom: 0;
+}
+
+.funnelStepChangeIdentity {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.funnelStepChangeIdentity > span {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid rgba(165, 111, 255, 0.46);
+  border-radius: 50%;
+  background: rgba(124, 60, 255, 0.17);
+  color: #d6c4ff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.funnelStepChangeIdentity > div,
+.funnelStepChangeRate,
+.funnelStepChangeDelta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.funnelStepChangeIdentity strong,
+.funnelStepChangeIdentity small,
+.funnelStepChangeRate strong,
+.funnelStepChangeRate small,
+.funnelStepChangeDelta strong,
+.funnelStepChangeDelta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funnelStepChangeIdentity strong {
+  color: #eef1ff;
+  font-size: 13px;
+}
+
+.funnelStepChangeCellLabel {
+  display: none;
+  color: #8995b2;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.funnelStepChangeIdentity small,
+.funnelStepChangeRate small,
+.funnelStepChangeDelta small {
+  color: #828eaa;
+  font-size: 9px;
+}
+
+.funnelStepChangeRate,
+.funnelStepChangeDelta {
+  justify-items: center;
+  text-align: center;
+}
+
+.funnelStepChangeRate strong {
+  color: #f6f7ff;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.funnelStepChangeDelta strong {
+  color: #aeb8d1;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.funnelStepChangeRow.improved .funnelStepChangeDelta strong,
+.funnelStepChangeRow.improved .funnelStepChangeDelta small {
+  color: #42dca3;
+}
+
+.funnelStepChangeRow.declined .funnelStepChangeDelta strong,
+.funnelStepChangeRow.declined .funnelStepChangeDelta small {
+  color: #ff6f82;
+}
+
+.funnelStepChangeRow.low-data .funnelStepChangeDelta {
+  opacity: 0.72;
+}
+
 .funnelResultSteps {
   gap: 0;
   overflow-x: auto;
@@ -8554,6 +8836,17 @@ body.hasEventConfirmDialog {
     flex-direction: column;
   }
 
+  .funnelStepChangesHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .funnelStepChangesHeader p {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .funnelTimelineStepPicker,
   .funnelTimelineStepPicker > button {
     width: 100%;
@@ -9105,6 +9398,42 @@ body.hasEventConfirmDialog {
     border-left: 1px solid rgba(47, 61, 96, 0.56);
     padding-left: 9px;
     text-align: left;
+  }
+
+  .funnelStepChangeHighlights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .funnelStepChangesColumnHeader {
+    display: none;
+  }
+
+  .funnelStepChangesTable {
+    gap: 0;
+    overflow-x: visible;
+  }
+
+  .funnelStepChangeRow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 8px;
+    min-width: 0;
+    padding: 14px 0;
+  }
+
+  .funnelStepChangeIdentity {
+    grid-column: 1 / -1;
+  }
+
+  .funnelStepChangeRate,
+  .funnelStepChangeDelta {
+    justify-items: start;
+    border-left: 1px solid rgba(47, 61, 96, 0.56);
+    padding-left: 9px;
+    text-align: left;
+  }
+
+  .funnelStepChangeCellLabel {
+    display: block;
   }
 }
 
