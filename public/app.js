@@ -44,6 +44,8 @@ const usageUpgradeMessage = document.querySelector("#usageUpgradeMessage");
 const usageUpgradeButton = document.querySelector("#usageUpgradeButton");
 const usagePlanOptions = document.querySelector("#usagePlanOptions");
 const discordConnectionForm = document.querySelector("#discordConnectionForm");
+const discordWebhookSelect = document.querySelector("#discordWebhookSelect");
+const discordWebhookName = document.querySelector("#discordWebhookName");
 const discordWebhookUrl = document.querySelector("#discordWebhookUrl");
 const discordConnectionBadge = document.querySelector("#discordConnectionBadge");
 const discordSendStatus = document.querySelector("#discordSendStatus");
@@ -62,6 +64,7 @@ const discordRuleForm = document.querySelector("#discordRuleForm");
 const discordRuleId = document.querySelector("#discordRuleId");
 const discordRuleName = document.querySelector("#discordRuleName");
 const discordRuleEvent = document.querySelector("#discordRuleEvent");
+const discordRuleWebhook = document.querySelector("#discordRuleWebhook");
 const discordRuleOperator = document.querySelector("#discordRuleOperator");
 const discordRuleThreshold = document.querySelector("#discordRuleThreshold");
 const discordRuleWindow = document.querySelector("#discordRuleWindow");
@@ -279,6 +282,7 @@ let activeView = getViewFromHash();
 let discordBusy = false;
 let discordIntegration = null;
 let discordIntegrationRequestSequence = 0;
+let discordEditingWebhookId = "";
 let aiChatBusy = false;
 let aiChatHistory = [];
 let heatmapModulePromise = null;
@@ -341,7 +345,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-56";
+const DASHBOARD_ASSET_VERSION = "20260725-57";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -483,6 +487,7 @@ function bindEvents() {
     saveDiscordConnection();
   });
   discordWebhookUrl?.addEventListener("input", clearDiscordSendStatus);
+  discordWebhookSelect?.addEventListener("change", () => selectDiscordWebhook(discordWebhookSelect.value));
   discordTestButton?.addEventListener("click", testDiscordConnection);
   discordDisconnectButton?.addEventListener("click", disconnectDiscordConnection);
   discordNewRuleButton?.addEventListener("click", () => openDiscordRuleEditor());
@@ -1058,6 +1063,7 @@ function setAuthenticated(value, user = null) {
     setDiscordBusy(false);
     discordConnectionForm?.reset();
     discordIntegration = null;
+    discordEditingWebhookId = "";
     discordIntegrationRequestSequence += 1;
     closeDiscordRuleEditor();
     renderDiscordIntegration();
@@ -1643,14 +1649,17 @@ function clearDiscordSendStatus() {
 
 function setDiscordBusy(busy) {
   discordBusy = busy;
+  if (discordWebhookSelect) discordWebhookSelect.disabled = busy;
+  if (discordWebhookName) discordWebhookName.disabled = busy;
   if (discordWebhookUrl) discordWebhookUrl.disabled = busy;
   const connected = Boolean(discordIntegration?.connection?.connected);
+  const hasSelection = Boolean(getEditingDiscordWebhook());
   if (discordSaveConnectionButton) {
     discordSaveConnectionButton.disabled = busy;
     discordSaveConnectionButton.setAttribute("aria-busy", String(busy));
   }
-  if (discordTestButton) discordTestButton.disabled = busy || !connected;
-  if (discordDisconnectButton) discordDisconnectButton.disabled = busy || !connected;
+  if (discordTestButton) discordTestButton.disabled = busy || !hasSelection;
+  if (discordDisconnectButton) discordDisconnectButton.disabled = busy || !hasSelection;
   if (discordNewRuleButton) discordNewRuleButton.disabled = busy || !connected;
 }
 
@@ -1670,6 +1679,7 @@ async function loadDiscordIntegration() {
     const payload = await request(`/api/integrations/discord?universeId=${encodeURIComponent(universeId)}`);
     if (requestSequence !== discordIntegrationRequestSequence || universeId !== selectedUniverseId) return;
     discordIntegration = payload;
+    discordEditingWebhookId = payload?.connection?.selectedWebhookId || "";
     renderDiscordIntegration();
     if (discordRulesStatus) discordRulesStatus.textContent = "";
   } catch (error) {
@@ -1687,6 +1697,7 @@ async function loadDiscordIntegration() {
 async function saveDiscordConnection() {
   if (!authenticated || discordBusy || !selectedUniverseId || !discordConnectionForm) return;
   if (!discordConnectionForm.reportValidity()) return;
+  const updatingExistingWebhook = Boolean(discordEditingWebhookId);
   setDiscordBusy(true);
   if (discordSendStatus) {
     discordSendStatus.dataset.state = "sending";
@@ -1698,15 +1709,18 @@ async function saveDiscordConnection() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         universeId: selectedUniverseId,
+        webhookId: discordEditingWebhookId,
+        name: String(discordWebhookName?.value || "").trim(),
         webhookUrl: String(discordWebhookUrl?.value || "").trim(),
       }),
     });
     discordIntegration = payload;
+    discordEditingWebhookId = payload?.connection?.selectedWebhookId || "";
     if (discordWebhookUrl) discordWebhookUrl.value = "";
     renderDiscordIntegration();
     if (discordSendStatus) {
       discordSendStatus.dataset.state = "success";
-      discordSendStatus.textContent = "Webhook connected.";
+      discordSendStatus.textContent = updatingExistingWebhook ? "Webhook saved." : "Webhook added.";
     }
   } catch (error) {
     handleAuthError(error);
@@ -1721,7 +1735,8 @@ async function saveDiscordConnection() {
 }
 
 async function testDiscordConnection() {
-  if (!authenticated || discordBusy || !selectedUniverseId || !discordIntegration?.connection?.connected) return;
+  const webhook = getEditingDiscordWebhook();
+  if (!authenticated || discordBusy || !selectedUniverseId || !webhook) return;
   setDiscordBusy(true);
   if (discordSendStatus) {
     discordSendStatus.dataset.state = "sending";
@@ -1731,7 +1746,7 @@ async function testDiscordConnection() {
     await request("/api/integrations/discord/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ universeId: selectedUniverseId }),
+      body: JSON.stringify({ universeId: selectedUniverseId, webhookId: webhook.id }),
     });
     if (discordSendStatus) {
       discordSendStatus.dataset.state = "success";
@@ -1751,23 +1766,25 @@ async function testDiscordConnection() {
 }
 
 async function disconnectDiscordConnection() {
-  if (!authenticated || discordBusy || !selectedUniverseId || !discordIntegration?.connection?.connected) return;
+  const webhook = getEditingDiscordWebhook();
+  if (!authenticated || discordBusy || !selectedUniverseId || !webhook) return;
   const confirmed = await showEventConfirmation({
-    title: "Disconnect Discord?",
-    description: "The saved webhook will be removed and every alert rule will be turned off.",
-    actionLabel: "Disconnect",
+    title: `Delete ${webhook.name}?`,
+    description: "Rules using this webhook will be paused until you choose another delivery webhook.",
+    actionLabel: "Delete webhook",
     tone: "danger",
   });
   if (!confirmed) return;
   setDiscordBusy(true);
   try {
-    discordIntegration = await request(`/api/integrations/discord/connection?universeId=${encodeURIComponent(selectedUniverseId)}`, {
+    discordIntegration = await request(`/api/integrations/discord/connection?universeId=${encodeURIComponent(selectedUniverseId)}&webhookId=${encodeURIComponent(webhook.id)}`, {
       method: "DELETE",
     });
+    discordEditingWebhookId = discordIntegration?.connection?.selectedWebhookId || "";
     renderDiscordIntegration();
     if (discordSendStatus) {
       discordSendStatus.dataset.state = "success";
-      discordSendStatus.textContent = "Discord disconnected.";
+      discordSendStatus.textContent = "Webhook deleted.";
     }
   } catch (error) {
     handleAuthError(error);
@@ -1781,26 +1798,53 @@ async function disconnectDiscordConnection() {
   }
 }
 
+async function selectDiscordWebhook(value) {
+  const webhookId = String(value || "");
+  discordEditingWebhookId = webhookId;
+  clearDiscordSendStatus();
+  if (!webhookId) {
+    renderDiscordConnectionEditor();
+    return;
+  }
+  if (!authenticated || discordBusy || !selectedUniverseId) return;
+  setDiscordBusy(true);
+  try {
+    discordIntegration = await request("/api/integrations/discord/connection/select", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: selectedUniverseId, webhookId }),
+    });
+    discordEditingWebhookId = discordIntegration?.connection?.selectedWebhookId || webhookId;
+    renderDiscordIntegration();
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "error";
+      discordSendStatus.textContent = formatRequestError(error);
+    }
+    discordEditingWebhookId = discordIntegration?.connection?.selectedWebhookId || "";
+    renderDiscordConnectionEditor();
+  } finally {
+    setDiscordBusy(false);
+  }
+}
+
+function getEditingDiscordWebhook() {
+  return discordIntegration?.webhooks?.find((webhook) => webhook.id === discordEditingWebhookId) || null;
+}
+
 function renderDiscordIntegration() {
   const connected = Boolean(discordIntegration?.connection?.connected);
+  const webhooks = Array.isArray(discordIntegration?.webhooks) ? discordIntegration.webhooks : [];
   const rules = Array.isArray(discordIntegration?.rules) ? discordIntegration.rules : [];
   const maxRules = Number(discordIntegration?.limits?.rules) || 20;
+  const maxWebhooks = Number(discordIntegration?.limits?.webhooks) || 10;
   if (discordConnectionBadge) {
     discordConnectionBadge.dataset.state = connected ? "connected" : "disconnected";
-    discordConnectionBadge.textContent = connected
-      ? (discordIntegration.connection.webhookHint || "Connected")
-      : "Not connected";
+    discordConnectionBadge.textContent = `${webhooks.length} / ${maxWebhooks} saved`;
   }
-  if (discordWebhookUrl) {
-    discordWebhookUrl.placeholder = connected
-      ? "Paste a new webhook URL to replace the connection"
-      : "https://discord.com/api/webhooks/...";
-  }
-  if (discordTestButton) discordTestButton.disabled = discordBusy || !connected;
-  if (discordDisconnectButton) {
-    discordDisconnectButton.hidden = !connected;
-    discordDisconnectButton.disabled = discordBusy || !connected;
-  }
+  renderDiscordConnectionEditor();
   if (discordNewRuleButton) discordNewRuleButton.disabled = discordBusy || !connected || rules.length >= maxRules;
   if (discordRuleCount) discordRuleCount.textContent = `${rules.length} / ${maxRules}`;
   if (!discordRuleList) return;
@@ -1831,6 +1875,46 @@ function renderDiscordIntegration() {
   setDiscordBusy(discordBusy);
 }
 
+function renderDiscordConnectionEditor() {
+  const webhooks = Array.isArray(discordIntegration?.webhooks) ? discordIntegration.webhooks : [];
+  const maxWebhooks = Number(discordIntegration?.limits?.webhooks) || 10;
+  const atWebhookLimit = webhooks.length >= maxWebhooks;
+  if (discordEditingWebhookId && !webhooks.some((webhook) => webhook.id === discordEditingWebhookId)) {
+    discordEditingWebhookId = discordIntegration?.connection?.selectedWebhookId || webhooks[0]?.id || "";
+  }
+  const selectedWebhook = getEditingDiscordWebhook();
+  if (discordWebhookSelect) {
+    discordWebhookSelect.innerHTML = [
+      `<option value="" ${atWebhookLimit ? "disabled" : ""}>${atWebhookLimit ? "Webhook limit reached" : "Add a new webhook"}</option>`,
+      ...webhooks.map((webhook) => (
+        `<option value="${escapeHtml(webhook.id)}">${escapeHtml(webhook.name)} · ${escapeHtml(webhook.webhookHint)}</option>`
+      )),
+    ].join("");
+    discordWebhookSelect.value = selectedWebhook?.id || "";
+  }
+  if (discordWebhookName) discordWebhookName.value = selectedWebhook?.name || "";
+  if (discordWebhookUrl) {
+    discordWebhookUrl.value = "";
+    discordWebhookUrl.required = !selectedWebhook;
+    discordWebhookUrl.placeholder = selectedWebhook
+      ? "Leave blank to keep the current URL"
+      : "https://discord.com/api/webhooks/...";
+  }
+  const note = document.querySelector("#discordWebhookNote");
+  if (note) note.textContent = selectedWebhook
+    ? `${selectedWebhook.webhookHint}. Leave blank to keep it.`
+    : "Encrypted before it is saved.";
+  if (discordSaveConnectionButton) {
+    const label = discordSaveConnectionButton.querySelector("span");
+    if (label) label.textContent = selectedWebhook ? "Save changes" : "Add webhook";
+  }
+  if (discordTestButton) discordTestButton.disabled = discordBusy || !selectedWebhook;
+  if (discordDisconnectButton) {
+    discordDisconnectButton.hidden = !selectedWebhook;
+    discordDisconnectButton.disabled = discordBusy || !selectedWebhook;
+  }
+}
+
 function renderDiscordRuleRow(rule) {
   const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
   const windowLabel = formatDiscordAlertWindow(rule.windowMinutes);
@@ -1847,8 +1931,8 @@ function renderDiscordRuleRow(rule) {
         <span>Current ${escapeHtml(formatCompactNumber(rule.currentCount || 0))} · ${escapeHtml(formatEventName(rule.eventName))} · ${escapeHtml(formatDiscordAlertWindow(rule.cooldownMinutes))} cooldown</span>
       </div>
       <div class="discordRuleDelivery">
-        <strong>${rule.enabled ? "Active" : "Paused"}</strong>
-        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || lastSent)}</span>
+        <strong>${escapeHtml(rule.webhookName || "No webhook selected")}</strong>
+        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || `${rule.enabled ? "Active" : "Paused"} · ${lastSent}`)}</span>
       </div>
       <div class="discordRuleActions">
         <button class="discordRuleToggle" type="button" data-discord-rule-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"></button>
@@ -1877,9 +1961,21 @@ function openDiscordRuleEditor(rule = null) {
       .map((eventName) => `<option value="${escapeHtml(eventName)}">${escapeHtml(formatEventName(eventName))} · ${escapeHtml(eventName)}</option>`)
       .join("");
   }
+  const webhooks = discordIntegration.webhooks || [];
+  if (discordRuleWebhook) {
+    discordRuleWebhook.innerHTML = webhooks
+      .map((webhook) => `<option value="${escapeHtml(webhook.id)}">${escapeHtml(webhook.name)} · ${escapeHtml(webhook.webhookHint)}</option>`)
+      .join("");
+  }
   if (discordRuleId) discordRuleId.value = rule?.id || "";
   if (discordRuleName) discordRuleName.value = rule?.name || "";
   if (discordRuleEvent) discordRuleEvent.value = rule?.eventName || eventNames[0] || "";
+  if (discordRuleWebhook) {
+    const defaultWebhookId = discordIntegration.connection?.selectedWebhookId || webhooks[0]?.id || "";
+    discordRuleWebhook.value = webhooks.some((webhook) => webhook.id === rule?.webhookId)
+      ? rule.webhookId
+      : defaultWebhookId;
+  }
   if (discordRuleOperator) discordRuleOperator.value = rule?.operator || "at_least";
   if (discordRuleThreshold) discordRuleThreshold.value = String(rule?.threshold ?? 10);
   if (discordRuleWindow) discordRuleWindow.value = String(rule?.windowMinutes || 15);
@@ -1965,6 +2061,7 @@ function getDiscordRulePayload(overrides = {}) {
     threshold: Number(discordRuleThreshold?.value),
     windowMinutes: Number(discordRuleWindow?.value),
     cooldownMinutes: Number(discordRuleCooldown?.value),
+    webhookId: String(discordRuleWebhook?.value || ""),
     messageTemplate: String(discordRuleMessage?.value || "").trim(),
     ...overrides,
   };
@@ -2014,6 +2111,7 @@ async function updateDiscordAlertRule(rule, overrides) {
         threshold: rule.threshold,
         windowMinutes: rule.windowMinutes,
         cooldownMinutes: rule.cooldownMinutes,
+        webhookId: rule.webhookId,
         messageTemplate: rule.messageTemplate,
         enabled: rule.enabled,
         ...overrides,
@@ -3056,6 +3154,7 @@ async function selectUniverse(value) {
   isCreatingFunnel = false;
   setFunnelBuilderVisible(false);
   discordIntegration = null;
+  discordEditingWebhookId = "";
   discordIntegrationRequestSequence += 1;
   closeDiscordRuleEditor();
   if (discordConnectionForm) discordConnectionForm.reset();

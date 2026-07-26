@@ -124,17 +124,22 @@ const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "ut
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 
 assert.match(indexSource, /id="discordConnectionForm"[\s\S]*?id="discordWebhookUrl"[\s\S]*?type="password"[\s\S]*?maxlength="600"/);
+assert.match(indexSource, /id="discordWebhookSelect"[\s\S]*?id="discordWebhookName"[\s\S]*?id="discordWebhookUrl"/);
 assert.match(indexSource, /id="discordSendStatus"[^>]*aria-live="polite"/);
 assert.match(indexSource, /id="discordTestButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordNewRuleButton"[^>]*type="button"/);
-assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"/);
+assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleWebhook"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"/);
 assert.match(indexSource, /\{\{game\}\}[\s\S]*?\{\{event\}\}[\s\S]*?\{\{count\}\}[\s\S]*?\{\{threshold\}\}/);
 assert.doesNotMatch(indexSource, /id="discordMessage"/);
 assert.match(appSource, /request\(`\/api\/integrations\/discord\?universeId=/);
 assert.match(appSource, /request\("\/api\/integrations\/discord\/connection"/);
+assert.match(appSource, /request\("\/api\/integrations\/discord\/connection\/select"/);
 assert.match(appSource, /request\("\/api\/integrations\/discord\/test"/);
 assert.match(appSource, /request\(id[\s\S]*?"\/api\/integrations\/discord\/rules"/);
 assert.match(appSource, /function renderDiscordRuleRow\(rule\)/);
+assert.match(appSource, /function renderDiscordConnectionEditor\(\)/);
+assert.match(appSource, /webhookId:\s*String\(discordRuleWebhook\?\.value \|\| ""\)/);
+assert.match(appSource, /rule\.webhookName \|\| "No webhook selected"/);
 assert.match(appSource, /Current \$\{escapeHtml\(formatCompactNumber\(rule\.currentCount \|\| 0\)\)\}/);
 assert.match(appSource, /function updateDiscordRulePreview\(\)/);
 assert.match(
@@ -142,8 +147,14 @@ assert.match(
   /url\.pathname === "\/api\/integrations\/discord"[\s\S]*?handleDiscordIntegrationGet\(req, res, auth, url\.searchParams\)/,
 );
 assert.match(serverSource, /url\.pathname === "\/api\/integrations\/discord\/connection"[\s\S]*?handleDiscordConnectionSave\(req, res, auth\)/);
+assert.match(serverSource, /url\.pathname === "\/api\/integrations\/discord\/connection\/select"[\s\S]*?handleDiscordConnectionSelect\(req, res, auth\)/);
 assert.match(serverSource, /url\.pathname === "\/api\/integrations\/discord\/test"[\s\S]*?handleDiscordConnectionTest\(req, res, auth\)/);
-assert.match(serverSource, /function normalizeDiscordAlertRule\(value, existingRule = null\)/);
+assert.match(serverSource, /function normalizeDiscordAlertRule\(value, existingRule = null, integration = null\)/);
+assert.match(serverSource, /const MAX_DISCORD_WEBHOOKS_PER_UNIVERSE = 10/);
+assert.match(serverSource, /function normalizeStoredDiscordIntegration\(integration\)/, "legacy single-webhook records should migrate to named webhooks");
+assert.match(serverSource, /webhooks:\s*webhooks\.map\(\(webhook\) => \(\{/);
+assert.match(serverSource, /rule\.webhookId === webhookId[\s\S]*?enabled:\s*false[\s\S]*?Select a delivery webhook/, "deleting a webhook should pause rather than silently reroute assigned rules");
+assert.match(serverSource, /getStoredDiscordWebhookUrl\(integration, rule\.webhookId\)/, "each rule should deliver through its assigned webhook");
 assert.match(serverSource, /createCipheriv\("aes-256-gcm"/, "saved webhook URLs should be encrypted at rest");
 assert.match(serverSource, /evaluateDiscordAlertsForPresence\(presence\.value, project\)/, "incoming Roblox data should evaluate saved Discord alerts");
 assert.match(serverSource, /countDiscordAlertEvents\(/, "rules should use actual stored analytics event counts");

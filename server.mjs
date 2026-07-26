@@ -65,6 +65,7 @@ const MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS = 200;
 const MAX_COMMON_QUESTIONS_RESPONSE = 5;
 const DISCORD_SEND_WINDOW_MS = 60 * 1000;
 const MAX_DISCORD_SENDS_PER_WINDOW = 10;
+const MAX_DISCORD_WEBHOOKS_PER_UNIVERSE = 10;
 const MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20;
 const MAX_DISCORD_ALERT_DELIVERIES = 30;
 const DISCORD_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
@@ -561,6 +562,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/integrations/discord/connection" && req.method === "DELETE") {
       return handleDiscordConnectionDelete(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/discord/connection/select" && req.method === "PUT") {
+      return handleDiscordConnectionSelect(req, res, auth);
     }
 
     if (url.pathname === "/api/integrations/discord/test" && req.method === "POST") {
@@ -1953,19 +1958,45 @@ async function handleDiscordConnectionSave(req, res, auth) {
     return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
 
-  let webhookUrl;
-  try {
-    webhookUrl = normalizeDiscordWebhookUrl(body?.webhookUrl);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-
   const now = Date.now();
   const existing = await readDiscordIntegration(auth.userId, universeId);
   const integration = existing || createEmptyDiscordIntegration(auth.userId, universeId);
-  integration.webhook = encryptDiscordWebhookUrl(webhookUrl);
-  integration.webhookHint = getDiscordWebhookHint(webhookUrl);
-  integration.connectedAt = cleanInteger(integration.connectedAt) || now;
+  const webhookId = cleanString(body?.webhookId, 120);
+  const savedWebhook = webhookId
+    ? integration.webhooks.find((webhook) => webhook.id === webhookId)
+    : null;
+  if (webhookId && !savedWebhook) return sendJson(res, 404, { error: "Saved webhook not found." });
+  if (!savedWebhook && integration.webhooks.length >= MAX_DISCORD_WEBHOOKS_PER_UNIVERSE) {
+    return sendJson(res, 409, { error: `A universe can have up to ${MAX_DISCORD_WEBHOOKS_PER_UNIVERSE} saved webhooks.` });
+  }
+
+  const name = cleanString(body?.name, 60);
+  if (!name) return sendJson(res, 400, { error: "Enter a name for this webhook." });
+  const rawWebhookUrl = typeof body?.webhookUrl === "string" ? body.webhookUrl.trim() : "";
+  let webhookUrl = "";
+  if (rawWebhookUrl) {
+    try {
+      webhookUrl = normalizeDiscordWebhookUrl(rawWebhookUrl);
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message });
+    }
+  } else if (!savedWebhook) {
+    return sendJson(res, 400, { error: "Enter a Discord webhook URL." });
+  }
+
+  const nextWebhook = {
+    id: savedWebhook?.id || crypto.randomUUID(),
+    name,
+    webhook: webhookUrl ? encryptDiscordWebhookUrl(webhookUrl) : savedWebhook.webhook,
+    webhookHint: webhookUrl ? getDiscordWebhookHint(webhookUrl) : savedWebhook.webhookHint,
+    createdAt: cleanInteger(savedWebhook?.createdAt) || now,
+    updatedAt: now,
+    lastTestAt: cleanInteger(savedWebhook?.lastTestAt),
+  };
+  integration.webhooks = savedWebhook
+    ? integration.webhooks.map((webhook) => webhook.id === savedWebhook.id ? nextWebhook : webhook)
+    : [...integration.webhooks, nextWebhook];
+  integration.selectedWebhookId = nextWebhook.id;
   integration.updatedAt = now;
   await saveDiscordIntegration(integration);
   return sendJson(res, 200, serializeDiscordIntegration(integration, {
@@ -1976,19 +2007,57 @@ async function handleDiscordConnectionSave(req, res, auth) {
 
 async function handleDiscordConnectionDelete(req, res, auth, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
+  const webhookId = cleanString(searchParams.get("webhookId"), 120);
   if (!await userOwnsUniverse(auth.userId, universeId)) {
     return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
+  if (!webhookId) return sendJson(res, 400, { error: "Select a saved webhook to delete." });
 
   const integration = await readDiscordIntegration(auth.userId, universeId);
-  if (!integration) {
-    return sendJson(res, 200, serializeDiscordIntegration(null, { universeId, eventNames: [] }));
-  }
-  integration.webhook = null;
-  integration.webhookHint = "";
-  integration.connectedAt = 0;
+  const previousLength = integration?.webhooks?.length || 0;
+  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Saved webhook not found." });
+  integration.webhooks = integration.webhooks.filter((webhook) => webhook.id !== webhookId);
+  if (integration.webhooks.length === previousLength) return sendJson(res, 404, { error: "Saved webhook not found." });
+  integration.selectedWebhookId = integration.selectedWebhookId === webhookId
+    ? (integration.webhooks[0]?.id || "")
+    : integration.selectedWebhookId;
   integration.updatedAt = Date.now();
-  integration.rules = (integration.rules || []).map((rule) => ({ ...rule, enabled: false }));
+  integration.rules = (integration.rules || []).map((rule) => (
+    rule.webhookId === webhookId
+      ? {
+        ...rule,
+        webhookId: "",
+        enabled: false,
+        lastError: "Select a delivery webhook.",
+        updatedAt: Date.now(),
+      }
+      : rule
+  ));
+  await saveDiscordIntegration(integration);
+  return sendJson(res, 200, serializeDiscordIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleDiscordConnectionSelect(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const webhookId = cleanString(body?.webhookId, 120);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readDiscordIntegration(auth.userId, universeId);
+  if (!integration?.webhooks?.some((webhook) => webhook.id === webhookId)) {
+    return sendJson(res, 404, { error: "Saved webhook not found." });
+  }
+  integration.selectedWebhookId = webhookId;
+  integration.updatedAt = Date.now();
   await saveDiscordIntegration(integration);
   return sendJson(res, 200, serializeDiscordIntegration(integration, {
     universeId,
@@ -2010,8 +2079,10 @@ async function handleDiscordConnectionTest(req, res, auth) {
     return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
   const integration = await readDiscordIntegration(auth.userId, universeId);
-  const webhookUrl = getStoredDiscordWebhookUrl(integration);
-  if (!webhookUrl) return sendJson(res, 400, { error: "Connect a Discord webhook first." });
+  const webhookId = cleanString(body?.webhookId, 120) || integration?.selectedWebhookId;
+  const selectedWebhook = integration?.webhooks?.find((webhook) => webhook.id === webhookId);
+  const webhookUrl = getStoredDiscordWebhookUrl(integration, webhookId);
+  if (!selectedWebhook || !webhookUrl) return sendJson(res, 400, { error: "Select a saved Discord webhook first." });
 
   const retryAfterMs = claimDiscordSendSlot(auth.userId);
   if (retryAfterMs > 0) return sendDiscordRateLimitError(res, retryAfterMs);
@@ -2025,6 +2096,7 @@ async function handleDiscordConnectionTest(req, res, auth) {
         color: 0x52dfa1,
         fields: [
           { name: "Universe", value: project.name || `Universe ${universeId}` },
+          { name: "Webhook", value: selectedWebhook.name },
           { name: "Status", value: "Ready" },
         ],
       },
@@ -2033,10 +2105,13 @@ async function handleDiscordConnectionTest(req, res, auth) {
       id: crypto.randomUUID(),
       type: "test",
       status: "sent",
-      title: "Connection test",
+      title: `${selectedWebhook.name} test`,
       sentAt: result.sentAt,
+      webhookId,
     });
-    integration.lastTestAt = result.sentAt;
+    integration.webhooks = integration.webhooks.map((webhook) => (
+      webhook.id === webhookId ? { ...webhook, lastTestAt: result.sentAt } : webhook
+    ));
     integration.updatedAt = Date.now();
     await saveDiscordIntegration(integration);
     return sendJson(res, 200, { ok: true, sentAt: result.sentAt });
@@ -2063,8 +2138,8 @@ async function handleDiscordAlertRuleSave(req, res, auth, requestedRuleId = "") 
     return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
   const integration = await readDiscordIntegration(auth.userId, universeId);
-  if (!getStoredDiscordWebhookUrl(integration)) {
-    return sendJson(res, 400, { error: "Connect a Discord webhook before creating alerts." });
+  if (!integration?.webhooks?.length) {
+    return sendJson(res, 400, { error: "Save a Discord webhook before creating alerts." });
   }
 
   const ruleId = cleanString(requestedRuleId || body?.id, 120);
@@ -2076,7 +2151,7 @@ async function handleDiscordAlertRuleSave(req, res, auth, requestedRuleId = "") 
     return sendJson(res, 409, { error: `A universe can have up to ${MAX_DISCORD_ALERT_RULES_PER_UNIVERSE} Discord alerts.` });
   }
 
-  const normalized = normalizeDiscordAlertRule(body, existingRule);
+  const normalized = normalizeDiscordAlertRule(body, existingRule, integration);
   if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
   if (existingRule) {
     integration.rules = integration.rules.map((rule) => rule.id === existingRule.id ? normalized.value : rule);
@@ -2134,10 +2209,9 @@ function createEmptyDiscordIntegration(ownerUserId, universeId) {
   return {
     ownerUserId: cleanString(ownerUserId, 120),
     universeId: cleanInteger(universeId),
-    webhook: null,
-    webhookHint: "",
-    connectedAt: 0,
-    lastTestAt: 0,
+    discordSchemaVersion: 2,
+    webhooks: [],
+    selectedWebhookId: "",
     rules: [],
     deliveries: [],
     createdAt: now,
@@ -2145,7 +2219,7 @@ function createEmptyDiscordIntegration(ownerUserId, universeId) {
   };
 }
 
-function normalizeDiscordAlertRule(value, existingRule = null) {
+function normalizeDiscordAlertRule(value, existingRule = null, integration = null) {
   const eventName = normalizeCustomEventName(value?.eventName);
   if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
   const name = cleanString(value?.name, 80) || `${formatDiscordEventName(eventName)} alert`;
@@ -2167,6 +2241,12 @@ function normalizeDiscordAlertRule(value, existingRule = null) {
   }
   const messageTemplate = typeof value?.messageTemplate === "string" ? value.messageTemplate.trim() : "";
   if (messageTemplate.length > 500) return { ok: false, error: "Alert message can contain up to 500 characters." };
+  const webhookId = value && Object.hasOwn(value, "webhookId")
+    ? cleanString(value.webhookId, 120)
+    : cleanString(existingRule?.webhookId, 120) || cleanString(integration?.selectedWebhookId, 120);
+  if (!integration?.webhooks?.some((webhook) => webhook.id === webhookId)) {
+    return { ok: false, error: "Choose a saved webhook for this alert." };
+  }
 
   const now = Date.now();
   const changedCondition = Boolean(existingRule) && (
@@ -2174,6 +2254,7 @@ function normalizeDiscordAlertRule(value, existingRule = null) {
     || existingRule.operator !== operator
     || cleanInteger(existingRule.threshold) !== threshold
     || cleanInteger(existingRule.windowMinutes) !== windowMinutes
+    || existingRule.webhookId !== webhookId
   );
   return {
     ok: true,
@@ -2185,6 +2266,7 @@ function normalizeDiscordAlertRule(value, existingRule = null) {
       threshold,
       windowMinutes,
       cooldownMinutes,
+      webhookId,
       messageTemplate,
       enabled: value?.enabled === undefined ? existingRule?.enabled !== false : Boolean(value.enabled),
       lastConditionMet: changedCondition ? false : Boolean(existingRule?.lastConditionMet),
@@ -2199,17 +2281,27 @@ function normalizeDiscordAlertRule(value, existingRule = null) {
 }
 
 function serializeDiscordIntegration(integration, { universeId, eventNames = [] } = {}) {
-  const cleanUniverseId = cleanInteger(universeId || integration?.universeId);
-  const rules = Array.isArray(integration?.rules) ? integration.rules : [];
-  const deliveries = Array.isArray(integration?.deliveries) ? integration.deliveries : [];
+  const normalizedIntegration = normalizeStoredDiscordIntegration(integration);
+  const cleanUniverseId = cleanInteger(universeId || normalizedIntegration?.universeId);
+  const webhooks = normalizedIntegration?.webhooks || [];
+  const webhooksById = new Map(webhooks.map((webhook) => [webhook.id, webhook]));
+  const rules = normalizedIntegration?.rules || [];
+  const deliveries = normalizedIntegration?.deliveries || [];
   return {
     universeId: cleanUniverseId,
     connection: {
-      connected: Boolean(integration?.webhook),
-      webhookHint: cleanString(integration?.webhookHint, 80),
-      connectedAt: cleanInteger(integration?.connectedAt) || null,
-      lastTestAt: cleanInteger(integration?.lastTestAt) || null,
+      connected: webhooks.length > 0,
+      count: webhooks.length,
+      selectedWebhookId: cleanString(normalizedIntegration?.selectedWebhookId, 120),
     },
+    webhooks: webhooks.map((webhook) => ({
+      id: cleanString(webhook?.id, 120),
+      name: cleanString(webhook?.name, 60),
+      webhookHint: cleanString(webhook?.webhookHint, 80),
+      createdAt: cleanInteger(webhook?.createdAt),
+      updatedAt: cleanInteger(webhook?.updatedAt),
+      lastTestAt: cleanInteger(webhook?.lastTestAt) || null,
+    })),
     rules: rules
       .map((rule) => {
         const eventName = normalizeCustomEventName(rule?.eventName);
@@ -2228,6 +2320,8 @@ function serializeDiscordIntegration(integration, { universeId, eventNames = [] 
           threshold: cleanInteger(rule?.threshold),
           windowMinutes,
           cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
+          webhookId: cleanString(rule?.webhookId, 120),
+          webhookName: cleanString(webhooksById.get(rule?.webhookId)?.name, 60),
           currentCount,
           messageTemplate: cleanString(rule?.messageTemplate, 500),
           enabled: rule?.enabled !== false,
@@ -2252,6 +2346,7 @@ function serializeDiscordIntegration(integration, { universeId, eventNames = [] 
     eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
     limits: {
       rules: MAX_DISCORD_ALERT_RULES_PER_UNIVERSE,
+      webhooks: MAX_DISCORD_WEBHOOKS_PER_UNIVERSE,
       messageLength: 500,
       windowsMinutes: [...DISCORD_ALERT_WINDOWS_MINUTES],
       cooldownsMinutes: [...DISCORD_ALERT_COOLDOWNS_MINUTES],
@@ -2285,7 +2380,8 @@ function getDiscordWebhookHint(webhookUrl) {
   try {
     const segments = new URL(webhookUrl).pathname.split("/").filter(Boolean);
     const webhookId = segments.at(-2) || "";
-    return webhookId ? `Webhook ••••${webhookId.slice(-4)}` : "Discord webhook";
+    if (webhookId) return `Webhook ending in ${webhookId.slice(-4)}`;
+    return "Discord webhook";
   } catch {
     return "Discord webhook";
   }
@@ -2323,13 +2419,75 @@ function decryptDiscordWebhookUrl(value) {
   ]).toString("utf8");
 }
 
-function getStoredDiscordWebhookUrl(integration) {
+function getStoredDiscordWebhookUrl(integration, webhookId = "") {
   try {
-    return integration?.webhook ? normalizeDiscordWebhookUrl(decryptDiscordWebhookUrl(integration.webhook)) : "";
+    const normalizedIntegration = normalizeStoredDiscordIntegration(integration);
+    const selectedId = cleanString(webhookId, 120) || normalizedIntegration?.selectedWebhookId;
+    const savedWebhook = normalizedIntegration?.webhooks?.find((entry) => entry.id === selectedId);
+    return savedWebhook?.webhook
+      ? normalizeDiscordWebhookUrl(decryptDiscordWebhookUrl(savedWebhook.webhook))
+      : "";
   } catch (error) {
     console.warn("Could not decrypt a stored Discord webhook:", error.message || error);
     return "";
   }
+}
+
+function normalizeStoredDiscordIntegration(integration) {
+  if (!integration) return null;
+  const {
+    webhook: legacyWebhook,
+    webhookHint: legacyWebhookHint,
+    connectedAt: legacyConnectedAt,
+    lastTestAt: legacyLastTestAt,
+    ...rest
+  } = integration;
+  let webhooks = Array.isArray(integration.webhooks)
+    ? integration.webhooks
+      .map((webhook) => ({
+        id: cleanString(webhook?.id, 120),
+        name: cleanString(webhook?.name, 60) || "Discord alerts",
+        webhook: webhook?.webhook || null,
+        webhookHint: cleanString(webhook?.webhookHint, 80),
+        createdAt: cleanInteger(webhook?.createdAt),
+        updatedAt: cleanInteger(webhook?.updatedAt),
+        lastTestAt: cleanInteger(webhook?.lastTestAt),
+      }))
+      .filter((webhook) => webhook.id && webhook.webhook)
+    : [];
+  if (!webhooks.length && legacyWebhook) {
+    const legacyId = `legacy-${crypto.createHash("sha1")
+      .update(JSON.stringify(legacyWebhook))
+      .digest("hex")
+      .slice(0, 16)}`;
+    webhooks = [{
+      id: legacyId,
+      name: "Discord alerts",
+      webhook: legacyWebhook,
+      webhookHint: cleanString(legacyWebhookHint, 80),
+      createdAt: cleanInteger(legacyConnectedAt) || cleanInteger(integration.createdAt),
+      updatedAt: cleanInteger(integration.updatedAt),
+      lastTestAt: cleanInteger(legacyLastTestAt),
+    }];
+  }
+  const selectedWebhookId = webhooks.some((webhook) => webhook.id === integration.selectedWebhookId)
+    ? integration.selectedWebhookId
+    : (webhooks[0]?.id || "");
+  const migrateRuleTargets = cleanInteger(integration.discordSchemaVersion) < 2;
+  const rules = (Array.isArray(integration.rules) ? integration.rules : []).map((rule) => ({
+    ...rule,
+    webhookId: webhooks.some((webhook) => webhook.id === rule?.webhookId)
+      ? rule.webhookId
+      : (migrateRuleTargets ? selectedWebhookId : ""),
+  }));
+  return {
+    ...rest,
+    discordSchemaVersion: 2,
+    webhooks,
+    selectedWebhookId,
+    rules,
+    deliveries: Array.isArray(integration.deliveries) ? integration.deliveries : [],
+  };
 }
 
 function getDiscordIntegrationScopeKey(ownerUserId, universeId) {
@@ -2353,33 +2511,35 @@ async function readDiscordIntegration(ownerUserId, universeId) {
       && cleanInteger(entry.universeId) === cleanInteger(universeId)
     )) || null;
   }
+  integration = normalizeStoredDiscordIntegration(integration);
   discordIntegrationCache.set(scopeKey, integration);
   return integration;
 }
 
 async function saveDiscordIntegration(integration) {
-  const scopeKey = getDiscordIntegrationScopeKey(integration?.ownerUserId, integration?.universeId);
+  const normalizedIntegration = normalizeStoredDiscordIntegration(integration);
+  const scopeKey = getDiscordIntegrationScopeKey(normalizedIntegration?.ownerUserId, normalizedIntegration?.universeId);
   const db = await getMongoDb();
   if (db) {
     await db.collection("discord_integrations").replaceOne(
-      { ownerUserId: integration.ownerUserId, universeId: integration.universeId },
-      integration,
+      { ownerUserId: normalizedIntegration.ownerUserId, universeId: normalizedIntegration.universeId },
+      normalizedIntegration,
       { upsert: true },
     );
   } else {
     await withLocalDiscordIntegrationStoreLock(async () => {
       const integrations = await readLocalDiscordIntegrationStore();
       const index = integrations.findIndex((entry) => (
-        entry.ownerUserId === integration.ownerUserId
-        && cleanInteger(entry.universeId) === cleanInteger(integration.universeId)
+        entry.ownerUserId === normalizedIntegration.ownerUserId
+        && cleanInteger(entry.universeId) === cleanInteger(normalizedIntegration.universeId)
       ));
-      if (index >= 0) integrations[index] = integration;
-      else integrations.push(integration);
+      if (index >= 0) integrations[index] = normalizedIntegration;
+      else integrations.push(normalizedIntegration);
       await writeLocalDiscordIntegrationStore(integrations);
     });
   }
-  discordIntegrationCache.set(scopeKey, integration);
-  return integration;
+  discordIntegrationCache.set(scopeKey, normalizedIntegration);
+  return normalizedIntegration;
 }
 
 async function readLocalDiscordIntegrationStore() {
@@ -2469,13 +2629,21 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
   const previous = discordAlertEvaluationLocks.get(scopeKey) || Promise.resolve();
   const current = previous.catch(() => {}).then(async () => {
     const integration = await readDiscordIntegration(project.ownerUserId, presence.universeId);
-    const webhookUrl = getStoredDiscordWebhookUrl(integration);
-    if (!integration || !webhookUrl || !integration.rules?.some((rule) => rule.enabled !== false)) return;
+    if (!integration?.webhooks?.length || !integration.rules?.some((rule) => rule.enabled !== false)) return;
 
     const now = Date.now();
     let changed = false;
     for (const rule of integration.rules) {
       if (rule.enabled === false) continue;
+      const savedWebhook = integration.webhooks.find((webhook) => webhook.id === rule.webhookId);
+      const webhookUrl = getStoredDiscordWebhookUrl(integration, rule.webhookId);
+      if (!savedWebhook || !webhookUrl) {
+        rule.enabled = false;
+        rule.lastError = "Select a delivery webhook.";
+        rule.updatedAt = now;
+        changed = true;
+        continue;
+      }
       const count = countDiscordAlertEvents(
         presence.universeId,
         rule.eventName,
@@ -2524,6 +2692,7 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
             timestamp: now,
             fields: [
               { name: "Universe", value: project.name || `Universe ${presence.universeId}` },
+              { name: "Webhook", value: savedWebhook.name },
               { name: "Event", value: `${eventLabel}\n\`${rule.eventName}\`` },
               { name: "Observed", value: `${count.toLocaleString("en-US")} / ${windowLabel}` },
               { name: "Rule", value: `${operatorLabel} ${cleanInteger(rule.threshold).toLocaleString("en-US")}` },
@@ -2540,6 +2709,7 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
           status: "sent",
           title: rule.name,
           sentAt: result.sentAt,
+          webhookId: rule.webhookId,
         });
       } catch (error) {
         rule.lastAttemptedAt = now;
@@ -2552,6 +2722,7 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
           title: rule.name,
           sentAt: now,
           error: rule.lastError,
+          webhookId: rule.webhookId,
         });
       }
       changed = true;

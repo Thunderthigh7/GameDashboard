@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-56/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-57/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1129,41 +1129,55 @@
                 </svg>
               </span>
               <div>
-                <span>Delivery channel</span>
-                <h2>Discord connection</h2>
-                <p>Alerts for the selected universe are delivered through one saved webhook.</p>
+                <span>Delivery channels</span>
+                <h2>Saved webhooks</h2>
+                <p>Save multiple Discord channels and choose exactly where each alert is delivered.</p>
               </div>
-              <span class="discordConnectionBadge" id="discordConnectionBadge" data-state="disconnected">Not connected</span>
+              <span class="discordConnectionBadge" id="discordConnectionBadge" data-state="disconnected">0 saved</span>
             </header>
 
             <form class="discordConnectionForm" id="discordConnectionForm">
-              <label class="discordFormField" for="discordWebhookUrl">
-                <span>Webhook URL</span>
-                <input
-                  id="discordWebhookUrl"
-                  name="discordWebhookUrl"
-                  type="password"
-                  inputmode="url"
-                  autocomplete="off"
-                  spellcheck="false"
-                  maxlength="600"
-                  placeholder="https://discord.com/api/webhooks/..."
-                  aria-describedby="discordWebhookNote"
-                  required
-                >
-                <small id="discordWebhookNote">Encrypted before it is saved. Paste a new URL here to replace the connected webhook.</small>
-              </label>
+              <div class="discordConnectionFields">
+                <label class="discordFormField" for="discordWebhookSelect">
+                  <span>Saved webhook</span>
+                  <select id="discordWebhookSelect">
+                    <option value="">Add a new webhook</option>
+                  </select>
+                  <small>Select one to rename, replace, test, or delete.</small>
+                </label>
+                <label class="discordFormField" for="discordWebhookName">
+                  <span>Channel name</span>
+                  <input id="discordWebhookName" maxlength="60" placeholder="Live operations" required>
+                  <small>A clear label shown on alert rules.</small>
+                </label>
+                <label class="discordFormField" for="discordWebhookUrl">
+                  <span>Webhook URL</span>
+                  <input
+                    id="discordWebhookUrl"
+                    name="discordWebhookUrl"
+                    type="password"
+                    inputmode="url"
+                    autocomplete="off"
+                    spellcheck="false"
+                    maxlength="600"
+                    placeholder="https://discord.com/api/webhooks/..."
+                    aria-describedby="discordWebhookNote"
+                    required
+                  >
+                  <small id="discordWebhookNote">Encrypted before it is saved.</small>
+                </label>
+              </div>
               <footer class="discordConnectionActions">
                 <p class="discordSendStatus" id="discordSendStatus" aria-live="polite"></p>
                 <div>
-                  <button class="button secondary compact discordDisconnectButton" id="discordDisconnectButton" type="button" hidden>Disconnect</button>
-                  <button class="button secondary compact" id="discordTestButton" type="button" disabled>Send test alert</button>
+                  <button class="button secondary compact discordDisconnectButton" id="discordDisconnectButton" type="button" hidden>Delete selected</button>
+                  <button class="button secondary compact" id="discordTestButton" type="button" disabled>Test selected</button>
                   <button class="button discordSendButton" id="discordSaveConnectionButton" type="submit">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M5 4h12l2 2v14H5Z" />
                       <path d="M8 4v6h8V4M8 20v-6h8v6" />
                     </svg>
-                    <span>Save webhook</span>
+                    <span>Add webhook</span>
                   </button>
                 </div>
               </footer>
@@ -1216,6 +1230,10 @@
                 <label class="discordFormField" for="discordRuleEvent">
                   <span>Tracked event</span>
                   <select id="discordRuleEvent" required></select>
+                </label>
+                <label class="discordFormField" for="discordRuleWebhook">
+                  <span>Delivery webhook</span>
+                  <select id="discordRuleWebhook" required></select>
                 </label>
                 <div class="discordRuleConditionGrid">
                   <label class="discordFormField" for="discordRuleOperator">
@@ -1529,6 +1547,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-56/app.js"></script>
+    <script defer src="/assets/20260725-57/app.js"></script>
   </body>
 </html>

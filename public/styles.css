@@ -3615,10 +3615,15 @@ body[data-active-view="connect"] .topbar > div:first-child {
 
 .discordConnectionForm {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto;
-  align-items: end;
-  gap: 20px;
+  gap: 16px;
   padding: 22px 26px 24px;
+}
+
+.discordConnectionFields {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(180px, 0.75fr) minmax(280px, 1.5fr);
+  align-items: start;
+  gap: 14px;
 }
 
 .discordFormField {
@@ -3715,9 +3720,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .discordConnectionActions {
-  display: grid;
-  justify-items: end;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .discordConnectionActions > div {
@@ -9471,12 +9477,12 @@ body.hasEventConfirmDialog {
 }
 
 @media (max-width: 860px) {
-  .discordConnectionForm {
-    grid-template-columns: minmax(0, 1fr);
+  .discordConnectionFields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .discordConnectionActions {
-    justify-items: stretch;
+  .discordConnectionFields .discordFormField:last-child {
+    grid-column: 1 / -1;
   }
 
   .discordConnectionActions > div {
@@ -9862,6 +9868,7 @@ body.hasEventConfirmDialog {
   }
 
   .discordConnectionForm,
+  .discordConnectionFields,
   .discordRuleConditionGrid,
   .discordRuleRow,
   .discordAlertPreview > div {
@@ -9876,6 +9883,11 @@ body.hasEventConfirmDialog {
     width: 100%;
   }
 
+  .discordConnectionFields .discordFormField:last-child {
+    grid-column: auto;
+  }
+
+  .discordConnectionActions,
   .discordConnectionActions > div,
   .discordRulesHeader {
     flex-direction: column;
