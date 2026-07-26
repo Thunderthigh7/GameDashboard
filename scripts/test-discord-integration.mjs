@@ -128,6 +128,9 @@ assert.match(indexSource, /id="discordNewWebhookButton"[\s\S]*?id="discordWebhoo
 assert.match(indexSource, /id="discordSendStatus"[^>]*aria-live="polite"/);
 assert.match(indexSource, /id="discordTestButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordNewRuleButton"[^>]*type="button"/);
+assert.match(indexSource, /id="discordTopbarActions"[\s\S]*?id="discordTestButton"[\s\S]*?id="discordDisconnectButton"[\s\S]*?id="discordNewRuleButton"/);
+assert.match(indexSource, /class="discordRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Topic name<[\s\S]*?>Condition<[\s\S]*?>Actions</);
+assert.doesNotMatch(indexSource, /Automatic monitoring|<h2>Alert rules<\/h2>/);
 assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleTriggerType"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"[\s\S]*?id="discordRuleScheduleDate"[\s\S]*?id="discordRuleScheduleTime"/);
 assert.match(indexSource, /Eastern Time \(EST\/EDT, UTC-5\/UTC-4\)/);
 assert.match(indexSource, /\{\{game\}\}[\s\S]*?\{\{event\}\}[\s\S]*?\{\{count\}\}[\s\S]*?\{\{threshold\}\}/);
@@ -143,8 +146,9 @@ assert.match(appSource, /function startNewDiscordWebhook\(\)/);
 assert.match(appSource, /data-discord-webhook-id=/);
 assert.match(appSource, /webhookId:\s*getEditingDiscordWebhook\(\)\?\.id \|\| ""/);
 assert.match(appSource, /function easternDateTimeInputToTimestamp\(value\)/);
-assert.match(appSource, /rule\.webhookName \|\| "No webhook selected"/);
-assert.match(appSource, /Current \$\{escapeHtml\(formatCompactNumber\(rule\.currentCount \|\| 0\)\)\}/);
+assert.match(appSource, /function getDiscordPageHeading\(\)[\s\S]*?getEditingDiscordWebhook\(\)\?\.name/);
+assert.match(appSource, /class="discordRuleTopic"[\s\S]*?class="discordRuleCondition"/);
+assert.match(appSource, /Current \$\{formatCompactNumber\(rule\.currentCount \|\| 0\)\}/);
 assert.match(appSource, /function updateDiscordRulePreview\(\)/);
 assert.match(
   serverSource,
@@ -171,6 +175,7 @@ assert.match(serverSource, /MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20/);
 assert.match(styleSource, /\.discordConnectionPanel,/);
 assert.match(styleSource, /\.discordWebhookCatalogPanel\s*\{/);
 assert.match(styleSource, /\.discordWorkspace\s*\{/);
+assert.match(styleSource, /\.discordRuleTableHeader,/);
 assert.match(styleSource, /\.discordRuleRow\s*\{/);
 assert.match(styleSource, /\.discordAlertPreview\s*\{/);
 assert.match(styleSource, /\.discordSendStatus\[data-state="success"\]\s*\{/);

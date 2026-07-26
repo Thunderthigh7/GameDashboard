@@ -58,6 +58,7 @@ const discordTestButton = document.querySelector("#discordTestButton");
 const discordDisconnectButton = document.querySelector("#discordDisconnectButton");
 const discordNewRuleButton = document.querySelector("#discordNewRuleButton");
 const discordRuleCount = document.querySelector("#discordRuleCount");
+const discordTopbarActions = document.querySelector("#discordTopbarActions");
 const discordRulesPanel = document.querySelector(".discordRulesPanel");
 const discordRulesStatus = document.querySelector("#discordRulesStatus");
 const discordRuleList = document.querySelector("#discordRuleList");
@@ -400,7 +401,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-07";
+const DASHBOARD_ASSET_VERSION = "20260726-08";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -1304,7 +1305,9 @@ function renderActiveView(options = {}) {
     },
   };
   const activeViewCopy = viewCopy[activeView] || viewCopy.overview;
-  pageTitle.textContent = activeViewCopy.title;
+  pageTitle.textContent = activeView === "discord"
+    ? getDiscordPageHeading()
+    : activeViewCopy.title;
   pageSubtitle.textContent = activeViewCopy.subtitle || "";
   pageSubtitle.hidden = !activeViewCopy.subtitle;
   updateViewRefreshTimers();
@@ -1967,6 +1970,11 @@ function getEditingDiscordWebhook() {
   return discordIntegration?.webhooks?.find((webhook) => webhook.id === discordEditingWebhookId) || null;
 }
 
+function getDiscordPageHeading() {
+  if (discordCreatingWebhook) return "Create webhook";
+  return getEditingDiscordWebhook()?.name || "Discord Alerts";
+}
+
 function renderDiscordIntegration() {
   const rules = Array.isArray(discordIntegration?.rules) ? discordIntegration.rules : [];
   const maxRules = Number(discordIntegration?.limits?.rules) || 20;
@@ -2015,8 +2023,10 @@ function renderDiscordConnectionEditor() {
     discordEditingWebhookId = discordIntegration?.connection?.selectedWebhookId || webhooks[0]?.id || "";
   }
   const selectedWebhook = getEditingDiscordWebhook();
+  if (activeView === "discord" && pageTitle) pageTitle.textContent = getDiscordPageHeading();
   if (discordWebhookBuilder) discordWebhookBuilder.hidden = !discordCreatingWebhook;
   if (discordRulesPanel) discordRulesPanel.hidden = discordCreatingWebhook;
+  if (discordTopbarActions) discordTopbarActions.hidden = discordCreatingWebhook || !selectedWebhook;
   if (discordWebhookCatalog) {
     discordWebhookCatalog.innerHTML = webhooks.length
       ? webhooks.map((webhook) => {
@@ -2070,23 +2080,24 @@ function renderDiscordRuleRow(rule) {
   const lastSent = rule.lastTriggeredAt ? formatRelativeTime(rule.lastTriggeredAt) : "Never sent";
   const deliveryState = rule.lastError ? "error" : "";
   const scheduleComplete = Boolean(rule.scheduleDeliveredAt);
+  const statusLabel = scheduleComplete ? "Sent" : rule.enabled ? "Active" : "Paused";
   return `
     <article class="discordRuleRow" data-discord-rule-id="${escapeHtml(rule.id)}">
       <div class="discordRuleIdentity">
         <strong>${escapeHtml(rule.name)}</strong>
-        <span>${escapeHtml(isScheduled ? "Scheduled once" : rule.eventName)}</span>
+        <span>${escapeHtml(`${statusLabel} · ${lastSent}`)}</span>
       </div>
-      <div class="discordRuleTrigger">
+      <div class="discordRuleTopic">
+        <strong>${escapeHtml(isScheduled ? "—" : rule.eventName)}</strong>
+        <span>${escapeHtml(isScheduled ? "One-time schedule" : formatEventName(rule.eventName))}</span>
+      </div>
+      <div class="discordRuleCondition">
         <strong>${isScheduled
           ? escapeHtml(formatEasternDateTime(rule.scheduledFor))
           : `${escapeHtml(operatorLabel)} ${escapeHtml(formatCompactNumber(rule.threshold))} in ${escapeHtml(windowLabel)}`}</strong>
-        <span>${isScheduled
-          ? `Eastern Time (EST/EDT) · ${scheduleComplete ? "Sent" : "One-time delivery"}`
-          : `Current ${escapeHtml(formatCompactNumber(rule.currentCount || 0))} · ${escapeHtml(formatEventName(rule.eventName))} · ${escapeHtml(formatDiscordAlertWindow(rule.cooldownMinutes))} cooldown`}</span>
-      </div>
-      <div class="discordRuleDelivery">
-        <strong>${escapeHtml(rule.webhookName || "No webhook selected")}</strong>
-        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || `${scheduleComplete ? "Completed" : rule.enabled ? "Active" : "Paused"} · ${lastSent}`)}</span>
+        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || (isScheduled
+          ? `Eastern Time (EST/EDT) · ${scheduleComplete ? "Completed" : "Sends once"}`
+          : `Current ${formatCompactNumber(rule.currentCount || 0)} · ${formatDiscordAlertWindow(rule.cooldownMinutes)} cooldown`))}</span>
       </div>
       <div class="discordRuleActions">
         <button class="discordRuleToggle" type="button" data-discord-rule-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}" ${scheduleComplete ? "disabled" : ""}></button>

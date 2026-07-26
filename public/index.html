@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260726-07/styles.css">
+    <link rel="stylesheet" href="/assets/20260726-08/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -377,6 +377,17 @@
                   <input id="funnelToFilter" type="hidden">
                 </div>
               </div>
+            </div>
+            <div class="discordTopbarActions" id="discordTopbarActions" hidden>
+              <strong id="discordRuleCount">0 / 20</strong>
+              <button class="button secondary compact" id="discordTestButton" type="button" disabled>Test webhook</button>
+              <button class="button secondary compact discordDisconnectButton" id="discordDisconnectButton" type="button" disabled>Delete webhook</button>
+              <button class="button discordNewRuleButton" id="discordNewRuleButton" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span>New alert</span>
+              </button>
             </div>
           </div>
         </header>
@@ -1198,25 +1209,14 @@
             </form>
           </article>
 
+          <p class="discordRulesStatus discordPageStatus" id="discordRulesStatus" aria-live="polite"></p>
           <article class="panel discordRulesPanel">
-            <header class="discordRulesHeader">
-              <div>
-                <span>Automatic monitoring</span>
-                <h2>Alert rules</h2>
-              </div>
-              <div class="discordRulesHeaderActions">
-                <strong id="discordRuleCount">0 / 20</strong>
-                <button class="button secondary compact" id="discordTestButton" type="button" disabled>Test webhook</button>
-                <button class="button secondary compact discordDisconnectButton" id="discordDisconnectButton" type="button" disabled>Delete webhook</button>
-                <button class="button discordNewRuleButton" id="discordNewRuleButton" type="button" disabled>
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                  <span>New alert</span>
-                </button>
-              </div>
-            </header>
-            <p class="discordRulesStatus" id="discordRulesStatus" aria-live="polite"></p>
+            <div class="discordRuleTableHeader" aria-hidden="true">
+              <span>Name</span>
+              <span>Topic name</span>
+              <span>Condition</span>
+              <span>Actions</span>
+            </div>
             <div class="discordRuleList" id="discordRuleList">
               <div class="discordRuleEmpty">
                 <strong>Connect Discord to create alerts</strong>
@@ -1739,6 +1739,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260726-07/app.js"></script>
+    <script defer src="/assets/20260726-08/app.js"></script>
   </body>
 </html>

@@ -844,14 +844,51 @@ body[data-active-view="connect"] .topbar > div:first-child {
   display: none;
 }
 
-body[data-active-view="discord"] .topbar,
 body[data-active-view="roblox-live"] .topbar {
   margin-bottom: 12px;
 }
 
-body[data-active-view="discord"] .topbarActions,
 body[data-active-view="roblox-live"] .topbarActions {
   display: none;
+}
+
+body[data-active-view="discord"] .topbarActions {
+  display: flex;
+  flex: 1 1 auto;
+}
+
+body[data-active-view="discord"] .topbar > div:first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+body[data-active-view="discord"] #pageTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-active-view="discord"] .eventTopbarSelection,
+body[data-active-view="discord"] .funnelTopbarSelection,
+body[data-active-view="discord"] .eventTopbarFilters,
+body[data-active-view="discord"] .funnelTopbarFilters {
+  display: none;
+}
+
+.discordTopbarActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.discordTopbarActions > strong {
+  margin-right: 4px;
+  color: #9ba7c7;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .connectUniversePanel {
@@ -3637,7 +3674,6 @@ body[data-active-view="roblox-live"] .topbarActions {
   padding: 0;
 }
 
-.discordRulesHeader > div:first-child > span,
 .discordRuleDialogCard > header > div > span,
 .discordAlertPreview > span {
   color: #9aa5c5;
@@ -3647,7 +3683,6 @@ body[data-active-view="roblox-live"] .topbarActions {
   text-transform: uppercase;
 }
 
-.discordRulesHeader h2,
 .discordRuleDialogCard h2 {
   color: var(--text);
   font-size: 21px;
@@ -3822,34 +3857,6 @@ body[data-active-view="roblox-live"] .topbarActions {
   min-height: 320px;
 }
 
-.discordRulesHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid rgba(82, 100, 150, 0.3);
-  padding: 20px 24px;
-}
-
-.discordRulesHeader > div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.discordRulesHeaderActions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.discordRulesHeaderActions > strong {
-  color: #8f9cbe;
-  font-size: 11px;
-  font-weight: 850;
-}
-
 .discordNewRuleButton {
   gap: 7px;
   min-height: 38px;
@@ -3872,9 +3879,8 @@ body[data-active-view="roblox-live"] .topbarActions {
   font-weight: 750;
 }
 
-.discordRulesPanel > .discordRulesStatus:not(:empty) {
-  border-bottom: 1px solid rgba(82, 100, 150, 0.24);
-  padding: 12px 24px;
+.discordPageStatus:not(:empty) {
+  padding: 0 2px;
 }
 
 .discordRulesStatus[data-state="error"] {
@@ -3891,6 +3897,36 @@ body[data-active-view="roblox-live"] .topbarActions {
 
 .discordRuleList {
   display: grid;
+}
+
+.discordRuleTableHeader,
+.discordRuleRow {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1.1fr)
+    minmax(190px, 1fr)
+    minmax(300px, 1.55fr)
+    minmax(230px, auto);
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.discordRuleTableHeader {
+  border-bottom: 1px solid rgba(82, 100, 150, 0.38);
+  padding: 14px 24px;
+}
+
+.discordRuleTableHeader span {
+  color: #91a0c3;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.discordRuleTableHeader span:last-child {
+  text-align: right;
 }
 
 .discordRuleEmpty {
@@ -3914,13 +3950,8 @@ body[data-active-view="roblox-live"] .topbarActions {
 }
 
 .discordRuleRow {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.25fr) minmax(250px, 1.45fr) minmax(130px, 0.65fr) auto;
-  align-items: center;
-  gap: 18px;
-  min-width: 0;
   border-bottom: 1px solid rgba(62, 78, 122, 0.36);
-  padding: 17px 24px;
+  padding: 18px 24px;
 }
 
 .discordRuleRow:last-child {
@@ -3928,41 +3959,41 @@ body[data-active-view="roblox-live"] .topbarActions {
 }
 
 .discordRuleIdentity,
-.discordRuleTrigger,
-.discordRuleDelivery {
+.discordRuleTopic,
+.discordRuleCondition {
   display: grid;
   min-width: 0;
   gap: 4px;
 }
 
 .discordRuleIdentity strong,
-.discordRuleTrigger strong,
-.discordRuleDelivery strong {
+.discordRuleTopic strong,
+.discordRuleCondition strong {
   overflow: hidden;
   color: #f4f7ff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .discordRuleIdentity span,
-.discordRuleTrigger span,
-.discordRuleDelivery span {
+.discordRuleTopic span,
+.discordRuleCondition span {
   overflow: hidden;
   color: #8f9cbe;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.discordRuleIdentity > span:first-of-type {
+.discordRuleTopic > strong {
   color: #aa96ff;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.discordRuleDelivery span[data-state="error"] {
+.discordRuleCondition span[data-state="error"] {
   color: #fb7185;
 }
 
@@ -10199,8 +10230,13 @@ body.hasEventConfirmDialog {
     justify-content: flex-start;
   }
 
+  .discordRuleTableHeader,
   .discordRuleRow {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .discordRuleTableHeader span:last-child {
+    text-align: left;
   }
 
   .discordRuleActions {
@@ -10562,7 +10598,6 @@ body.hasEventConfirmDialog {
 @media (max-width: 560px) {
   .discordWebhookBuilderHeader,
   .discordConnectionForm,
-  .discordRulesHeader,
   .discordRuleRow,
   .discordRuleForm {
     padding: 20px;
@@ -10578,22 +10613,22 @@ body.hasEventConfirmDialog {
   }
 
   .discordConnectionActions,
-  .discordConnectionActions > div,
-  .discordRulesHeader,
-  .discordRulesHeaderActions {
+  .discordConnectionActions > div {
     align-items: stretch;
     width: 100%;
   }
 
   .discordConnectionActions,
-  .discordConnectionActions > div,
-  .discordRulesHeader {
+  .discordConnectionActions > div {
     flex-direction: column;
   }
 
-  .discordConnectionActions .button,
-  .discordRulesHeaderActions .button {
+  .discordConnectionActions .button {
     width: 100%;
+  }
+
+  .discordRuleTableHeader {
+    display: none;
   }
 
   .topbarFilters .dateFilterCluster {
