@@ -345,7 +345,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-57";
+const DASHBOARD_ASSET_VERSION = "20260726-01";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -6165,6 +6165,41 @@ function closeFunnelTimelineStepMenu(options = {}) {
   if (options.restoreFocus) funnelTimelineStepPickerButton.focus();
 }
 
+function getFunnelTimelineCoincidentPathGroups(seriesModels) {
+  const pathsByShape = new Map();
+  for (const series of seriesModels) {
+    for (const segment of series.segments) {
+      if (segment.length < 2) continue;
+      const path = buildRoundedEventPropertyPathSegment(segment);
+      if (!path) continue;
+      if (!pathsByShape.has(path)) pathsByShape.set(path, []);
+      pathsByShape.get(path).push({
+        path,
+        color: series.color,
+        stepIndex: series.stepIndex,
+      });
+    }
+  }
+  return [...pathsByShape.values()].filter((entries) => entries.length > 1);
+}
+
+function getFunnelTimelineCoincidentPointGroups(seriesModels) {
+  const pointsByPosition = new Map();
+  for (const series of seriesModels) {
+    for (const point of series.points) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+      const position = `${point.x.toFixed(2)}:${point.y.toFixed(2)}`;
+      if (!pointsByPosition.has(position)) pointsByPosition.set(position, []);
+      pointsByPosition.get(position).push({
+        ...point,
+        color: series.color,
+        stepIndex: series.stepIndex,
+      });
+    }
+  }
+  return [...pointsByPosition.values()].filter((entries) => entries.length > 1);
+}
+
 function handleFunnelTimelineStepMenuClick(event) {
   const actionButton = event.target.closest("[data-funnel-step-selection-action]");
   if (!actionButton) return;
@@ -6453,7 +6488,7 @@ function renderFunnelTimeline(funnel) {
       ? `<text class="funnelTimelineXLabel" x="${xForIndex(index)}" y="${chartHeight - 17}" text-anchor="${index === 0 ? "start" : index === buckets.length - 1 ? "end" : "middle"}">${escapeHtml(formatEventChartLabel(bucket.start, bucketMs, chartSpanMs))}</text>`
       : ""
   )).join("");
-  const series = visibleSteps.map((step) => {
+  const seriesModels = visibleSteps.map((step) => {
     const stepIndex = Number(step.index);
     const color = getFunnelStepColor(funnel, stepIndex);
     const points = buckets.map((bucket, index) => {
@@ -6486,28 +6521,60 @@ function renderFunnelTimeline(funnel) {
       }
     }
     if (segment.length) segments.push(segment);
-    const paths = segments.map((pathPoints) => (
-      `<path d="${buildRoundedEventPropertyPathSegment(pathPoints)}" style="stroke:${color}" />`
-    )).join("");
-    const circles = points.map((point) => {
+    return {
+      color,
+      eventName: step.eventName,
+      points,
+      segments,
+      stepIndex,
+    };
+  });
+  const seriesPaths = seriesModels.map((series) => (
+    series.segments.map((pathPoints) => (
+      `<path d="${buildRoundedEventPropertyPathSegment(pathPoints)}" style="stroke:${series.color}" />`
+    )).join("")
+  )).join("");
+  const seriesPoints = seriesModels.map((series) => (
+    series.points.map((point) => {
       if (point.y === null) return "";
       const startLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
       const endLabel = formatEventChartLabel(point.end, bucketMs, chartSpanMs, { detailed: true });
-      const denominatorLabel = stepIndex > 1 ? "sessions at the previous step" : "entering sessions";
+      const denominatorLabel = series.stepIndex > 1 ? "sessions at the previous step" : "entering sessions";
       return `
-        <circle cx="${point.x}" cy="${point.y}" r="3.7" style="fill:${color};stroke:${color}">
-          <title>Step ${stepIndex} | ${escapeHtml(formatEventName(step.eventName))} | ${escapeHtml(startLabel)} - ${escapeHtml(endLabel)}: ${formatEventNumber(point.percentage)}% (${formatCompactNumber(point.sessions)} of ${formatCompactNumber(point.eligibleSessions)} ${denominatorLabel})</title>
+        <circle cx="${point.x}" cy="${point.y}" r="3.7" style="fill:${series.color};stroke:${series.color}">
+          <title>Step ${series.stepIndex} | ${escapeHtml(formatEventName(series.eventName))} | ${escapeHtml(startLabel)} - ${escapeHtml(endLabel)}: ${formatEventNumber(point.percentage)}% (${formatCompactNumber(point.sessions)} of ${formatCompactNumber(point.eligibleSessions)} ${denominatorLabel})</title>
         </circle>`;
-    }).join("");
-    return `<g class="funnelTimelineSeries">${paths}${circles}</g>`;
-  }).join("");
+    }).join("")
+  )).join("");
+  const coincidentPaths = getFunnelTimelineCoincidentPathGroups(seriesModels)
+    .map((entries) => entries.map((entry, index) => {
+      const strokeWidth = 2.6 + ((entries.length - index - 1) * 2.4);
+      return `<path class="funnelTimelineCoincidentPath" d="${entry.path}" style="stroke:${entry.color};stroke-width:${strokeWidth}px" data-funnel-step="${entry.stepIndex}" />`;
+    }).join(""))
+    .join("");
+  const coincidentPoints = getFunnelTimelineCoincidentPointGroups(seriesModels)
+    .map((entries) => entries.map((entry, index) => {
+      const radius = 3.7 + ((entries.length - index - 1) * 2.3);
+      const startLabel = formatEventChartLabel(entry.start, bucketMs, chartSpanMs, { detailed: true });
+      const endLabel = formatEventChartLabel(entry.end, bucketMs, chartSpanMs, { detailed: true });
+      const denominatorLabel = entry.stepIndex > 1 ? "sessions at the previous step" : "entering sessions";
+      const eventName = seriesModels.find((series) => series.stepIndex === entry.stepIndex)?.eventName || "";
+      return `
+        <circle class="funnelTimelineCoincidentPoint" cx="${entry.x}" cy="${entry.y}" r="${radius}" style="stroke:${entry.color}" data-funnel-step="${entry.stepIndex}">
+          <title>Step ${entry.stepIndex} | ${escapeHtml(formatEventName(eventName))} | ${escapeHtml(startLabel)} - ${escapeHtml(endLabel)}: ${formatEventNumber(entry.percentage)}% (${formatCompactNumber(entry.sessions)} of ${formatCompactNumber(entry.eligibleSessions)} ${denominatorLabel})</title>
+        </circle>`;
+    }).join(""))
+    .join("");
 
   funnelTimelineChart.innerHTML = `
     <div class="funnelTimelineChartScroller">
       <svg class="funnelTimelineSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Selected Funnel step-to-step conversion percentages over time">
         <g class="funnelTimelineGrid">${grid}</g>
         <text class="funnelTimelineYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Step conversion</text>
-        ${series}
+        <g class="funnelTimelineSeries">${seriesPaths}</g>
+        <g class="funnelTimelineCoincidentPaths">${coincidentPaths}</g>
+        <g class="funnelTimelineSeries">${seriesPoints}</g>
+        <g class="funnelTimelineCoincidentPoints">${coincidentPoints}</g>
         ${xLabels}
       </svg>
       ${visibleSteps.length ? "" : '<p class="funnelTimelineChartNotice">No steps selected</p>'}

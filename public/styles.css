@@ -7668,6 +7668,19 @@ body[data-active-view="funnels"] #pageSubtitle {
   cursor: help;
 }
 
+.funnelTimelineCoincidentPath {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.funnelTimelineCoincidentPoint {
+  fill: #081023;
+  stroke-width: 2px;
+  cursor: help;
+}
+
 .funnelTimelineChartNotice {
   position: absolute;
   inset: 0;
