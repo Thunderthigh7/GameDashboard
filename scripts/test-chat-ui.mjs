@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { paginateChatLogsPayload } from "../lib/chat-pagination.mjs";
 
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+const heatmapSource = readFileSync(new URL("../public/heatmap.js", import.meta.url), "utf8");
+
+const chatPage = paginateChatLogsPayload({
+  logCount: 61,
+  logs: Array.from({ length: 61 }, (_, index) => ({ id: String(index + 1) })),
+}, 25, 25);
+assert.equal(chatPage.logs.length, 25);
+assert.equal(chatPage.logs[0].id, "26");
+assert.equal(chatPage.logs.at(-1).id, "50");
+assert.equal(chatPage.paginationTotal, 61);
+assert.equal(chatPage.hasPrevious, true);
+assert.equal(chatPage.hasNext, true);
 
 assert.match(indexSource, /data-dashboard-view="chat"[\s\S]*?<span>Chats<\/span>/);
 assert.match(
@@ -13,6 +26,9 @@ assert.match(
 );
 assert.equal((indexSource.match(/id="commonQuestionList"/g) || []).length, 1);
 assert.equal((indexSource.match(/id="aiChatMessages"/g) || []).length, 1);
+assert.match(indexSource, /id="chatPagination"[\s\S]*?id="chatPreviousPageButton"[\s\S]*?id="chatNextPageButton"/);
+assert.match(indexSource, /data-admin-only-heatmap[\s\S]*?AI Analysis[\s\S]*?<small>Admin<\/small>/);
+assert.doesNotMatch(indexSource, /data-heatmap-mode="movement"/);
 
 const overviewStart = indexSource.indexOf('data-view-panel="overview"');
 const aiRunsStart = indexSource.indexOf('data-view-panel="ai-runs"');
@@ -49,6 +65,8 @@ assert.match(
   serverSource,
   /const ADMIN_ONLY_AI_DASHBOARD_PATHS = new Set\(\[[\s\S]*?"\/api\/ai-chat"[\s\S]*?\]\);/,
 );
+assert.match(serverSource, /ADMIN_ONLY_AI_DASHBOARD_PATHS = new Set\(\[[\s\S]*?"\/api\/ai-area-analysis"/);
+assert.match(serverSource, /ADMIN_ONLY_AI_DASHBOARD_PATHS = new Set\(\[[\s\S]*?"\/api\/ai-area-analysis\/analyze"/);
 assert.match(
   serverSource,
   /ADMIN_ONLY_AI_DASHBOARD_PATHS\.has\(url\.pathname\)[\s\S]*?findUserById\(auth\.userId\)[\s\S]*?Admin access required/,
@@ -66,5 +84,14 @@ assert.match(
   /\.aiFeaturesTopGrid\s*\{[^}]*grid-template-columns:\s*minmax\(280px, 380px\)\s+minmax\(420px, 1fr\);/,
 );
 assert.match(styleSource, /\.sideNav a\.aiFeaturesNavLink\.isAdminLocked\s*\{/);
+assert.match(styleSource, /\.aiFeaturesAdminBadge svg\s*\{[\s\S]*?width:\s*15px;[\s\S]*?height:\s*15px;/);
+assert.match(styleSource, /\.chatLogItem time\s*\{[\s\S]*?font-size:\s*16px;[\s\S]*?font-weight:\s*850;/);
+assert.match(styleSource, /\.chatPagination\s*\{/);
+assert.match(appSource, /const CHAT_LOG_PAGE_SIZE = 25;/);
+assert.match(appSource, /offset:\s*String\(chatLogOffset\)/);
+assert.match(serverSource, /paginateChatLogsPayload\([\s\S]*?searchParams\.get\("offset"\)/);
+assert.match(heatmapSource, /const MOVEMENT_EVENT_OPTION = "__movement__";/);
+assert.match(heatmapSource, /function renderMovementDropdownOption\(\)/);
+assert.match(heatmapSource, /if \(requestedMode === "ai-analysis" && !isAdminViewer\) requestedMode = "movement";/);
 
 console.log("Chat UI regression checks passed.");

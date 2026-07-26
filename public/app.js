@@ -79,6 +79,10 @@ const chatLogList = document.querySelector("#chatLogList");
 const chatMessageCount = document.querySelector("#chatMessageCount");
 const chatPlayerCount = document.querySelector("#chatPlayerCount");
 const chatLiveBadge = document.querySelector("#chatLiveBadge");
+const chatPagination = document.querySelector("#chatPagination");
+const chatPreviousPageButton = document.querySelector("#chatPreviousPageButton");
+const chatNextPageButton = document.querySelector("#chatNextPageButton");
+const chatPageStatus = document.querySelector("#chatPageStatus");
 const eventsStatus = document.querySelector("#eventsStatus");
 const eventCatalog = document.querySelector("#eventCatalog");
 const newEventButton = document.querySelector("#newEventButton");
@@ -232,6 +236,7 @@ let funnelRefreshTimer;
 let selectedUniverseId = "";
 let selectedChatLogId = "";
 let currentChatLogs = [];
+let chatLogOffset = 0;
 let knownUniverses = [];
 let ownedGames = [];
 let authenticated = false;
@@ -300,7 +305,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-48";
+const DASHBOARD_ASSET_VERSION = "20260725-50";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -354,6 +359,7 @@ const GENERIC_EVENT_PROPERTY_NAMES = new Set([
 
 window.getSelectedUniverseId = () => selectedUniverseId;
 window.isDashboardAuthenticated = () => authenticated;
+window.isDashboardAdmin = () => Boolean(authenticatedUser?.isAdmin);
 const resolveDashboardCacheScope = () => {
   const username = String(authenticatedUser?.username || "").trim().toLowerCase();
   return authenticated && username ? encodeURIComponent(username) : "";
@@ -361,7 +367,7 @@ const resolveDashboardCacheScope = () => {
 window.getDashboardCacheScope = resolveDashboardCacheScope;
 
 const CHAT_REFRESH_MS = 5000;
-const RECENT_CHAT_LIMIT = 100;
+const CHAT_LOG_PAGE_SIZE = 25;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat"]);
@@ -696,6 +702,8 @@ function bindEvents() {
     event.preventDefault();
     selectChatLog(item.dataset.chatLogId || "", { notifyMap: true });
   });
+  chatPreviousPageButton?.addEventListener("click", () => changeChatLogPage(-1));
+  chatNextPageButton?.addEventListener("click", () => changeChatLogPage(1));
 
   window.addEventListener("dashboard:chatPointSelected", (event) => {
     selectChatLog(event.detail?.id || "", { scroll: true });
@@ -944,6 +952,7 @@ function setAuthenticated(value, user = null) {
       aiReportSelect.disabled = true;
     }
     selectedUniverseId = "";
+    chatLogOffset = 0;
     currentEventReleaseVersions = [];
     currentEventReleaseVersionsUniverseId = "";
     eventReleaseVersionRequestSequence += 1;
@@ -1205,7 +1214,9 @@ function loadActiveViewData(view, options = {}) {
 
 function startChatRefresh() {
   if (chatRefreshTimer || document.hidden) return;
-  chatRefreshTimer = window.setInterval(() => loadChatLogs({ includeInsights: false }), CHAT_REFRESH_MS);
+  chatRefreshTimer = window.setInterval(() => {
+    if (chatLogOffset === 0) loadChatLogs({ includeInsights: false });
+  }, CHAT_REFRESH_MS);
 }
 
 function stopChatRefresh() {
@@ -2510,6 +2521,7 @@ async function selectUniverse(value) {
 
   selectedChatLogId = "";
   currentChatLogs = [];
+  chatLogOffset = 0;
   selectedCustomEventName = "";
   currentEventCatalog = [];
   currentSelectedEvent = null;
@@ -5757,9 +5769,7 @@ function handleFunnelColorManagerKeydown(event) {
 function renderFunnelTimeline(funnel) {
   if (!funnelTimelineChart || !funnelTimelineLegend) return;
   const timeline = funnel?.timeline;
-  const buckets = (Array.isArray(timeline?.buckets) ? timeline.buckets : [])
-    .filter((bucket) => Number(bucket?.start) > 0)
-    .sort((leftBucket, rightBucket) => Number(leftBucket.start) - Number(rightBucket.start));
+  const buckets = getCompletedFunnelTimelineBuckets(funnel);
   const steps = getFunnelTimelineSteps(funnel);
   const selection = getFunnelTimelineStepSelection(funnel);
   if (funnelManageColorsButton) funnelManageColorsButton.disabled = !funnel || !steps.length;
@@ -5776,7 +5786,7 @@ function renderFunnelTimeline(funnel) {
     return;
   }
   if (!buckets.length) {
-    funnelTimelineChart.innerHTML = '<p class="funnelTimelineEmpty">No timeline buckets are available for this range.</p>';
+    funnelTimelineChart.innerHTML = '<p class="funnelTimelineEmpty">No completed Funnel buckets are available for this range.</p>';
     funnelTimelineLegend.innerHTML = "";
     return;
   }
@@ -5801,9 +5811,9 @@ function renderFunnelTimeline(funnel) {
   }
 
   const bucketMs = Math.max(Number(timeline.bucketMs) || getSeriesBucketMs(buckets), 1);
-  const timelineStart = Number(timeline.start) || Number(buckets[0].start);
+  const timelineStart = Number(buckets[0].start);
   const timelineEnd = Math.max(
-    Number(timeline.end) || Number(buckets.at(-1)?.end) || timelineStart + bucketMs,
+    Number(buckets.at(-1)?.end) || timelineStart + bucketMs,
     timelineStart + 1,
   );
   const chartSpanMs = Math.max(timelineEnd - timelineStart, bucketMs);
@@ -5837,7 +5847,8 @@ function renderFunnelTimeline(funnel) {
     const color = getFunnelStepColor(funnel, stepIndex);
     const points = buckets.map((bucket, index) => {
       const point = bucket.steps?.find((entry) => Number(entry.index) === stepIndex);
-      const rawPercentage = point?.percentage;
+      const previousStep = bucket.steps?.find((entry) => Number(entry.index) === stepIndex - 1);
+      const rawPercentage = getFunnelBucketStepConversion(bucket, stepIndex);
       const hasPercentage = rawPercentage !== null
         && rawPercentage !== undefined
         && Number.isFinite(Number(rawPercentage));
@@ -5846,7 +5857,9 @@ function renderFunnelTimeline(funnel) {
         y: hasPercentage ? yForPercent(Math.max(0, Math.min(Number(rawPercentage), 100))) : null,
         percentage: hasPercentage ? Number(rawPercentage) : null,
         sessions: Number(point?.sessions) || 0,
-        entrants: Number(bucket.entrySessions) || 0,
+        eligibleSessions: stepIndex > 1
+          ? Number(previousStep?.sessions) || 0
+          : Number(bucket.entrySessions) || 0,
         start: Number(bucket.start),
         end: Number(bucket.end),
       };
@@ -5869,9 +5882,10 @@ function renderFunnelTimeline(funnel) {
       if (point.y === null) return "";
       const startLabel = formatEventChartLabel(point.start, bucketMs, chartSpanMs, { detailed: true });
       const endLabel = formatEventChartLabel(point.end, bucketMs, chartSpanMs, { detailed: true });
+      const denominatorLabel = stepIndex > 1 ? "sessions at the previous step" : "entering sessions";
       return `
         <circle cx="${point.x}" cy="${point.y}" r="3.7" style="fill:${color};stroke:${color}">
-          <title>Step ${stepIndex} | ${escapeHtml(formatEventName(step.eventName))} | ${escapeHtml(startLabel)} - ${escapeHtml(endLabel)}: ${formatEventNumber(point.percentage)}% (${formatCompactNumber(point.sessions)} of ${formatCompactNumber(point.entrants)} entering sessions)</title>
+          <title>Step ${stepIndex} | ${escapeHtml(formatEventName(step.eventName))} | ${escapeHtml(startLabel)} - ${escapeHtml(endLabel)}: ${formatEventNumber(point.percentage)}% (${formatCompactNumber(point.sessions)} of ${formatCompactNumber(point.eligibleSessions)} ${denominatorLabel})</title>
         </circle>`;
     }).join("");
     return `<g class="funnelTimelineSeries">${paths}${circles}</g>`;
@@ -5879,9 +5893,9 @@ function renderFunnelTimeline(funnel) {
 
   funnelTimelineChart.innerHTML = `
     <div class="funnelTimelineChartScroller">
-      <svg class="funnelTimelineSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Selected Funnel step conversion percentages over time">
+      <svg class="funnelTimelineSvg" width="${chartWidth}" height="${chartHeight}" viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Selected Funnel step-to-step conversion percentages over time">
         <g class="funnelTimelineGrid">${grid}</g>
-        <text class="funnelTimelineYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Reached step</text>
+        <text class="funnelTimelineYAxisTitle" x="15" y="${top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 15 ${top + (plotHeight / 2)})">Step conversion</text>
         ${series}
         ${xLabels}
       </svg>
@@ -5900,10 +5914,8 @@ function renderFunnelStepChanges(funnel) {
     return;
   }
 
-  const conversionWindowMs = Math.max(Number(funnel.conversionWindowMinutes) || 30, 1) * 60 * 1000;
-  const completedBefore = Date.now() - conversionWindowMs;
-  const completedBuckets = (Array.isArray(funnel.timeline.buckets) ? funnel.timeline.buckets : [])
-    .filter((bucket) => Number(bucket?.entrySessions) > 0 && Number(bucket?.end) <= completedBefore);
+  const completedBuckets = getCompletedFunnelTimelineBuckets(funnel)
+    .filter((bucket) => Number(bucket?.entrySessions) > 0);
   const startBucket = completedBuckets[0];
   const endBucket = completedBuckets[completedBuckets.length - 1];
   if (!startBucket || !endBucket) {
@@ -5982,12 +5994,34 @@ function getFunnelAverageStepConversion(buckets, stepIndex) {
   return Math.round((reachedSessions / eligibleSessions) * 1000) / 10;
 }
 
+function getCompletedFunnelTimelineBuckets(funnel) {
+  const conversionWindowMs = Math.max(Number(funnel?.conversionWindowMinutes) || 30, 1) * 60 * 1000;
+  const completedBefore = Date.now() - conversionWindowMs;
+  return (Array.isArray(funnel?.timeline?.buckets) ? funnel.timeline.buckets : [])
+    .filter((bucket) => (
+      Number(bucket?.start) > 0
+      && Number(bucket?.end) >= Number(bucket?.start)
+      && Number(bucket?.end) <= completedBefore
+    ))
+    .sort((leftBucket, rightBucket) => Number(leftBucket.start) - Number(rightBucket.start));
+}
+
 function getFunnelBucketStepConversion(bucket, stepIndex) {
   const steps = Array.isArray(bucket?.steps) ? bucket.steps : [];
   const currentStep = steps.find((step) => Number(step.index) === Number(stepIndex));
+  if (!currentStep) return null;
+  if (Object.prototype.hasOwnProperty.call(currentStep, "conversionFromPrevious")) {
+    const conversion = Number(currentStep.conversionFromPrevious);
+    return currentStep.conversionFromPrevious !== null && Number.isFinite(conversion)
+      ? conversion
+      : null;
+  }
+  if (Number(stepIndex) === 1) {
+    return Number(bucket?.entrySessions) > 0 ? 100 : null;
+  }
   const previousStep = steps.find((step) => Number(step.index) === Number(stepIndex) - 1);
   const eligibleSessions = Number(previousStep?.sessions) || 0;
-  if (!currentStep || eligibleSessions <= 0) return null;
+  if (eligibleSessions <= 0) return null;
   return Math.round(((Number(currentStep.sessions) || 0) / eligibleSessions) * 1000) / 10;
 }
 
@@ -6123,6 +6157,7 @@ async function loadChatLogs(options = {}) {
   if (!selectedUniverseId) {
     chatLogRequestState = null;
     currentChatLogs = [];
+    chatLogOffset = 0;
     chatLogsStatus.textContent = "Connect or select a Roblox game to view chat logs.";
     renderChatSummary();
     setChatLiveState("waiting");
@@ -6144,11 +6179,20 @@ async function loadChatLogs(options = {}) {
     try {
       const data = await request(`/api/chat-logs${requestKey}`);
       if (requestSequence !== chatLogRequestSequence || universeId !== selectedUniverseId) return;
-      currentChatLogs = Array.isArray(data.logs) ? data.logs : [];
+      const responseLogs = Array.isArray(data.logs) ? data.logs : [];
+      const paginationTotal = Math.max(Number(data.paginationTotal) || 0, 0);
+      if (!responseLogs.length && chatLogOffset > 0 && paginationTotal > 0) {
+        chatLogOffset = Math.floor((paginationTotal - 1) / CHAT_LOG_PAGE_SIZE) * CHAT_LOG_PAGE_SIZE;
+        return loadChatLogs({ includeInsights: requestState.includeInsights });
+      }
+      currentChatLogs = responseLogs;
+      if (!currentChatLogs.some((log) => String(log.id || "") === String(selectedChatLogId))) {
+        selectedChatLogId = "";
+      }
       if (requestState.includeInsights) loadChatInsights();
       renderChatSummary(data);
       setChatLiveState("live");
-      if (!data.logs.length) {
+      if (!responseLogs.length) {
         chatLogsStatus.textContent = selectedUniverseId
           ? "No chat logs yet. Start a live server with chat tracking enabled, then have a player send a message."
           : "Connect or select a Roblox game to view chat logs.";
@@ -6156,8 +6200,12 @@ async function loadChatLogs(options = {}) {
         return;
       }
 
-      chatLogsStatus.textContent = `Showing ${data.logs.length} recent message${data.logs.length === 1 ? "" : "s"} from ${data.logCount || data.logs.length} in the selected range.`;
-      chatLogList.innerHTML = data.logs.map(renderChatLog).join("");
+      const totalCount = Math.max(Number(data.logCount) || responseLogs.length, responseLogs.length);
+      const rangeStart = Math.max(Number(data.offset) || chatLogOffset, 0) + 1;
+      const rangeEnd = rangeStart + responseLogs.length - 1;
+      chatLogsStatus.textContent = `Showing messages ${rangeStart} through ${rangeEnd} of ${totalCount} in the selected range.`;
+      chatLogList.innerHTML = responseLogs.map(renderChatLog).join("");
+      renderChatPagination(data);
       highlightSelectedChatLog({ scroll: false });
     } catch (error) {
       if (requestSequence !== chatLogRequestSequence || universeId !== selectedUniverseId) return;
@@ -6182,13 +6230,38 @@ async function loadChatLogs(options = {}) {
 function buildChatLogsQuery(universeId) {
   const params = new URLSearchParams({
     universeId: String(universeId || ""),
-    limit: String(RECENT_CHAT_LIMIT),
+    limit: String(CHAT_LOG_PAGE_SIZE),
+    offset: String(chatLogOffset),
   });
   const from = getDashboardDateFilterMs(movementFromFilter);
   const to = getDashboardDateFilterMs(movementToFilter);
   if (from) params.set("from", String(from));
   if (to) params.set("to", String(to));
   return `?${params.toString()}`;
+}
+
+function changeChatLogPage(direction) {
+  const cleanDirection = Number(direction) < 0 ? -1 : 1;
+  const nextOffset = Math.max(chatLogOffset + (cleanDirection * CHAT_LOG_PAGE_SIZE), 0);
+  if (nextOffset === chatLogOffset) return;
+  chatLogOffset = nextOffset;
+  selectedChatLogId = "";
+  loadChatLogs({ includeInsights: false });
+}
+
+function renderChatPagination(data = null) {
+  if (!chatPagination || !chatPreviousPageButton || !chatNextPageButton || !chatPageStatus) return;
+  const totalCount = Math.max(Number(data?.paginationTotal) || Number(data?.logCount) || 0, 0);
+  const offset = Math.max(Number(data?.offset) || 0, 0);
+  const returnedCount = Math.max(Number(data?.returnedCount) || data?.logs?.length || 0, 0);
+  const rangeStart = returnedCount ? offset + 1 : 0;
+  const rangeEnd = offset + returnedCount;
+  chatPagination.hidden = totalCount <= CHAT_LOG_PAGE_SIZE;
+  chatPreviousPageButton.disabled = offset <= 0;
+  chatNextPageButton.disabled = !data?.hasNext;
+  chatPageStatus.textContent = returnedCount
+    ? `${formatCompactNumber(rangeStart)}–${formatCompactNumber(rangeEnd)} of ${formatCompactNumber(totalCount)}`
+    : `0 of ${formatCompactNumber(totalCount)}`;
 }
 
 async function loadChatInsights() {
@@ -6887,7 +6960,10 @@ function handleDateFilterChange(context = dateRangePickerContext) {
     loadCustomEvents({ force: true });
   }
   if (cleanContext === "funnels" && activeView === "funnels") loadFunnels({ force: true });
-  if (cleanContext === "events" && activeView === "chat") loadChatLogs({ includeInsights: false });
+  if (cleanContext === "events" && activeView === "chat") {
+    chatLogOffset = 0;
+    loadChatLogs({ includeInsights: false });
+  }
 }
 
 function getDateRangeInput(side, context = dateRangePickerContext) {
@@ -7342,6 +7418,7 @@ function renderCommonQuestionPlaceholders(message = "Player questions will appea
 
 function renderRecentChatEmpty(message) {
   if (!chatLogList) return;
+  renderChatPagination();
   chatLogList.innerHTML = `
     <div class="chatRecentEmpty" role="status">
       <span class="chatRecentEmptyIcon" aria-hidden="true">

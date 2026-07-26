@@ -36,19 +36,27 @@ const timeline = calculateFunnelTimelineAnalytics(definition, sessions, [
 assert.equal(timeline.length, 3, "the requested time buckets should be retained");
 assert.equal(timeline[0].entrySessions, 2, "the first bucket should cohort sessions by first-step time");
 assert.deepEqual(
-  timeline[0].steps.map((step) => [step.sessions, step.percentage]),
-  [[2, 100], [1, 50], [1, 50]],
-  "the first cohort should report the percentage that reached each ordered step",
+  timeline[0].steps.map((step) => [step.sessions, step.percentage, step.conversionFromPrevious]),
+  [[2, 100, 100], [1, 50, 50], [1, 50, 100]],
+  "the first cohort should distinguish total reach from accurate previous-step conversion",
 );
 assert.deepEqual(
-  timeline[1].steps.map((step) => [step.sessions, step.percentage]),
-  [[1, 100], [1, 100], [1, 100]],
+  timeline[1].steps.map((step) => [step.sessions, step.percentage, step.conversionFromPrevious]),
+  [[1, 100, 100], [1, 100, 100], [1, 100, 100]],
   "a completed second cohort should remain at 100 percent through every step",
 );
 assert.equal(timeline[2].entrySessions, 0, "sessions that never entered at step one should not create a cohort");
 assert.ok(
-  timeline[2].steps.every((step) => step.percentage === null),
+  timeline[2].steps.every((step) => step.percentage === null && step.conversionFromPrevious === null),
   "empty cohorts should remain no-data instead of becoming a misleading zero-percent line",
+);
+assert.equal(
+  Math.round((
+    timeline.reduce((total, bucket) => total + bucket.steps[1].sessions, 0)
+    / timeline.reduce((total, bucket) => total + bucket.steps[0].sessions, 0)
+  ) * 1000) / 10,
+  66.7,
+  "the weighted average should reconcile reached sessions against previous-step sessions",
 );
 
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
@@ -62,11 +70,17 @@ assert.match(indexSource, /id="funnelManageColorsButton"[\s\S]*?>[\s\S]*?Manage 
 assert.match(indexSource, /id="funnelColorManagerDialog"/, "Funnels should include a dedicated step color manager");
 assert.match(indexSource, /id="funnelTimelineChart"/, "Funnels should include the step conversion line chart");
 assert.match(indexSource, /id="funnelStepChangesTable"/, "Funnels should include the step change comparison below the main table");
+assert.match(indexSource, />Step-to-step conversion over time</, "the chart title should identify the same metric as the comparison");
 assert.match(indexSource, />Step-to-step conversion</, "the comparison should retain its direct title");
 assert.doesNotMatch(indexSource, /funnelStepChangesPeriod|change vs prior period|Mature cohorts only/, "the comparison should not include explanatory subtext or prior-period terminology");
 assert.match(appSource, /params\.set\("funnelId", selectedFunnelId\)/, "the selected Funnel should request its timeline");
 assert.match(appSource, /params\.set\("interval", selectedFunnelInterval\)/, "Funnel interval changes should reach the API");
 assert.match(appSource, /function renderFunnelTimeline\(funnel\)/, "the Funnel timeline renderer should be present");
+assert.match(appSource, /const rawPercentage = getFunnelBucketStepConversion\(bucket, stepIndex\)/, "the chart and table should use the same step-to-step conversion calculation");
+assert.doesNotMatch(appSource, /const rawPercentage = point\?\.percentage/, "the chart should not plot the from-start percentage as step conversion");
+assert.match(appSource, /function getCompletedFunnelTimelineBuckets\(funnel\)/, "the chart and table should share completed cohort filtering");
+assert.match(appSource, /const buckets = getCompletedFunnelTimelineBuckets\(funnel\)/, "the chart should exclude unfinished conversion cohorts");
+assert.match(indexSource, /Percent of sessions at the previous step that reached each selected step\./, "the chart should state its step-to-step denominator");
 assert.match(appSource, /function getFunnelStepColor\(funnel, stepIndex\)/, "saved Funnel step colors should drive the timeline");
 assert.match(appSource, /async function saveFunnelStepColors\(\)/, "Funnel step color changes should persist");
 assert.match(appSource, /document\.body\.append\(eventConfirmDialog\)/, "the shared discard confirmation should remain visible from the Funnels view");

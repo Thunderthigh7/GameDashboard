@@ -29,6 +29,7 @@ const fromFilter = document.querySelector("#movementFromFilter");
 const toFilter = document.querySelector("#movementToFilter");
 const presetButtons = document.querySelectorAll("[data-heatmap-preset-minutes]");
 const modeButtons = document.querySelectorAll("[data-heatmap-mode]");
+const aiAnalysisModeButton = document.querySelector("[data-admin-only-heatmap]");
 const renderButtons = document.querySelectorAll("[data-heatmap-render]");
 const mapViewButtons = document.querySelectorAll("[data-map-view]");
 const eventControl = document.querySelector("#heatmapEventControl");
@@ -45,6 +46,7 @@ const funnelMenu = document.querySelector("#heatmapFunnelMenu");
 const DEFAULT_3D_YAW = -0.8;
 const DEFAULT_3D_PITCH = 0.72;
 const TOP_DOWN_PITCH = 1.5;
+const MOVEMENT_EVENT_OPTION = "__movement__";
 
 let renderer;
 let scene;
@@ -72,7 +74,8 @@ let panTarget;
 let viewInitialized = false;
 let canvasHovered = false;
 let lastFrameTime = 0;
-let activeHeatmapMode = "ai-analysis";
+let isAdminViewer = window.isDashboardAdmin?.() === true;
+let activeHeatmapMode = isAdminViewer ? "ai-analysis" : "movement";
 let activeRenderMode = "points";
 let activeCameraView = "3d";
 let saved3dView = { yaw: DEFAULT_3D_YAW, pitch: DEFAULT_3D_PITCH };
@@ -129,6 +132,9 @@ if (canvas) {
   if (eventMenu && eventMenu.parentElement !== document.body) document.body.append(eventMenu);
   if (funnelMenu && funnelMenu.parentElement !== document.body) document.body.append(funnelMenu);
   initScene();
+  syncAiAnalysisAccess();
+  syncHeatmapModeControls();
+  syncEventSelect();
   syncFunnelSelect();
   refreshButton?.addEventListener("click", () => loadHeatmap({ force: true }));
   centerButton?.addEventListener("click", centerView);
@@ -151,6 +157,7 @@ if (canvas) {
   }
   for (const button of modeButtons) {
     button.addEventListener("click", () => {
+      if (button.dataset.heatmapMode === "ai-analysis" && !isAdminViewer) return;
       setHeatmapMode(button.dataset.heatmapMode || "movement");
     });
   }
@@ -190,6 +197,13 @@ if (canvas) {
     if (!renderPendingAreaAnalysis()) loadHeatmap();
   });
   window.addEventListener("dashboard:authChanged", (event) => {
+    isAdminViewer = Boolean(event.detail?.user?.isAdmin);
+    syncAiAnalysisAccess();
+    if (!isAdminViewer && activeHeatmapMode === "ai-analysis") {
+      activeHeatmapMode = "movement";
+      syncHeatmapModeControls();
+      syncEventSelect();
+    }
     if (!event.detail?.authenticated) {
       stopHeatmapRefresh();
       stopAnimation();
@@ -322,6 +336,10 @@ if (canvas) {
 
 function renderPendingAreaAnalysis() {
   if (!pendingAreaAnalysisRender || document.hidden) return false;
+  if (!isAdminViewer) {
+    pendingAreaAnalysisRender = null;
+    return false;
+  }
   const pending = pendingAreaAnalysisRender;
   pendingAreaAnalysisRender = null;
   const selectedUniverseId = String(window.getSelectedUniverseId?.() || "");
@@ -495,10 +513,9 @@ async function loadEventCatalog(options = {}) {
   if (eventCatalogRequestState?.key === cacheKey && !options.force) return eventCatalogRequestState.promise;
   abortEventCatalogRequest();
   if (!currentEventCatalog.length && eventButton) {
-    closeEventDropdown();
-    eventButton.disabled = true;
-    if (eventButtonLabel) eventButtonLabel.textContent = "Loading events...";
-    if (eventButtonMeta) eventButtonMeta.textContent = "";
+    eventButton.disabled = false;
+    if (eventButtonLabel) eventButtonLabel.textContent = "Movement";
+    if (eventButtonMeta) eventButtonMeta.textContent = "Loading events...";
   }
 
   const controller = new AbortController();
@@ -517,10 +534,9 @@ async function loadEventCatalog(options = {}) {
     return payload;
   }).catch((error) => {
     if (error.name !== "AbortError" && !currentEventCatalog.length && eventButton) {
-      closeEventDropdown();
-      eventButton.disabled = true;
-      if (eventButtonLabel) eventButtonLabel.textContent = "Events unavailable";
-      if (eventButtonMeta) eventButtonMeta.textContent = "";
+      eventButton.disabled = false;
+      if (eventButtonLabel) eventButtonLabel.textContent = "Movement";
+      if (eventButtonMeta) eventButtonMeta.textContent = "Events unavailable";
     }
     return null;
   }).finally(() => {
@@ -637,10 +653,8 @@ function resetFunnelSelection() {
   funnelMenuView = "funnels";
   closeFunnelDropdown();
   if (activeHeatmapMode === "funnels") {
-    activeHeatmapMode = "ai-analysis";
-    for (const button of modeButtons) {
-      button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
-    }
+    activeHeatmapMode = isAdminViewer ? "ai-analysis" : "movement";
+    syncHeatmapModeControls();
   }
   syncFunnelSelect();
 }
@@ -791,30 +805,36 @@ function syncEventSelect() {
   const focusedEventName = eventMenu.contains(document.activeElement)
     ? String(document.activeElement?.dataset?.eventMapOption || "")
     : "";
-  eventControl.classList.toggle("active", activeHeatmapMode === "events");
-  if (!currentEventCatalog.length) {
-    closeEventDropdown();
-    eventButton.disabled = true;
-    if (eventButtonLabel) eventButtonLabel.textContent = "No tracked events";
-    if (eventButtonMeta) eventButtonMeta.textContent = "";
-    eventMenu.innerHTML = "";
-    return;
-  }
-
+  const movementSelected = activeHeatmapMode === "movement";
   const selectedEvent = currentEventCatalog.find((event) => event.name === selectedTrackedEventName)
-    || currentEventCatalog[0];
+    || currentEventCatalog[0]
+    || null;
+  if (!movementSelected && activeHeatmapMode === "events" && !selectedEvent) {
+    activeHeatmapMode = "movement";
+    syncHeatmapModeControls();
+  }
+  eventControl.classList.toggle("active", activeHeatmapMode === "movement" || activeHeatmapMode === "events");
   const locationCount = Math.max(Number(selectedEvent?.locationCount) || 0, 0);
   const trackedCount = Math.max(Number(selectedEvent?.count) || 0, 0);
   eventButton.disabled = false;
-  eventButton.setAttribute("aria-label", `Choose tracked event. Current: ${formatTrackedEventName(selectedEvent?.name)}`);
-  if (eventButtonLabel) eventButtonLabel.textContent = formatTrackedEventName(selectedEvent?.name);
-  if (eventButtonMeta) {
+  const showMovement = activeHeatmapMode === "movement" || !selectedEvent;
+  eventButton.setAttribute("aria-label", showMovement
+    ? "Choose map activity. Current: Movement"
+    : `Choose map activity. Current: ${formatTrackedEventName(selectedEvent?.name)}`);
+  if (eventButtonLabel) {
+    eventButtonLabel.textContent = showMovement ? "Movement" : formatTrackedEventName(selectedEvent?.name);
+  }
+  if (eventButtonMeta && showMovement) {
+    eventButtonMeta.textContent = "Player paths";
+    eventButtonMeta.classList.remove("hasNoPositions");
+  } else if (eventButtonMeta) {
     eventButtonMeta.textContent = locationCount > 0
       ? `${locationCount.toLocaleString()} mapped`
       : `${trackedCount.toLocaleString()} tracked`;
     eventButtonMeta.classList.toggle("hasNoPositions", locationCount <= 0);
   }
-  eventMenu.innerHTML = currentEventCatalog.map(renderEventDropdownOption).join("");
+  eventMenu.innerHTML = renderMovementDropdownOption()
+    + currentEventCatalog.map(renderEventDropdownOption).join("");
   if (!eventMenu.hidden) {
     positionEventDropdown();
     if (focusedEventName) {
@@ -824,11 +844,23 @@ function syncEventSelect() {
   }
 }
 
+function renderMovementDropdownOption() {
+  return `
+    <button class="heatmapEventOption" type="button" role="option" tabindex="-1" data-event-map-option="${MOVEMENT_EVENT_OPTION}" aria-selected="${activeHeatmapMode === "movement" ? "true" : "false"}">
+      <span>
+        <strong>Movement</strong>
+        <small>System activity &middot; Player path samples</small>
+      </span>
+      <i aria-hidden="true">&#10003;</i>
+    </button>
+  `;
+}
+
 function renderEventDropdownOption(event) {
   const name = String(event?.name || "");
   const locationCount = Math.max(Number(event?.locationCount) || 0, 0);
   const trackedCount = Math.max(Number(event?.count) || 0, 0);
-  const selected = name === selectedTrackedEventName;
+  const selected = activeHeatmapMode === "events" && name === selectedTrackedEventName;
   const sourceLabel = event?.sourceType === "system" ? "System event" : "Custom event";
   const detail = locationCount > 0
     ? `${locationCount.toLocaleString()} mapped location${locationCount === 1 ? "" : "s"}`
@@ -851,7 +883,7 @@ function toggleEventDropdown() {
 }
 
 function openEventDropdown(options = {}) {
-  if (!eventMenu || !eventButton || eventButton.disabled || !currentEventCatalog.length) return;
+  if (!eventMenu || !eventButton || eventButton.disabled) return;
   closeFunnelDropdown();
   eventMenu.hidden = false;
   eventButton.setAttribute("aria-expanded", "true");
@@ -908,6 +940,12 @@ function handleEventMenuClick(event) {
   const eventName = String(option.dataset.eventMapOption || "");
   if (!eventName) return;
   closeEventDropdown();
+  if (eventName === MOVEMENT_EVENT_OPTION) {
+    setHeatmapMode("movement");
+    syncEventSelect();
+    eventButton?.focus();
+    return;
+  }
   window.dispatchEvent(new CustomEvent("dashboard:eventMapSelectionChanged", {
     detail: { eventName, source: "map" },
   }));
@@ -1376,19 +1414,16 @@ function abortHeatmapRequest() {
 
 async function renderAreaAnalysisPayload(payload, options = {}) {
   if (window.isDashboardAuthenticated?.() === false || !payload) return;
+  if (!isAdminViewer) return setHeatmapMode("movement");
   abortHeatmapRequest();
   const renderSequence = heatmapLoadSequence;
 
   activeHeatmapMode = "ai-analysis";
   activeRenderMode = "points";
-  for (const button of modeButtons) {
-    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
-  }
+  syncHeatmapModeControls();
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);
   }
-  eventControl?.classList.remove("active");
-  funnelControl?.classList.remove("active");
 
   const universeId = window.getSelectedUniverseId?.() || payload.universeId || "";
   setHeatmapEmptyState(false);
@@ -1725,8 +1760,31 @@ function normalizeHeatmapPayload(payload) {
   };
 }
 
+function syncAiAnalysisAccess() {
+  if (!aiAnalysisModeButton) return;
+  aiAnalysisModeButton.disabled = !isAdminViewer;
+  aiAnalysisModeButton.classList.toggle("isAdminLocked", !isAdminViewer);
+  aiAnalysisModeButton.title = isAdminViewer
+    ? "Open AI Analysis"
+    : "Admin access required";
+}
+
+function syncHeatmapModeControls() {
+  for (const button of modeButtons) {
+    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
+  }
+  eventControl?.classList.toggle(
+    "active",
+    activeHeatmapMode === "movement" || activeHeatmapMode === "events",
+  );
+  funnelControl?.classList.toggle("active", activeHeatmapMode === "funnels");
+}
+
 function setHeatmapMode(mode, options = {}) {
-  const requestedMode = ["ai-analysis", "movement", "deaths", "leaves", "chat", "events", "funnels"].includes(mode) ? mode : "ai-analysis";
+  let requestedMode = ["ai-analysis", "movement", "deaths", "leaves", "chat", "events", "funnels"].includes(mode)
+    ? mode
+    : (isAdminViewer ? "ai-analysis" : "movement");
+  if (requestedMode === "ai-analysis" && !isAdminViewer) requestedMode = "movement";
   if (requestedMode === "funnels" && (!selectedMapFunnelId || !selectedMapFunnelStep)) return Promise.resolve(null);
   activeHeatmapMode = requestedMode;
   if (mapAreaBreakdown) mapAreaBreakdown.hidden = true;
@@ -1739,11 +1797,8 @@ function setHeatmapMode(mode, options = {}) {
     selectedChatLogId = "";
   }
 
-  for (const button of modeButtons) {
-    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
-  }
-  eventControl?.classList.toggle("active", activeHeatmapMode === "events");
-  funnelControl?.classList.toggle("active", activeHeatmapMode === "funnels");
+  syncHeatmapModeControls();
+  syncEventSelect();
 
   if (options.forcePoints || activeHeatmapMode === "ai-analysis") {
     activeRenderMode = "points";
@@ -1765,11 +1820,8 @@ function setRenderMode(mode) {
     activeHeatmapMode = "movement";
   }
 
-  for (const button of modeButtons) {
-    button.classList.toggle("active", button.dataset.heatmapMode === activeHeatmapMode);
-  }
-  eventControl?.classList.toggle("active", activeHeatmapMode === "events");
-  funnelControl?.classList.toggle("active", activeHeatmapMode === "funnels");
+  syncHeatmapModeControls();
+  syncEventSelect();
 
   for (const button of renderButtons) {
     button.classList.toggle("active", button.dataset.heatmapRender === activeRenderMode);

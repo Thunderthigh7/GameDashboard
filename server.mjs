@@ -20,6 +20,7 @@ import {
   calculateFunnelTimelineAnalytics,
   groupCustomEventsBySession,
 } from "./lib/funnels.mjs";
+import { paginateChatLogsPayload } from "./lib/chat-pagination.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -113,6 +114,8 @@ const MAX_FUNNEL_MAP_CLUSTERS = 180;
 const MAX_ROBLOX_HEATMAP_POINTS = 700;
 const MAX_AI_ANALYSIS_AREAS = 5;
 const ADMIN_ONLY_AI_DASHBOARD_PATHS = new Set([
+  "/api/ai-area-analysis",
+  "/api/ai-area-analysis/analyze",
   "/api/chat-insights",
   "/api/ai-insights/reports",
   "/api/ai-insights/report",
@@ -4368,20 +4371,12 @@ async function getChatLogsFromQuery(searchParams) {
     ? getChatLogsMergedWithLive(rollup, filters)
     : getChatLogs(filters);
 
-  return limitChatLogsPayload(payload, searchParams.get("limit"));
-}
-
-function limitChatLogsPayload(payload, requestedLimit) {
-  const parsedLimit = cleanFiniteInteger(requestedLimit);
-  const limit = parsedLimit > 0
-    ? Math.min(parsedLimit, MAX_CHAT_LOGS_PER_UNIVERSE)
-    : MAX_CHAT_LOGS_PER_UNIVERSE;
-  const logs = Array.isArray(payload?.logs) ? payload.logs.slice(0, limit) : [];
-  return {
-    ...payload,
-    returnedCount: logs.length,
-    logs,
-  };
+  return paginateChatLogsPayload(
+    payload,
+    searchParams.get("limit"),
+    searchParams.get("offset"),
+    MAX_CHAT_LOGS_PER_UNIVERSE,
+  );
 }
 
 async function getAiAreaAnalysisFromQuery(searchParams) {
