@@ -124,7 +124,7 @@ const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "ut
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 
 assert.match(indexSource, /id="discordConnectionForm"[\s\S]*?id="discordWebhookUrl"[\s\S]*?type="password"[\s\S]*?maxlength="600"/);
-assert.match(indexSource, /id="discordWebhookSelect"[\s\S]*?id="discordWebhookName"[\s\S]*?id="discordWebhookUrl"/);
+assert.match(indexSource, /id="discordNewWebhookButton"[\s\S]*?id="discordWebhookCatalog"[\s\S]*?id="discordWebhookEditorTitle"[\s\S]*?id="discordWebhookName"[\s\S]*?id="discordWebhookUrl"/);
 assert.match(indexSource, /id="discordSendStatus"[^>]*aria-live="polite"/);
 assert.match(indexSource, /id="discordTestButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordNewRuleButton"[^>]*type="button"/);
@@ -138,6 +138,8 @@ assert.match(appSource, /request\("\/api\/integrations\/discord\/test"/);
 assert.match(appSource, /request\(id[\s\S]*?"\/api\/integrations\/discord\/rules"/);
 assert.match(appSource, /function renderDiscordRuleRow\(rule\)/);
 assert.match(appSource, /function renderDiscordConnectionEditor\(\)/);
+assert.match(appSource, /function startNewDiscordWebhook\(\)/);
+assert.match(appSource, /data-discord-webhook-id=/);
 assert.match(appSource, /webhookId:\s*String\(discordRuleWebhook\?\.value \|\| ""\)/);
 assert.match(appSource, /rule\.webhookName \|\| "No webhook selected"/);
 assert.match(appSource, /Current \$\{escapeHtml\(formatCompactNumber\(rule\.currentCount \|\| 0\)\)\}/);
@@ -162,6 +164,8 @@ assert.match(serverSource, /sendDiscordWebhookAlert\(\{[\s\S]*?Observed[\s\S]*?R
 assert.match(serverSource, /MAX_DISCORD_SENDS_PER_WINDOW = 10/);
 assert.match(serverSource, /MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20/);
 assert.match(styleSource, /\.discordConnectionPanel,/);
+assert.match(styleSource, /\.discordWebhookCatalogPanel\s*\{/);
+assert.match(styleSource, /\.discordWorkspace\s*\{/);
 assert.match(styleSource, /\.discordRuleRow\s*\{/);
 assert.match(styleSource, /\.discordAlertPreview\s*\{/);
 assert.match(styleSource, /\.discordSendStatus\[data-state="success"\]\s*\{/);

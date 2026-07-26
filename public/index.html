@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260726-05/styles.css">
+    <link rel="stylesheet" href="/assets/20260726-06/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1128,16 +1128,34 @@
         </section>
 
         <section class="viewPage discordPage" data-view-panel="discord" hidden>
-          <article class="panel discordConnectionPanel">
+          <div class="discordWorkspace">
+            <aside class="discordWebhookCatalogPanel" aria-label="Saved Discord webhooks">
+              <a class="eventExitButton discordExitButton" id="discordExitButton" href="#overview" data-dashboard-view="overview">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+                <span>Back to dashboard</span>
+              </a>
+              <h1 class="eventCatalogTitle discordCatalogTitle">Discord</h1>
+              <div class="eventCatalogAction discordCatalogAction">
+                <button class="button eventNewButton" id="discordNewWebhookButton" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                  <span>New webhook</span>
+                </button>
+              </div>
+              <header class="eventCatalogHeader discordCatalogHeader">
+                <h2>Saved webhooks</h2>
+              </header>
+              <nav class="eventCatalog discordWebhookCatalog" id="discordWebhookCatalog" aria-label="Available Discord webhooks"></nav>
+              <p class="srOnly" id="discordWebhookCatalogStatus" aria-live="polite">Loading webhooks...</p>
+            </aside>
+
+            <section class="discordDetailColumn">
+          <article class="panel discordConnectionPanel" aria-labelledby="discordWebhookEditorTitle">
+            <header class="discordWebhookEditorHeader">
+              <span>Webhook settings</span>
+              <h2 id="discordWebhookEditorTitle">New webhook</h2>
+            </header>
             <form class="discordConnectionForm" id="discordConnectionForm">
               <div class="discordConnectionFields">
-                <label class="discordFormField" for="discordWebhookSelect">
-                  <span>Saved webhook</span>
-                  <select id="discordWebhookSelect">
-                    <option value="">Add a new webhook</option>
-                  </select>
-                  <small>Select one to rename, replace, test, or delete.</small>
-                </label>
                 <label class="discordFormField" for="discordWebhookName">
                   <span>Channel name</span>
                   <input id="discordWebhookName" maxlength="60" placeholder="Live operations" required>
@@ -1201,6 +1219,8 @@
               </div>
             </div>
           </article>
+            </section>
+          </div>
 
           <div class="discordRuleDialog" id="discordRuleDialog" hidden>
             <button class="discordRuleDialogBackdrop" id="discordRuleDialogBackdrop" type="button" aria-label="Close alert editor"></button>
@@ -1696,6 +1716,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260726-05/app.js"></script>
+    <script defer src="/assets/20260726-06/app.js"></script>
   </body>
 </html>
