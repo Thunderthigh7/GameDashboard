@@ -1,0 +1,25 @@
+local Methods = require(script.Parent.Core.Methods)
+
+local RoAnalytics = {}
+
+function RoAnalytics.SendHeartbeat()
+	return Methods.SendHeartbeat()
+end
+
+function RoAnalytics.Log(eventName, info, player)
+	return Methods.Log(eventName, info, player)
+end
+
+function RoAnalytics.SetPlayerContext(player, context)
+	return Methods.SetPlayerContext(player, context)
+end
+
+function RoAnalytics.RegisterLiveAction(actionKey, handler)
+	return Methods.RegisterLiveAction(actionKey, handler)
+end
+
+function RoAnalytics.Start()
+	Methods.Start()
+end
+
+return RoAnalytics

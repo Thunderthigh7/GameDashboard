@@ -60,22 +60,6 @@ local PLATFORM_NAMES = {
 	vr = "VR",
 }
 
-local function debugWarn(...)
-	if Settings.Debug then
-		warn("[PresenceService]", ...)
-	end
-end
-
-local function getPlayerSummary()
-	local summaries = {}
-
-	for _, player in Players:GetPlayers() do
-		table.insert(summaries, player.Name .. ":" .. tostring(player.UserId))
-	end
-
-	return table.concat(summaries, ", ")
-end
-
 local function getMaxChatLogsPerPayload()
 	return Settings.MaxChatLogsPerPayload or 100
 end
@@ -202,7 +186,6 @@ local function requestPlayerSegments(player)
 			return AnalyticsService:GetPlayerSegmentsAsync(player)
 		end)
 		if not success or typeof(segments) ~= "table" or segments.HasData ~= true then
-			debugWarn("Player segments unavailable:", player.Name, player.UserId, success and "no data" or segments)
 			return
 		end
 		if player.Parent ~= Players then
@@ -212,7 +195,6 @@ local function requestPlayerSegments(player)
 		local context = playerAnalyticsContexts[player.UserId] or {}
 		context.whenUserFirstPlayed = normalizeEnumName(segments.WhenUserFirstPlayed)
 		playerAnalyticsContexts[player.UserId] = context
-		debugWarn("Loaded player segments:", player.Name, player.UserId, context.whenUserFirstPlayed or "unknown")
 	end)
 end
 
@@ -253,8 +235,6 @@ local function queueChatLog(player, message)
 	while #pendingChatLogs > getMaxPendingChatLogs() do
 		table.remove(pendingChatLogs, 1)
 	end
-
-	debugWarn("Queued chat log:", player.Name, player.UserId, text, position)
 end
 
 local function queueMovementSample(player)
@@ -343,7 +323,6 @@ local function queueDeathSample(player, character)
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 	local position = rootPart and rootPart.Position or lastPlayerPositions[player.UserId]
 	if not position then
-		debugWarn("Skipped death sample because no position was available:", player.Name, player.UserId)
 		return
 	end
 
@@ -367,8 +346,6 @@ local function queueDeathSample(player, character)
 	while #pendingDeathSamples > getMaxPendingDeathSamples() do
 		table.remove(pendingDeathSamples, 1)
 	end
-
-	debugWarn("Queued death sample:", player.Name, player.UserId, position)
 end
 
 local function queueLeaveSample(player)
@@ -401,8 +378,6 @@ local function queueLeaveSample(player)
 	while #pendingLeaveSamples > getMaxPendingLeaveSamples() do
 		table.remove(pendingLeaveSamples, 1)
 	end
-
-	debugWarn("Queued leave sample:", player.Name, player.UserId, position)
 end
 
 local function normalizeEventName(value)
@@ -553,15 +528,12 @@ end
 function Methods.Log(eventName, info, player)
 	local normalizedName = normalizeEventName(eventName)
 	if not normalizedName then
-		debugWarn("Rejected custom event with invalid name:", eventName)
 		return false
 	end
 	if SYSTEM_EVENT_NAMES[normalizedName] then
-		debugWarn("Rejected reserved system event name:", normalizedName)
 		return false
 	end
 	if player ~= nil and (typeof(player) ~= "Instance" or not player:IsA("Player")) then
-		debugWarn("Rejected custom event with invalid player:", normalizedName)
 		return false
 	end
 
@@ -603,29 +575,22 @@ function Methods.Log(eventName, info, player)
 	while #pendingCustomEvents > getMaxPendingCustomEvents() do
 		table.remove(pendingCustomEvents, 1)
 	end
-	if propertiesTruncated then
-		debugWarn("Custom event properties reached a safety limit:", normalizedName)
-	end
-	debugWarn("Queued custom event:", normalizedName, player and player.Name or "server")
 	return true
 end
 
 function Methods.SetPlayerContext(player, context)
 	if typeof(player) ~= "Instance" or not player:IsA("Player") or typeof(context) ~= "table" then
-		debugWarn("Rejected invalid player analytics context")
 		return false
 	end
 
 	local platform = normalizePlatform(context.platform or context.device)
 	if not platform then
-		debugWarn("Rejected player analytics context with invalid platform:", player.Name, context.platform or context.device)
 		return false
 	end
 
 	local current = playerAnalyticsContexts[player.UserId] or {}
 	current.platform = platform
 	playerAnalyticsContexts[player.UserId] = current
-	debugWarn("Updated player analytics context:", player.Name, player.UserId, platform)
 	return true
 end
 
@@ -677,7 +642,6 @@ local function trackPlayer(player)
 	playerAnalyticsContexts[player.UserId] = playerAnalyticsContexts[player.UserId] or {}
 	leaveSampledUserIds[player.UserId] = nil
 	requestPlayerSegments(player)
-	debugWarn("Tracking player:", player.Name, player.UserId, "joinedAt", playerJoinTimes[player.UserId])
 end
 
 local function watchPlayer(player)
@@ -700,12 +664,9 @@ local function watchPlayer(player)
 	if player.Character then
 		watchCharacter(player, player.Character)
 	end
-
-	debugWarn("Watching chat for player:", player.Name, player.UserId)
 end
 
 local function untrackPlayer(player)
-	debugWarn("Untracking player:", player.Name, player.UserId)
 	queueLeaveSample(player)
 
 	task.defer(function()
@@ -783,7 +744,6 @@ local function handleLiveActionMessage(message)
 		return HttpService:JSONDecode(message.Data)
 	end)
 	if not decodedOk or typeof(payload) ~= "table" then
-		debugWarn("Rejected malformed live action")
 		return
 	end
 	if payload.type ~= "roanalytics.live_action" or payload.version ~= 1 then
@@ -792,7 +752,6 @@ local function handleLiveActionMessage(message)
 	local deliveryId = tostring(payload.deliveryId or "")
 	local actionKey = normalizeLiveActionKey(payload.actionKey)
 	if deliveryId == "" or not actionKey or tonumber(payload.universeId) ~= game.GameId then
-		debugWarn("Rejected invalid live action envelope")
 		return
 	end
 	if not rememberLiveActionDelivery(deliveryId) then
@@ -825,10 +784,8 @@ local function handleLiveActionMessage(message)
 		end, debug.traceback)
 		if success then
 			queueLiveActionAck(deliveryId, "executed", tostring(result or "Action executed."))
-			debugWarn("Executed live action:", actionKey, deliveryId)
 		else
 			queueLiveActionAck(deliveryId, "failed", tostring(result))
-			warn("[PresenceService] Live action failed:", actionKey, result)
 		end
 	end)
 end
@@ -842,26 +799,7 @@ function Methods.RegisterLiveAction(actionKey, handler)
 		error("RegisterLiveAction expected a handler function", 2)
 	end
 	registeredLiveActions[normalizedKey] = handler
-	debugWarn("Registered live action:", normalizedKey)
 	return normalizedKey
-end
-
-local function processHeartbeatResponse(response)
-	if not response.Body or response.Body == "" then
-		debugWarn("Heartbeat response has no body")
-		return
-	end
-
-	local ok, payload = pcall(function()
-		return HttpService:JSONDecode(response.Body)
-	end)
-
-	if not ok or typeof(payload) ~= "table" then
-		debugWarn("Failed to decode heartbeat response:", payload)
-		return
-	end
-
-	debugWarn("Heartbeat response:", "savedChatCount", payload.savedChatCount or 0, "savedMovementCount", payload.savedMovementCount or 0, "savedDeathCount", payload.savedDeathCount or 0, "savedLeaveCount", payload.savedLeaveCount or 0, "savedCustomEventCount", payload.savedCustomEventCount or 0, "acknowledgedLiveActions", payload.acknowledgedLiveActionCount or 0)
 end
 
 local function getPlayersPayload()
@@ -869,7 +807,6 @@ local function getPlayersPayload()
 
 	for _, player in Players:GetPlayers() do
 		if #players >= Settings.MaxPlayersPerPayload then
-			debugWarn("MaxPlayersPerPayload reached:", Settings.MaxPlayersPerPayload, "actual players", #Players:GetPlayers())
 			break
 		end
 
@@ -1060,7 +997,6 @@ end
 
 function Methods.SendHeartbeat()
 	if sending then
-		debugWarn("Skipping heartbeat because previous heartbeat is still sending")
 		return false
 	end
 
@@ -1068,12 +1004,6 @@ function Methods.SendHeartbeat()
 
 	local payload = buildPayload()
 	local body = HttpService:JSONEncode(payload)
-
-	local playerSummaries = {}
-	for _, player in payload.players do
-		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
-	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "placeVersion", payload.placeVersion, "environment", payload.environment, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples, "customEvents", #payload.customEvents, "liveActions", #payload.liveActionKeys, "liveActionAcks", #payload.liveActionAcks)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -1090,14 +1020,10 @@ function Methods.SendHeartbeat()
 	sending = false
 
 	if not success then
-		debugWarn("Heartbeat request failed:", response)
-
 		return false
 	end
 
 	if not response.Success then
-		debugWarn("Heartbeat rejected:", response.StatusCode, response.Body)
-
 		return false
 	end
 
@@ -1108,9 +1034,6 @@ function Methods.SendHeartbeat()
 	clearSentLeaveSamples(#payload.leaveSamples)
 	clearSentCustomEvents(#payload.customEvents)
 	clearSentLiveActionAcks(#payload.liveActionAcks)
-	processHeartbeatResponse(response)
-
-	debugWarn("Heartbeat sent:", response.StatusCode, response.Body or "", "remainingChatLogs", #pendingChatLogs)
 
 	return true
 end
@@ -1126,7 +1049,6 @@ function Methods.FlushBeforeShutdown()
 	end
 
 	if sending then
-		debugWarn("Shutdown flush skipped because heartbeat is still in flight")
 		return false
 	end
 
@@ -1140,22 +1062,15 @@ function Methods.Start()
 
 	started = true
 
-	debugWarn("Starting:", "script", script:GetFullName(), "universe", game.GameId, "place", game.PlaceId, "placeVersion", game.PlaceVersion, "environment", runtimeEnvironment, "job", game.JobId)
-	debugWarn("Settings:", "endpoint", Settings.Endpoint, "interval", Settings.HeartbeatInterval, "maxPlayers", Settings.MaxPlayersPerPayload, "debug", Settings.Debug)
-	debugWarn("Players at start:", #Players:GetPlayers(), getPlayerSummary())
-
 	if Settings.LiveActionsEnabled then
-		local subscribed, subscriptionOrError = pcall(function()
+		local subscribed, subscription = pcall(function()
 			return MessagingService:SubscribeAsync(
 				Settings.LiveActionsTopic or "roanalytics-live-actions-v1",
 				handleLiveActionMessage
 			)
 		end)
 		if subscribed then
-			liveActionSubscription = subscriptionOrError
-			debugWarn("Live actions subscribed:", Settings.LiveActionsTopic or "roanalytics-live-actions-v1")
-		else
-			warn("[PresenceService] Could not subscribe to live actions:", subscriptionOrError)
+			liveActionSubscription = subscription
 		end
 	end
 

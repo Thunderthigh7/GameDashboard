@@ -4488,9 +4488,9 @@ function buildEventDefinitionLuauTemplate() {
   const infoTable = propertyLines ? `{\n${propertyLines}\n}` : "{}";
   return [
     'local ServerScriptService = game:GetService("ServerScriptService")',
-    "local Logger = require(ServerScriptService.Server.Services.Game.PresenceService.API)",
+    "local RoAnalytics = require(ServerScriptService.RoAnalytics.API)",
     "",
-    `Logger.Log(${formatLuauString(getEventDefinitionPreviewName())}, ${infoTable}, player)`,
+    `RoAnalytics.Log(${formatLuauString(getEventDefinitionPreviewName())}, ${infoTable}, player)`,
   ].join("\n");
 }
 

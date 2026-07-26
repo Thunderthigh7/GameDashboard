@@ -360,13 +360,13 @@ const { buildEventDefinitionLuauTemplate } = Function(
 const luauTemplate = buildEventDefinitionLuauTemplate();
 assert.match(
   luauTemplate,
-  /require\(ServerScriptService\.Server\.Services\.Game\.PresenceService\.API\)/,
+  /require\(ServerScriptService\.RoAnalytics\.API\)/,
   "the generated Luau should require the official RoAnalytics service path",
 );
 assert.match(luauTemplate, /\["weapon\.name"\] = "Example"/, "nested paths should be valid Luau keys");
 assert.match(luauTemplate, /damage = 0/, "numeric properties should use numeric Luau examples");
 assert.match(luauTemplate, /isCritical = false/, "boolean properties should use boolean Luau examples");
-assert.match(luauTemplate, /Logger\.Log\("weapon_equipped",[\s\S]*, player\)/, "the generated code should log the event for a player");
+assert.match(luauTemplate, /RoAnalytics\.Log\("weapon_equipped",[\s\S]*, player\)/, "the generated code should log the event for a player");
 assert.doesNotMatch(luauTemplate, /hiddenDebug/, "hidden properties should stay out of generated Luau");
 const editorDefinitionStart = appSource.indexOf("function editSelectedEventDefinition(");
 const editorDefinitionEnd = appSource.indexOf("\nfunction normalizeEventDefinitionEditorProperties(", editorDefinitionStart);

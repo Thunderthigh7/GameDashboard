@@ -98,8 +98,9 @@ const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "ut
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
-const methodsSource = readFileSync(new URL("../roblox-presence/Core/Methods.lua", import.meta.url), "utf8");
-const apiSource = readFileSync(new URL("../roblox-presence/API.lua", import.meta.url), "utf8");
+const methodsSource = readFileSync(new URL("../RoAnalytics/Core/Methods.lua", import.meta.url), "utf8");
+const apiSource = readFileSync(new URL("../RoAnalytics/API.lua", import.meta.url), "utf8");
+const project = JSON.parse(readFileSync(new URL("../default.project.json", import.meta.url), "utf8"));
 
 assert.match(serverSource, /ROBLOX_OAUTH_LIVE_ACTION_SCOPES[\s\S]*?universe-messaging-service:publish/);
 assert.match(serverSource, /purpose:\s*"roblox-live"/);
@@ -113,6 +114,22 @@ assert.match(serverSource, /if \(!delivery \|\| delivery\.confirmation \|\| deli
 assert.match(serverSource, /delivery\.confirmation = normalizedAck[\s\S]*?delivery\.status = "confirmed"/);
 assert.match(serverSource, /function getRobloxLiveDeliveryStatus\(delivery\)[\s\S]*?return "unconfirmed"/);
 assert.match(serverSource, /MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20/);
+const presenceHeartbeatSource = serverSource.match(
+  /async function handlePresenceHeartbeat\(req, res\)([\s\S]*?)async function handleMapSnapshotUpload/,
+)?.[1] || "";
+assert.ok(presenceHeartbeatSource);
+assert.doesNotMatch(
+  presenceHeartbeatSource,
+  /getRobloxHeatmap|heatmap:/,
+  "heartbeat responses should not calculate or return dashboard heatmap data",
+);
+assert.match(
+  serverSource,
+  /url\.pathname === "\/api\/roblox\/heatmap"[\s\S]*?getRobloxHeatmapFromQuery/,
+  "the dedicated dashboard heatmap endpoint should remain available",
+);
+assert.equal(project.tree.ServerScriptService.RoAnalytics.$path, "RoAnalytics");
+assert.equal(project.tree.ServerScriptService.Server, undefined, "RoAnalytics should be directly under ServerScriptService");
 assert.match(indexSource, /data-dashboard-view="roblox-live"/);
 assert.match(indexSource, /id="robloxLiveMasterToggle"/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
@@ -136,7 +153,8 @@ assert.doesNotMatch(
   /SendHeartbeat/,
   "live-action acknowledgements should wait for the existing scheduled heartbeat",
 );
-assert.match(apiSource, /function PresenceService\.RegisterLiveAction\(actionKey, handler\)/);
+assert.match(apiSource, /function RoAnalytics\.RegisterLiveAction\(actionKey, handler\)/);
+assert.doesNotMatch(`${apiSource}\n${methodsSource}`, /\bwarn\s*\(|debugWarn/, "RoAnalytics should not emit warning logs");
 assert.doesNotMatch(methodsSource, /function Methods\.RegisterLiveAction[\s\S]*?function Methods\.Start\(\)[\s\S]*?function Methods\.RegisterLiveAction/);
 
 console.log("Roblox live-action integration regression checks passed.");

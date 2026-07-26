@@ -19,7 +19,7 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 2. Pick one of the public games owned by your Roblox account or by a group you own.
 3. Click Connect game.
 4. Copy the Roblox secret that appears once.
-5. Put that secret in `roblox-presence/Config/Settings.lua` as `Settings.Secret`.
+5. Put that secret in `RoAnalytics/Config/Settings.lua` as `Settings.Secret`.
 6. Use the same secret in the Studio heatmap plugin when exporting a map.
 
 The original secret is not shown again because only its hash is stored. Use Connect Universe -> Connected games -> Regenerate secret to replace the key for a connected game. The regenerated secret box names the exact game and universe it belongs to. Use Unlink to disconnect a game from the account and delete its stored analytics data; Roblox analytics requests using that game's secret will stop working.
@@ -84,11 +84,11 @@ Optional quick tunnel:
 npm run start:all -- --tunnel
 ```
 
-The tunnel command creates a new temporary URL for local testing only. Roblox games should keep `roblox-presence/Config/Settings.lua` pointed at `https://game-dashboard-zaya.onrender.com/api/roblox/presence`.
+The tunnel command creates a new temporary URL for local testing only. Roblox games should keep `RoAnalytics/Config/Settings.lua` pointed at `https://game-dashboard-zaya.onrender.com/api/roblox/presence`.
 
-## Roblox Presence Sync
+## RoAnalytics Sync
 
-This repo includes a Rojo project for the Roblox presence service:
+This repo includes a Rojo project for RoAnalytics:
 
 ```bash
 rojo serve default.project.json
@@ -98,28 +98,25 @@ In Roblox Studio, use the Rojo plugin to connect to the local server. It syncs t
 
 ```txt
 ServerScriptService
-  Server
-    Services
-      Game
-        PresenceService
-          Start
-          API
-          Core
-            Methods
-          Config
-            Settings
+  RoAnalytics
+    Start
+    API
+    Core
+      Methods
+    Config
+      Settings
 ```
 
-`Start` is a server Script that requires `PresenceService.API` and calls `Start()`.
+`Start` is a server Script that requires `RoAnalytics.API` and calls `Start()`.
 
 The service automatically records `player_died`, `player_left`, and `chat_message`. These use the same player session IDs as custom events and appear under **Events**, in the map's **Events** mode, and as funnel steps. Their names are reserved; game code should not log duplicates.
 
 Game server scripts can use that same API to send custom events:
 
 ```lua
-local Logger = require(game.ServerScriptService.Server.Services.Game.PresenceService.API)
+local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
 
-Logger.Log("weapon_equipped", {
+RoAnalytics.Log("weapon_equipped", {
 	weapon = {
 		name = "Iron Sword",
 		rarity = "Common",
@@ -128,9 +125,9 @@ Logger.Log("weapon_equipped", {
 }, player)
 ```
 
-The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. The logger adds player session, server time, universe, place, `game.PlaceVersion`, production/studio environment, and character position. See `roblox-presence/README.md` for naming, property limits, and server-only requirements.
+The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. RoAnalytics adds player session, server time, universe, place, `game.PlaceVersion`, production/studio environment, and character position. See `RoAnalytics/README.md` for naming, property limits, and server-only requirements.
 
-The **Events** page also includes an event builder. Select **New event** to name an event and define up to 20 properties before writing the Roblox code. New property paths are added automatically when Roblox sends them. Unwanted properties can be hidden from breakdowns without deleting their raw values, then restored later. The builder generates a copyable Roblox Luau `Logger.Log(...)` example; saved definitions are immediately available to Funnels even before their first record arrives.
+The **Events** page also includes an event builder. Select **New event** to name an event and define up to 20 properties before writing the Roblox code. New property paths are added automatically when Roblox sends them. Unwanted properties can be hidden from breakdowns without deleting their raw values, then restored later. The builder generates a copyable Roblox Luau `RoAnalytics.Log(...)` example; saved definitions are immediately available to Funnels even before their first record arrives.
 
 Custom events can be reopened to edit their visible or hidden properties and generated Luau. Deleting an event removes its definition and stored dashboard history. A later Roblox log with the same name is treated as new activity and can create the event again.
 

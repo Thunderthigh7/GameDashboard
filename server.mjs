@@ -4678,7 +4678,6 @@ async function handlePresenceHeartbeat(req, res) {
     savedVisitCount,
     savedCustomEventCount,
     acknowledgedLiveActionCount,
-    heatmap: getRobloxHeatmap(presence.value.universeId),
   });
 }
 

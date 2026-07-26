@@ -37,6 +37,5 @@ Settings.MaxLiveActionAcksPerPayload = 50
 Settings.MaxPendingLiveActionAcks = 100
 Settings.MaxProcessedLiveActionIds = 250
 Settings.ShutdownFlushTimeout = 8
-Settings.Debug = true
 
 return Settings
