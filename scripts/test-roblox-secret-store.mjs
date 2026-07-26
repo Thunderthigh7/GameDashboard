@@ -77,10 +77,12 @@ const [serverSource, settingsSource, methodsSource, appSource, indexSource] = aw
 assert.match(serverSource, /universe[.]secret:read universe[.]secret:write/);
 assert.match(serverSource, /pendingSecretHash/);
 assert.match(serverSource, /upsertRobloxUniverseSecret/);
+assert.match(serverSource, /secretSetupAuthorizationUrl: getProjectSecretAuthorizationUrl[(]project[)]/);
 assert.doesNotMatch(settingsSource, /paste-project-roblox-secret-here|Settings[.]Secret\s*=/);
 assert.match(settingsSource, /Settings[.]SecretName = "ROANALYTICS_SECRET"/);
 assert.match(methodsSource, /HttpService:GetSecret[(]Settings[.]SecretName[)]/);
 assert.match(appSource, /authorizationUrl/);
+assert.match(appSource, /Game connected[.] Authorize key setup below/);
 assert.match(indexSource, /installs it automatically/i);
 assert.doesNotMatch(indexSource, /Paste the secret into <strong>Config\/Settings[.]lua<\/strong>/);
 

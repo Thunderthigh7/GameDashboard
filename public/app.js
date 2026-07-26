@@ -3111,18 +3111,13 @@ async function createProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ universeId }),
     });
-    if (data.authorizationUrl) {
-      if (ownedGamesStatus) ownedGamesStatus.textContent = "Opening Roblox to install the secure game key...";
-      window.location.assign(data.authorizationUrl);
-      return;
-    }
     usageRequestSequence += 1;
     removeScopedSessionCache("account-usage", "current");
     loadedViews.delete("usage");
     removeScopedSessionCache("admin-users", "summary");
     loadedViews.delete("admin");
-    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected and secure key installed.";
-    await loadUniverses();
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Authorize key setup below to install the live secret.";
+    await loadUniverses({ preferredUniverseId: String(data.project?.universeId || universeId) });
     await loadOwnedGames();
   } catch (error) {
     handleAuthError(error);

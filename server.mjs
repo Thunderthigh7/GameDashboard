@@ -4335,12 +4335,44 @@ async function handleProjectCreate(req, res, auth) {
     return sendJson(res, 403, { error: ownership.reason || "The logged-in Roblox account does not own this universe." });
   }
 
-  return sendJson(res, 202, {
+  const now = Date.now();
+  const project = {
+    id: crypto.randomUUID(),
+    ownerUserId: auth.userId,
+    universeId,
+    name: ownership.universeName || `Universe ${universeId}`,
+    secretHash: "",
+    pendingSecretHash: "",
+    ingestDisabled: true,
+    robloxSecretStore: {
+      status: "pending",
+      secretId: ROANALYTICS_SECRET_NAME,
+      domain: ROANALYTICS_SECRET_DOMAIN,
+      lastError: "",
+    },
+    createdAt: now,
+    ownershipVerifiedAt: now,
+    ownershipMethod: "roblox-login",
+    robloxUserId,
+    robloxUsername: cleanString(user.robloxUsername || user.username, 80),
+    creatorType: ownership.creatorType,
+    creatorId: ownership.creatorId,
+    creatorName: ownership.creatorName,
+  };
+
+  try {
+    await createProject(project);
+  } catch (error) {
+    if (error.code === 11000) {
+      return sendJson(res, 409, { error: "This universe is already connected to an account." });
+    }
+    throw error;
+  }
+
+  return sendJson(res, 201, {
     ok: true,
-    authorizationUrl: getProjectSecretAuthorizationUrl({
-      universeId,
-      name: ownership.universeName || `Universe ${universeId}`,
-    }),
+    project: serializeProject(project),
+    secretSetupAuthorizationUrl: getProjectSecretAuthorizationUrl(project),
   });
 }
 
@@ -4602,12 +4634,15 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
     });
   }
 
-  const error = cleanString(searchParams.get("error_description") || searchParams.get("error"), 240);
-  if (error) {
+  const oauthErrorCode = cleanString(searchParams.get("error"), 80);
+  const oauthErrorDescription = cleanString(searchParams.get("error_description"), 240);
+  if (oauthErrorCode || oauthErrorDescription) {
     return sendRobloxOAuthResult(res, {
       ok: false,
-      title: "Roblox verification was cancelled",
-      message: error,
+      title: oauthErrorCode === "access_denied"
+        ? "Roblox authorization was cancelled"
+        : "Roblox authorization failed",
+      message: oauthErrorDescription || oauthErrorCode,
       backHref: oauthBackHref,
     });
   }

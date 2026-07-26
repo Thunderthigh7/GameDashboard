@@ -18,11 +18,12 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 1. Open the Connect Universe tab.
 2. Pick one of the public games owned by your Roblox account or by a group you own.
 3. Click Connect game.
-4. Approve the selected universe and the two Roblox Secrets Store permissions.
-5. RoAnalytics creates `ROANALYTICS_SECRET` in that universe automatically.
-6. Publish the game or start a collaborative test. No secret is pasted into Luau.
+4. Click Authorize key setup on the connected game.
+5. Approve the selected universe and the two Roblox Secrets Store permissions.
+6. RoAnalytics creates `ROANALYTICS_SECRET` in that universe automatically.
+7. Publish the game or start a collaborative test. No secret is pasted into Luau.
 
-The OAuth callback shows the generated value once only for the current Studio heatmap plugin. Live servers are already configured and do not need that value. Use Connect Universe -> Connected games -> Rotate key to replace it in both Roblox Secrets Store and the dashboard. Existing games created before automatic setup show **Authorize key setup**. Use Unlink to delete the stored analytics data, remove the Roblox secret when authorization is still valid, and stop accepting that game's key.
+Connecting a game never depends on Secrets Store authorization. If Roblox rejects that permission, the game remains connected and shows **Key setup required**. The OAuth callback shows the generated value once only for the current Studio heatmap plugin. Live servers are configured after key setup and do not need that value. Use Connect Universe -> Connected games -> Rotate key to replace it in both Roblox Secrets Store and the dashboard. Existing games created before automatic setup show **Authorize key setup**. Use Unlink to delete the stored analytics data, remove the Roblox secret when authorization is still valid, and stop accepting that game's key.
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
