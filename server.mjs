@@ -27,10 +27,15 @@ import {
   sendDiscordWebhookAlert,
 } from "./lib/discord-webhooks.mjs";
 import {
-  normalizeEmailAddress,
-  normalizeEmailSubject,
-  sendTransactionalEmail,
-} from "./lib/email-delivery.mjs";
+  buildRobloxLiveActionMessage,
+  getRobloxOAuthTokenResources,
+  normalizeRobloxActionKey,
+  normalizeRobloxActionParameters,
+  publishRobloxUniverseMessage,
+  refreshRobloxOAuthTokens,
+  revokeRobloxOAuthToken,
+  ROBLOX_LIVE_ACTION_TOPIC,
+} from "./lib/roblox-live-actions.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,7 +51,7 @@ const funnelStorePath = path.join(__dirname, "data", "funnels.json");
 const eventDefinitionStorePath = path.join(__dirname, "data", "event-definitions.json");
 const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-deletions.json");
 const discordIntegrationStorePath = path.join(__dirname, "data", "discord-integrations.json");
-const emailIntegrationStorePath = path.join(__dirname, "data", "email-integrations.json");
+const robloxLiveIntegrationStorePath = path.join(__dirname, "data", "roblox-live-integrations.json");
 
 loadLocalEnv();
 
@@ -61,6 +66,8 @@ const ROBLOX_OAUTH_CLIENT_ID = process.env.ROBLOX_OAUTH_CLIENT_ID || "";
 const ROBLOX_OAUTH_CLIENT_SECRET = process.env.ROBLOX_OAUTH_CLIENT_SECRET || "";
 const ROBLOX_OAUTH_REDIRECT_URI = process.env.ROBLOX_OAUTH_REDIRECT_URI || `${appBaseUrl}/api/roblox/oauth/callback`;
 const ROBLOX_OAUTH_SCOPES = process.env.ROBLOX_OAUTH_SCOPES || "openid profile";
+const ROBLOX_OAUTH_LIVE_ACTION_SCOPES = process.env.ROBLOX_OAUTH_LIVE_ACTION_SCOPES
+  || `${ROBLOX_OAUTH_SCOPES} universe-messaging-service:publish`;
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -76,15 +83,19 @@ const MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20;
 const MAX_DISCORD_ALERT_DELIVERIES = 30;
 const DISCORD_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const DISCORD_ALERT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
-const EMAIL_SEND_WINDOW_MS = 60 * 1000;
-const MAX_EMAIL_SENDS_PER_WINDOW = 10;
-const MAX_EMAIL_RECIPIENTS_PER_UNIVERSE = 20;
-const MAX_EMAIL_ALERT_RULES_PER_UNIVERSE = 20;
-const MAX_EMAIL_ALERT_DELIVERIES = 30;
-const EMAIL_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
-const EMAIL_ALERT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const EMAIL_FROM = process.env.EMAIL_FROM || "";
+const ROBLOX_LIVE_SEND_WINDOW_MS = 60 * 1000;
+const MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20;
+const MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE = 20;
+const MAX_ROBLOX_LIVE_DELIVERIES = 50;
+const MAX_ROBLOX_LIVE_ACKS_PER_PAYLOAD = 50;
+const MAX_ROBLOX_LIVE_ACTION_KEYS_PER_SERVER = 50;
+const ROBLOX_LIVE_EVENT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES = new Set([5, 15, 30, 60, 360, 720, 1440]);
+const ROBLOX_LIVE_EXPIRY_SECONDS = new Set([30, 60, 300, 900]);
+const ROBLOX_LIVE_SCHEDULER_INTERVAL_MS = 30 * 1000;
+const ROBLOX_LIVE_CAPABILITY_TTL_MS = 2 * 60 * 1000;
+const ROBLOX_OAUTH_REFRESH_EARLY_MS = 60 * 1000;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -420,13 +431,15 @@ let localFunnelStoreLock = Promise.resolve();
 let localEventDefinitionStoreLock = Promise.resolve();
 let localCustomEventDeletionStoreLock = Promise.resolve();
 let localDiscordIntegrationStoreLock = Promise.resolve();
-let localEmailIntegrationStoreLock = Promise.resolve();
+let localRobloxLiveIntegrationStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
 const discordIntegrationCache = new Map();
 const discordAlertEvaluationLocks = new Map();
-const emailSendHistoryByUser = new Map();
-const emailIntegrationCache = new Map();
-const emailAlertEvaluationLocks = new Map();
+const robloxLiveSendHistoryByUser = new Map();
+const robloxLiveIntegrationCache = new Map();
+const robloxLiveEvaluationLocks = new Map();
+const robloxLiveTokenRefreshLocks = new Map();
+const robloxLiveCapabilitiesByUniverse = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
@@ -571,6 +584,43 @@ const server = http.createServer(async (req, res) => {
       return handleAccountPlanUpdate(req, res, auth);
     }
 
+    if (url.pathname === "/api/integrations/roblox-live" && req.method === "GET") {
+      return handleRobloxLiveIntegrationGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/roblox-live/oauth/start" && req.method === "GET") {
+      return handleRobloxLiveOAuthStart(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/roblox-live/oauth" && req.method === "DELETE") {
+      return handleRobloxLiveOAuthDisconnect(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/roblox-live/settings" && req.method === "PUT") {
+      return handleRobloxLiveSettingsUpdate(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/roblox-live/test" && req.method === "POST") {
+      return handleRobloxLiveConnectionTest(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/roblox-live/rules" && req.method === "POST") {
+      return handleRobloxLiveRuleSave(req, res, auth);
+    }
+
+    const robloxLiveRuleMatch = url.pathname.match(/^\/api\/integrations\/roblox-live\/rules\/([^/]+)$/);
+    if (robloxLiveRuleMatch && req.method === "PUT") {
+      return handleRobloxLiveRuleSave(req, res, auth, decodeURIComponent(robloxLiveRuleMatch[1]));
+    }
+    if (robloxLiveRuleMatch && req.method === "DELETE") {
+      return handleRobloxLiveRuleDelete(req, res, auth, decodeURIComponent(robloxLiveRuleMatch[1]), url.searchParams);
+    }
+
+    const robloxLiveRuleRunMatch = url.pathname.match(/^\/api\/integrations\/roblox-live\/rules\/([^/]+)\/run$/);
+    if (robloxLiveRuleRunMatch && req.method === "POST") {
+      return handleRobloxLiveRuleRun(req, res, auth, decodeURIComponent(robloxLiveRuleRunMatch[1]));
+    }
+
     if (url.pathname === "/api/integrations/discord" && req.method === "GET") {
       return handleDiscordIntegrationGet(req, res, auth, url.searchParams);
     }
@@ -601,38 +651,6 @@ const server = http.createServer(async (req, res) => {
     }
     if (discordRuleMatch && req.method === "DELETE") {
       return handleDiscordAlertRuleDelete(req, res, auth, decodeURIComponent(discordRuleMatch[1]), url.searchParams);
-    }
-
-    if (url.pathname === "/api/integrations/email" && req.method === "GET") {
-      return handleEmailIntegrationGet(req, res, auth, url.searchParams);
-    }
-
-    if (url.pathname === "/api/integrations/email/recipient" && req.method === "PUT") {
-      return handleEmailRecipientSave(req, res, auth);
-    }
-
-    if (url.pathname === "/api/integrations/email/recipient" && req.method === "DELETE") {
-      return handleEmailRecipientDelete(req, res, auth, url.searchParams);
-    }
-
-    if (url.pathname === "/api/integrations/email/recipient/select" && req.method === "PUT") {
-      return handleEmailRecipientSelect(req, res, auth);
-    }
-
-    if (url.pathname === "/api/integrations/email/test" && req.method === "POST") {
-      return handleEmailConnectionTest(req, res, auth);
-    }
-
-    if (url.pathname === "/api/integrations/email/rules" && req.method === "POST") {
-      return handleEmailAlertRuleSave(req, res, auth);
-    }
-
-    const emailRuleMatch = url.pathname.match(/^\/api\/integrations\/email\/rules\/([^/]+)$/);
-    if (emailRuleMatch && req.method === "PUT") {
-      return handleEmailAlertRuleSave(req, res, auth, decodeURIComponent(emailRuleMatch[1]));
-    }
-    if (emailRuleMatch && req.method === "DELETE") {
-      return handleEmailAlertRuleDelete(req, res, auth, decodeURIComponent(emailRuleMatch[1]), url.searchParams);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -1021,6 +1039,13 @@ server.listen(port, () => {
   console.log(`Roblox presence endpoint: ${appBaseUrl}/api/roblox/presence`);
 });
 
+const robloxLiveScheduler = setInterval(() => {
+  evaluateScheduledRobloxLiveActions().catch((error) => {
+    console.warn("Could not evaluate scheduled Roblox live actions:", error.message || error);
+  });
+}, ROBLOX_LIVE_SCHEDULER_INTERVAL_MS);
+robloxLiveScheduler.unref();
+
 if (MONGODB_URI) {
   void initializeMongoStorage();
 }
@@ -1339,6 +1364,7 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("event_definitions").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
     db.collection("custom_event_deletions").createIndex({ universeId: 1, eventName: 1 }, { unique: true }),
     db.collection("discord_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
+    db.collection("roblox_live_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
   ]);
 }
 
@@ -1977,6 +2003,863 @@ async function handleAccountPlanUpdate(req, res, auth) {
   if (!updated) return sendJson(res, 404, { error: "Account not found." });
 
   return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+}
+
+async function handleRobloxLiveIntegrationGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "You do not have access to live actions for this universe" });
+  }
+  const [integration, eventNames] = await Promise.all([
+    readRobloxLiveIntegration(auth.userId, universeId),
+    getDiscordAlertEventNames(auth.userId, universeId),
+  ]);
+  return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
+    universeId,
+    eventNames,
+  }));
+}
+
+async function handleRobloxLiveOAuthStart(req, res, auth, searchParams) {
+  if (!isRobloxOAuthConfigured()) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox OAuth is not configured",
+      message: "Configure the Roblox OAuth client before authorizing live actions.",
+      backHref: "/#roblox-live",
+    });
+  }
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Universe unavailable",
+      message: "Select a connected Roblox universe before authorizing live actions.",
+      backHref: "/#roblox-live",
+    });
+  }
+
+  const state = crypto.randomBytes(24).toString("base64url");
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  const codeVerifier = crypto.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+  setRobloxOAuthStateCookie(res, {
+    purpose: "roblox-live",
+    state,
+    nonce,
+    codeVerifier,
+    universeId,
+    userId: auth.userId,
+    createdAt: Date.now(),
+  });
+  return redirect(res, getRobloxAuthorizeUrl({
+    state,
+    nonce,
+    codeChallenge,
+    scopes: ROBLOX_OAUTH_LIVE_ACTION_SCOPES,
+  }));
+}
+
+async function handleRobloxLiveOAuthDisconnect(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readRobloxLiveIntegration(auth.userId, universeId);
+  if (!integration) return sendJson(res, 404, { error: "Roblox live actions are not connected." });
+  const refreshToken = decryptRobloxLiveOAuthToken(integration.oauth?.refreshToken);
+  if (refreshToken) {
+    try {
+      await revokeRobloxOAuthToken({
+        token: refreshToken,
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+    } catch (error) {
+      console.warn("Could not revoke Roblox live-action authorization:", error.message || error);
+    }
+  }
+  integration.oauth = null;
+  integration.enabled = false;
+  integration.updatedAt = Date.now();
+  await saveRobloxLiveIntegration(integration);
+  return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleRobloxLiveSettingsUpdate(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readRobloxLiveIntegration(auth.userId, universeId)
+    || createEmptyRobloxLiveIntegration(auth.userId, universeId);
+  const enabled = Boolean(body?.enabled);
+  if (enabled && !hasRobloxLiveAuthorization(integration)) {
+    return sendJson(res, 400, { error: "Authorize Roblox live actions before enabling them." });
+  }
+  integration.enabled = enabled;
+  integration.updatedAt = Date.now();
+  for (const rule of integration.rules || []) {
+    if (enabled && rule.enabled !== false && rule.triggerType === "schedule" && !cleanInteger(rule.nextRunAt)) {
+      rule.nextRunAt = Date.now() + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
+      rule.updatedAt = Date.now();
+    }
+  }
+  await saveRobloxLiveIntegration(integration);
+  return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleRobloxLiveConnectionTest(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readRobloxLiveIntegration(auth.userId, universeId);
+  if (!hasRobloxLiveAuthorization(integration)) {
+    return sendJson(res, 400, { error: "Authorize Roblox live actions first." });
+  }
+  try {
+    const result = await deliverRobloxLiveAction(integration, {
+      id: "",
+      name: "Connection test",
+      actionKey: "roanalytics_test",
+      parameters: {},
+      expiresInSeconds: 60,
+    }, "test", { allowWhenPaused: true });
+    integration.updatedAt = Date.now();
+    await saveRobloxLiveIntegration(integration);
+    return sendJson(res, 200, {
+      ok: true,
+      deliveryId: result.delivery.id,
+      publishedAt: result.delivery.sentAt,
+    });
+  } catch (error) {
+    integration.updatedAt = Date.now();
+    await saveRobloxLiveIntegration(integration);
+    return sendJson(res, normalizeProviderStatusCode(error), {
+      error: error?.message || "Could not publish the Roblox test action.",
+    });
+  }
+}
+
+async function handleRobloxLiveRuleSave(req, res, auth, requestedRuleId = "") {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readRobloxLiveIntegration(auth.userId, universeId)
+    || createEmptyRobloxLiveIntegration(auth.userId, universeId);
+  const ruleId = cleanString(requestedRuleId || body?.id, 120);
+  const existingRule = ruleId
+    ? (integration.rules || []).find((rule) => rule.id === ruleId)
+    : null;
+  if (ruleId && !existingRule) return sendJson(res, 404, { error: "Live action rule not found." });
+  if (!existingRule && (integration.rules || []).length >= MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE) {
+    return sendJson(res, 409, {
+      error: `A universe can have up to ${MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE} live action rules.`,
+    });
+  }
+  const normalized = normalizeRobloxLiveRule(body, existingRule);
+  if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
+  integration.rules = existingRule
+    ? integration.rules.map((rule) => rule.id === existingRule.id ? normalized.value : rule)
+    : [...(integration.rules || []), normalized.value];
+  integration.updatedAt = Date.now();
+  await saveRobloxLiveIntegration(integration);
+  return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleRobloxLiveRuleDelete(req, res, auth, ruleId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readRobloxLiveIntegration(auth.userId, universeId);
+  const previousLength = integration?.rules?.length || 0;
+  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Live action rule not found." });
+  integration.rules = integration.rules.filter((rule) => rule.id !== ruleId);
+  if (integration.rules.length === previousLength) return sendJson(res, 404, { error: "Live action rule not found." });
+  integration.updatedAt = Date.now();
+  await saveRobloxLiveIntegration(integration);
+  return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleRobloxLiveRuleRun(req, res, auth, ruleId) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readRobloxLiveIntegration(auth.userId, universeId);
+  const rule = integration?.rules?.find((entry) => entry.id === ruleId);
+  if (!rule) return sendJson(res, 404, { error: "Live action rule not found." });
+  if (!integration.enabled) return sendJson(res, 400, { error: "Enable Roblox live actions before running a rule." });
+  try {
+    const result = await deliverRobloxLiveAction(integration, rule, "manual");
+    rule.lastTriggeredAt = result.delivery.sentAt;
+    rule.lastAttemptedAt = result.delivery.sentAt;
+    rule.lastAttemptStatus = "published";
+    rule.lastError = "";
+    rule.updatedAt = Date.now();
+    integration.updatedAt = Date.now();
+    await saveRobloxLiveIntegration(integration);
+    return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
+      universeId,
+      eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+    }));
+  } catch (error) {
+    rule.lastAttemptedAt = Date.now();
+    rule.lastAttemptStatus = "failed";
+    rule.lastError = cleanString(error?.message, 240);
+    rule.updatedAt = Date.now();
+    integration.updatedAt = Date.now();
+    await saveRobloxLiveIntegration(integration);
+    return sendJson(res, normalizeProviderStatusCode(error), {
+      error: error?.message || "Could not publish this live action.",
+    });
+  }
+}
+
+function normalizeRobloxLiveRule(value, existingRule = null) {
+  const triggerType = value?.triggerType === "schedule" ? "schedule" : "event_count";
+  const name = cleanString(value?.name, 80) || "Live action";
+  let actionKey;
+  let parameters;
+  try {
+    actionKey = normalizeRobloxActionKey(value?.actionKey);
+    parameters = normalizeRobloxActionParameters(value?.parameters);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+  const expiresInSeconds = Number(value?.expiresInSeconds);
+  if (!ROBLOX_LIVE_EXPIRY_SECONDS.has(expiresInSeconds)) {
+    return { ok: false, error: "Choose a valid action expiry." };
+  }
+
+  let eventName = "";
+  let operator = "at_least";
+  let threshold = 0;
+  let windowMinutes = 15;
+  let cooldownMinutes = 60;
+  let scheduleIntervalMinutes = 60;
+  if (triggerType === "event_count") {
+    eventName = normalizeCustomEventName(value?.eventName);
+    if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
+    operator = value?.operator === "at_most" ? "at_most" : "at_least";
+    threshold = Number(value?.threshold);
+    const minimum = operator === "at_least" ? 1 : 0;
+    if (!Number.isSafeInteger(threshold) || threshold < minimum || threshold > 1_000_000) {
+      return { ok: false, error: `Threshold must be between ${minimum} and 1,000,000.` };
+    }
+    windowMinutes = Number(value?.windowMinutes);
+    cooldownMinutes = Number(value?.cooldownMinutes);
+    if (!ROBLOX_LIVE_EVENT_WINDOWS_MINUTES.has(windowMinutes)) {
+      return { ok: false, error: "Choose a valid event window." };
+    }
+    if (!ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES.has(cooldownMinutes)) {
+      return { ok: false, error: "Choose a valid cooldown." };
+    }
+  } else {
+    scheduleIntervalMinutes = Number(value?.scheduleIntervalMinutes);
+    if (!ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES.has(scheduleIntervalMinutes)) {
+      return { ok: false, error: "Choose a valid repeating interval." };
+    }
+  }
+
+  const enabled = value?.enabled === undefined ? existingRule?.enabled !== false : Boolean(value.enabled);
+  const now = Date.now();
+  const conditionChanged = Boolean(existingRule) && (
+    existingRule.triggerType !== triggerType
+    || existingRule.eventName !== eventName
+    || existingRule.operator !== operator
+    || cleanInteger(existingRule.threshold) !== threshold
+    || cleanInteger(existingRule.windowMinutes) !== windowMinutes
+    || cleanInteger(existingRule.scheduleIntervalMinutes) !== scheduleIntervalMinutes
+  );
+  const scheduleChanged = triggerType === "schedule" && (
+    existingRule?.triggerType !== "schedule"
+    || cleanInteger(existingRule?.scheduleIntervalMinutes) !== scheduleIntervalMinutes
+    || (existingRule?.enabled === false && enabled)
+  );
+
+  return {
+    ok: true,
+    value: {
+      id: cleanString(existingRule?.id, 120) || crypto.randomUUID(),
+      name,
+      triggerType,
+      eventName,
+      operator,
+      threshold,
+      windowMinutes,
+      cooldownMinutes,
+      scheduleIntervalMinutes,
+      actionKey,
+      parameters,
+      expiresInSeconds,
+      enabled,
+      nextRunAt: triggerType === "schedule"
+        ? (scheduleChanged || !cleanInteger(existingRule?.nextRunAt)
+          ? now + scheduleIntervalMinutes * 60 * 1000
+          : cleanInteger(existingRule.nextRunAt))
+        : null,
+      lastConditionMet: conditionChanged ? false : Boolean(existingRule?.lastConditionMet),
+      lastTriggeredAt: cleanInteger(existingRule?.lastTriggeredAt) || null,
+      lastAttemptedAt: cleanInteger(existingRule?.lastAttemptedAt) || null,
+      lastAttemptStatus: existingRule?.lastAttemptStatus === "failed" ? "failed" : "published",
+      lastError: cleanString(existingRule?.lastError, 240),
+      createdAt: cleanInteger(existingRule?.createdAt) || now,
+      updatedAt: now,
+    },
+  };
+}
+
+function createEmptyRobloxLiveIntegration(ownerUserId, universeId) {
+  const now = Date.now();
+  return {
+    ownerUserId: cleanString(ownerUserId, 120),
+    universeId: cleanInteger(universeId),
+    robloxLiveSchemaVersion: 1,
+    topic: ROBLOX_LIVE_ACTION_TOPIC,
+    enabled: false,
+    oauth: null,
+    rules: [],
+    deliveries: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function serializeRobloxLiveIntegration(integration, { universeId, eventNames = [] } = {}) {
+  const normalized = normalizeStoredRobloxLiveIntegration(integration);
+  const cleanUniverseId = cleanInteger(universeId || normalized?.universeId);
+  const capabilities = getRobloxLiveCapabilities(cleanUniverseId);
+  const detectedKeys = new Map(capabilities.actions.map((action) => [action.actionKey, action]));
+  for (const rule of normalized?.rules || []) {
+    if (!detectedKeys.has(rule.actionKey)) {
+      detectedKeys.set(rule.actionKey, {
+        actionKey: rule.actionKey,
+        serverCount: 0,
+        lastSeenAt: null,
+      });
+    }
+  }
+  return {
+    universeId: cleanUniverseId,
+    connection: {
+      oauthConfigured: isRobloxOAuthConfigured(),
+      connected: hasRobloxLiveAuthorization(normalized),
+      authorizationValid: normalized?.oauth?.authorizationValid !== false,
+      enabled: Boolean(normalized?.enabled),
+      topic: ROBLOX_LIVE_ACTION_TOPIC,
+      robloxUserId: cleanInteger(normalized?.oauth?.robloxUserId) || null,
+      robloxUsername: cleanString(normalized?.oauth?.robloxUsername, 80),
+      scope: cleanString(normalized?.oauth?.scope, 240),
+      expiresAt: cleanInteger(normalized?.oauth?.expiresAt) || null,
+      connectedAt: cleanInteger(normalized?.oauth?.connectedAt) || null,
+      lastError: cleanString(normalized?.oauth?.lastError, 240),
+    },
+    runtime: {
+      liveServers: capabilities.liveServers,
+      lastSeenAt: capabilities.lastSeenAt,
+      detectedActions: [...detectedKeys.values()].sort((left, right) => left.actionKey.localeCompare(right.actionKey)),
+    },
+    rules: (normalized?.rules || [])
+      .map((rule) => ({
+        id: cleanString(rule?.id, 120),
+        name: cleanString(rule?.name, 80),
+        triggerType: rule?.triggerType === "schedule" ? "schedule" : "event_count",
+        eventName: normalizeCustomEventName(rule?.eventName),
+        operator: rule?.operator === "at_most" ? "at_most" : "at_least",
+        threshold: cleanInteger(rule?.threshold),
+        windowMinutes: cleanInteger(rule?.windowMinutes),
+        cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
+        scheduleIntervalMinutes: cleanInteger(rule?.scheduleIntervalMinutes),
+        actionKey: cleanString(rule?.actionKey, 64),
+        parameters: rule?.parameters || {},
+        expiresInSeconds: cleanInteger(rule?.expiresInSeconds),
+        enabled: rule?.enabled !== false,
+        currentCount: rule?.triggerType === "schedule"
+          ? null
+          : countDiscordAlertEvents(
+            cleanUniverseId,
+            normalizeCustomEventName(rule?.eventName),
+            Date.now() - cleanInteger(rule?.windowMinutes) * 60 * 1000,
+            Date.now(),
+          ),
+        nextRunAt: cleanInteger(rule?.nextRunAt) || null,
+        lastTriggeredAt: cleanInteger(rule?.lastTriggeredAt) || null,
+        lastError: cleanString(rule?.lastError, 240),
+        createdAt: cleanInteger(rule?.createdAt),
+        updatedAt: cleanInteger(rule?.updatedAt),
+      }))
+      .sort((left, right) => right.updatedAt - left.updatedAt),
+    deliveries: (normalized?.deliveries || [])
+      .slice(-MAX_ROBLOX_LIVE_DELIVERIES)
+      .reverse()
+      .map((delivery) => ({
+        id: cleanString(delivery?.id, 120),
+        ruleId: cleanString(delivery?.ruleId, 120),
+        title: cleanString(delivery?.title, 120),
+        actionKey: cleanString(delivery?.actionKey, 64),
+        trigger: cleanString(delivery?.trigger, 32),
+        status: normalizeRobloxLiveDeliveryStatus(delivery?.status),
+        sentAt: cleanInteger(delivery?.sentAt) || null,
+        expiresAt: cleanInteger(delivery?.expiresAt) || null,
+        error: cleanString(delivery?.error, 240),
+        acknowledgedServers: Object.keys(delivery?.acknowledgements || {}).length,
+        acknowledgements: Object.values(delivery?.acknowledgements || {})
+          .map((ack) => ({
+            jobId: cleanString(ack?.jobId, 128),
+            status: normalizeRobloxLiveAckStatus(ack?.status),
+            message: cleanString(ack?.message, 160),
+            processedAt: cleanInteger(ack?.processedAt) || null,
+          }))
+          .sort((left, right) => (right.processedAt || 0) - (left.processedAt || 0)),
+      })),
+    eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
+    limits: {
+      rules: MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE,
+      eventWindowsMinutes: [...ROBLOX_LIVE_EVENT_WINDOWS_MINUTES],
+      eventCooldownsMinutes: [...ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES],
+      scheduleIntervalsMinutes: [...ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES],
+      expirySeconds: [...ROBLOX_LIVE_EXPIRY_SECONDS],
+    },
+  };
+}
+
+function normalizeProviderStatusCode(error) {
+  const statusCode = cleanInteger(error?.statusCode);
+  return statusCode >= 400 && statusCode <= 599 ? statusCode : 502;
+}
+
+function normalizeRobloxLiveDeliveryStatus(value) {
+  return ["published", "acknowledged", "partial", "failed", "expired"].includes(value)
+    ? value
+    : "published";
+}
+
+function normalizeRobloxLiveAckStatus(value) {
+  return ["executed", "failed", "unhandled", "expired", "duplicate", "test"].includes(value)
+    ? value
+    : "failed";
+}
+
+function normalizeStoredRobloxLiveIntegration(integration) {
+  if (!integration || typeof integration !== "object") return null;
+  const now = Date.now();
+  const normalizedRules = [];
+  for (const rule of Array.isArray(integration.rules) ? integration.rules : []) {
+    const normalized = normalizeRobloxLiveRule({
+      ...rule,
+      parameters: rule?.parameters || {},
+      expiresInSeconds: ROBLOX_LIVE_EXPIRY_SECONDS.has(cleanInteger(rule?.expiresInSeconds))
+        ? cleanInteger(rule.expiresInSeconds)
+        : 60,
+      windowMinutes: ROBLOX_LIVE_EVENT_WINDOWS_MINUTES.has(cleanInteger(rule?.windowMinutes))
+        ? cleanInteger(rule.windowMinutes)
+        : 15,
+      cooldownMinutes: ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES.has(cleanInteger(rule?.cooldownMinutes))
+        ? cleanInteger(rule.cooldownMinutes)
+        : 60,
+      scheduleIntervalMinutes: ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES.has(cleanInteger(rule?.scheduleIntervalMinutes))
+        ? cleanInteger(rule.scheduleIntervalMinutes)
+        : 60,
+    }, rule);
+    if (normalized.ok) {
+      normalized.value.createdAt = cleanInteger(rule?.createdAt) || now;
+      normalized.value.updatedAt = cleanInteger(rule?.updatedAt) || normalized.value.createdAt;
+      normalized.value.nextRunAt = rule?.triggerType === "schedule"
+        ? cleanInteger(rule?.nextRunAt) || normalized.value.nextRunAt
+        : null;
+      normalized.value.lastConditionMet = Boolean(rule?.lastConditionMet);
+      normalizedRules.push(normalized.value);
+    }
+  }
+  const deliveries = (Array.isArray(integration.deliveries) ? integration.deliveries : [])
+    .map((delivery) => ({
+      id: cleanString(delivery?.id, 120),
+      ruleId: cleanString(delivery?.ruleId, 120),
+      title: cleanString(delivery?.title, 120),
+      actionKey: cleanString(delivery?.actionKey, 64),
+      trigger: cleanString(delivery?.trigger, 32),
+      status: normalizeRobloxLiveDeliveryStatus(delivery?.status),
+      sentAt: cleanInteger(delivery?.sentAt) || null,
+      expiresAt: cleanInteger(delivery?.expiresAt) || null,
+      error: cleanString(delivery?.error, 240),
+      acknowledgements: Object.fromEntries(
+        Object.entries(delivery?.acknowledgements || {})
+          .slice(0, MAX_ROBLOX_LIVE_ACKS_PER_PAYLOAD * 4)
+          .map(([jobId, ack]) => [cleanString(jobId, 128), {
+            jobId: cleanString(ack?.jobId || jobId, 128),
+            status: normalizeRobloxLiveAckStatus(ack?.status),
+            message: cleanString(ack?.message, 160),
+            processedAt: cleanInteger(ack?.processedAt) || null,
+          }])
+          .filter(([jobId]) => jobId),
+      ),
+    }))
+    .filter((delivery) => delivery.id)
+    .slice(-MAX_ROBLOX_LIVE_DELIVERIES);
+  return {
+    ownerUserId: cleanString(integration.ownerUserId, 120),
+    universeId: cleanInteger(integration.universeId),
+    robloxLiveSchemaVersion: 1,
+    topic: ROBLOX_LIVE_ACTION_TOPIC,
+    enabled: Boolean(integration.enabled),
+    oauth: integration.oauth && typeof integration.oauth === "object" ? {
+      accessToken: cleanString(integration.oauth.accessToken, 8192),
+      refreshToken: cleanString(integration.oauth.refreshToken, 8192),
+      expiresAt: cleanInteger(integration.oauth.expiresAt),
+      scope: cleanString(integration.oauth.scope, 500),
+      robloxUserId: cleanInteger(integration.oauth.robloxUserId),
+      robloxUsername: cleanString(integration.oauth.robloxUsername, 80),
+      authorizationValid: integration.oauth.authorizationValid !== false,
+      connectedAt: cleanInteger(integration.oauth.connectedAt) || now,
+      lastRefreshedAt: cleanInteger(integration.oauth.lastRefreshedAt) || null,
+      lastError: cleanString(integration.oauth.lastError, 240),
+    } : null,
+    rules: normalizedRules.slice(0, MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE),
+    deliveries,
+    createdAt: cleanInteger(integration.createdAt) || now,
+    updatedAt: cleanInteger(integration.updatedAt) || now,
+  };
+}
+
+function getRobloxLiveIntegrationScopeKey(ownerUserId, universeId) {
+  return `${cleanString(ownerUserId, 120)}:${cleanInteger(universeId)}`;
+}
+
+async function readRobloxLiveIntegration(ownerUserId, universeId) {
+  const scopeKey = getRobloxLiveIntegrationScopeKey(ownerUserId, universeId);
+  if (robloxLiveIntegrationCache.has(scopeKey)) return robloxLiveIntegrationCache.get(scopeKey);
+  const db = await getMongoDb();
+  let integration = null;
+  if (db) {
+    integration = await db.collection("roblox_live_integrations").findOne(
+      { ownerUserId, universeId: cleanInteger(universeId) },
+      { projection: { _id: 0 } },
+    );
+  } else {
+    const integrations = await readLocalRobloxLiveIntegrationStore();
+    integration = integrations.find((entry) => (
+      entry.ownerUserId === ownerUserId
+      && cleanInteger(entry.universeId) === cleanInteger(universeId)
+    )) || null;
+  }
+  integration = normalizeStoredRobloxLiveIntegration(integration);
+  robloxLiveIntegrationCache.set(scopeKey, integration);
+  return integration;
+}
+
+async function saveRobloxLiveIntegration(integration) {
+  const normalized = normalizeStoredRobloxLiveIntegration(integration);
+  if (!normalized?.ownerUserId || normalized.universeId <= 0) {
+    throw new Error("Cannot save an invalid Roblox live-action integration.");
+  }
+  const scopeKey = getRobloxLiveIntegrationScopeKey(normalized.ownerUserId, normalized.universeId);
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("roblox_live_integrations").replaceOne(
+      { ownerUserId: normalized.ownerUserId, universeId: normalized.universeId },
+      normalized,
+      { upsert: true },
+    );
+  } else {
+    await withLocalRobloxLiveIntegrationStoreLock(async () => {
+      const integrations = await readLocalRobloxLiveIntegrationStore();
+      const index = integrations.findIndex((entry) => (
+        entry.ownerUserId === normalized.ownerUserId
+        && cleanInteger(entry.universeId) === normalized.universeId
+      ));
+      if (index >= 0) integrations[index] = normalized;
+      else integrations.push(normalized);
+      await writeLocalRobloxLiveIntegrationStore(integrations);
+    });
+  }
+  robloxLiveIntegrationCache.set(scopeKey, normalized);
+  return normalized;
+}
+
+async function readLocalRobloxLiveIntegrationStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(robloxLiveIntegrationStorePath, "utf8"));
+    return Array.isArray(payload.integrations) ? payload.integrations : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalRobloxLiveIntegrationStore(integrations) {
+  await fs.mkdir(path.dirname(robloxLiveIntegrationStorePath), { recursive: true });
+  await fs.writeFile(robloxLiveIntegrationStorePath, JSON.stringify({ integrations }, null, 2));
+}
+
+async function withLocalRobloxLiveIntegrationStoreLock(operation) {
+  const previous = localRobloxLiveIntegrationStoreLock;
+  let release;
+  localRobloxLiveIntegrationStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+function getRobloxLiveOAuthEncryptionKey() {
+  return crypto.createHash("sha256")
+    .update(`${DASHBOARD_PASSWORD}\0${PRESENCE_SECRET}\0roblox-live-oauth-v1`)
+    .digest();
+}
+
+function encryptRobloxLiveOAuthToken(value) {
+  const token = cleanString(value, 8192);
+  if (!token) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getRobloxLiveOAuthEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function decryptRobloxLiveOAuthToken(value) {
+  const encryptedValue = cleanString(value, 8192);
+  if (!encryptedValue) return "";
+  const [version, ivValue, tagValue, cipherValue] = encryptedValue.split(".");
+  if (version !== "v1" || !ivValue || !tagValue || !cipherValue) return "";
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    getRobloxLiveOAuthEncryptionKey(),
+    Buffer.from(ivValue, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(cipherValue, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function hasRobloxLiveAuthorization(integration) {
+  try {
+    return Boolean(
+      integration?.oauth?.authorizationValid !== false
+      && decryptRobloxLiveOAuthToken(integration?.oauth?.accessToken)
+      && decryptRobloxLiveOAuthToken(integration?.oauth?.refreshToken)
+      && cleanString(integration?.oauth?.scope, 500).split(/\s+/).includes("universe-messaging-service:publish"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function getRobloxLiveAccessToken(integration) {
+  if (!hasRobloxLiveAuthorization(integration)) {
+    const error = new Error("Authorize Roblox live actions before publishing.");
+    error.statusCode = 401;
+    throw error;
+  }
+  if (cleanInteger(integration.oauth.expiresAt) > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS) {
+    return decryptRobloxLiveOAuthToken(integration.oauth.accessToken);
+  }
+
+  const scopeKey = getRobloxLiveIntegrationScopeKey(integration.ownerUserId, integration.universeId);
+  const previous = robloxLiveTokenRefreshLocks.get(scopeKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(async () => {
+    const latest = robloxLiveIntegrationCache.get(scopeKey);
+    if (latest?.oauth && cleanInteger(latest.oauth.expiresAt) > cleanInteger(integration.oauth.expiresAt)) {
+      integration.oauth = { ...latest.oauth };
+      integration.enabled = latest.enabled;
+      integration.updatedAt = latest.updatedAt;
+    }
+    if (cleanInteger(integration.oauth.expiresAt) > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS) {
+      return decryptRobloxLiveOAuthToken(integration.oauth.accessToken);
+    }
+    try {
+      const tokens = await refreshRobloxOAuthTokens({
+        refreshToken: decryptRobloxLiveOAuthToken(integration.oauth.refreshToken),
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+      const now = Date.now();
+      integration.oauth.accessToken = encryptRobloxLiveOAuthToken(tokens.access_token);
+      integration.oauth.refreshToken = encryptRobloxLiveOAuthToken(tokens.refresh_token);
+      integration.oauth.expiresAt = now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000;
+      integration.oauth.scope = cleanString(tokens.scope || integration.oauth.scope, 500);
+      integration.oauth.authorizationValid = true;
+      integration.oauth.lastRefreshedAt = now;
+      integration.oauth.lastError = "";
+      integration.updatedAt = now;
+      await saveRobloxLiveIntegration(integration);
+      return tokens.access_token;
+    } catch (error) {
+      integration.oauth.authorizationValid = false;
+      integration.oauth.lastError = cleanString(error?.message, 240) || "Roblox authorization expired.";
+      integration.enabled = false;
+      integration.updatedAt = Date.now();
+      await saveRobloxLiveIntegration(integration);
+      throw error;
+    }
+  });
+  robloxLiveTokenRefreshLocks.set(scopeKey, current);
+  try {
+    return await current;
+  } finally {
+    if (robloxLiveTokenRefreshLocks.get(scopeKey) === current) robloxLiveTokenRefreshLocks.delete(scopeKey);
+  }
+}
+
+function claimRobloxLiveSendSlot(ownerUserId, now = Date.now()) {
+  const key = cleanString(ownerUserId, 120);
+  const cutoff = now - ROBLOX_LIVE_SEND_WINDOW_MS;
+  const recent = (robloxLiveSendHistoryByUser.get(key) || []).filter((timestamp) => timestamp > cutoff);
+  if (recent.length >= MAX_ROBLOX_LIVE_SENDS_PER_WINDOW) {
+    return Math.max(1, recent[0] + ROBLOX_LIVE_SEND_WINDOW_MS - now);
+  }
+  recent.push(now);
+  robloxLiveSendHistoryByUser.set(key, recent);
+  return 0;
+}
+
+function appendRobloxLiveDelivery(deliveries, delivery) {
+  return [...(Array.isArray(deliveries) ? deliveries : []), delivery]
+    .slice(-MAX_ROBLOX_LIVE_DELIVERIES);
+}
+
+async function deliverRobloxLiveAction(integration, rule, trigger, { allowWhenPaused = false } = {}) {
+  if (!allowWhenPaused && !integration?.enabled) {
+    const error = new Error("Roblox live actions are paused.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const retryAfterMs = claimRobloxLiveSendSlot(integration.ownerUserId);
+  if (retryAfterMs > 0) {
+    const error = new Error(`Live actions are rate limited. Try again in ${Math.ceil(retryAfterMs / 1000)} seconds.`);
+    error.statusCode = 429;
+    throw error;
+  }
+  const sentAt = Date.now();
+  const deliveryId = crypto.randomUUID();
+  const built = buildRobloxLiveActionMessage({
+    deliveryId,
+    universeId: integration.universeId,
+    ruleId: cleanString(rule?.id, 120),
+    actionKey: rule?.actionKey,
+    parameters: rule?.parameters || {},
+    sentAt,
+    expiresInSeconds: cleanInteger(rule?.expiresInSeconds) || 60,
+    trigger,
+  });
+  const delivery = {
+    id: deliveryId,
+    ruleId: cleanString(rule?.id, 120),
+    title: cleanString(rule?.name, 120) || "Live action",
+    actionKey: built.payload.actionKey,
+    trigger: cleanString(trigger, 32),
+    status: "published",
+    sentAt,
+    expiresAt: built.payload.expiresAt * 1000,
+    error: "",
+    acknowledgements: {},
+  };
+  try {
+    const accessToken = await getRobloxLiveAccessToken(integration);
+    await publishRobloxUniverseMessage({
+      accessToken,
+      universeId: integration.universeId,
+      topic: ROBLOX_LIVE_ACTION_TOPIC,
+      message: built.message,
+    });
+    integration.deliveries = appendRobloxLiveDelivery(integration.deliveries, delivery);
+    return { delivery, payload: built.payload };
+  } catch (error) {
+    delivery.status = "failed";
+    delivery.error = cleanString(error?.message, 240) || "Roblox did not accept the live action.";
+    integration.deliveries = appendRobloxLiveDelivery(integration.deliveries, delivery);
+    if (normalizeProviderStatusCode(error) === 401 && integration.oauth) {
+      integration.oauth.authorizationValid = false;
+      integration.oauth.lastError = delivery.error;
+      integration.enabled = false;
+    }
+    throw error;
+  }
+}
+
+function getRobloxLiveCapabilities(universeId) {
+  const now = Date.now();
+  const universeServers = robloxLiveCapabilitiesByUniverse.get(String(cleanInteger(universeId))) || new Map();
+  const actionServers = new Map();
+  let lastSeenAt = null;
+  for (const [jobId, server] of universeServers) {
+    if (now - cleanInteger(server?.lastSeenAt) > ROBLOX_LIVE_CAPABILITY_TTL_MS) {
+      universeServers.delete(jobId);
+      continue;
+    }
+    lastSeenAt = Math.max(lastSeenAt || 0, cleanInteger(server.lastSeenAt));
+    for (const actionKey of server.actionKeys || []) {
+      const entry = actionServers.get(actionKey) || { actionKey, serverCount: 0, lastSeenAt: null };
+      entry.serverCount += 1;
+      entry.lastSeenAt = Math.max(entry.lastSeenAt || 0, cleanInteger(server.lastSeenAt));
+      actionServers.set(actionKey, entry);
+    }
+  }
+  if (!universeServers.size) robloxLiveCapabilitiesByUniverse.delete(String(cleanInteger(universeId)));
+  return {
+    liveServers: universeServers.size,
+    lastSeenAt,
+    actions: [...actionServers.values()],
+  };
+}
+
+function updateRobloxLiveCapabilities(presence) {
+  const universeId = cleanInteger(presence?.universeId);
+  const jobId = cleanString(presence?.jobId, 128);
+  if (universeId <= 0 || !jobId) return;
+  const servers = robloxLiveCapabilitiesByUniverse.get(String(universeId)) || new Map();
+  servers.set(jobId, {
+    actionKeys: Array.isArray(presence.liveActionKeys) ? presence.liveActionKeys : [],
+    lastSeenAt: Date.now(),
+  });
+  robloxLiveCapabilitiesByUniverse.set(String(universeId), servers);
 }
 
 async function handleDiscordIntegrationGet(req, res, auth, searchParams) {
@@ -2791,643 +3674,70 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
   }
 }
 
-async function handleEmailIntegrationGet(req, res, auth, searchParams) {
-  const universeId = cleanInteger(searchParams.get("universeId"));
-  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
-  if (!project || (isDemoProject(project) && !isAdminUser(await findUserById(auth.userId)))) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
+function getRobloxLiveDeliveryStatusFromAcks(delivery) {
+  const statuses = Object.values(delivery?.acknowledgements || {}).map((ack) => ack.status);
+  if (!statuses.length) {
+    return cleanInteger(delivery?.expiresAt) < Date.now() ? "expired" : "published";
   }
-  const [integration, eventNames] = await Promise.all([
-    readEmailIntegration(auth.userId, universeId),
-    getDiscordAlertEventNames(auth.userId, universeId),
-  ]);
-  return sendJson(res, 200, serializeEmailIntegration(integration, { universeId, eventNames }));
+  const succeeded = statuses.some((status) => status === "executed" || status === "test" || status === "duplicate");
+  const failed = statuses.some((status) => status === "failed" || status === "unhandled" || status === "expired");
+  if (succeeded && failed) return "partial";
+  if (succeeded) return "acknowledged";
+  if (statuses.every((status) => status === "expired")) return "expired";
+  return "failed";
 }
 
-async function handleEmailRecipientSave(req, res, auth) {
-  let body;
-  try {
-    body = await readJsonBody(req, 8 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const universeId = cleanInteger(body?.universeId);
-  if (!await userOwnsUniverse(auth.userId, universeId)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-
-  const now = Date.now();
-  const integration = await readEmailIntegration(auth.userId, universeId)
-    || createEmptyEmailIntegration(auth.userId, universeId);
-  const recipientId = cleanString(body?.recipientId, 120);
-  const savedRecipient = recipientId
-    ? integration.recipients.find((recipient) => recipient.id === recipientId)
-    : null;
-  if (recipientId && !savedRecipient) return sendJson(res, 404, { error: "Saved recipient not found." });
-  if (!savedRecipient && integration.recipients.length >= MAX_EMAIL_RECIPIENTS_PER_UNIVERSE) {
-    return sendJson(res, 409, { error: `A universe can have up to ${MAX_EMAIL_RECIPIENTS_PER_UNIVERSE} saved email recipients.` });
-  }
-
-  const name = cleanString(body?.name, 60);
-  if (!name) return sendJson(res, 400, { error: "Enter a name for this recipient." });
-  let emailAddress;
-  try {
-    emailAddress = normalizeEmailAddress(body?.email);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const nextRecipient = {
-    id: savedRecipient?.id || crypto.randomUUID(),
-    name,
-    email: encryptEmailRecipientAddress(emailAddress),
-    emailHint: getEmailAddressHint(emailAddress),
-    createdAt: cleanInteger(savedRecipient?.createdAt) || now,
-    updatedAt: now,
-    lastTestAt: cleanInteger(savedRecipient?.lastTestAt),
-  };
-  integration.recipients = savedRecipient
-    ? integration.recipients.map((recipient) => recipient.id === savedRecipient.id ? nextRecipient : recipient)
-    : [...integration.recipients, nextRecipient];
-  integration.selectedRecipientId = nextRecipient.id;
-  integration.updatedAt = now;
-  await saveEmailIntegration(integration);
-  return sendJson(res, 200, serializeEmailIntegration(integration, {
-    universeId,
-    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
-  }));
-}
-
-async function handleEmailRecipientDelete(req, res, auth, searchParams) {
-  const universeId = cleanInteger(searchParams.get("universeId"));
-  const recipientId = cleanString(searchParams.get("recipientId"), 120);
-  if (!await userOwnsUniverse(auth.userId, universeId)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  if (!recipientId) return sendJson(res, 400, { error: "Select a saved recipient to delete." });
-  const integration = await readEmailIntegration(auth.userId, universeId);
-  const previousLength = integration?.recipients?.length || 0;
-  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Saved recipient not found." });
-  integration.recipients = integration.recipients.filter((recipient) => recipient.id !== recipientId);
-  if (integration.recipients.length === previousLength) return sendJson(res, 404, { error: "Saved recipient not found." });
-  integration.selectedRecipientId = integration.selectedRecipientId === recipientId
-    ? (integration.recipients[0]?.id || "")
-    : integration.selectedRecipientId;
-  integration.rules = (integration.rules || []).map((rule) => (
-    rule.recipientId === recipientId
-      ? {
-        ...rule,
-        recipientId: "",
-        enabled: false,
-        lastError: "Select a delivery recipient.",
-        updatedAt: Date.now(),
-      }
-      : rule
-  ));
-  integration.updatedAt = Date.now();
-  await saveEmailIntegration(integration);
-  return sendJson(res, 200, serializeEmailIntegration(integration, {
-    universeId,
-    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
-  }));
-}
-
-async function handleEmailRecipientSelect(req, res, auth) {
-  let body;
-  try {
-    body = await readJsonBody(req, 8 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const universeId = cleanInteger(body?.universeId);
-  const recipientId = cleanString(body?.recipientId, 120);
-  if (!await userOwnsUniverse(auth.userId, universeId)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  const integration = await readEmailIntegration(auth.userId, universeId);
-  if (!integration?.recipients?.some((recipient) => recipient.id === recipientId)) {
-    return sendJson(res, 404, { error: "Saved recipient not found." });
-  }
-  integration.selectedRecipientId = recipientId;
-  integration.updatedAt = Date.now();
-  await saveEmailIntegration(integration);
-  return sendJson(res, 200, serializeEmailIntegration(integration, {
-    universeId,
-    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
-  }));
-}
-
-async function handleEmailConnectionTest(req, res, auth) {
-  let body;
-  try {
-    body = await readJsonBody(req, 8 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const universeId = cleanInteger(body?.universeId);
-  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
-  if (!project || (isDemoProject(project) && !isAdminUser(await findUserById(auth.userId)))) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  const integration = await readEmailIntegration(auth.userId, universeId);
-  const recipientId = cleanString(body?.recipientId, 120) || integration?.selectedRecipientId;
-  const recipient = integration?.recipients?.find((entry) => entry.id === recipientId);
-  const emailAddress = getStoredEmailRecipientAddress(integration, recipientId);
-  if (!recipient || !emailAddress) return sendJson(res, 400, { error: "Select a saved email recipient first." });
-  if (!RESEND_API_KEY || !EMAIL_FROM) {
-    return sendJson(res, 503, { error: "Email delivery is not configured yet." });
-  }
-  const retryAfterMs = claimEmailSendSlot(auth.userId);
-  if (retryAfterMs > 0) return sendEmailRateLimitError(res, retryAfterMs);
-
-  try {
-    const title = "Email alerts connected";
-    const message = `RoAnalytics can now send automatic analytics alerts for ${project.name || `Universe ${universeId}`} to this address.`;
-    const result = await sendTransactionalEmail({
-      apiKey: RESEND_API_KEY,
-      from: EMAIL_FROM,
-      to: emailAddress,
-      subject: "RoAnalytics email alerts connected",
-      message,
-      html: renderEmailAlertHtml({
-        title,
-        message,
-        gameName: project.name || `Universe ${universeId}`,
-        eventLabel: "Connection test",
-        observed: "Ready",
-        ruleLabel: recipient.name,
-      }),
-      idempotencyKey: `roanalytics-email-test-${recipient.id}-${Date.now()}`,
-    });
-    integration.deliveries = appendEmailDelivery(integration.deliveries, {
-      id: crypto.randomUUID(),
-      type: "test",
-      status: "sent",
-      title: `${recipient.name} test`,
-      sentAt: result.sentAt,
-      recipientId,
-    });
-    integration.recipients = integration.recipients.map((entry) => (
-      entry.id === recipientId ? { ...entry, lastTestAt: result.sentAt } : entry
-    ));
-    integration.updatedAt = Date.now();
-    await saveEmailIntegration(integration);
-    return sendJson(res, 200, { ok: true, sentAt: result.sentAt });
-  } catch (error) {
-    const statusCode = Number(error?.statusCode);
-    return sendJson(
-      res,
-      Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 502,
-      { error: error?.message || "Could not send the test email." },
-    );
-  }
-}
-
-async function handleEmailAlertRuleSave(req, res, auth, requestedRuleId = "") {
-  let body;
-  try {
-    body = await readJsonBody(req, 16 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const universeId = cleanInteger(body?.universeId);
-  if (!await userOwnsUniverse(auth.userId, universeId)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  const integration = await readEmailIntegration(auth.userId, universeId);
-  if (!integration?.recipients?.length) {
-    return sendJson(res, 400, { error: "Save an email recipient before creating alerts." });
-  }
-  const ruleId = cleanString(requestedRuleId || body?.id, 120);
-  const existingRule = ruleId
-    ? (integration.rules || []).find((rule) => rule.id === ruleId)
-    : null;
-  if (ruleId && !existingRule) return sendJson(res, 404, { error: "Alert rule not found." });
-  if (!existingRule && (integration.rules || []).length >= MAX_EMAIL_ALERT_RULES_PER_UNIVERSE) {
-    return sendJson(res, 409, { error: `A universe can have up to ${MAX_EMAIL_ALERT_RULES_PER_UNIVERSE} email alerts.` });
-  }
-  const normalized = normalizeEmailAlertRule(body, existingRule, integration);
-  if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
-  integration.rules = existingRule
-    ? integration.rules.map((rule) => rule.id === existingRule.id ? normalized.value : rule)
-    : [...(integration.rules || []), normalized.value];
-  integration.updatedAt = Date.now();
-  await saveEmailIntegration(integration);
-  return sendJson(res, 200, serializeEmailIntegration(integration, {
-    universeId,
-    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
-  }));
-}
-
-async function handleEmailAlertRuleDelete(req, res, auth, ruleId, searchParams) {
-  const universeId = cleanInteger(searchParams.get("universeId"));
-  if (!await userOwnsUniverse(auth.userId, universeId)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  const integration = await readEmailIntegration(auth.userId, universeId);
-  const previousLength = integration?.rules?.length || 0;
-  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Alert rule not found." });
-  integration.rules = integration.rules.filter((rule) => rule.id !== ruleId);
-  if (integration.rules.length === previousLength) return sendJson(res, 404, { error: "Alert rule not found." });
-  integration.updatedAt = Date.now();
-  await saveEmailIntegration(integration);
-  return sendJson(res, 200, serializeEmailIntegration(integration, {
-    universeId,
-    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
-  }));
-}
-
-function normalizeEmailAlertRule(value, existingRule = null, integration = null) {
-  const eventName = normalizeCustomEventName(value?.eventName);
-  if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
-  const name = cleanString(value?.name, 80) || `${formatDiscordEventName(eventName)} alert`;
-  const operator = cleanString(value?.operator, 24).toLowerCase();
-  if (operator !== "at_least" && operator !== "at_most") {
-    return { ok: false, error: "Choose whether the event count should be above or below the threshold." };
-  }
-  const threshold = Number(value?.threshold);
-  if (!Number.isSafeInteger(threshold) || threshold < (operator === "at_least" ? 1 : 0) || threshold > 1_000_000) {
-    return { ok: false, error: operator === "at_least" ? "Threshold must be between 1 and 1,000,000." : "Threshold must be between 0 and 1,000,000." };
-  }
-  const windowMinutes = Number(value?.windowMinutes);
-  if (!EMAIL_ALERT_WINDOWS_MINUTES.has(windowMinutes)) return { ok: false, error: "Choose a valid alert window." };
-  const cooldownMinutes = Number(value?.cooldownMinutes);
-  if (!EMAIL_ALERT_COOLDOWNS_MINUTES.has(cooldownMinutes)) return { ok: false, error: "Choose a valid cooldown." };
-  let subjectTemplate;
-  try {
-    subjectTemplate = normalizeEmailSubject(value?.subjectTemplate);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-  const messageTemplate = typeof value?.messageTemplate === "string" ? value.messageTemplate.trim() : "";
-  if (messageTemplate.length > 500) return { ok: false, error: "Alert message can contain up to 500 characters." };
-  const recipientId = value && Object.hasOwn(value, "recipientId")
-    ? cleanString(value.recipientId, 120)
-    : cleanString(existingRule?.recipientId, 120) || cleanString(integration?.selectedRecipientId, 120);
-  if (!integration?.recipients?.some((recipient) => recipient.id === recipientId)) {
-    return { ok: false, error: "Choose a saved recipient for this alert." };
-  }
-
-  const now = Date.now();
-  const changedCondition = Boolean(existingRule) && (
-    existingRule.eventName !== eventName
-    || existingRule.operator !== operator
-    || cleanInteger(existingRule.threshold) !== threshold
-    || cleanInteger(existingRule.windowMinutes) !== windowMinutes
-    || existingRule.recipientId !== recipientId
-  );
-  return {
-    ok: true,
-    value: {
-      id: cleanString(existingRule?.id, 120) || crypto.randomUUID(),
-      name,
-      eventName,
-      operator,
-      threshold,
-      windowMinutes,
-      cooldownMinutes,
-      recipientId,
-      subjectTemplate,
-      messageTemplate,
-      enabled: value?.enabled === undefined ? existingRule?.enabled !== false : Boolean(value.enabled),
-      lastConditionMet: changedCondition ? false : Boolean(existingRule?.lastConditionMet),
-      lastTriggeredAt: cleanInteger(existingRule?.lastTriggeredAt),
-      lastAttemptedAt: cleanInteger(existingRule?.lastAttemptedAt),
-      lastAttemptStatus: existingRule?.lastAttemptStatus === "failed" ? "failed" : "sent",
-      lastError: cleanString(existingRule?.lastError, 240),
-      createdAt: cleanInteger(existingRule?.createdAt) || now,
-      updatedAt: now,
-    },
-  };
-}
-
-function createEmptyEmailIntegration(ownerUserId, universeId) {
-  const now = Date.now();
-  return {
-    ownerUserId: cleanString(ownerUserId, 120),
-    universeId: cleanInteger(universeId),
-    emailSchemaVersion: 1,
-    recipients: [],
-    selectedRecipientId: "",
-    rules: [],
-    deliveries: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function normalizeStoredEmailIntegration(integration) {
-  if (!integration) return null;
-  const recipients = (Array.isArray(integration.recipients) ? integration.recipients : [])
-    .map((recipient) => ({
-      id: cleanString(recipient?.id, 120),
-      name: cleanString(recipient?.name, 60) || "Email alerts",
-      email: recipient?.email || null,
-      emailHint: cleanString(recipient?.emailHint, 254),
-      createdAt: cleanInteger(recipient?.createdAt),
-      updatedAt: cleanInteger(recipient?.updatedAt),
-      lastTestAt: cleanInteger(recipient?.lastTestAt),
-    }))
-    .filter((recipient) => recipient.id && recipient.email);
-  const selectedRecipientId = recipients.some((recipient) => recipient.id === integration.selectedRecipientId)
-    ? integration.selectedRecipientId
-    : (recipients[0]?.id || "");
-  return {
-    ...integration,
-    emailSchemaVersion: 1,
-    recipients,
-    selectedRecipientId,
-    rules: Array.isArray(integration.rules) ? integration.rules : [],
-    deliveries: Array.isArray(integration.deliveries) ? integration.deliveries : [],
-  };
-}
-
-function serializeEmailIntegration(integration, { universeId, eventNames = [] } = {}) {
-  const normalizedIntegration = normalizeStoredEmailIntegration(integration);
-  const cleanUniverseId = cleanInteger(universeId || normalizedIntegration?.universeId);
-  const recipients = normalizedIntegration?.recipients || [];
-  const recipientsById = new Map(recipients.map((recipient) => [recipient.id, recipient]));
-  const rules = normalizedIntegration?.rules || [];
-  return {
-    universeId: cleanUniverseId,
-    provider: {
-      configured: Boolean(RESEND_API_KEY && EMAIL_FROM),
-      name: "Resend",
-    },
-    connection: {
-      connected: recipients.length > 0,
-      count: recipients.length,
-      selectedRecipientId: cleanString(normalizedIntegration?.selectedRecipientId, 120),
-    },
-    recipients: recipients.map((recipient) => ({
-      id: recipient.id,
-      name: recipient.name,
-      email: getStoredEmailRecipientAddress(normalizedIntegration, recipient.id),
-      emailHint: recipient.emailHint,
-      createdAt: recipient.createdAt,
-      updatedAt: recipient.updatedAt,
-      lastTestAt: recipient.lastTestAt || null,
-    })),
-    rules: rules
-      .map((rule) => {
-        const eventName = normalizeCustomEventName(rule?.eventName);
-        const windowMinutes = cleanInteger(rule?.windowMinutes);
-        return {
-          id: cleanString(rule?.id, 120),
-          name: cleanString(rule?.name, 80),
-          eventName,
-          operator: rule?.operator === "at_most" ? "at_most" : "at_least",
-          threshold: cleanInteger(rule?.threshold),
-          windowMinutes,
-          cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
-          recipientId: cleanString(rule?.recipientId, 120),
-          recipientName: cleanString(recipientsById.get(rule?.recipientId)?.name, 60),
-          recipientEmail: getStoredEmailRecipientAddress(normalizedIntegration, rule?.recipientId),
-          currentCount: countDiscordAlertEvents(
-            cleanUniverseId,
-            eventName,
-            Date.now() - windowMinutes * 60 * 1000,
-            Date.now(),
-          ),
-          subjectTemplate: cleanString(rule?.subjectTemplate, 120),
-          messageTemplate: cleanString(rule?.messageTemplate, 500),
-          enabled: rule?.enabled !== false,
-          lastTriggeredAt: cleanInteger(rule?.lastTriggeredAt) || null,
-          lastError: cleanString(rule?.lastError, 240),
-          createdAt: cleanInteger(rule?.createdAt),
-          updatedAt: cleanInteger(rule?.updatedAt),
-        };
-      })
-      .sort((left, right) => right.updatedAt - left.updatedAt),
-    deliveries: (normalizedIntegration?.deliveries || [])
-      .slice(-MAX_EMAIL_ALERT_DELIVERIES)
-      .reverse()
-      .map((delivery) => ({
-        id: cleanString(delivery?.id, 120),
-        type: cleanString(delivery?.type, 32),
-        status: delivery?.status === "failed" ? "failed" : "sent",
-        title: cleanString(delivery?.title, 120),
-        sentAt: cleanInteger(delivery?.sentAt) || null,
-        error: cleanString(delivery?.error, 240),
-      })),
-    eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
-    limits: {
-      rules: MAX_EMAIL_ALERT_RULES_PER_UNIVERSE,
-      recipients: MAX_EMAIL_RECIPIENTS_PER_UNIVERSE,
-      messageLength: 500,
-      subjectLength: 120,
-      windowsMinutes: [...EMAIL_ALERT_WINDOWS_MINUTES],
-      cooldownsMinutes: [...EMAIL_ALERT_COOLDOWNS_MINUTES],
-    },
-  };
-}
-
-function getEmailIntegrationScopeKey(ownerUserId, universeId) {
-  return `${cleanString(ownerUserId, 120)}:${cleanInteger(universeId)}`;
-}
-
-async function readEmailIntegration(ownerUserId, universeId) {
-  const scopeKey = getEmailIntegrationScopeKey(ownerUserId, universeId);
-  if (emailIntegrationCache.has(scopeKey)) return emailIntegrationCache.get(scopeKey);
-  const db = await getMongoDb();
-  let integration = null;
-  if (db) {
-    integration = await db.collection("email_integrations").findOne(
-      { ownerUserId, universeId: cleanInteger(universeId) },
-      { projection: { _id: 0 } },
-    );
-  } else {
-    const integrations = await readLocalEmailIntegrationStore();
-    integration = integrations.find((entry) => (
-      entry.ownerUserId === ownerUserId
-      && cleanInteger(entry.universeId) === cleanInteger(universeId)
-    )) || null;
-  }
-  integration = normalizeStoredEmailIntegration(integration);
-  emailIntegrationCache.set(scopeKey, integration);
-  return integration;
-}
-
-async function saveEmailIntegration(integration) {
-  const normalizedIntegration = normalizeStoredEmailIntegration(integration);
-  const scopeKey = getEmailIntegrationScopeKey(normalizedIntegration?.ownerUserId, normalizedIntegration?.universeId);
-  const db = await getMongoDb();
-  if (db) {
-    await db.collection("email_integrations").replaceOne(
-      { ownerUserId: normalizedIntegration.ownerUserId, universeId: normalizedIntegration.universeId },
-      normalizedIntegration,
-      { upsert: true },
-    );
-  } else {
-    await withLocalEmailIntegrationStoreLock(async () => {
-      const integrations = await readLocalEmailIntegrationStore();
-      const index = integrations.findIndex((entry) => (
-        entry.ownerUserId === normalizedIntegration.ownerUserId
-        && cleanInteger(entry.universeId) === cleanInteger(normalizedIntegration.universeId)
-      ));
-      if (index >= 0) integrations[index] = normalizedIntegration;
-      else integrations.push(normalizedIntegration);
-      await writeLocalEmailIntegrationStore(integrations);
-    });
-  }
-  emailIntegrationCache.set(scopeKey, normalizedIntegration);
-  return normalizedIntegration;
-}
-
-async function readLocalEmailIntegrationStore() {
-  try {
-    const payload = JSON.parse(await fs.readFile(emailIntegrationStorePath, "utf8"));
-    return Array.isArray(payload.integrations) ? payload.integrations : [];
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-async function writeLocalEmailIntegrationStore(integrations) {
-  await fs.mkdir(path.dirname(emailIntegrationStorePath), { recursive: true });
-  await fs.writeFile(emailIntegrationStorePath, JSON.stringify({ integrations }, null, 2));
-}
-
-async function withLocalEmailIntegrationStoreLock(operation) {
-  const previous = localEmailIntegrationStoreLock;
-  let release;
-  localEmailIntegrationStoreLock = new Promise((resolve) => { release = resolve; });
-  await previous;
-  try {
-    return await operation();
-  } finally {
-    release();
-  }
-}
-
-function getEmailRecipientEncryptionKey() {
-  return crypto.createHash("sha256")
-    .update(`roanalytics:email-recipient:v1:${PRESENCE_SECRET}`)
-    .digest();
-}
-
-function encryptEmailRecipientAddress(emailAddress) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", getEmailRecipientEncryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(emailAddress, "utf8"), cipher.final()]);
-  return {
-    version: 1,
-    iv: iv.toString("base64"),
-    tag: cipher.getAuthTag().toString("base64"),
-    ciphertext: ciphertext.toString("base64"),
-  };
-}
-
-function decryptEmailRecipientAddress(value) {
-  if (!value || cleanInteger(value.version) !== 1) return "";
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm",
-    getEmailRecipientEncryptionKey(),
-    Buffer.from(String(value.iv || ""), "base64"),
-  );
-  decipher.setAuthTag(Buffer.from(String(value.tag || ""), "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(String(value.ciphertext || ""), "base64")),
-    decipher.final(),
-  ]).toString("utf8");
-}
-
-function getStoredEmailRecipientAddress(integration, recipientId = "") {
-  try {
-    const normalizedIntegration = normalizeStoredEmailIntegration(integration);
-    const selectedId = cleanString(recipientId, 120) || normalizedIntegration?.selectedRecipientId;
-    const recipient = normalizedIntegration?.recipients?.find((entry) => entry.id === selectedId);
-    return recipient?.email ? normalizeEmailAddress(decryptEmailRecipientAddress(recipient.email)) : "";
-  } catch (error) {
-    console.warn("Could not decrypt a stored email recipient:", error.message || error);
-    return "";
-  }
-}
-
-function getEmailAddressHint(emailAddress) {
-  const [localPart, domain] = String(emailAddress || "").split("@");
-  if (!localPart || !domain) return "Email recipient";
-  return `${localPart.slice(0, 1)}${localPart.length > 1 ? "***" : ""}@${domain}`;
-}
-
-function claimEmailSendSlot(userId, now = Date.now()) {
-  const key = String(userId || "");
-  const cutoff = now - EMAIL_SEND_WINDOW_MS;
-  const recentSends = (emailSendHistoryByUser.get(key) || []).filter((timestamp) => timestamp > cutoff);
-  if (recentSends.length >= MAX_EMAIL_SENDS_PER_WINDOW) {
-    return Math.max(1000, recentSends[0] + EMAIL_SEND_WINDOW_MS - now);
-  }
-  recentSends.push(now);
-  emailSendHistoryByUser.set(key, recentSends);
-  return 0;
-}
-
-function sendEmailRateLimitError(res, retryAfterMs) {
-  return sendJson(res, 429, {
-    error: "Too many email messages. Wait a moment and try again.",
-    retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
-  });
-}
-
-function appendEmailDelivery(deliveries, delivery) {
-  return [...(Array.isArray(deliveries) ? deliveries : []), delivery]
-    .slice(-MAX_EMAIL_ALERT_DELIVERIES);
-}
-
-function renderEmailAlertTemplate(template, rule, context, fallback) {
-  const source = cleanString(template, 500) || fallback;
-  const replacements = {
-    game: context.gameName,
-    event: context.eventLabel,
-    event_key: rule.eventName,
-    count: context.count.toLocaleString("en-US"),
-    threshold: cleanInteger(rule.threshold).toLocaleString("en-US"),
-    window: context.windowLabel,
-  };
-  return source.replace(/\{\{(game|event|event_key|count|threshold|window)\}\}/g, (_, key) => replacements[key]);
-}
-
-function renderEmailAlertHtml({ title, message, gameName, eventLabel, observed, ruleLabel }) {
-  return `<!doctype html>
-  <html>
-    <body style="margin:0;background:#070d1c;color:#f7f8ff;font-family:Arial,sans-serif">
-      <div style="max-width:620px;margin:0 auto;padding:32px 18px">
-        <div style="border:1px solid #26345d;border-radius:14px;background:#0c1530;padding:26px">
-          <div style="color:#9e7cff;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">RoAnalytics alert</div>
-          <h1 style="margin:10px 0 8px;font-size:24px;line-height:1.25">${escapeHtml(title)}</h1>
-          <p style="margin:0 0 22px;color:#c4cbe0;font-size:15px;line-height:1.6">${escapeHtml(message)}</p>
-          <table style="width:100%;border-collapse:collapse;font-size:14px">
-            <tr><td style="padding:10px 0;color:#8793b2">Universe</td><td style="padding:10px 0;text-align:right;font-weight:700">${escapeHtml(gameName)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #202c4d;color:#8793b2">Event</td><td style="padding:10px 0;border-top:1px solid #202c4d;text-align:right;font-weight:700">${escapeHtml(eventLabel)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #202c4d;color:#8793b2">Observed</td><td style="padding:10px 0;border-top:1px solid #202c4d;text-align:right;font-weight:700">${escapeHtml(observed)}</td></tr>
-            <tr><td style="padding:10px 0;border-top:1px solid #202c4d;color:#8793b2">Rule</td><td style="padding:10px 0;border-top:1px solid #202c4d;text-align:right;font-weight:700">${escapeHtml(ruleLabel)}</td></tr>
-          </table>
-        </div>
-      </div>
-    </body>
-  </html>`;
-}
-
-async function evaluateEmailAlertsForPresence(presence, project) {
-  if (!RESEND_API_KEY || !EMAIL_FROM || !project?.ownerUserId || cleanInteger(presence?.universeId) <= 0) return;
-  const scopeKey = getEmailIntegrationScopeKey(project.ownerUserId, presence.universeId);
-  const previous = emailAlertEvaluationLocks.get(scopeKey) || Promise.resolve();
+async function processRobloxLiveAcknowledgements(presence, project) {
+  updateRobloxLiveCapabilities(presence);
+  if (!project?.ownerUserId || !presence?.liveActionAcks?.length) return 0;
+  const scopeKey = getRobloxLiveIntegrationScopeKey(project.ownerUserId, presence.universeId);
+  const previous = robloxLiveEvaluationLocks.get(scopeKey) || Promise.resolve();
+  let acknowledged = 0;
   const current = previous.catch(() => {}).then(async () => {
-    const integration = await readEmailIntegration(project.ownerUserId, presence.universeId);
-    if (!integration?.recipients?.length || !integration.rules?.some((rule) => rule.enabled !== false)) return;
+    const integration = await readRobloxLiveIntegration(project.ownerUserId, presence.universeId);
+    if (!integration?.deliveries?.length) return;
+    for (const ack of presence.liveActionAcks) {
+      const delivery = integration.deliveries.find((entry) => entry.id === ack.deliveryId);
+      if (!delivery) continue;
+      delivery.acknowledgements ||= {};
+      delivery.acknowledgements[presence.jobId] = {
+        jobId: presence.jobId,
+        status: normalizeRobloxLiveAckStatus(ack.status),
+        message: cleanString(ack.message, 160),
+        processedAt: cleanTimestampMs(ack.processedAt) || Date.now(),
+      };
+      delivery.status = getRobloxLiveDeliveryStatusFromAcks(delivery);
+      acknowledged += 1;
+    }
+    if (acknowledged > 0) {
+      integration.updatedAt = Date.now();
+      await saveRobloxLiveIntegration(integration);
+    }
+  });
+  robloxLiveEvaluationLocks.set(scopeKey, current);
+  try {
+    await current;
+    return acknowledged;
+  } finally {
+    if (robloxLiveEvaluationLocks.get(scopeKey) === current) robloxLiveEvaluationLocks.delete(scopeKey);
+  }
+}
+
+async function evaluateRobloxLiveEventRulesForPresence(presence, project) {
+  if (!project?.ownerUserId || cleanInteger(presence?.universeId) <= 0) return;
+  const scopeKey = getRobloxLiveIntegrationScopeKey(project.ownerUserId, presence.universeId);
+  const previous = robloxLiveEvaluationLocks.get(scopeKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(async () => {
+    const integration = await readRobloxLiveIntegration(project.ownerUserId, presence.universeId);
+    if (!integration?.enabled || !hasRobloxLiveAuthorization(integration)) return;
+    const eventRules = integration.rules?.filter((rule) => (
+      rule.enabled !== false && rule.triggerType === "event_count"
+    )) || [];
+    if (!eventRules.length) return;
+
     const now = Date.now();
     let changed = false;
-    for (const rule of integration.rules) {
-      if (rule.enabled === false) continue;
-      const recipient = integration.recipients.find((entry) => entry.id === rule.recipientId);
-      const emailAddress = getStoredEmailRecipientAddress(integration, rule.recipientId);
-      if (!recipient || !emailAddress) {
-        rule.enabled = false;
-        rule.lastError = "Select a delivery recipient.";
-        rule.updatedAt = now;
-        changed = true;
-        continue;
-      }
+    for (const rule of eventRules) {
       const count = countDiscordAlertEvents(
         presence.universeId,
         rule.eventName,
@@ -3442,88 +3752,118 @@ async function evaluateEmailAlertsForPresence(presence, project) {
         changed = true;
       }
       const cooldownMs = cleanInteger(rule.cooldownMinutes) * 60 * 1000;
-      const lastAttemptedAt = cleanInteger(rule.lastAttemptedAt);
       const retryDelayMs = rule.lastAttemptStatus === "failed"
         ? Math.min(cooldownMs, 5 * 60 * 1000)
         : cooldownMs;
-      if (!conditionMet || (lastAttemptedAt && now - lastAttemptedAt < retryDelayMs)) continue;
-      const retryAfterMs = claimEmailSendSlot(project.ownerUserId, now);
-      if (retryAfterMs > 0) {
-        rule.lastError = "Delivery paused by the email rate limit.";
-        rule.lastAttemptedAt = now;
-        rule.lastAttemptStatus = "failed";
-        changed = true;
+      if (
+        !conditionMet
+        || (cleanInteger(rule.lastAttemptedAt) > 0 && now - cleanInteger(rule.lastAttemptedAt) < retryDelayMs)
+      ) {
         continue;
       }
-
-      const gameName = project.name || `Universe ${presence.universeId}`;
-      const eventLabel = formatDiscordEventName(rule.eventName);
-      const windowLabel = formatDiscordAlertWindow(cleanInteger(rule.windowMinutes));
-      const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
-      const fallbackMessage = `${eventLabel} recorded ${count.toLocaleString("en-US")} events in the last ${windowLabel}.`;
-      const context = { gameName, eventLabel, count, windowLabel };
-      const subject = renderEmailAlertTemplate(
-        rule.subjectTemplate,
-        rule,
-        context,
-        `${eventLabel} alert for ${gameName}`,
-      ).slice(0, 120);
-      const message = renderEmailAlertTemplate(rule.messageTemplate, rule, context, fallbackMessage);
+      rule.lastAttemptedAt = now;
       try {
-        const result = await sendTransactionalEmail({
-          apiKey: RESEND_API_KEY,
-          from: EMAIL_FROM,
-          to: emailAddress,
-          subject,
-          message,
-          html: renderEmailAlertHtml({
-            title: rule.name,
-            message,
-            gameName,
-            eventLabel,
-            observed: `${count.toLocaleString("en-US")} / ${windowLabel}`,
-            ruleLabel: `${operatorLabel} ${cleanInteger(rule.threshold).toLocaleString("en-US")}`,
-          }),
-          idempotencyKey: `roanalytics-email-alert-${rule.id}-${Math.floor(now / 60_000)}`,
-        });
-        rule.lastTriggeredAt = result.sentAt;
-        rule.lastAttemptedAt = result.sentAt;
-        rule.lastAttemptStatus = "sent";
+        const result = await deliverRobloxLiveAction(integration, rule, "event_count");
+        rule.lastTriggeredAt = result.delivery.sentAt;
+        rule.lastAttemptedAt = result.delivery.sentAt;
+        rule.lastAttemptStatus = "published";
         rule.lastError = "";
-        integration.deliveries = appendEmailDelivery(integration.deliveries, {
-          id: crypto.randomUUID(),
-          type: "alert",
-          status: "sent",
-          title: rule.name,
-          sentAt: result.sentAt,
-          recipientId: rule.recipientId,
-        });
       } catch (error) {
-        rule.lastAttemptedAt = now;
         rule.lastAttemptStatus = "failed";
-        rule.lastError = cleanString(error?.message, 240) || "Email delivery failed.";
-        integration.deliveries = appendEmailDelivery(integration.deliveries, {
-          id: crypto.randomUUID(),
-          type: "alert",
-          status: "failed",
-          title: rule.name,
-          sentAt: now,
-          error: rule.lastError,
-          recipientId: rule.recipientId,
-        });
+        rule.lastError = cleanString(error?.message, 240) || "Roblox live action failed.";
       }
+      rule.updatedAt = Date.now();
       changed = true;
+      if (!integration.enabled) break;
     }
     if (changed) {
       integration.updatedAt = Date.now();
-      await saveEmailIntegration(integration);
+      await saveRobloxLiveIntegration(integration);
     }
   });
-  emailAlertEvaluationLocks.set(scopeKey, current);
+  robloxLiveEvaluationLocks.set(scopeKey, current);
   try {
     await current;
   } finally {
-    if (emailAlertEvaluationLocks.get(scopeKey) === current) emailAlertEvaluationLocks.delete(scopeKey);
+    if (robloxLiveEvaluationLocks.get(scopeKey) === current) robloxLiveEvaluationLocks.delete(scopeKey);
+  }
+}
+
+async function getEnabledRobloxLiveIntegrations() {
+  const db = await getMongoDb();
+  if (db) {
+    const documents = await db.collection("roblox_live_integrations")
+      .find({
+        enabled: true,
+        rules: { $elemMatch: { triggerType: "schedule", enabled: { $ne: false } } },
+      })
+      .project({ _id: 0 })
+      .toArray();
+    return documents.map(normalizeStoredRobloxLiveIntegration).filter(Boolean);
+  }
+  return (await readLocalRobloxLiveIntegrationStore())
+    .map(normalizeStoredRobloxLiveIntegration)
+    .filter((integration) => (
+      integration?.enabled
+      && integration.rules?.some((rule) => rule.triggerType === "schedule" && rule.enabled !== false)
+    ));
+}
+
+async function evaluateScheduledRobloxLiveActions() {
+  const integrations = await getEnabledRobloxLiveIntegrations();
+  for (const listedIntegration of integrations) {
+    const scopeKey = getRobloxLiveIntegrationScopeKey(
+      listedIntegration.ownerUserId,
+      listedIntegration.universeId,
+    );
+    const previous = robloxLiveEvaluationLocks.get(scopeKey) || Promise.resolve();
+    const current = previous.catch(() => {}).then(async () => {
+      const integration = await readRobloxLiveIntegration(
+        listedIntegration.ownerUserId,
+        listedIntegration.universeId,
+      ) || listedIntegration;
+      if (!integration.enabled || !hasRobloxLiveAuthorization(integration)) return;
+      const now = Date.now();
+      let changed = false;
+      for (const rule of integration.rules || []) {
+        if (rule.enabled === false || rule.triggerType !== "schedule") continue;
+        if (!cleanInteger(rule.nextRunAt)) {
+          rule.nextRunAt = now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
+          changed = true;
+          continue;
+        }
+        if (cleanInteger(rule.nextRunAt) > now) continue;
+        rule.lastAttemptedAt = now;
+        try {
+          const result = await deliverRobloxLiveAction(integration, rule, "schedule");
+          rule.lastTriggeredAt = result.delivery.sentAt;
+          rule.lastAttemptStatus = "published";
+          rule.lastError = "";
+        } catch (error) {
+          rule.lastAttemptStatus = "failed";
+          rule.lastError = cleanString(error?.message, 240) || "Roblox live action failed.";
+        }
+        rule.nextRunAt = now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
+        rule.updatedAt = Date.now();
+        changed = true;
+        if (!integration.enabled) break;
+      }
+      if (changed) {
+        integration.updatedAt = Date.now();
+        await saveRobloxLiveIntegration(integration);
+      }
+    });
+    robloxLiveEvaluationLocks.set(scopeKey, current);
+    try {
+      await current;
+    } catch (error) {
+      console.warn(
+        `Could not evaluate scheduled Roblox live actions for universe ${listedIntegration.universeId}:`,
+        error.message || error,
+      );
+    } finally {
+      if (robloxLiveEvaluationLocks.get(scopeKey) === current) robloxLiveEvaluationLocks.delete(scopeKey);
+    }
   }
 }
 
@@ -3981,12 +4321,14 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       message: "Start the universe connection again from the dashboard.",
     });
   }
+  const oauthBackHref = oauthState.purpose === "roblox-live" ? "/#roblox-live" : "/";
 
   if (Date.now() - cleanInteger(oauthState.createdAt) > ROBLOX_OAUTH_STATE_MAX_AGE_MS) {
     return sendRobloxOAuthResult(res, {
       ok: false,
       title: "Roblox verification expired",
       message: "Start the universe connection again from the dashboard.",
+      backHref: oauthBackHref,
     });
   }
 
@@ -3996,6 +4338,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       ok: false,
       title: "Roblox verification was cancelled",
       message: error,
+      backHref: oauthBackHref,
     });
   }
 
@@ -4006,6 +4349,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       ok: false,
       title: "Roblox verification failed",
       message: "The OAuth state did not match. Start again from the dashboard.",
+      backHref: oauthBackHref,
     });
   }
 
@@ -4020,6 +4364,87 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       user.lastLoginAt = lastLoginAt;
       setDashboardAuthCookie(res, user);
       return redirect(res, "/");
+    }
+
+    if (oauthState.purpose === "roblox-live") {
+      if (!auth || oauthState.userId !== auth.userId) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Roblox authorization expired",
+          message: "Start live-action authorization again from the dashboard.",
+          backHref: "/#roblox-live",
+        });
+      }
+      const universeId = cleanInteger(oauthState.universeId);
+      const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+      if (!project || isDemoProject(project)) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Universe unavailable",
+          message: "This universe is not connected to your dashboard account.",
+          backHref: "/#roblox-live",
+        });
+      }
+      const grantedScopes = new Set(cleanString(tokens.scope, 500).split(/\s+/).filter(Boolean));
+      if (!grantedScopes.has("universe-messaging-service:publish")) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Messaging permission missing",
+          message: "Authorize the universe-messaging-service:publish permission to use live actions.",
+          backHref: "/#roblox-live",
+        });
+      }
+      const resources = await getRobloxOAuthTokenResources({
+        accessToken: tokens.access_token,
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+      if (!getAuthorizedRobloxUniverseIds(resources).has(String(universeId))) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Universe permission missing",
+          message: "The Roblox authorization did not include the selected universe.",
+          backHref: "/#roblox-live",
+        });
+      }
+      if (!tokens.refresh_token) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Renewable authorization missing",
+          message: "Roblox did not return a refresh token. Start authorization again.",
+          backHref: "/#roblox-live",
+        });
+      }
+
+      const now = Date.now();
+      const integration = await readRobloxLiveIntegration(auth.userId, universeId)
+        || createEmptyRobloxLiveIntegration(auth.userId, universeId);
+      integration.oauth = {
+        accessToken: encryptRobloxLiveOAuthToken(tokens.access_token),
+        refreshToken: encryptRobloxLiveOAuthToken(tokens.refresh_token),
+        expiresAt: now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000,
+        scope: cleanString(tokens.scope, 500),
+        robloxUserId: cleanInteger(robloxUser.sub),
+        robloxUsername: cleanString(
+          robloxUser.preferred_username || robloxUser.name || robloxUser.nickname,
+          80,
+        ),
+        authorizationValid: true,
+        connectedAt: now,
+        lastRefreshedAt: now,
+        lastError: "",
+      };
+      integration.enabled = false;
+      integration.updatedAt = now;
+      await saveRobloxLiveIntegration(integration);
+      return sendRobloxOAuthResult(res, {
+        ok: true,
+        title: "Roblox live actions authorized",
+        message: "Authorization is saved. Enable live actions when your in-game handlers are ready.",
+        universeId,
+        universeName: project.name || `Universe ${universeId}`,
+        backHref: "/#roblox-live",
+      });
     }
 
     if (oauthState.purpose !== "project" || !auth || oauthState.userId !== auth.userId) {
@@ -4089,6 +4514,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         ok: false,
         title: "Universe already connected",
         message: "This universe is already connected to an account.",
+        backHref: oauthBackHref,
       });
     }
 
@@ -4096,6 +4522,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       ok: false,
       title: "Roblox verification failed",
       message: error.message || String(error),
+      backHref: oauthBackHref,
     });
   }
 }
@@ -4147,6 +4574,9 @@ async function handlePresenceHeartbeat(req, res) {
     }),
   ]);
   const objectStorageResult = await persistPresenceToObjectStorage(presence.value, usageContext);
+  const acknowledgedLiveActionCount = project
+    ? await processRobloxLiveAcknowledgements(presence.value, project)
+    : 0;
   if (usageContext.userId && eventCount > 0) {
     await recordUsage({
       ...usageContext,
@@ -4174,9 +4604,9 @@ async function handlePresenceHeartbeat(req, res) {
           error.message || error,
         );
       });
-      evaluateEmailAlertsForPresence(presence.value, project).catch((error) => {
+      evaluateRobloxLiveEventRulesForPresence(presence.value, project).catch((error) => {
         console.warn(
-          `Could not evaluate email alerts for universe ${presence.value.universeId}:`,
+          `Could not evaluate Roblox live actions for universe ${presence.value.universeId}:`,
           error.message || error,
         );
       });
@@ -4206,6 +4636,7 @@ async function handlePresenceHeartbeat(req, res) {
     savedLeaveCount,
     savedVisitCount,
     savedCustomEventCount,
+    acknowledgedLiveActionCount,
     heatmap: getRobloxHeatmap(presence.value.universeId),
   });
 }
@@ -4319,17 +4750,45 @@ function isRobloxOAuthConfigured() {
   return Boolean(ROBLOX_OAUTH_CLIENT_ID && ROBLOX_OAUTH_CLIENT_SECRET && ROBLOX_OAUTH_REDIRECT_URI);
 }
 
-function getRobloxAuthorizeUrl({ state, nonce, codeChallenge }) {
+function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OAUTH_SCOPES }) {
   const authorizeUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
   authorizeUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
   authorizeUrl.searchParams.set("redirect_uri", ROBLOX_OAUTH_REDIRECT_URI);
-  authorizeUrl.searchParams.set("scope", ROBLOX_OAUTH_SCOPES);
+  authorizeUrl.searchParams.set("scope", scopes);
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("state", state);
   authorizeUrl.searchParams.set("nonce", nonce);
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
   return authorizeUrl.toString();
+}
+
+function getAuthorizedRobloxUniverseIds(payload) {
+  const universeIds = new Set();
+  const visit = (value, insideUniverseResource = false) => {
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, insideUniverseResource);
+      return;
+    }
+    if (!value || typeof value !== "object") {
+      if (insideUniverseResource) {
+        const universeId = cleanInteger(value);
+        if (universeId > 0) universeIds.add(String(universeId));
+      }
+      return;
+    }
+    for (const [key, entry] of Object.entries(value)) {
+      const normalizedKey = key.toLowerCase();
+      const isUniverseResource = insideUniverseResource
+        || normalizedKey === "universe"
+        || normalizedKey === "universes"
+        || normalizedKey === "universeids"
+        || normalizedKey === "universe_ids";
+      visit(entry, isUniverseResource);
+    }
+  };
+  visit(payload);
+  return universeIds;
 }
 
 function isMatchingSecret(value, expectedValue) {
@@ -4381,6 +4840,27 @@ function normalizePresence(body) {
   const leaveSamples = normalizeLeaveSamples(body.leaveSamples, context);
   const visitSamples = normalizeVisitSamples(cleanPlayers, context);
   const customEvents = normalizeCustomEvents(body.customEvents, context);
+  const liveActionKeys = [...new Set(
+    (Array.isArray(body.liveActionKeys) ? body.liveActionKeys : [])
+      .slice(0, MAX_ROBLOX_LIVE_ACTION_KEYS_PER_SERVER)
+      .map((value) => {
+        try {
+          return normalizeRobloxActionKey(value);
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean),
+  )];
+  const liveActionAcks = (Array.isArray(body.liveActionAcks) ? body.liveActionAcks : [])
+    .slice(0, MAX_ROBLOX_LIVE_ACKS_PER_PAYLOAD)
+    .map((ack) => ({
+      deliveryId: cleanString(ack?.deliveryId, 120),
+      status: normalizeRobloxLiveAckStatus(ack?.status),
+      message: cleanString(ack?.message, 160),
+      processedAt: cleanTimestampMs(ack?.processedAt) || receivedAt,
+    }))
+    .filter((ack) => ack.deliveryId);
 
   return {
     ok: true,
@@ -4402,6 +4882,8 @@ function normalizePresence(body) {
       leaveSamples,
       visitSamples,
       customEvents,
+      liveActionKeys,
+      liveActionAcks,
     },
   };
 }
@@ -14286,7 +14768,7 @@ async function deleteMongoUniverseData(universeId) {
     "event_definitions",
     "funnels",
     "discord_integrations",
-    "email_integrations",
+    "roblox_live_integrations",
     "map_snapshots",
     "map_snapshot_chunks",
   ]) {
@@ -14332,22 +14814,23 @@ async function deleteLocalUniverseData(universeId) {
   for (const scopeKey of [...discordIntegrationCache.keys()]) {
     if (scopeKey.endsWith(`:${universeId}`)) discordIntegrationCache.delete(scopeKey);
   }
-  const deletedEmailIntegrations = await withLocalEmailIntegrationStoreLock(async () => {
-    const integrations = await readLocalEmailIntegrationStore();
+  const deletedRobloxLiveIntegrations = await withLocalRobloxLiveIntegrationStoreLock(async () => {
+    const integrations = await readLocalRobloxLiveIntegrationStore();
     const nextIntegrations = integrations.filter((integration) => cleanInteger(integration.universeId) !== universeId);
-    if (nextIntegrations.length !== integrations.length) await writeLocalEmailIntegrationStore(nextIntegrations);
+    if (nextIntegrations.length !== integrations.length) await writeLocalRobloxLiveIntegrationStore(nextIntegrations);
     return integrations.length - nextIntegrations.length;
   });
-  for (const scopeKey of [...emailIntegrationCache.keys()]) {
-    if (scopeKey.endsWith(`:${universeId}`)) emailIntegrationCache.delete(scopeKey);
+  for (const scopeKey of [...robloxLiveIntegrationCache.keys()]) {
+    if (scopeKey.endsWith(`:${universeId}`)) robloxLiveIntegrationCache.delete(scopeKey);
   }
+  robloxLiveCapabilitiesByUniverse.delete(String(universeId));
   return {
     mapSnapshot,
     funnels: deletedFunnels,
     eventDefinitions: deletedEventDefinitions,
     customEventDeletions: deletedCustomEventDeletions,
     discordIntegrations: deletedDiscordIntegrations,
-    emailIntegrations: deletedEmailIntegrations,
+    robloxLiveIntegrations: deletedRobloxLiveIntegrations,
   };
 }
 
@@ -14530,6 +15013,9 @@ function isCompressibleContentType(value) {
 
 function sendRobloxOAuthResult(res, result) {
   const ok = Boolean(result.ok);
+  const backHref = /^\/(?:#[-a-z0-9]+)?$/i.test(String(result.backHref || ""))
+    ? String(result.backHref)
+    : "/";
   const secretHtml = result.secret
     ? `<div class="secret"><span>Roblox secret</span><code>${escapeHtml(result.secret)}</code></div>`
     : "";
@@ -14560,7 +15046,7 @@ function sendRobloxOAuthResult(res, result) {
       ${subtitle}
       <p>${escapeHtml(result.message || "")}</p>
       ${secretHtml}
-      <a href="/">Back to dashboard</a>
+      <a href="${escapeHtml(backHref)}">Back to dashboard</a>
     </main>
   </body>
 </html>`);

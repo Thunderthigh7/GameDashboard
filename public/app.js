@@ -78,43 +78,45 @@ const discordAlertPreviewRule = document.querySelector("#discordAlertPreviewRule
 const discordRuleFormStatus = document.querySelector("#discordRuleFormStatus");
 const discordRuleCancelButton = document.querySelector("#discordRuleCancelButton");
 const discordRuleSaveButton = document.querySelector("#discordRuleSaveButton");
-const emailConnectionForm = document.querySelector("#emailConnectionForm");
-const emailRecipientSelect = document.querySelector("#emailRecipientSelect");
-const emailRecipientName = document.querySelector("#emailRecipientName");
-const emailRecipientAddress = document.querySelector("#emailRecipientAddress");
-const emailConnectionBadge = document.querySelector("#emailConnectionBadge");
-const emailSendStatus = document.querySelector("#emailSendStatus");
-const emailSaveRecipientButton = document.querySelector("#emailSaveRecipientButton");
-const emailTestButton = document.querySelector("#emailTestButton");
-const emailDeleteRecipientButton = document.querySelector("#emailDeleteRecipientButton");
-const emailNewRuleButton = document.querySelector("#emailNewRuleButton");
-const emailRuleCount = document.querySelector("#emailRuleCount");
-const emailRulesStatus = document.querySelector("#emailRulesStatus");
-const emailRuleList = document.querySelector("#emailRuleList");
-const emailRuleDialog = document.querySelector("#emailRuleDialog");
-const emailRuleDialogBackdrop = document.querySelector("#emailRuleDialogBackdrop");
-const emailRuleCloseButton = document.querySelector("#emailRuleCloseButton");
-const emailRuleDialogTitle = document.querySelector("#emailRuleDialogTitle");
-const emailRuleForm = document.querySelector("#emailRuleForm");
-const emailRuleId = document.querySelector("#emailRuleId");
-const emailRuleName = document.querySelector("#emailRuleName");
-const emailRuleEvent = document.querySelector("#emailRuleEvent");
-const emailRuleRecipient = document.querySelector("#emailRuleRecipient");
-const emailRuleOperator = document.querySelector("#emailRuleOperator");
-const emailRuleThreshold = document.querySelector("#emailRuleThreshold");
-const emailRuleWindow = document.querySelector("#emailRuleWindow");
-const emailRuleCooldown = document.querySelector("#emailRuleCooldown");
-const emailRuleSubject = document.querySelector("#emailRuleSubject");
-const emailRuleSubjectCount = document.querySelector("#emailRuleSubjectCount");
-const emailRuleMessage = document.querySelector("#emailRuleMessage");
-const emailRuleMessageCount = document.querySelector("#emailRuleMessageCount");
-const emailAlertPreviewSubject = document.querySelector("#emailAlertPreviewSubject");
-const emailAlertPreviewMessage = document.querySelector("#emailAlertPreviewMessage");
-const emailAlertPreviewEvent = document.querySelector("#emailAlertPreviewEvent");
-const emailAlertPreviewRule = document.querySelector("#emailAlertPreviewRule");
-const emailRuleFormStatus = document.querySelector("#emailRuleFormStatus");
-const emailRuleCancelButton = document.querySelector("#emailRuleCancelButton");
-const emailRuleSaveButton = document.querySelector("#emailRuleSaveButton");
+const robloxLiveConnectionBadge = document.querySelector("#robloxLiveConnectionBadge");
+const robloxLiveAuthorizationTitle = document.querySelector("#robloxLiveAuthorizationTitle");
+const robloxLiveAuthorizationCopy = document.querySelector("#robloxLiveAuthorizationCopy");
+const robloxLiveAuthorizeButton = document.querySelector("#robloxLiveAuthorizeButton");
+const robloxLiveMasterToggle = document.querySelector("#robloxLiveMasterToggle");
+const robloxLiveMasterState = document.querySelector("#robloxLiveMasterState");
+const robloxLiveTestButton = document.querySelector("#robloxLiveTestButton");
+const robloxLiveDisconnectButton = document.querySelector("#robloxLiveDisconnectButton");
+const robloxLiveServerCount = document.querySelector("#robloxLiveServerCount");
+const robloxLiveActionCount = document.querySelector("#robloxLiveActionCount");
+const robloxLiveTopic = document.querySelector("#robloxLiveTopic");
+const robloxLiveStatus = document.querySelector("#robloxLiveStatus");
+const robloxLiveRuleCount = document.querySelector("#robloxLiveRuleCount");
+const robloxLiveNewRuleButton = document.querySelector("#robloxLiveNewRuleButton");
+const robloxLiveRuleList = document.querySelector("#robloxLiveRuleList");
+const robloxLiveDeliveryList = document.querySelector("#robloxLiveDeliveryList");
+const robloxLiveRuleDialog = document.querySelector("#robloxLiveRuleDialog");
+const robloxLiveRuleDialogBackdrop = document.querySelector("#robloxLiveRuleDialogBackdrop");
+const robloxLiveRuleCloseButton = document.querySelector("#robloxLiveRuleCloseButton");
+const robloxLiveRuleDialogTitle = document.querySelector("#robloxLiveRuleDialogTitle");
+const robloxLiveRuleForm = document.querySelector("#robloxLiveRuleForm");
+const robloxLiveRuleId = document.querySelector("#robloxLiveRuleId");
+const robloxLiveRuleName = document.querySelector("#robloxLiveRuleName");
+const robloxLiveRuleTrigger = document.querySelector("#robloxLiveRuleTrigger");
+const robloxLiveEventCondition = document.querySelector("#robloxLiveEventCondition");
+const robloxLiveScheduleCondition = document.querySelector("#robloxLiveScheduleCondition");
+const robloxLiveRuleEvent = document.querySelector("#robloxLiveRuleEvent");
+const robloxLiveRuleOperator = document.querySelector("#robloxLiveRuleOperator");
+const robloxLiveRuleThreshold = document.querySelector("#robloxLiveRuleThreshold");
+const robloxLiveRuleWindow = document.querySelector("#robloxLiveRuleWindow");
+const robloxLiveRuleCooldown = document.querySelector("#robloxLiveRuleCooldown");
+const robloxLiveRuleSchedule = document.querySelector("#robloxLiveRuleSchedule");
+const robloxLiveRuleActionKey = document.querySelector("#robloxLiveRuleActionKey");
+const robloxLiveActionKeys = document.querySelector("#robloxLiveActionKeys");
+const robloxLiveRuleExpiry = document.querySelector("#robloxLiveRuleExpiry");
+const robloxLiveRuleParameters = document.querySelector("#robloxLiveRuleParameters");
+const robloxLiveRuleFormStatus = document.querySelector("#robloxLiveRuleFormStatus");
+const robloxLiveRuleCancelButton = document.querySelector("#robloxLiveRuleCancelButton");
+const robloxLiveRuleSaveButton = document.querySelector("#robloxLiveRuleSaveButton");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -320,10 +322,9 @@ let discordBusy = false;
 let discordIntegration = null;
 let discordIntegrationRequestSequence = 0;
 let discordEditingWebhookId = "";
-let emailBusy = false;
-let emailIntegration = null;
-let emailIntegrationRequestSequence = 0;
-let emailEditingRecipientId = "";
+let robloxLiveBusy = false;
+let robloxLiveIntegration = null;
+let robloxLiveIntegrationRequestSequence = 0;
 let aiChatBusy = false;
 let aiChatHistory = [];
 let heatmapModulePromise = null;
@@ -386,7 +387,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-03";
+const DASHBOARD_ASSET_VERSION = "20260726-05";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -451,7 +452,7 @@ const CHAT_REFRESH_MS = 5000;
 const CHAT_LOG_PAGE_SIZE = 25;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "email"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live"]);
 const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -543,26 +544,22 @@ function bindEvents() {
   discordRuleForm?.addEventListener("input", updateDiscordRulePreview);
   discordRuleForm?.addEventListener("change", updateDiscordRulePreview);
   document.addEventListener("keydown", handleDiscordRuleDialogKeydown);
-  emailConnectionForm?.addEventListener("submit", (event) => {
+  robloxLiveAuthorizeButton?.addEventListener("click", authorizeRobloxLiveActions);
+  robloxLiveMasterToggle?.addEventListener("change", updateRobloxLiveMasterState);
+  robloxLiveTestButton?.addEventListener("click", testRobloxLiveActions);
+  robloxLiveDisconnectButton?.addEventListener("click", disconnectRobloxLiveActions);
+  robloxLiveNewRuleButton?.addEventListener("click", () => openRobloxLiveRuleEditor());
+  robloxLiveRuleList?.addEventListener("click", handleRobloxLiveRuleListClick);
+  robloxLiveRuleTrigger?.addEventListener("change", syncRobloxLiveRuleTriggerFields);
+  robloxLiveRuleOperator?.addEventListener("change", syncRobloxLiveRuleThreshold);
+  robloxLiveRuleForm?.addEventListener("submit", (event) => {
     event.preventDefault();
-    saveEmailRecipient();
+    saveRobloxLiveRule();
   });
-  emailRecipientAddress?.addEventListener("input", clearEmailSendStatus);
-  emailRecipientSelect?.addEventListener("change", () => selectEmailRecipient(emailRecipientSelect.value));
-  emailTestButton?.addEventListener("click", testEmailConnection);
-  emailDeleteRecipientButton?.addEventListener("click", deleteEmailRecipient);
-  emailNewRuleButton?.addEventListener("click", () => openEmailRuleEditor());
-  emailRuleList?.addEventListener("click", handleEmailRuleListClick);
-  emailRuleForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    saveEmailAlertRule();
-  });
-  emailRuleCancelButton?.addEventListener("click", closeEmailRuleEditor);
-  emailRuleCloseButton?.addEventListener("click", closeEmailRuleEditor);
-  emailRuleDialogBackdrop?.addEventListener("click", closeEmailRuleEditor);
-  emailRuleForm?.addEventListener("input", updateEmailRulePreview);
-  emailRuleForm?.addEventListener("change", updateEmailRulePreview);
-  document.addEventListener("keydown", handleEmailRuleDialogKeydown);
+  robloxLiveRuleCancelButton?.addEventListener("click", closeRobloxLiveRuleEditor);
+  robloxLiveRuleCloseButton?.addEventListener("click", closeRobloxLiveRuleEditor);
+  robloxLiveRuleDialogBackdrop?.addEventListener("click", closeRobloxLiveRuleEditor);
+  document.addEventListener("keydown", handleRobloxLiveDialogKeydown);
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   connectNewGameButton?.addEventListener("click", () => {
     document.querySelector("#connectGameRow")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1129,14 +1126,11 @@ function setAuthenticated(value, user = null) {
     closeDiscordRuleEditor();
     renderDiscordIntegration();
     clearDiscordSendStatus();
-    setEmailBusy(false);
-    emailConnectionForm?.reset();
-    emailIntegration = null;
-    emailEditingRecipientId = "";
-    emailIntegrationRequestSequence += 1;
-    closeEmailRuleEditor();
-    renderEmailIntegration();
-    clearEmailSendStatus();
+    robloxLiveIntegration = null;
+    robloxLiveIntegrationRequestSequence += 1;
+    setRobloxLiveBusy(false);
+    closeRobloxLiveRuleEditor();
+    renderRobloxLiveIntegration();
     return;
   }
 
@@ -1169,7 +1163,7 @@ function getViewFromHash() {
   if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
   if (window.location.hash === "#discord") return "discord";
-  if (window.location.hash === "#email") return "email";
+  if (window.location.hash === "#roblox-live") return "roblox-live";
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#admin") return "admin";
@@ -1178,7 +1172,7 @@ function getViewFromHash() {
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "email" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
   if (lacksAdminAccess && (window.location.hash === "#admin" || window.location.hash === "#ai-runs")) {
@@ -1197,7 +1191,7 @@ function setActiveView(view, options = {}) {
     setEventDefinitionBuilderVisible(false);
   }
   if (activeView !== "discord") closeDiscordRuleEditor();
-  if (activeView !== "email") closeEmailRuleEditor();
+  if (activeView !== "roblox-live") closeRobloxLiveRuleEditor();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "events"
@@ -1210,8 +1204,8 @@ function setActiveView(view, options = {}) {
               ? "#chat"
               : activeView === "discord"
                 ? "#discord"
-                : activeView === "email"
-                  ? "#email"
+                : activeView === "roblox-live"
+                  ? "#roblox-live"
                   : activeView === "usage"
                     ? "#usage"
                     : activeView === "connect"
@@ -1275,8 +1269,8 @@ function renderActiveView(options = {}) {
       title: "Discord Alerts",
       subtitle: "",
     },
-    email: {
-      title: "Email Alerts",
+    "roblox-live": {
+      title: "Roblox Live Actions",
       subtitle: "",
     },
     usage: {
@@ -1345,8 +1339,8 @@ function loadActiveViewData(view, options = {}) {
       loadChatLogs({ includeInsights: false });
     } else if (view === "discord") {
       loadDiscordIntegration();
-    } else if (view === "email") {
-      loadEmailIntegration();
+    } else if (view === "roblox-live") {
+      loadRobloxLiveIntegration();
     }
     return;
   }
@@ -1364,8 +1358,8 @@ function loadActiveViewData(view, options = {}) {
     loadChatLogs({ includeInsights: false });
   } else if (view === "discord") {
     loadDiscordIntegration();
-  } else if (view === "email") {
-    loadEmailIntegration();
+  } else if (view === "roblox-live") {
+    loadRobloxLiveIntegration();
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -2244,524 +2238,450 @@ function setDiscordRuleFormBusy(busy) {
   }
 }
 
-function clearEmailSendStatus() {
-  if (!emailSendStatus || emailBusy) return;
-  emailSendStatus.textContent = "";
-  delete emailSendStatus.dataset.state;
+function setRobloxLiveStatus(message = "", state = "") {
+  if (!robloxLiveStatus) return;
+  robloxLiveStatus.textContent = message;
+  if (state) robloxLiveStatus.dataset.state = state;
+  else delete robloxLiveStatus.dataset.state;
 }
 
-function setEmailBusy(busy) {
-  emailBusy = busy;
-  if (emailRecipientSelect) emailRecipientSelect.disabled = busy;
-  if (emailRecipientName) emailRecipientName.disabled = busy;
-  if (emailRecipientAddress) emailRecipientAddress.disabled = busy;
-  const connected = Boolean(emailIntegration?.connection?.connected);
-  const providerConfigured = Boolean(emailIntegration?.provider?.configured);
-  const hasSelection = Boolean(getEditingEmailRecipient());
-  if (emailSaveRecipientButton) {
-    emailSaveRecipientButton.disabled = busy;
-    emailSaveRecipientButton.setAttribute("aria-busy", String(busy));
+function setRobloxLiveBusy(busy) {
+  robloxLiveBusy = busy;
+  const connected = Boolean(robloxLiveIntegration?.connection?.connected);
+  if (robloxLiveAuthorizeButton) robloxLiveAuthorizeButton.disabled = busy;
+  if (robloxLiveMasterToggle) robloxLiveMasterToggle.disabled = busy || !connected;
+  if (robloxLiveTestButton) robloxLiveTestButton.disabled = busy || !connected;
+  if (robloxLiveDisconnectButton) robloxLiveDisconnectButton.disabled = busy || !connected;
+  if (robloxLiveNewRuleButton) {
+    const ruleCount = robloxLiveIntegration?.rules?.length || 0;
+    const maxRules = Number(robloxLiveIntegration?.limits?.rules) || 20;
+    robloxLiveNewRuleButton.disabled = busy || !connected || ruleCount >= maxRules;
   }
-  if (emailTestButton) emailTestButton.disabled = busy || !hasSelection || !providerConfigured;
-  if (emailDeleteRecipientButton) emailDeleteRecipientButton.disabled = busy || !hasSelection;
-  if (emailNewRuleButton) emailNewRuleButton.disabled = busy || !connected;
 }
 
-async function loadEmailIntegration() {
-  if (!authenticated || !selectedUniverseId || !emailRuleList) {
-    emailIntegration = null;
-    renderEmailIntegration();
+async function loadRobloxLiveIntegration() {
+  if (!authenticated || !selectedUniverseId || !robloxLiveRuleList) {
+    robloxLiveIntegration = null;
+    renderRobloxLiveIntegration();
     return;
   }
-  const requestSequence = ++emailIntegrationRequestSequence;
-  const universeId = selectedUniverseId;
-  if (emailRulesStatus) {
-    emailRulesStatus.textContent = "Loading email alerts...";
-    delete emailRulesStatus.dataset.state;
-  }
+  const sequence = ++robloxLiveIntegrationRequestSequence;
+  setRobloxLiveStatus("Loading live actions...", "sending");
   try {
-    const payload = await request(`/api/integrations/email?universeId=${encodeURIComponent(universeId)}`);
-    if (requestSequence !== emailIntegrationRequestSequence || universeId !== selectedUniverseId) return;
-    emailIntegration = payload;
-    emailEditingRecipientId = payload?.connection?.selectedRecipientId || "";
-    renderEmailIntegration();
-    if (emailRulesStatus) {
-      emailRulesStatus.textContent = payload?.provider?.configured
-        ? ""
-        : "Email sending needs RESEND_API_KEY and EMAIL_FROM on the server.";
-      emailRulesStatus.dataset.state = payload?.provider?.configured ? "" : "error";
-    }
+    const universeId = selectedUniverseId;
+    const payload = await request(`/api/integrations/roblox-live?universeId=${encodeURIComponent(universeId)}`);
+    if (sequence !== robloxLiveIntegrationRequestSequence || universeId !== selectedUniverseId) return;
+    robloxLiveIntegration = payload;
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
-    if (!authenticated || requestSequence !== emailIntegrationRequestSequence) return;
-    emailIntegration = null;
-    renderEmailIntegration();
-    if (emailRulesStatus) {
-      emailRulesStatus.dataset.state = "error";
-      emailRulesStatus.textContent = formatRequestError(error);
-    }
+    if (!authenticated || sequence !== robloxLiveIntegrationRequestSequence) return;
+    robloxLiveIntegration = null;
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus(formatRequestError(error), "error");
   }
 }
 
-async function saveEmailRecipient() {
-  if (!authenticated || emailBusy || !selectedUniverseId || !emailConnectionForm) return;
-  if (!emailConnectionForm.reportValidity()) return;
-  const updatingExistingRecipient = Boolean(emailEditingRecipientId);
-  setEmailBusy(true);
-  if (emailSendStatus) {
-    emailSendStatus.dataset.state = "sending";
-    emailSendStatus.textContent = "Saving recipient...";
-  }
+function authorizeRobloxLiveActions() {
+  if (!authenticated || robloxLiveBusy || !selectedUniverseId) return;
+  setRobloxLiveStatus("Opening Roblox authorization...", "sending");
+  window.location.href = `/api/integrations/roblox-live/oauth/start?universeId=${encodeURIComponent(selectedUniverseId)}`;
+}
+
+async function updateRobloxLiveMasterState() {
+  if (!authenticated || robloxLiveBusy || !selectedUniverseId || !robloxLiveMasterToggle) return;
+  const enabled = robloxLiveMasterToggle.checked;
+  setRobloxLiveBusy(true);
+  setRobloxLiveStatus(enabled ? "Enabling live actions..." : "Pausing live actions...", "sending");
   try {
-    const payload = await request("/api/integrations/email/recipient", {
+    robloxLiveIntegration = await request("/api/integrations/roblox-live/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        universeId: selectedUniverseId,
-        recipientId: emailEditingRecipientId,
-        name: String(emailRecipientName?.value || "").trim(),
-        email: String(emailRecipientAddress?.value || "").trim(),
-      }),
+      body: JSON.stringify({ universeId: selectedUniverseId, enabled }),
     });
-    emailIntegration = payload;
-    emailEditingRecipientId = payload?.connection?.selectedRecipientId || "";
-    renderEmailIntegration();
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "success";
-      emailSendStatus.textContent = updatingExistingRecipient ? "Recipient saved." : "Recipient added.";
-    }
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus(enabled ? "Live actions enabled." : "Live actions paused.", "success");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "error";
-      emailSendStatus.textContent = formatRequestError(error);
-    }
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus(formatRequestError(error), "error");
   } finally {
-    setEmailBusy(false);
+    setRobloxLiveBusy(false);
   }
 }
 
-async function testEmailConnection() {
-  const recipient = getEditingEmailRecipient();
-  if (!authenticated || emailBusy || !selectedUniverseId || !recipient) return;
-  setEmailBusy(true);
-  if (emailSendStatus) {
-    emailSendStatus.dataset.state = "sending";
-    emailSendStatus.textContent = "Sending test email...";
-  }
+async function testRobloxLiveActions() {
+  if (!authenticated || robloxLiveBusy || !selectedUniverseId) return;
+  setRobloxLiveBusy(true);
+  setRobloxLiveStatus("Publishing connection test...", "sending");
   try {
-    await request("/api/integrations/email/test", {
+    await request("/api/integrations/roblox-live/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ universeId: selectedUniverseId, recipientId: recipient.id }),
+      body: JSON.stringify({ universeId: selectedUniverseId }),
     });
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "success";
-      emailSendStatus.textContent = "Test email delivered.";
-    }
-    await loadEmailIntegration();
+    await loadRobloxLiveIntegration();
+    setRobloxLiveStatus("Test published. A live server will acknowledge it on its next heartbeat.", "success");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "error";
-      emailSendStatus.textContent = formatRequestError(error);
-    }
+    setRobloxLiveStatus(formatRequestError(error), "error");
   } finally {
-    setEmailBusy(false);
+    setRobloxLiveBusy(false);
   }
 }
 
-async function deleteEmailRecipient() {
-  const recipient = getEditingEmailRecipient();
-  if (!authenticated || emailBusy || !selectedUniverseId || !recipient) return;
+async function disconnectRobloxLiveActions() {
+  if (!authenticated || robloxLiveBusy || !selectedUniverseId) return;
   const confirmed = await showEventConfirmation({
-    title: `Delete ${recipient.name}?`,
-    description: "Rules using this recipient will be paused until you choose another delivery recipient.",
-    actionLabel: "Delete recipient",
+    title: "Disconnect Roblox live actions?",
+    description: "Rules stay saved, but publishing stops until you authorize Roblox again.",
+    actionLabel: "Disconnect",
     tone: "danger",
   });
   if (!confirmed) return;
-  setEmailBusy(true);
+  setRobloxLiveBusy(true);
+  setRobloxLiveStatus("Revoking Roblox authorization...", "sending");
   try {
-    emailIntegration = await request(`/api/integrations/email/recipient?universeId=${encodeURIComponent(selectedUniverseId)}&recipientId=${encodeURIComponent(recipient.id)}`, {
-      method: "DELETE",
-    });
-    emailEditingRecipientId = emailIntegration?.connection?.selectedRecipientId || "";
-    renderEmailIntegration();
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "success";
-      emailSendStatus.textContent = "Recipient deleted.";
-    }
+    robloxLiveIntegration = await request(
+      `/api/integrations/roblox-live/oauth?universeId=${encodeURIComponent(selectedUniverseId)}`,
+      { method: "DELETE" },
+    );
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus("Roblox live actions disconnected.", "success");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "error";
-      emailSendStatus.textContent = formatRequestError(error);
-    }
+    setRobloxLiveStatus(formatRequestError(error), "error");
   } finally {
-    setEmailBusy(false);
+    setRobloxLiveBusy(false);
   }
 }
 
-async function selectEmailRecipient(value) {
-  const recipientId = String(value || "");
-  emailEditingRecipientId = recipientId;
-  clearEmailSendStatus();
-  if (!recipientId) {
-    renderEmailRecipientEditor();
-    return;
+function renderRobloxLiveIntegration() {
+  const connection = robloxLiveIntegration?.connection || {};
+  const runtime = robloxLiveIntegration?.runtime || {};
+  const rules = Array.isArray(robloxLiveIntegration?.rules) ? robloxLiveIntegration.rules : [];
+  const deliveries = Array.isArray(robloxLiveIntegration?.deliveries) ? robloxLiveIntegration.deliveries : [];
+  const connected = Boolean(connection.connected);
+  const authorizationError = connection.authorizationValid === false && Boolean(connection.connectedAt);
+  if (robloxLiveConnectionBadge) {
+    robloxLiveConnectionBadge.dataset.state = authorizationError ? "error" : connected ? "connected" : "disconnected";
+    robloxLiveConnectionBadge.textContent = authorizationError
+      ? "Authorization expired"
+      : connected
+        ? "Authorized"
+        : "Not authorized";
   }
-  if (!authenticated || emailBusy || !selectedUniverseId) return;
-  setEmailBusy(true);
-  try {
-    emailIntegration = await request("/api/integrations/email/recipient/select", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ universeId: selectedUniverseId, recipientId }),
-    });
-    emailEditingRecipientId = emailIntegration?.connection?.selectedRecipientId || recipientId;
-    renderEmailIntegration();
-  } catch (error) {
-    handleAuthError(error);
-    if (!authenticated) return;
-    if (emailSendStatus) {
-      emailSendStatus.dataset.state = "error";
-      emailSendStatus.textContent = formatRequestError(error);
+  if (robloxLiveAuthorizationTitle) {
+    robloxLiveAuthorizationTitle.textContent = connected
+      ? `Connected as ${connection.robloxUsername || "Roblox user"}`
+      : "Authorize MessagingService";
+  }
+  if (robloxLiveAuthorizationCopy) {
+    robloxLiveAuthorizationCopy.textContent = connected
+      ? "Scoped to this universe with renewable Open Cloud authorization."
+      : "Grant publish access for this universe. No Roblox code is stored here.";
+  }
+  if (robloxLiveAuthorizeButton) {
+    robloxLiveAuthorizeButton.textContent = connected ? "Reauthorize" : "Authorize Roblox";
+  }
+  if (robloxLiveMasterToggle) robloxLiveMasterToggle.checked = Boolean(connection.enabled);
+  if (robloxLiveMasterState) robloxLiveMasterState.textContent = connection.enabled ? "Running" : "Paused";
+  if (robloxLiveServerCount) robloxLiveServerCount.textContent = formatCompactNumber(runtime.liveServers || 0);
+  if (robloxLiveActionCount) robloxLiveActionCount.textContent = formatCompactNumber(runtime.detectedActions?.length || 0);
+  if (robloxLiveTopic) robloxLiveTopic.textContent = connection.topic || "roanalytics-live-actions-v1";
+  if (robloxLiveRuleCount) {
+    robloxLiveRuleCount.textContent = `${rules.length} / ${Number(robloxLiveIntegration?.limits?.rules) || 20}`;
+  }
+  if (robloxLiveActionKeys) {
+    robloxLiveActionKeys.innerHTML = (runtime.detectedActions || [])
+      .filter((action) => action.actionKey !== "roanalytics_test")
+      .map((action) => `<option value="${escapeHtml(action.actionKey)}"></option>`)
+      .join("");
+  }
+
+  if (robloxLiveRuleList) {
+    if (!selectedUniverseId) {
+      robloxLiveRuleList.innerHTML = `<div class="robloxLiveEmpty"><strong>Select a universe</strong><span>Live actions are configured per universe.</span></div>`;
+    } else if (!connected) {
+      robloxLiveRuleList.innerHTML = `<div class="robloxLiveEmpty"><strong>Authorize Roblox to create live actions</strong><span>Only action keys registered by your server can run.</span></div>`;
+    } else if (!rules.length) {
+      robloxLiveRuleList.innerHTML = `<div class="robloxLiveEmpty"><strong>No action rules</strong><span>Create an analytics requirement or repeating schedule.</span></div>`;
+    } else {
+      robloxLiveRuleList.innerHTML = rules.map(renderRobloxLiveRuleRow).join("");
     }
-    emailEditingRecipientId = emailIntegration?.connection?.selectedRecipientId || "";
-    renderEmailRecipientEditor();
-  } finally {
-    setEmailBusy(false);
   }
+  if (robloxLiveDeliveryList) {
+    robloxLiveDeliveryList.innerHTML = deliveries.length
+      ? deliveries.map(renderRobloxLiveDeliveryRow).join("")
+      : `<div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Tests and triggered actions appear here.</span></div>`;
+  }
+  if (connection.lastError) setRobloxLiveStatus(connection.lastError, "error");
+  setRobloxLiveBusy(robloxLiveBusy);
 }
 
-function getEditingEmailRecipient() {
-  return emailIntegration?.recipients?.find((recipient) => recipient.id === emailEditingRecipientId) || null;
-}
-
-function renderEmailIntegration() {
-  const connected = Boolean(emailIntegration?.connection?.connected);
-  const recipients = Array.isArray(emailIntegration?.recipients) ? emailIntegration.recipients : [];
-  const rules = Array.isArray(emailIntegration?.rules) ? emailIntegration.rules : [];
-  const maxRules = Number(emailIntegration?.limits?.rules) || 20;
-  const maxRecipients = Number(emailIntegration?.limits?.recipients) || 20;
-  if (emailConnectionBadge) {
-    emailConnectionBadge.dataset.state = connected ? "connected" : "disconnected";
-    emailConnectionBadge.textContent = `${recipients.length} / ${maxRecipients} saved`;
-  }
-  renderEmailRecipientEditor();
-  if (emailNewRuleButton) emailNewRuleButton.disabled = emailBusy || !connected || rules.length >= maxRules;
-  if (emailRuleCount) emailRuleCount.textContent = `${rules.length} / ${maxRules}`;
-  if (!emailRuleList) return;
-  if (!selectedUniverseId) {
-    emailRuleList.innerHTML = `
-      <div class="discordRuleEmpty">
-        <strong>Select a universe</strong>
-        <span>Email alerts are configured separately for each game.</span>
-      </div>`;
-  } else if (!connected) {
-    emailRuleList.innerHTML = `
-      <div class="discordRuleEmpty">
-        <strong>Add an email recipient</strong>
-        <span>Rules will monitor your Roblox events automatically.</span>
-      </div>`;
-  } else if (!rules.length) {
-    emailRuleList.innerHTML = `
-      <div class="discordRuleEmpty">
-        <strong>No email alert rules yet</strong>
-        <span>Create a rule for a high-value event, a spike, or missing activity.</span>
-      </div>`;
-  } else {
-    emailRuleList.innerHTML = rules.map(renderEmailRuleRow).join("");
-  }
-  setEmailBusy(emailBusy);
-}
-
-function renderEmailRecipientEditor() {
-  const recipients = Array.isArray(emailIntegration?.recipients) ? emailIntegration.recipients : [];
-  const maxRecipients = Number(emailIntegration?.limits?.recipients) || 20;
-  const atRecipientLimit = recipients.length >= maxRecipients;
-  if (emailEditingRecipientId && !recipients.some((recipient) => recipient.id === emailEditingRecipientId)) {
-    emailEditingRecipientId = emailIntegration?.connection?.selectedRecipientId || recipients[0]?.id || "";
-  }
-  const selectedRecipient = getEditingEmailRecipient();
-  if (emailRecipientSelect) {
-    emailRecipientSelect.innerHTML = [
-      `<option value="" ${atRecipientLimit ? "disabled" : ""}>${atRecipientLimit ? "Recipient limit reached" : "Add a new recipient"}</option>`,
-      ...recipients.map((recipient) => (
-        `<option value="${escapeHtml(recipient.id)}">${escapeHtml(recipient.name)} · ${escapeHtml(recipient.email)}</option>`
-      )),
-    ].join("");
-    emailRecipientSelect.value = selectedRecipient?.id || "";
-  }
-  if (emailRecipientName) emailRecipientName.value = selectedRecipient?.name || "";
-  if (emailRecipientAddress) emailRecipientAddress.value = selectedRecipient?.email || "";
-  if (emailSaveRecipientButton) {
-    const label = emailSaveRecipientButton.querySelector("span");
-    if (label) label.textContent = selectedRecipient ? "Save changes" : "Add recipient";
-  }
-  if (emailTestButton) {
-    emailTestButton.disabled = emailBusy || !selectedRecipient || !emailIntegration?.provider?.configured;
-    emailTestButton.title = emailIntegration?.provider?.configured ? "" : "Email delivery is not configured on the server";
-  }
-  if (emailDeleteRecipientButton) {
-    emailDeleteRecipientButton.hidden = !selectedRecipient;
-    emailDeleteRecipientButton.disabled = emailBusy || !selectedRecipient;
-  }
-}
-
-function renderEmailRuleRow(rule) {
-  const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
-  const windowLabel = formatDiscordAlertWindow(rule.windowMinutes);
-  const lastSent = rule.lastTriggeredAt ? formatRelativeTime(rule.lastTriggeredAt) : "Never sent";
-  const deliveryState = rule.lastError ? "error" : "";
-  const recipientLabel = rule.recipientEmail
-    ? `${rule.recipientName || "Recipient"} · ${rule.recipientEmail}`
-    : "No recipient selected";
+function renderRobloxLiveRuleRow(rule) {
+  const requirement = rule.triggerType === "schedule"
+    ? `Every ${formatRobloxLiveInterval(rule.scheduleIntervalMinutes)}`
+    : `${rule.operator === "at_most" ? "At most" : "At least"} ${formatCompactNumber(rule.threshold)} ${formatEventName(rule.eventName)} / ${formatRobloxLiveInterval(rule.windowMinutes)}`;
+  const runStatus = rule.lastError
+    ? rule.lastError
+    : rule.lastTriggeredAt
+      ? `Last run ${formatRelativeTime(rule.lastTriggeredAt)}`
+      : rule.triggerType === "schedule" && rule.nextRunAt
+        ? `Next run ${formatRelativeTime(rule.nextRunAt)}`
+        : "Never run";
+  const status = rule.triggerType === "event_count"
+    ? `Current ${formatCompactNumber(rule.currentCount || 0)} · ${runStatus}`
+    : runStatus;
+  const detectedAction = robloxLiveIntegration?.runtime?.detectedActions
+    ?.find((action) => action.actionKey === rule.actionKey);
+  const serverCount = Number(detectedAction?.serverCount) || 0;
   return `
-    <article class="discordRuleRow" data-email-rule-id="${escapeHtml(rule.id)}">
-      <div class="discordRuleIdentity">
-        <strong>${escapeHtml(rule.name)}</strong>
-        <span>${escapeHtml(rule.eventName)}</span>
-      </div>
-      <div class="discordRuleTrigger">
-        <strong>${escapeHtml(operatorLabel)} ${escapeHtml(formatCompactNumber(rule.threshold))} in ${escapeHtml(windowLabel)}</strong>
-        <span>Current ${escapeHtml(formatCompactNumber(rule.currentCount || 0))} · ${escapeHtml(formatEventName(rule.eventName))} · ${escapeHtml(formatDiscordAlertWindow(rule.cooldownMinutes))} cooldown</span>
-      </div>
-      <div class="discordRuleDelivery">
-        <strong>${escapeHtml(recipientLabel)}</strong>
-        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || `${rule.enabled ? "Active" : "Paused"} · ${lastSent}`)}</span>
-      </div>
-      <div class="discordRuleActions">
-        <button class="discordRuleToggle" type="button" data-email-rule-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"></button>
-        <button class="button secondary compact" type="button" data-email-rule-action="edit">Edit</button>
-        <button class="button secondary compact danger" type="button" data-email-rule-action="delete">Delete</button>
+    <article class="robloxLiveRuleRow" data-roblox-live-rule-id="${escapeHtml(rule.id)}">
+      <div class="robloxLiveRuleIdentity"><strong>${escapeHtml(rule.name)}</strong><span>${rule.enabled ? "Enabled" : "Paused"}</span></div>
+      <div class="robloxLiveRuleRequirement"><strong>${escapeHtml(requirement)}</strong><span>${escapeHtml(status)}</span></div>
+      <div class="robloxLiveRuleTarget"><code>${escapeHtml(rule.actionKey)}</code><span>${serverCount} live server${serverCount === 1 ? "" : "s"} detect this key · ${escapeHtml(formatRobloxLiveExpiry(rule.expiresInSeconds))} expiry</span></div>
+      <div class="robloxLiveRuleActions">
+        <button class="robloxLiveRuleToggle" type="button" data-roblox-live-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"></button>
+        <button class="button secondary compact" type="button" data-roblox-live-action="run">Run now</button>
+        <button class="button secondary compact" type="button" data-roblox-live-action="edit">Edit</button>
+        <button class="button secondary compact danger" type="button" data-roblox-live-action="delete">Delete</button>
       </div>
     </article>`;
 }
 
-function openEmailRuleEditor(rule = null) {
-  if (!emailRuleDialog || !emailIntegration?.connection?.connected) return;
+function renderRobloxLiveDeliveryRow(delivery) {
+  const acknowledgement = delivery.acknowledgedServers
+    ? `${delivery.acknowledgedServers} server${delivery.acknowledgedServers === 1 ? "" : "s"} acknowledged`
+    : "Waiting for a server acknowledgement";
+  return `
+    <article class="robloxLiveDeliveryRow">
+      <div><strong>${escapeHtml(delivery.title || delivery.actionKey)}</strong><span>${escapeHtml(delivery.trigger || "manual")}</span></div>
+      <div><strong>${escapeHtml(delivery.actionKey)}</strong><span>${escapeHtml(acknowledgement)}</span></div>
+      <div><strong>${delivery.sentAt ? escapeHtml(formatRelativeTime(delivery.sentAt)) : "Unknown time"}</strong><span>${escapeHtml(delivery.error || `Expires ${formatRelativeTime(delivery.expiresAt)}`)}</span></div>
+      <b class="robloxLiveDeliveryStatus" data-state="${escapeHtml(delivery.status)}">${escapeHtml(delivery.status)}</b>
+    </article>`;
+}
+
+function formatRobloxLiveInterval(value) {
+  const minutes = Number(value) || 0;
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${minutes / 60} hr`;
+  return `${minutes / 1440} day`;
+}
+
+function formatRobloxLiveExpiry(value) {
+  const seconds = Number(value) || 60;
+  return seconds < 60 ? `${seconds} sec` : `${seconds / 60} min`;
+}
+
+function openRobloxLiveRuleEditor(rule = null) {
+  if (!robloxLiveRuleDialog || !robloxLiveIntegration?.connection?.connected) return;
   const eventNames = [...new Set([
-    ...(emailIntegration.eventNames || []),
+    ...(robloxLiveIntegration.eventNames || []),
     ...(rule?.eventName ? [rule.eventName] : []),
   ])].filter(Boolean);
-  if (emailRuleEvent) {
-    emailRuleEvent.innerHTML = eventNames
-      .map((eventName) => `<option value="${escapeHtml(eventName)}">${escapeHtml(formatEventName(eventName))} · ${escapeHtml(eventName)}</option>`)
-      .join("");
+  if (robloxLiveRuleEvent) {
+    robloxLiveRuleEvent.innerHTML = eventNames.length
+      ? eventNames.map((eventName) => `<option value="${escapeHtml(eventName)}">${escapeHtml(formatEventName(eventName))} · ${escapeHtml(eventName)}</option>`).join("")
+      : `<option value="">No tracked events yet</option>`;
   }
-  const recipients = emailIntegration.recipients || [];
-  if (emailRuleRecipient) {
-    emailRuleRecipient.innerHTML = recipients
-      .map((recipient) => `<option value="${escapeHtml(recipient.id)}">${escapeHtml(recipient.name)} · ${escapeHtml(recipient.email)}</option>`)
-      .join("");
+  if (robloxLiveRuleId) robloxLiveRuleId.value = rule?.id || "";
+  if (robloxLiveRuleName) robloxLiveRuleName.value = rule?.name || "";
+  if (robloxLiveRuleTrigger) robloxLiveRuleTrigger.value = rule?.triggerType || "event_count";
+  if (robloxLiveRuleEvent) robloxLiveRuleEvent.value = rule?.eventName || eventNames[0] || "";
+  if (robloxLiveRuleOperator) robloxLiveRuleOperator.value = rule?.operator || "at_least";
+  if (robloxLiveRuleThreshold) robloxLiveRuleThreshold.value = String(rule?.threshold ?? 10);
+  if (robloxLiveRuleWindow) robloxLiveRuleWindow.value = String(rule?.windowMinutes || 15);
+  if (robloxLiveRuleCooldown) robloxLiveRuleCooldown.value = String(rule?.cooldownMinutes || 60);
+  if (robloxLiveRuleSchedule) robloxLiveRuleSchedule.value = String(rule?.scheduleIntervalMinutes || 60);
+  if (robloxLiveRuleActionKey) robloxLiveRuleActionKey.value = rule?.actionKey || "";
+  if (robloxLiveRuleExpiry) robloxLiveRuleExpiry.value = String(rule?.expiresInSeconds || 60);
+  if (robloxLiveRuleParameters) robloxLiveRuleParameters.value = JSON.stringify(rule?.parameters || {}, null, 2);
+  if (robloxLiveRuleDialogTitle) robloxLiveRuleDialogTitle.textContent = rule ? "Edit action" : "New action";
+  if (robloxLiveRuleSaveButton) robloxLiveRuleSaveButton.textContent = rule ? "Save changes" : "Save action";
+  if (robloxLiveRuleFormStatus) {
+    robloxLiveRuleFormStatus.textContent = "";
+    delete robloxLiveRuleFormStatus.dataset.state;
   }
-  if (emailRuleId) emailRuleId.value = rule?.id || "";
-  if (emailRuleName) emailRuleName.value = rule?.name || "";
-  if (emailRuleEvent) emailRuleEvent.value = rule?.eventName || eventNames[0] || "";
-  if (emailRuleRecipient) {
-    const defaultRecipientId = emailIntegration.connection?.selectedRecipientId || recipients[0]?.id || "";
-    emailRuleRecipient.value = recipients.some((recipient) => recipient.id === rule?.recipientId)
-      ? rule.recipientId
-      : defaultRecipientId;
-  }
-  if (emailRuleOperator) emailRuleOperator.value = rule?.operator || "at_least";
-  if (emailRuleThreshold) emailRuleThreshold.value = String(rule?.threshold ?? 10);
-  if (emailRuleWindow) emailRuleWindow.value = String(rule?.windowMinutes || 15);
-  if (emailRuleCooldown) emailRuleCooldown.value = String(rule?.cooldownMinutes || 60);
-  if (emailRuleSubject) emailRuleSubject.value = rule?.subjectTemplate || "{{event}} alert for {{game}}";
-  if (emailRuleMessage) emailRuleMessage.value = rule?.messageTemplate || "";
-  if (emailRuleDialogTitle) emailRuleDialogTitle.textContent = rule ? "Edit alert" : "New alert";
-  if (emailRuleSaveButton) emailRuleSaveButton.textContent = rule ? "Save changes" : "Save alert";
-  if (emailRuleFormStatus) {
-    emailRuleFormStatus.textContent = "";
-    delete emailRuleFormStatus.dataset.state;
-  }
-  emailRuleDialog.hidden = false;
-  updateEmailRulePreview();
-  window.setTimeout(() => emailRuleName?.focus(), 0);
+  syncRobloxLiveRuleTriggerFields();
+  syncRobloxLiveRuleThreshold();
+  robloxLiveRuleDialog.hidden = false;
+  window.setTimeout(() => robloxLiveRuleName?.focus(), 0);
 }
 
-function closeEmailRuleEditor() {
-  if (!emailRuleDialog || emailRuleDialog.hidden) return;
-  emailRuleDialog.hidden = true;
-  setEmailRuleFormBusy(false);
+function closeRobloxLiveRuleEditor() {
+  if (!robloxLiveRuleDialog || robloxLiveRuleDialog.hidden) return;
+  robloxLiveRuleDialog.hidden = true;
+  setRobloxLiveRuleFormBusy(false);
 }
 
-function handleEmailRuleDialogKeydown(event) {
-  if (event.key === "Escape" && emailRuleDialog && !emailRuleDialog.hidden) closeEmailRuleEditor();
-}
-
-function updateEmailRulePreview() {
-  const operator = emailRuleOperator?.value === "at_most" ? "At most" : "At least";
-  const minimum = operator === "At most" ? 0 : 1;
-  if (emailRuleThreshold) emailRuleThreshold.min = String(minimum);
-  const threshold = Math.max(minimum, Number(emailRuleThreshold?.value) || minimum);
-  const eventName = String(emailRuleEvent?.value || "");
-  const eventLabel = formatEventName(eventName || "tracked_event");
-  const windowLabel = formatDiscordAlertWindow(emailRuleWindow?.value);
-  const name = String(emailRuleName?.value || "").trim() || `${eventLabel} alert`;
-  const subjectTemplate = String(emailRuleSubject?.value || "");
-  const messageTemplate = String(emailRuleMessage?.value || "");
-  const sampleValues = {
-    game: knownUniverses.find((universe) => String(universe.id) === selectedUniverseId)?.name || "Selected universe",
-    event: eventLabel,
-    event_key: eventName,
-    count: String(threshold),
-    threshold: String(threshold),
-    window: windowLabel,
-  };
-  const replaceVariables = (template) => template.replace(
-    /\{\{(game|event|event_key|count|threshold|window)\}\}/g,
-    (_, key) => sampleValues[key],
-  );
-  const previewSubject = replaceVariables(subjectTemplate || `${eventLabel} alert for ${sampleValues.game}`);
-  const previewMessage = messageTemplate
-    ? replaceVariables(messageTemplate)
-    : `${eventLabel} recorded ${threshold.toLocaleString()} events in the last ${windowLabel}.`;
-  if (emailAlertPreviewSubject) emailAlertPreviewSubject.textContent = previewSubject || name;
-  if (emailAlertPreviewMessage) emailAlertPreviewMessage.textContent = previewMessage;
-  if (emailAlertPreviewEvent) emailAlertPreviewEvent.textContent = eventName || "Select an event";
-  if (emailAlertPreviewRule) emailAlertPreviewRule.textContent = `${operator} ${threshold.toLocaleString()} / ${windowLabel}`;
-  if (emailRuleSubjectCount) emailRuleSubjectCount.textContent = `${subjectTemplate.length.toLocaleString()} / 120`;
-  if (emailRuleMessageCount) emailRuleMessageCount.textContent = `${messageTemplate.length.toLocaleString()} / 500`;
-}
-
-async function handleEmailRuleListClick(event) {
-  const actionButton = event.target.closest("[data-email-rule-action]");
-  const row = actionButton?.closest("[data-email-rule-id]");
-  const rule = emailIntegration?.rules?.find((entry) => entry.id === row?.dataset.emailRuleId);
-  if (!actionButton || !rule || emailBusy) return;
-  const action = actionButton.dataset.emailRuleAction;
-  if (action === "edit") {
-    openEmailRuleEditor(rule);
-  } else if (action === "toggle") {
-    await updateEmailAlertRule(rule, { enabled: !rule.enabled });
-  } else if (action === "delete") {
-    const confirmed = await showEventConfirmation({
-      title: `Delete ${rule.name}?`,
-      description: "This email alert rule will be removed.",
-      actionLabel: "Delete alert",
-      tone: "danger",
-    });
-    if (confirmed) await deleteEmailAlertRule(rule);
+function handleRobloxLiveDialogKeydown(event) {
+  if (event.key === "Escape" && robloxLiveRuleDialog && !robloxLiveRuleDialog.hidden) {
+    closeRobloxLiveRuleEditor();
   }
 }
 
-function getEmailRulePayload(overrides = {}) {
+function syncRobloxLiveRuleTriggerFields() {
+  const isSchedule = robloxLiveRuleTrigger?.value === "schedule";
+  if (robloxLiveEventCondition) robloxLiveEventCondition.hidden = isSchedule;
+  if (robloxLiveScheduleCondition) robloxLiveScheduleCondition.hidden = !isSchedule;
+  if (robloxLiveRuleEvent) robloxLiveRuleEvent.required = !isSchedule;
+  if (robloxLiveRuleThreshold) robloxLiveRuleThreshold.required = !isSchedule;
+}
+
+function syncRobloxLiveRuleThreshold() {
+  if (!robloxLiveRuleThreshold) return;
+  robloxLiveRuleThreshold.min = robloxLiveRuleOperator?.value === "at_most" ? "0" : "1";
+}
+
+function setRobloxLiveRuleFormBusy(busy) {
+  for (const control of robloxLiveRuleForm?.elements || []) control.disabled = busy;
+  if (robloxLiveRuleCancelButton) robloxLiveRuleCancelButton.disabled = busy;
+  if (robloxLiveRuleCloseButton) robloxLiveRuleCloseButton.disabled = busy;
+}
+
+function getRobloxLiveRulePayload(rule = null, overrides = {}) {
   return {
     universeId: selectedUniverseId,
-    name: String(emailRuleName?.value || "").trim(),
-    eventName: String(emailRuleEvent?.value || ""),
-    operator: emailRuleOperator?.value === "at_most" ? "at_most" : "at_least",
-    threshold: Number(emailRuleThreshold?.value),
-    windowMinutes: Number(emailRuleWindow?.value),
-    cooldownMinutes: Number(emailRuleCooldown?.value),
-    recipientId: String(emailRuleRecipient?.value || ""),
-    subjectTemplate: String(emailRuleSubject?.value || "").trim(),
-    messageTemplate: String(emailRuleMessage?.value || "").trim(),
+    name: rule?.name ?? String(robloxLiveRuleName?.value || "").trim(),
+    triggerType: rule?.triggerType ?? robloxLiveRuleTrigger?.value,
+    eventName: rule?.eventName ?? String(robloxLiveRuleEvent?.value || ""),
+    operator: rule?.operator ?? (robloxLiveRuleOperator?.value === "at_most" ? "at_most" : "at_least"),
+    threshold: rule?.threshold ?? Number(robloxLiveRuleThreshold?.value),
+    windowMinutes: rule?.windowMinutes ?? Number(robloxLiveRuleWindow?.value),
+    cooldownMinutes: rule?.cooldownMinutes ?? Number(robloxLiveRuleCooldown?.value),
+    scheduleIntervalMinutes: rule?.scheduleIntervalMinutes ?? Number(robloxLiveRuleSchedule?.value),
+    actionKey: rule?.actionKey ?? String(robloxLiveRuleActionKey?.value || "").trim(),
+    parameters: rule?.parameters ?? {},
+    expiresInSeconds: rule?.expiresInSeconds ?? Number(robloxLiveRuleExpiry?.value),
+    enabled: rule?.enabled ?? true,
     ...overrides,
   };
 }
 
-async function saveEmailAlertRule() {
-  if (!authenticated || emailBusy || !selectedUniverseId || !emailRuleForm?.reportValidity()) return;
-  const id = String(emailRuleId?.value || "");
-  setEmailRuleFormBusy(true);
+async function saveRobloxLiveRule() {
+  if (!authenticated || robloxLiveBusy || !selectedUniverseId || !robloxLiveRuleForm?.reportValidity()) return;
+  let parameters;
   try {
-    emailIntegration = await request(id
-      ? `/api/integrations/email/rules/${encodeURIComponent(id)}`
-      : "/api/integrations/email/rules", {
+    parameters = JSON.parse(String(robloxLiveRuleParameters?.value || "{}"));
+    if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
+      throw new Error("Parameters must be a JSON object.");
+    }
+  } catch (error) {
+    robloxLiveRuleFormStatus.dataset.state = "error";
+    robloxLiveRuleFormStatus.textContent = error.message === "Parameters must be a JSON object."
+      ? error.message
+      : "Parameters must contain valid JSON.";
+    return;
+  }
+  const id = String(robloxLiveRuleId?.value || "");
+  setRobloxLiveRuleFormBusy(true);
+  try {
+    robloxLiveIntegration = await request(id
+      ? `/api/integrations/roblox-live/rules/${encodeURIComponent(id)}`
+      : "/api/integrations/roblox-live/rules", {
       method: id ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getEmailRulePayload()),
+      body: JSON.stringify(getRobloxLiveRulePayload(null, { parameters })),
     });
-    closeEmailRuleEditor();
-    renderEmailIntegration();
-    if (emailRulesStatus) {
-      emailRulesStatus.dataset.state = "success";
-      emailRulesStatus.textContent = id ? "Email alert updated." : "Email alert created.";
-    }
+    closeRobloxLiveRuleEditor();
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus(id ? "Action rule updated." : "Action rule created.", "success");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
-    if (emailRuleFormStatus) {
-      emailRuleFormStatus.dataset.state = "error";
-      emailRuleFormStatus.textContent = formatRequestError(error);
-    }
+    robloxLiveRuleFormStatus.dataset.state = "error";
+    robloxLiveRuleFormStatus.textContent = formatRequestError(error);
   } finally {
-    setEmailRuleFormBusy(false);
+    setRobloxLiveRuleFormBusy(false);
   }
 }
 
-async function updateEmailAlertRule(rule, overrides) {
-  setEmailBusy(true);
+async function handleRobloxLiveRuleListClick(event) {
+  const button = event.target.closest("[data-roblox-live-action]");
+  const row = button?.closest("[data-roblox-live-rule-id]");
+  const rule = robloxLiveIntegration?.rules?.find((entry) => entry.id === row?.dataset.robloxLiveRuleId);
+  if (!button || !rule || robloxLiveBusy) return;
+  const action = button.dataset.robloxLiveAction;
+  if (action === "edit") {
+    openRobloxLiveRuleEditor(rule);
+  } else if (action === "toggle") {
+    await updateRobloxLiveRule(rule, { enabled: !rule.enabled });
+  } else if (action === "run") {
+    await runRobloxLiveRule(rule);
+  } else if (action === "delete") {
+    const confirmed = await showEventConfirmation({
+      title: `Delete ${rule.name}?`,
+      description: "This Roblox live-action rule will be removed.",
+      actionLabel: "Delete action",
+      tone: "danger",
+    });
+    if (confirmed) await deleteRobloxLiveRule(rule);
+  }
+}
+
+async function updateRobloxLiveRule(rule, overrides) {
+  setRobloxLiveBusy(true);
   try {
-    emailIntegration = await request(`/api/integrations/email/rules/${encodeURIComponent(rule.id)}`, {
+    robloxLiveIntegration = await request(`/api/integrations/roblox-live/rules/${encodeURIComponent(rule.id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        universeId: selectedUniverseId,
-        name: rule.name,
-        eventName: rule.eventName,
-        operator: rule.operator,
-        threshold: rule.threshold,
-        windowMinutes: rule.windowMinutes,
-        cooldownMinutes: rule.cooldownMinutes,
-        recipientId: rule.recipientId,
-        subjectTemplate: rule.subjectTemplate,
-        messageTemplate: rule.messageTemplate,
-        enabled: rule.enabled,
-        ...overrides,
-      }),
+      body: JSON.stringify(getRobloxLiveRulePayload(rule, overrides)),
     });
-    renderEmailIntegration();
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus(overrides.enabled ? "Action enabled." : "Action paused.", "success");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
-    if (emailRulesStatus) {
-      emailRulesStatus.dataset.state = "error";
-      emailRulesStatus.textContent = formatRequestError(error);
-    }
+    setRobloxLiveStatus(formatRequestError(error), "error");
   } finally {
-    setEmailBusy(false);
+    setRobloxLiveBusy(false);
   }
 }
 
-async function deleteEmailAlertRule(rule) {
-  setEmailBusy(true);
+async function runRobloxLiveRule(rule) {
+  setRobloxLiveBusy(true);
+  setRobloxLiveStatus(`Publishing ${rule.name}...`, "sending");
   try {
-    emailIntegration = await request(`/api/integrations/email/rules/${encodeURIComponent(rule.id)}?universeId=${encodeURIComponent(selectedUniverseId)}`, {
-      method: "DELETE",
-    });
-    renderEmailIntegration();
-    if (emailRulesStatus) {
-      emailRulesStatus.dataset.state = "success";
-      emailRulesStatus.textContent = "Email alert deleted.";
-    }
+    robloxLiveIntegration = await request(
+      `/api/integrations/roblox-live/rules/${encodeURIComponent(rule.id)}/run`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ universeId: selectedUniverseId }),
+      },
+    );
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus("Action published to live Roblox servers.", "success");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
-    if (emailRulesStatus) {
-      emailRulesStatus.dataset.state = "error";
-      emailRulesStatus.textContent = formatRequestError(error);
-    }
+    setRobloxLiveStatus(formatRequestError(error), "error");
   } finally {
-    setEmailBusy(false);
+    setRobloxLiveBusy(false);
   }
 }
 
-function setEmailRuleFormBusy(busy) {
-  if (!emailRuleForm) return;
-  for (const element of emailRuleForm.elements) element.disabled = busy;
-  if (emailRuleSaveButton) {
-    emailRuleSaveButton.setAttribute("aria-busy", String(busy));
-    if (busy) emailRuleSaveButton.textContent = "Saving...";
-    else emailRuleSaveButton.textContent = emailRuleId?.value ? "Save changes" : "Save alert";
+async function deleteRobloxLiveRule(rule) {
+  setRobloxLiveBusy(true);
+  try {
+    robloxLiveIntegration = await request(
+      `/api/integrations/roblox-live/rules/${encodeURIComponent(rule.id)}?universeId=${encodeURIComponent(selectedUniverseId)}`,
+      { method: "DELETE" },
+    );
+    renderRobloxLiveIntegration();
+    setRobloxLiveStatus("Action rule deleted.", "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    setRobloxLiveStatus(formatRequestError(error), "error");
+  } finally {
+    setRobloxLiveBusy(false);
   }
 }
 
@@ -3761,12 +3681,6 @@ async function selectUniverse(value) {
   closeDiscordRuleEditor();
   if (discordConnectionForm) discordConnectionForm.reset();
   renderDiscordIntegration();
-  emailIntegration = null;
-  emailEditingRecipientId = "";
-  emailIntegrationRequestSequence += 1;
-  closeEmailRuleEditor();
-  if (emailConnectionForm) emailConnectionForm.reset();
-  renderEmailIntegration();
   renderChatSummary();
   setChatLiveState(selectedUniverseId ? "loading" : "waiting");
   renderRecentChatEmpty(selectedUniverseId ? "Loading recent chat..." : "Select a universe to view recent chat.");

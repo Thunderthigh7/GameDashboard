@@ -102,3 +102,20 @@ Logger.Log("round_started", {
 ```
 
 Do not require this module or place the project secret in a `LocalScript`. Client actions should be validated by your server before the server calls `Logger.Log`.
+
+## Roblox live actions
+
+Register every action the website is allowed to invoke from trusted server code. The website only sends an action key and validated JSON parameters; it never sends executable Luau.
+
+```lua
+local ServerScriptService = game:GetService("ServerScriptService")
+local PresenceService = require(ServerScriptService.Server.Services.Game.PresenceService.API)
+
+PresenceService.RegisterLiveAction("hourly_event.start", function(parameters, context)
+	local eventId = tostring(parameters.eventId or "default")
+	-- Call your existing server-authoritative event service here.
+	return "Started " .. eventId
+end)
+```
+
+`PresenceService.Start()` subscribes each live server to the fixed `roanalytics-live-actions-v1` MessagingService topic. Registered keys and delivery acknowledgements are returned in the normal heartbeat. Keep handlers idempotent when practical because MessagingService delivery is best effort, and validate all parameters again before changing gameplay.

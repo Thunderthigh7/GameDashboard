@@ -1,5 +1,6 @@
 local AnalyticsService = game:GetService("AnalyticsService")
 local HttpService = game:GetService("HttpService")
+local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -23,6 +24,10 @@ local pendingMovementRollupOrder = {}
 local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
 local pendingCustomEvents = {}
+local pendingLiveActionAcks = {}
+local registeredLiveActions = {}
+local processedLiveActionIds = {}
+local processedLiveActionOrder = {}
 local lastPlayerPositions = {}
 local leaveSampledUserIds = {}
 local serverStartedAt = os.time()
@@ -36,6 +41,7 @@ local customEventCounter = 0
 
 local started = false
 local sending = false
+local liveActionSubscription = nil
 
 local PLATFORM_NAMES = {
 	desktop = "Desktop",
@@ -722,6 +728,127 @@ local function untrackPlayer(player)
 	playerSegmentRequests[player.UserId] = nil
 end
 
+local function normalizeLiveActionKey(value)
+	local actionKey = string.lower(tostring(value or ""))
+	if #actionKey < 1 or #actionKey > 64 then
+		return nil
+	end
+	if string.match(actionKey, "^[%a][%w_%.:%-]*$") == nil then
+		return nil
+	end
+	return actionKey
+end
+
+local function getRegisteredLiveActionKeys()
+	local actionKeys = { "roanalytics_test" }
+	for actionKey in registeredLiveActions do
+		table.insert(actionKeys, actionKey)
+	end
+	table.sort(actionKeys)
+	return actionKeys
+end
+
+local function queueLiveActionAck(deliveryId, status, message)
+	table.insert(pendingLiveActionAcks, {
+		deliveryId = tostring(deliveryId or ""),
+		status = status,
+		message = string.sub(tostring(message or ""), 1, 160),
+		processedAt = os.time(),
+	})
+	local maximum = Settings.MaxPendingLiveActionAcks or 100
+	while #pendingLiveActionAcks > maximum do
+		table.remove(pendingLiveActionAcks, 1)
+	end
+end
+
+local function rememberLiveActionDelivery(deliveryId)
+	if processedLiveActionIds[deliveryId] then
+		return false
+	end
+	processedLiveActionIds[deliveryId] = true
+	table.insert(processedLiveActionOrder, deliveryId)
+	local maximum = Settings.MaxProcessedLiveActionIds or 250
+	while #processedLiveActionOrder > maximum do
+		local expiredId = table.remove(processedLiveActionOrder, 1)
+		processedLiveActionIds[expiredId] = nil
+	end
+	return true
+end
+
+local function handleLiveActionMessage(message)
+	if not Settings.LiveActionsEnabled then
+		return
+	end
+	local decodedOk, payload = pcall(function()
+		return HttpService:JSONDecode(message.Data)
+	end)
+	if not decodedOk or typeof(payload) ~= "table" then
+		debugWarn("Rejected malformed live action")
+		return
+	end
+	if payload.type ~= "roanalytics.live_action" or payload.version ~= 1 then
+		return
+	end
+	local deliveryId = tostring(payload.deliveryId or "")
+	local actionKey = normalizeLiveActionKey(payload.actionKey)
+	if deliveryId == "" or not actionKey or tonumber(payload.universeId) ~= game.GameId then
+		debugWarn("Rejected invalid live action envelope")
+		return
+	end
+	if not rememberLiveActionDelivery(deliveryId) then
+		queueLiveActionAck(deliveryId, "duplicate", "Already processed by this server.")
+		return
+	end
+	if tonumber(payload.expiresAt) == nil or os.time() > tonumber(payload.expiresAt) then
+		queueLiveActionAck(deliveryId, "expired", "Message expired before execution.")
+		return
+	end
+	if actionKey == "roanalytics_test" then
+		queueLiveActionAck(deliveryId, "test", "Live-action subscriber is connected.")
+		task.defer(Methods.SendHeartbeat)
+		return
+	end
+	local handler = registeredLiveActions[actionKey]
+	if not handler then
+		queueLiveActionAck(deliveryId, "unhandled", "No handler is registered for this action key.")
+		task.defer(Methods.SendHeartbeat)
+		return
+	end
+
+	task.spawn(function()
+		local success, result = xpcall(function()
+			return handler(payload.parameters or {}, {
+				deliveryId = deliveryId,
+				ruleId = tostring(payload.ruleId or ""),
+				trigger = tostring(payload.trigger or ""),
+				sentAt = tonumber(payload.sentAt),
+				expiresAt = tonumber(payload.expiresAt),
+			})
+		end, debug.traceback)
+		if success then
+			queueLiveActionAck(deliveryId, "executed", tostring(result or "Action executed."))
+			debugWarn("Executed live action:", actionKey, deliveryId)
+		else
+			queueLiveActionAck(deliveryId, "failed", tostring(result))
+			warn("[PresenceService] Live action failed:", actionKey, result)
+		end
+		Methods.SendHeartbeat()
+	end)
+end
+
+function Methods.RegisterLiveAction(actionKey, handler)
+	local normalizedKey = normalizeLiveActionKey(actionKey)
+	if not normalizedKey or normalizedKey == "roanalytics_test" then
+		error("RegisterLiveAction expected a valid custom action key", 2)
+	end
+	if typeof(handler) ~= "function" then
+		error("RegisterLiveAction expected a handler function", 2)
+	end
+	registeredLiveActions[normalizedKey] = handler
+	debugWarn("Registered live action:", normalizedKey)
+	return normalizedKey
+end
+
 local function processHeartbeatResponse(response)
 	if not response.Body or response.Body == "" then
 		debugWarn("Heartbeat response has no body")
@@ -737,7 +864,7 @@ local function processHeartbeatResponse(response)
 		return
 	end
 
-	debugWarn("Heartbeat response:", "savedChatCount", payload.savedChatCount or 0, "savedMovementCount", payload.savedMovementCount or 0, "savedDeathCount", payload.savedDeathCount or 0, "savedLeaveCount", payload.savedLeaveCount or 0, "savedCustomEventCount", payload.savedCustomEventCount or 0)
+	debugWarn("Heartbeat response:", "savedChatCount", payload.savedChatCount or 0, "savedMovementCount", payload.savedMovementCount or 0, "savedDeathCount", payload.savedDeathCount or 0, "savedLeaveCount", payload.savedLeaveCount or 0, "savedCustomEventCount", payload.savedCustomEventCount or 0, "acknowledgedLiveActions", payload.acknowledgedLiveActionCount or 0)
 end
 
 local function getPlayersPayload()
@@ -860,6 +987,15 @@ local function getCustomEventsPayload()
 	return customEvents
 end
 
+local function getLiveActionAcksPayload()
+	local acknowledgements = {}
+	local maximum = Settings.MaxLiveActionAcksPerPayload or 50
+	for index = 1, math.min(#pendingLiveActionAcks, maximum) do
+		table.insert(acknowledgements, pendingLiveActionAcks[index])
+	end
+	return acknowledgements
+end
+
 local function clearSentChatLogs(count)
 	for _ = 1, math.min(count, #pendingChatLogs) do
 		table.remove(pendingChatLogs, 1)
@@ -897,6 +1033,12 @@ local function clearSentCustomEvents(count)
 	end
 end
 
+local function clearSentLiveActionAcks(count)
+	for _ = 1, math.min(count, #pendingLiveActionAcks) do
+		table.remove(pendingLiveActionAcks, 1)
+	end
+end
+
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -914,6 +1056,8 @@ local function buildPayload()
 		deathSamples = getDeathSamplesPayload(),
 		leaveSamples = getLeaveSamplesPayload(),
 		customEvents = getCustomEventsPayload(),
+		liveActionKeys = getRegisteredLiveActionKeys(),
+		liveActionAcks = getLiveActionAcksPayload(),
 	}
 end
 
@@ -932,7 +1076,7 @@ function Methods.SendHeartbeat()
 	for _, player in payload.players do
 		table.insert(playerSummaries, player.username .. ":" .. tostring(player.userId))
 	end
-	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "placeVersion", payload.placeVersion, "environment", payload.environment, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples, "customEvents", #payload.customEvents)
+	debugWarn("Heartbeat payload:", "endpoint", Settings.Endpoint, "universe", payload.universeId, "place", payload.placeId, "placeVersion", payload.placeVersion, "environment", payload.environment, "job", payload.jobId, "uptime", os.time() - serverStartedAt, "players", payload.playerCount, table.concat(playerSummaries, ", "), "chatLogs", #payload.chatLogs, "movementSamples", #payload.movementSamples, "movementRollups", #payload.movementRollups, "deathSamples", #payload.deathSamples, "leaveSamples", #payload.leaveSamples, "customEvents", #payload.customEvents, "liveActions", #payload.liveActionKeys, "liveActionAcks", #payload.liveActionAcks)
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -966,6 +1110,7 @@ function Methods.SendHeartbeat()
 	clearSentDeathSamples(#payload.deathSamples)
 	clearSentLeaveSamples(#payload.leaveSamples)
 	clearSentCustomEvents(#payload.customEvents)
+	clearSentLiveActionAcks(#payload.liveActionAcks)
 	processHeartbeatResponse(response)
 
 	debugWarn("Heartbeat sent:", response.StatusCode, response.Body or "", "remainingChatLogs", #pendingChatLogs)
@@ -1001,6 +1146,21 @@ function Methods.Start()
 	debugWarn("Starting:", "script", script:GetFullName(), "universe", game.GameId, "place", game.PlaceId, "placeVersion", game.PlaceVersion, "environment", runtimeEnvironment, "job", game.JobId)
 	debugWarn("Settings:", "endpoint", Settings.Endpoint, "interval", Settings.HeartbeatInterval, "maxPlayers", Settings.MaxPlayersPerPayload, "debug", Settings.Debug)
 	debugWarn("Players at start:", #Players:GetPlayers(), getPlayerSummary())
+
+	if Settings.LiveActionsEnabled then
+		local subscribed, subscriptionOrError = pcall(function()
+			return MessagingService:SubscribeAsync(
+				Settings.LiveActionsTopic or "roanalytics-live-actions-v1",
+				handleLiveActionMessage
+			)
+		end)
+		if subscribed then
+			liveActionSubscription = subscriptionOrError
+			debugWarn("Live actions subscribed:", Settings.LiveActionsTopic or "roanalytics-live-actions-v1")
+		else
+			warn("[PresenceService] Could not subscribe to live actions:", subscriptionOrError)
+		end
+	end
 
 	Players.PlayerAdded:Connect(watchPlayer)
 	Players.PlayerRemoving:Connect(untrackPlayer)

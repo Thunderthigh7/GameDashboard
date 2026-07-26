@@ -33,7 +33,10 @@ ROBLOX_OAUTH_CLIENT_ID=your-roblox-oauth-client-id
 ROBLOX_OAUTH_CLIENT_SECRET=your-roblox-oauth-client-secret
 ROBLOX_OAUTH_REDIRECT_URI=https://game-dashboard-zaya.onrender.com/api/roblox/oauth/callback
 ROBLOX_OAUTH_SCOPES=openid profile
+ROBLOX_OAUTH_LIVE_ACTION_SCOPES=openid profile universe-messaging-service:publish
 ```
+
+The extra live-action scope is requested only when a universe owner authorizes **Integrations → Roblox**. The resulting access and rotating refresh tokens are encrypted at rest. Disconnecting the integration revokes the Roblox authorization.
 
 For local testing, use:
 
