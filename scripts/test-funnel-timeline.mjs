@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  calculateFunnelAnalytics,
   calculateFunnelTimelineAnalytics,
   groupCustomEventsBySession,
 } from "../lib/funnels.mjs";
@@ -59,6 +60,40 @@ assert.equal(
   "the weighted average should reconcile reached sessions against previous-step sessions",
 );
 
+const historicalRangeEnd = base + hour;
+const historicalSessions = groupCustomEventsBySession([
+  event(5, "edge", "round_started", hour - 5 * 60 * 1000),
+  event(5, "edge", "checkpoint_reached", hour + 2 * 60 * 1000),
+  event(5, "edge", "round_completed", hour + 10 * 60 * 1000),
+  event(6, "after", "round_started", hour + 1 * 60 * 1000),
+  event(6, "after", "checkpoint_reached", hour + 3 * 60 * 1000),
+  event(6, "after", "round_completed", hour + 5 * 60 * 1000),
+]);
+const historicalAnalytics = calculateFunnelAnalytics(definition, historicalSessions, {
+  entryFromMs: base,
+  entryToMs: historicalRangeEnd,
+  totalTrackedSessions: 2,
+});
+assert.equal(historicalAnalytics.entrySessions, 1, "only sessions entering inside the selected range should count");
+assert.equal(
+  historicalAnalytics.completedSessions,
+  1,
+  "a session entering before the range end should retain conversions completed afterward inside its conversion window",
+);
+assert.deepEqual(
+  historicalAnalytics.steps.map((step) => step.sessions),
+  [1, 1, 1],
+  "lookahead events should reconcile every ordered step without admitting later entry cohorts",
+);
+const historicalTimeline = calculateFunnelTimelineAnalytics(definition, historicalSessions, [
+  { start: base, end: historicalRangeEnd },
+]);
+assert.deepEqual(
+  historicalTimeline[0].steps.map((step) => step.conversionFromPrevious),
+  [100, 100, 100],
+  "the entry-time bucket should include later conversions from the same mature cohort",
+);
+
 const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
@@ -81,6 +116,10 @@ assert.doesNotMatch(appSource, /const rawPercentage = point\?\.percentage/, "the
 assert.match(appSource, /function getCompletedFunnelTimelineBuckets\(funnel\)/, "the chart and table should share completed cohort filtering");
 assert.match(appSource, /const buckets = getCompletedFunnelTimelineBuckets\(funnel\)/, "the chart should exclude unfinished conversion cohorts");
 assert.match(indexSource, /Percent of sessions at the previous step that reached each selected step\./, "the chart should state its step-to-step denominator");
+assert.match(indexSource, />Sessions entered</, "the Funnel summary should identify its session-based counting unit");
+assert.match(indexSource, />Sessions completed</, "completed Funnel counts should not be mislabeled as players");
+assert.match(indexSource, />For completed sessions</, "the Funnel timing summary should use the same counting unit");
+assert.match(appSource, /<span>Sessions<\/span><span>Total conversion<\/span>/, "the main Funnel table should label session counts accurately");
 assert.match(appSource, /function getFunnelStepColor\(funnel, stepIndex\)/, "saved Funnel step colors should drive the timeline");
 assert.match(appSource, /async function saveFunnelStepColors\(\)/, "Funnel step color changes should persist");
 assert.match(appSource, /document\.body\.append\(eventConfirmDialog\)/, "the shared discard confirmation should remain visible from the Funnels view");
@@ -90,6 +129,8 @@ assert.match(appSource, /function renderFunnelStepChanges\(funnel\)/, "the Funne
 assert.match(appSource, /funnelStepChangeDelta">\(\$\{formatFunnelPercentagePointChange/, "the change should sit directly beside its current percentage");
 assert.match(appSource, /<span>Average<\/span>/, "the step-to-step table should show an explicit average column");
 assert.match(appSource, /function getFunnelAverageStepConversion\(buckets, stepIndex\)/, "the Funnel average should be weighted from completed timeline buckets");
+assert.match(appSource, /function formatFunnelConversionFraction\(/, "the Funnel comparison should expose its numerator and denominator");
+assert.match(appSource, /<small>End \$\{endCounts\} &middot; Start \$\{startCounts\}<\/small>/, "the start and end cohort counts should be directly auditable");
 assert.doesNotMatch(appSource, /formatFunnelPercentage\(aggregateStep\?\.conversionFromStart\)/, "the Funnel legend should not display the aggregate percentage");
 assert.match(appSource, /End \(change from start\)/, "the value column should make the start-to-end comparison explicit");
 assert.match(appSource, /function getFunnelBucketStepConversion\(bucket, stepIndex\)/, "the comparison should calculate each bucket's step-to-step conversion");
@@ -97,6 +138,16 @@ assert.match(appSource, /const startBucket = completedBuckets\[0\]/, "the compar
 assert.match(appSource, /const endBucket = completedBuckets\[completedBuckets\.length - 1\]/, "the comparison should use the last completed populated timeline bucket");
 assert.match(appSource, /const selectedFunnelTimelineSteps = new Map\(\)/, "step visibility should be retained independently by Funnel");
 assert.match(serverSource, /calculateFunnelTimelineAnalytics\(\s*definition,\s*sessions,\s*timelineScaffold\.buckets,/s, "the API should calculate the selected Funnel timeline");
+assert.match(
+  serverSource,
+  /const analysisToMs = getFunnelAnalysisToMs\(toMs, definitions\);[\s\S]*?getAnalyticsEventRecords\(\{ universeId, fromMs, toMs: analysisToMs \}\)/,
+  "the Funnel API should load through the conversion window after the selected range end",
+);
+assert.match(
+  serverSource,
+  /calculateFunnelAnalytics\(definition, sessions, \{[\s\S]*?entryFromMs: fromMs,[\s\S]*?entryToMs: toMs,/,
+  "aggregate Funnel results should remain attributed to entry sessions inside the selected range",
+);
 assert.match(serverSource, /stepColors\.some\(\(color\) => color && !\/\^#\[0-9a-f\]\{6\}\$\/\.test\(color\)\)/, "the API should validate saved Funnel step colors");
 assert.match(serverSource, /stepColors:\s*Array\.isArray\(funnel\?\.stepColors\)/, "the API should serialize saved Funnel step colors");
 assert.match(serverSource, /body\?\.stepColors === undefined[\s\S]*?stepColors: existing\.stepColors/, "older Funnel saves should preserve existing step colors");
@@ -108,5 +159,7 @@ assert.match(styleSource, /body\[data-active-view="funnels"\] \.funnelTopbarFilt
 assert.match(styleSource, /\.funnelResultSteps\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?border-radius:\s*12px/, "the main Funnel step table should use a themed container");
 assert.match(styleSource, /\.funnelStepPlayerCount,[\s\S]*?\.funnelDropCell strong\s*\{[\s\S]*?font-size:\s*18px/, "the main Funnel table values should use the larger scannable number size");
 assert.match(styleSource, /\.funnelStepChangesPanel\s*\{/, "the step changes should use a dedicated scannable panel");
+assert.match(styleSource, /\.eventCatalog::-webkit-scrollbar,\s*\.funnelCatalog::-webkit-scrollbar\s*\{[\s\S]*?width:\s*6px/, "Events and Funnels should share the same thin themed catalog scrollbar");
+assert.match(styleSource, /\.eventCatalog::-webkit-scrollbar-button,\s*\.funnelCatalog::-webkit-scrollbar-button\s*\{[\s\S]*?display:\s*none/, "catalog scrollbars should not show native arrow buttons");
 
 console.log("Funnel timeline assertions passed.");

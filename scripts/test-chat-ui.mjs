@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   indexSource,
-  /<section class="viewPage discordPage" data-view-panel="discord" hidden>[\s\S]*?id="discordMessageForm"[\s\S]*?id="discordSendButton"/,
-  "the Discord page should contain the webhook message composer",
+  /<section class="viewPage discordPage" data-view-panel="discord" hidden>[\s\S]*?id="discordConnectionForm"[\s\S]*?id="discordRuleList"[\s\S]*?id="discordRuleForm"/,
+  "the Discord page should contain a saved connection and automatic alert rules",
 );
 assert.match(
   indexSource,

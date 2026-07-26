@@ -18,13 +18,13 @@ import {
   calculateFunnelAnalytics,
   calculateFunnelMapSamples,
   calculateFunnelTimelineAnalytics,
+  getFunnelConversionWindowMs,
   groupCustomEventsBySession,
 } from "./lib/funnels.mjs";
 import { paginateChatLogsPayload } from "./lib/chat-pagination.mjs";
 import {
-  normalizeDiscordMessage,
   normalizeDiscordWebhookUrl,
-  sendDiscordWebhookMessage,
+  sendDiscordWebhookAlert,
 } from "./lib/discord-webhooks.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
@@ -40,6 +40,7 @@ const reconciliationStorePath = path.join(__dirname, "data", "reconciliations.js
 const funnelStorePath = path.join(__dirname, "data", "funnels.json");
 const eventDefinitionStorePath = path.join(__dirname, "data", "event-definitions.json");
 const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-deletions.json");
+const discordIntegrationStorePath = path.join(__dirname, "data", "discord-integrations.json");
 
 loadLocalEnv();
 
@@ -64,6 +65,10 @@ const MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS = 200;
 const MAX_COMMON_QUESTIONS_RESPONSE = 5;
 const DISCORD_SEND_WINDOW_MS = 60 * 1000;
 const MAX_DISCORD_SENDS_PER_WINDOW = 10;
+const MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20;
+const MAX_DISCORD_ALERT_DELIVERIES = 30;
+const DISCORD_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const DISCORD_ALERT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -398,7 +403,10 @@ let persistedMapUniverseIdsVersion = 0;
 let localFunnelStoreLock = Promise.resolve();
 let localEventDefinitionStoreLock = Promise.resolve();
 let localCustomEventDeletionStoreLock = Promise.resolve();
+let localDiscordIntegrationStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
+const discordIntegrationCache = new Map();
+const discordAlertEvaluationLocks = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
@@ -543,8 +551,32 @@ const server = http.createServer(async (req, res) => {
       return handleAccountPlanUpdate(req, res, auth);
     }
 
-    if (url.pathname === "/api/integrations/discord/send" && req.method === "POST") {
-      return handleDiscordWebhookSend(req, res, auth);
+    if (url.pathname === "/api/integrations/discord" && req.method === "GET") {
+      return handleDiscordIntegrationGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/discord/connection" && req.method === "PUT") {
+      return handleDiscordConnectionSave(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/discord/connection" && req.method === "DELETE") {
+      return handleDiscordConnectionDelete(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/discord/test" && req.method === "POST") {
+      return handleDiscordConnectionTest(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/discord/rules" && req.method === "POST") {
+      return handleDiscordAlertRuleSave(req, res, auth);
+    }
+
+    const discordRuleMatch = url.pathname.match(/^\/api\/integrations\/discord\/rules\/([^/]+)$/);
+    if (discordRuleMatch && req.method === "PUT") {
+      return handleDiscordAlertRuleSave(req, res, auth, decodeURIComponent(discordRuleMatch[1]));
+    }
+    if (discordRuleMatch && req.method === "DELETE") {
+      return handleDiscordAlertRuleDelete(req, res, auth, decodeURIComponent(discordRuleMatch[1]), url.searchParams);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -1250,6 +1282,7 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("event_definitions").createIndex({ ownerUserId: 1, universeId: 1, eventName: 1 }, { unique: true }),
     db.collection("event_definitions").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
     db.collection("custom_event_deletions").createIndex({ universeId: 1, eventName: 1 }, { unique: true }),
+    db.collection("discord_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
   ]);
 }
 
@@ -1890,7 +1923,24 @@ async function handleAccountPlanUpdate(req, res, auth) {
   return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
 }
 
-async function handleDiscordWebhookSend(req, res, auth) {
+async function handleDiscordIntegrationGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || (isDemoProject(project) && !isAdminUser(await findUserById(auth.userId)))) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
+  const [integration, eventNames] = await Promise.all([
+    readDiscordIntegration(auth.userId, universeId),
+    getDiscordAlertEventNames(auth.userId, universeId),
+  ]);
+  return sendJson(res, 200, serializeDiscordIntegration(integration, {
+    universeId,
+    eventNames,
+  }));
+}
+
+async function handleDiscordConnectionSave(req, res, auth) {
   let body;
   try {
     body = await readJsonBody(req, 8 * 1024);
@@ -1898,33 +1948,172 @@ async function handleDiscordWebhookSend(req, res, auth) {
     return sendJson(res, 400, { error: error.message });
   }
 
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
   let webhookUrl;
-  let message;
   try {
     webhookUrl = normalizeDiscordWebhookUrl(body?.webhookUrl);
-    message = normalizeDiscordMessage(body?.message);
   } catch (error) {
     return sendJson(res, 400, { error: error.message });
   }
 
-  const retryAfterMs = claimDiscordSendSlot(auth.userId);
-  if (retryAfterMs > 0) {
-    return sendJson(res, 429, {
-      error: "Too many Discord messages. Wait a moment and try again.",
-      retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
-    });
+  const now = Date.now();
+  const existing = await readDiscordIntegration(auth.userId, universeId);
+  const integration = existing || createEmptyDiscordIntegration(auth.userId, universeId);
+  integration.webhook = encryptDiscordWebhookUrl(webhookUrl);
+  integration.webhookHint = getDiscordWebhookHint(webhookUrl);
+  integration.connectedAt = cleanInteger(integration.connectedAt) || now;
+  integration.updatedAt = now;
+  await saveDiscordIntegration(integration);
+  return sendJson(res, 200, serializeDiscordIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleDiscordConnectionDelete(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
   }
 
+  const integration = await readDiscordIntegration(auth.userId, universeId);
+  if (!integration) {
+    return sendJson(res, 200, serializeDiscordIntegration(null, { universeId, eventNames: [] }));
+  }
+  integration.webhook = null;
+  integration.webhookHint = "";
+  integration.connectedAt = 0;
+  integration.updatedAt = Date.now();
+  integration.rules = (integration.rules || []).map((rule) => ({ ...rule, enabled: false }));
+  await saveDiscordIntegration(integration);
+  return sendJson(res, 200, serializeDiscordIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleDiscordConnectionTest(req, res, auth) {
+  let body;
   try {
-    return sendJson(res, 200, await sendDiscordWebhookMessage({ webhookUrl, message }));
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || (isDemoProject(project) && !isAdminUser(await findUserById(auth.userId)))) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readDiscordIntegration(auth.userId, universeId);
+  const webhookUrl = getStoredDiscordWebhookUrl(integration);
+  if (!webhookUrl) return sendJson(res, 400, { error: "Connect a Discord webhook first." });
+
+  const retryAfterMs = claimDiscordSendSlot(auth.userId);
+  if (retryAfterMs > 0) return sendDiscordRateLimitError(res, retryAfterMs);
+
+  try {
+    const result = await sendDiscordWebhookAlert({
+      webhookUrl,
+      alert: {
+        title: "Discord alerts connected",
+        description: "RoAnalytics can now send automatic analytics alerts to this channel.",
+        color: 0x52dfa1,
+        fields: [
+          { name: "Universe", value: project.name || `Universe ${universeId}` },
+          { name: "Status", value: "Ready" },
+        ],
+      },
+    });
+    integration.deliveries = appendDiscordDelivery(integration.deliveries, {
+      id: crypto.randomUUID(),
+      type: "test",
+      status: "sent",
+      title: "Connection test",
+      sentAt: result.sentAt,
+    });
+    integration.lastTestAt = result.sentAt;
+    integration.updatedAt = Date.now();
+    await saveDiscordIntegration(integration);
+    return sendJson(res, 200, { ok: true, sentAt: result.sentAt });
   } catch (error) {
     const statusCode = Number(error?.statusCode);
     return sendJson(
       res,
       Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 502,
-      { error: error?.message || "Could not send the Discord message." },
+      { error: error?.message || "Could not test the Discord webhook." },
     );
   }
+}
+
+async function handleDiscordAlertRuleSave(req, res, auth, requestedRuleId = "") {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readDiscordIntegration(auth.userId, universeId);
+  if (!getStoredDiscordWebhookUrl(integration)) {
+    return sendJson(res, 400, { error: "Connect a Discord webhook before creating alerts." });
+  }
+
+  const ruleId = cleanString(requestedRuleId || body?.id, 120);
+  const existingRule = ruleId
+    ? (integration.rules || []).find((rule) => rule.id === ruleId)
+    : null;
+  if (ruleId && !existingRule) return sendJson(res, 404, { error: "Alert rule not found." });
+  if (!existingRule && (integration.rules || []).length >= MAX_DISCORD_ALERT_RULES_PER_UNIVERSE) {
+    return sendJson(res, 409, { error: `A universe can have up to ${MAX_DISCORD_ALERT_RULES_PER_UNIVERSE} Discord alerts.` });
+  }
+
+  const normalized = normalizeDiscordAlertRule(body, existingRule);
+  if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
+  if (existingRule) {
+    integration.rules = integration.rules.map((rule) => rule.id === existingRule.id ? normalized.value : rule);
+  } else {
+    integration.rules = [...(integration.rules || []), normalized.value];
+  }
+  integration.updatedAt = Date.now();
+  await saveDiscordIntegration(integration);
+  return sendJson(res, 200, serializeDiscordIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleDiscordAlertRuleDelete(req, res, auth, ruleId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readDiscordIntegration(auth.userId, universeId);
+  const previousLength = integration?.rules?.length || 0;
+  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Alert rule not found." });
+  integration.rules = integration.rules.filter((rule) => rule.id !== ruleId);
+  if (integration.rules.length === previousLength) return sendJson(res, 404, { error: "Alert rule not found." });
+  integration.updatedAt = Date.now();
+  await saveDiscordIntegration(integration);
+  return sendJson(res, 200, serializeDiscordIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+function sendDiscordRateLimitError(res, retryAfterMs) {
+  return sendJson(res, 429, {
+    error: "Too many Discord messages. Wait a moment and try again.",
+    retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+  });
 }
 
 function claimDiscordSendSlot(userId, now = Date.now()) {
@@ -1938,6 +2127,446 @@ function claimDiscordSendSlot(userId, now = Date.now()) {
   recentSends.push(now);
   discordSendHistoryByUser.set(key, recentSends);
   return 0;
+}
+
+function createEmptyDiscordIntegration(ownerUserId, universeId) {
+  const now = Date.now();
+  return {
+    ownerUserId: cleanString(ownerUserId, 120),
+    universeId: cleanInteger(universeId),
+    webhook: null,
+    webhookHint: "",
+    connectedAt: 0,
+    lastTestAt: 0,
+    rules: [],
+    deliveries: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function normalizeDiscordAlertRule(value, existingRule = null) {
+  const eventName = normalizeCustomEventName(value?.eventName);
+  if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
+  const name = cleanString(value?.name, 80) || `${formatDiscordEventName(eventName)} alert`;
+  const operator = cleanString(value?.operator, 24).toLowerCase();
+  if (operator !== "at_least" && operator !== "at_most") {
+    return { ok: false, error: "Choose whether the event count should be above or below the threshold." };
+  }
+  const threshold = Number(value?.threshold);
+  if (!Number.isSafeInteger(threshold) || threshold < (operator === "at_least" ? 1 : 0) || threshold > 1_000_000) {
+    return { ok: false, error: operator === "at_least" ? "Threshold must be between 1 and 1,000,000." : "Threshold must be between 0 and 1,000,000." };
+  }
+  const windowMinutes = Number(value?.windowMinutes);
+  if (!DISCORD_ALERT_WINDOWS_MINUTES.has(windowMinutes)) {
+    return { ok: false, error: "Choose a valid alert window." };
+  }
+  const cooldownMinutes = Number(value?.cooldownMinutes);
+  if (!DISCORD_ALERT_COOLDOWNS_MINUTES.has(cooldownMinutes)) {
+    return { ok: false, error: "Choose a valid cooldown." };
+  }
+  const messageTemplate = typeof value?.messageTemplate === "string" ? value.messageTemplate.trim() : "";
+  if (messageTemplate.length > 500) return { ok: false, error: "Alert message can contain up to 500 characters." };
+
+  const now = Date.now();
+  const changedCondition = Boolean(existingRule) && (
+    existingRule.eventName !== eventName
+    || existingRule.operator !== operator
+    || cleanInteger(existingRule.threshold) !== threshold
+    || cleanInteger(existingRule.windowMinutes) !== windowMinutes
+  );
+  return {
+    ok: true,
+    value: {
+      id: cleanString(existingRule?.id, 120) || crypto.randomUUID(),
+      name,
+      eventName,
+      operator,
+      threshold,
+      windowMinutes,
+      cooldownMinutes,
+      messageTemplate,
+      enabled: value?.enabled === undefined ? existingRule?.enabled !== false : Boolean(value.enabled),
+      lastConditionMet: changedCondition ? false : Boolean(existingRule?.lastConditionMet),
+      lastTriggeredAt: cleanInteger(existingRule?.lastTriggeredAt),
+      lastAttemptedAt: cleanInteger(existingRule?.lastAttemptedAt),
+      lastAttemptStatus: existingRule?.lastAttemptStatus === "failed" ? "failed" : "sent",
+      lastError: cleanString(existingRule?.lastError, 240),
+      createdAt: cleanInteger(existingRule?.createdAt) || now,
+      updatedAt: now,
+    },
+  };
+}
+
+function serializeDiscordIntegration(integration, { universeId, eventNames = [] } = {}) {
+  const cleanUniverseId = cleanInteger(universeId || integration?.universeId);
+  const rules = Array.isArray(integration?.rules) ? integration.rules : [];
+  const deliveries = Array.isArray(integration?.deliveries) ? integration.deliveries : [];
+  return {
+    universeId: cleanUniverseId,
+    connection: {
+      connected: Boolean(integration?.webhook),
+      webhookHint: cleanString(integration?.webhookHint, 80),
+      connectedAt: cleanInteger(integration?.connectedAt) || null,
+      lastTestAt: cleanInteger(integration?.lastTestAt) || null,
+    },
+    rules: rules
+      .map((rule) => {
+        const eventName = normalizeCustomEventName(rule?.eventName);
+        const windowMinutes = cleanInteger(rule?.windowMinutes);
+        const currentCount = countDiscordAlertEvents(
+          cleanUniverseId,
+          eventName,
+          Date.now() - windowMinutes * 60 * 1000,
+          Date.now(),
+        );
+        return {
+          id: cleanString(rule?.id, 120),
+          name: cleanString(rule?.name, 80),
+          eventName,
+          operator: rule?.operator === "at_most" ? "at_most" : "at_least",
+          threshold: cleanInteger(rule?.threshold),
+          windowMinutes,
+          cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
+          currentCount,
+          messageTemplate: cleanString(rule?.messageTemplate, 500),
+          enabled: rule?.enabled !== false,
+          lastTriggeredAt: cleanInteger(rule?.lastTriggeredAt) || null,
+          lastError: cleanString(rule?.lastError, 240),
+          createdAt: cleanInteger(rule?.createdAt),
+          updatedAt: cleanInteger(rule?.updatedAt),
+        };
+      })
+      .sort((left, right) => right.updatedAt - left.updatedAt),
+    deliveries: deliveries
+      .slice(-MAX_DISCORD_ALERT_DELIVERIES)
+      .reverse()
+      .map((delivery) => ({
+        id: cleanString(delivery?.id, 120),
+        type: cleanString(delivery?.type, 32),
+        status: delivery?.status === "failed" ? "failed" : "sent",
+        title: cleanString(delivery?.title, 120),
+        sentAt: cleanInteger(delivery?.sentAt) || null,
+        error: cleanString(delivery?.error, 240),
+      })),
+    eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
+    limits: {
+      rules: MAX_DISCORD_ALERT_RULES_PER_UNIVERSE,
+      messageLength: 500,
+      windowsMinutes: [...DISCORD_ALERT_WINDOWS_MINUTES],
+      cooldownsMinutes: [...DISCORD_ALERT_COOLDOWNS_MINUTES],
+    },
+  };
+}
+
+async function getDiscordAlertEventNames(ownerUserId, universeId) {
+  const definitions = await readEventDefinitions(ownerUserId, universeId);
+  const names = new Set(SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => event.name));
+  for (const definition of definitions) {
+    const eventName = normalizeCustomEventName(definition?.eventName);
+    if (eventName) names.add(eventName);
+  }
+  for (const event of customEventsByUniverseId.get(String(universeId)) || []) {
+    const eventName = normalizeCustomEventName(event?.eventName);
+    if (eventName) names.add(eventName);
+  }
+  return [...names];
+}
+
+function formatDiscordEventName(eventName) {
+  return String(eventName || "")
+    .split(/[_:.-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ") || "Event";
+}
+
+function getDiscordWebhookHint(webhookUrl) {
+  try {
+    const segments = new URL(webhookUrl).pathname.split("/").filter(Boolean);
+    const webhookId = segments.at(-2) || "";
+    return webhookId ? `Webhook ••••${webhookId.slice(-4)}` : "Discord webhook";
+  } catch {
+    return "Discord webhook";
+  }
+}
+
+function getDiscordWebhookEncryptionKey() {
+  return crypto.createHash("sha256")
+    .update(`roanalytics:discord-webhook:v1:${PRESENCE_SECRET}`)
+    .digest();
+}
+
+function encryptDiscordWebhookUrl(webhookUrl) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getDiscordWebhookEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(webhookUrl, "utf8"), cipher.final()]);
+  return {
+    version: 1,
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+  };
+}
+
+function decryptDiscordWebhookUrl(value) {
+  if (!value || cleanInteger(value.version) !== 1) return "";
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    getDiscordWebhookEncryptionKey(),
+    Buffer.from(String(value.iv || ""), "base64"),
+  );
+  decipher.setAuthTag(Buffer.from(String(value.tag || ""), "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(String(value.ciphertext || ""), "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function getStoredDiscordWebhookUrl(integration) {
+  try {
+    return integration?.webhook ? normalizeDiscordWebhookUrl(decryptDiscordWebhookUrl(integration.webhook)) : "";
+  } catch (error) {
+    console.warn("Could not decrypt a stored Discord webhook:", error.message || error);
+    return "";
+  }
+}
+
+function getDiscordIntegrationScopeKey(ownerUserId, universeId) {
+  return `${cleanString(ownerUserId, 120)}:${cleanInteger(universeId)}`;
+}
+
+async function readDiscordIntegration(ownerUserId, universeId) {
+  const scopeKey = getDiscordIntegrationScopeKey(ownerUserId, universeId);
+  if (discordIntegrationCache.has(scopeKey)) return discordIntegrationCache.get(scopeKey);
+  const db = await getMongoDb();
+  let integration = null;
+  if (db) {
+    integration = await db.collection("discord_integrations").findOne(
+      { ownerUserId, universeId: cleanInteger(universeId) },
+      { projection: { _id: 0 } },
+    );
+  } else {
+    const integrations = await readLocalDiscordIntegrationStore();
+    integration = integrations.find((entry) => (
+      entry.ownerUserId === ownerUserId
+      && cleanInteger(entry.universeId) === cleanInteger(universeId)
+    )) || null;
+  }
+  discordIntegrationCache.set(scopeKey, integration);
+  return integration;
+}
+
+async function saveDiscordIntegration(integration) {
+  const scopeKey = getDiscordIntegrationScopeKey(integration?.ownerUserId, integration?.universeId);
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("discord_integrations").replaceOne(
+      { ownerUserId: integration.ownerUserId, universeId: integration.universeId },
+      integration,
+      { upsert: true },
+    );
+  } else {
+    await withLocalDiscordIntegrationStoreLock(async () => {
+      const integrations = await readLocalDiscordIntegrationStore();
+      const index = integrations.findIndex((entry) => (
+        entry.ownerUserId === integration.ownerUserId
+        && cleanInteger(entry.universeId) === cleanInteger(integration.universeId)
+      ));
+      if (index >= 0) integrations[index] = integration;
+      else integrations.push(integration);
+      await writeLocalDiscordIntegrationStore(integrations);
+    });
+  }
+  discordIntegrationCache.set(scopeKey, integration);
+  return integration;
+}
+
+async function readLocalDiscordIntegrationStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(discordIntegrationStorePath, "utf8"));
+    return Array.isArray(payload.integrations) ? payload.integrations : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalDiscordIntegrationStore(integrations) {
+  await fs.mkdir(path.dirname(discordIntegrationStorePath), { recursive: true });
+  await fs.writeFile(discordIntegrationStorePath, JSON.stringify({ integrations }, null, 2));
+}
+
+async function withLocalDiscordIntegrationStoreLock(operation) {
+  const previous = localDiscordIntegrationStoreLock;
+  let release;
+  localDiscordIntegrationStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+function appendDiscordDelivery(deliveries, delivery) {
+  return [...(Array.isArray(deliveries) ? deliveries : []), delivery]
+    .slice(-MAX_DISCORD_ALERT_DELIVERIES);
+}
+
+function countDiscordAlertEvents(universeId, eventName, fromMs, toMs) {
+  const universeKey = String(universeId);
+  let samples;
+  let timestampField;
+  if (eventName === "player_died") {
+    samples = deathSamplesByUniverseId.get(universeKey) || [];
+    timestampField = "diedAt";
+  } else if (eventName === "player_left") {
+    samples = leaveSamplesByUniverseId.get(universeKey) || [];
+    timestampField = "leftAt";
+  } else if (eventName === "chat_message") {
+    samples = chatLogsByUniverseId.get(universeKey) || [];
+    timestampField = "sentAt";
+  } else {
+    samples = customEventsByUniverseId.get(universeKey) || [];
+    timestampField = "occurredAt";
+  }
+  let count = 0;
+  for (const sample of samples) {
+    if (eventName !== "player_died" && eventName !== "player_left" && eventName !== "chat_message") {
+      if (normalizeCustomEventName(sample?.eventName) !== eventName) continue;
+    }
+    const timestamp = cleanTimestampMs(sample?.[timestampField]) || cleanTimestampMs(sample?.receivedAt);
+    if (timestamp >= fromMs && timestamp <= toMs) count += 1;
+  }
+  return count;
+}
+
+function formatDiscordAlertWindow(minutes) {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${minutes / 60} hr`;
+  return `${minutes / 1440} day`;
+}
+
+function renderDiscordAlertMessage(rule, context) {
+  const defaultMessage = `${context.eventLabel} recorded ${context.count.toLocaleString("en-US")} events in the last ${context.windowLabel}.`;
+  const template = cleanString(rule?.messageTemplate, 500);
+  if (!template) return defaultMessage;
+  const replacements = {
+    game: context.gameName,
+    event: context.eventLabel,
+    event_key: rule.eventName,
+    count: context.count.toLocaleString("en-US"),
+    threshold: cleanInteger(rule.threshold).toLocaleString("en-US"),
+    window: context.windowLabel,
+  };
+  return template.replace(/\{\{(game|event|event_key|count|threshold|window)\}\}/g, (_, key) => replacements[key]);
+}
+
+async function evaluateDiscordAlertsForPresence(presence, project) {
+  if (!project?.ownerUserId || cleanInteger(presence?.universeId) <= 0) return;
+  const scopeKey = getDiscordIntegrationScopeKey(project.ownerUserId, presence.universeId);
+  const previous = discordAlertEvaluationLocks.get(scopeKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(async () => {
+    const integration = await readDiscordIntegration(project.ownerUserId, presence.universeId);
+    const webhookUrl = getStoredDiscordWebhookUrl(integration);
+    if (!integration || !webhookUrl || !integration.rules?.some((rule) => rule.enabled !== false)) return;
+
+    const now = Date.now();
+    let changed = false;
+    for (const rule of integration.rules) {
+      if (rule.enabled === false) continue;
+      const count = countDiscordAlertEvents(
+        presence.universeId,
+        rule.eventName,
+        now - cleanInteger(rule.windowMinutes) * 60 * 1000,
+        now,
+      );
+      const conditionMet = rule.operator === "at_most"
+        ? count <= cleanInteger(rule.threshold)
+        : count >= cleanInteger(rule.threshold);
+      const previousConditionMet = Boolean(rule.lastConditionMet);
+      if (previousConditionMet !== conditionMet) {
+        rule.lastConditionMet = conditionMet;
+        changed = true;
+      }
+      const cooldownMs = cleanInteger(rule.cooldownMinutes) * 60 * 1000;
+      const lastAttemptedAt = cleanInteger(rule.lastAttemptedAt);
+      const retryDelayMs = rule.lastAttemptStatus === "failed"
+        ? Math.min(cooldownMs, 5 * 60 * 1000)
+        : cooldownMs;
+      const canTriggerAgain = !lastAttemptedAt || now - lastAttemptedAt >= retryDelayMs;
+      if (!conditionMet || !canTriggerAgain) continue;
+
+      const retryAfterMs = claimDiscordSendSlot(project.ownerUserId, now);
+      if (retryAfterMs > 0) {
+        rule.lastError = "Delivery paused by the Discord rate limit.";
+        rule.lastAttemptedAt = now;
+        rule.lastAttemptStatus = "failed";
+        changed = true;
+        continue;
+      }
+      const eventLabel = formatDiscordEventName(rule.eventName);
+      const windowLabel = formatDiscordAlertWindow(cleanInteger(rule.windowMinutes));
+      const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
+      try {
+        const result = await sendDiscordWebhookAlert({
+          webhookUrl,
+          alert: {
+            title: rule.name,
+            description: renderDiscordAlertMessage(rule, {
+              gameName: project.name || `Universe ${presence.universeId}`,
+              eventLabel,
+              count,
+              windowLabel,
+            }),
+            color: rule.operator === "at_most" ? 0xffb52e : 0x7c3cff,
+            timestamp: now,
+            fields: [
+              { name: "Universe", value: project.name || `Universe ${presence.universeId}` },
+              { name: "Event", value: `${eventLabel}\n\`${rule.eventName}\`` },
+              { name: "Observed", value: `${count.toLocaleString("en-US")} / ${windowLabel}` },
+              { name: "Rule", value: `${operatorLabel} ${cleanInteger(rule.threshold).toLocaleString("en-US")}` },
+            ],
+          },
+        });
+        rule.lastTriggeredAt = result.sentAt;
+        rule.lastAttemptedAt = result.sentAt;
+        rule.lastAttemptStatus = "sent";
+        rule.lastError = "";
+        integration.deliveries = appendDiscordDelivery(integration.deliveries, {
+          id: crypto.randomUUID(),
+          type: "alert",
+          status: "sent",
+          title: rule.name,
+          sentAt: result.sentAt,
+        });
+      } catch (error) {
+        rule.lastAttemptedAt = now;
+        rule.lastAttemptStatus = "failed";
+        rule.lastError = cleanString(error?.message, 240) || "Discord delivery failed.";
+        integration.deliveries = appendDiscordDelivery(integration.deliveries, {
+          id: crypto.randomUUID(),
+          type: "alert",
+          status: "failed",
+          title: rule.name,
+          sentAt: now,
+          error: rule.lastError,
+        });
+      }
+      changed = true;
+    }
+    if (changed) {
+      integration.updatedAt = Date.now();
+      await saveDiscordIntegration(integration);
+    }
+  });
+  discordAlertEvaluationLocks.set(scopeKey, current);
+  try {
+    await current;
+  } finally {
+    if (discordAlertEvaluationLocks.get(scopeKey) === current) discordAlertEvaluationLocks.delete(scopeKey);
+  }
 }
 
 async function handleAdminUserPlanUpdate(req, res, adminUser) {
@@ -2577,6 +3206,16 @@ async function handlePresenceHeartbeat(req, res) {
         savedVisitCount,
         savedCustomEventCount,
       },
+    });
+  }
+  if (project) {
+    setImmediate(() => {
+      evaluateDiscordAlertsForPresence(presence.value, project).catch((error) => {
+        console.warn(
+          `Could not evaluate Discord alerts for universe ${presence.value.universeId}:`,
+          error.message || error,
+        );
+      });
     });
   }
 
@@ -6651,22 +7290,25 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedFunnelId = cleanString(searchParams.get("funnelId"), 120);
   const requestedInterval = normalizeCustomEventInterval(searchParams.get("interval"));
-  const [definitions, eventDefinitions, eventRecords] = await Promise.all([
+  const [definitions, eventDefinitions] = await Promise.all([
     readFunnelDefinitions(ownerUserId, universeId),
     readEventDefinitions(ownerUserId, universeId),
-    getAnalyticsEventRecords({ universeId, fromMs, toMs }),
   ]);
+  const analysisToMs = getFunnelAnalysisToMs(toMs, definitions);
+  const eventRecords = await getAnalyticsEventRecords({ universeId, fromMs, toMs: analysisToMs });
   const events = eventRecords.events;
+  const rangeEvents = events.filter((event) => isAnalyticsEventWithinRange(event, fromMs, toMs));
   const eventNames = [...new Set([
     ...SYSTEM_ANALYTICS_EVENT_DEFINITIONS.map((event) => event.name),
     ...eventDefinitions.map((definition) => normalizeCustomEventName(definition.eventName)).filter(Boolean),
-    ...events.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean),
+    ...rangeEvents.map((event) => normalizeCustomEventName(event.eventName)).filter(Boolean),
   ])].sort();
   const sessions = groupCustomEventsBySession(events);
+  const rangeSessions = groupCustomEventsBySession(rangeEvents);
   const selectedTimelineDefinition = definitions.find((definition) => definition.id === requestedFunnelId)
     || definitions[0]
     || null;
-  const timelineScaffold = buildCustomEventSeries(events, {
+  const timelineScaffold = buildCustomEventSeries(rangeEvents, {
     fromMs,
     toMs,
     interval: requestedInterval,
@@ -6680,11 +7322,15 @@ async function getFunnelsFromQuery(ownerUserId, searchParams) {
       funnelId: selectedTimelineDefinition?.id || null,
     },
     eventNames,
-    eventCount: events.length,
-    sessionCount: sessions.length,
+    eventCount: rangeEvents.length,
+    sessionCount: rangeSessions.length,
     funnels: definitions.map((definition) => ({
       ...serializeFunnelDefinition(definition),
-      analytics: calculateFunnelAnalytics(definition, sessions),
+      analytics: calculateFunnelAnalytics(definition, sessions, {
+        entryFromMs: fromMs,
+        entryToMs: toMs,
+        totalTrackedSessions: rangeSessions.length,
+      }),
       ...(definition.id === selectedTimelineDefinition?.id
         ? {
           timeline: {
@@ -6719,9 +7365,13 @@ async function getFunnelMapFromQuery(definition, searchParams) {
   const toMs = cleanFlexibleTimestampMs(searchParams.get("to"));
   const requestedStep = cleanInteger(searchParams.get("step")) || 1;
   const requestedMode = searchParams.get("mode") === "dropped" ? "dropped" : "reached";
-  const eventRecords = await getAnalyticsEventRecords({ universeId, fromMs, toMs });
+  const analysisToMs = getFunnelAnalysisToMs(toMs, [definition]);
+  const eventRecords = await getAnalyticsEventRecords({ universeId, fromMs, toMs: analysisToMs });
   const sessions = groupCustomEventsBySession(eventRecords.events);
-  const mapAnalytics = calculateFunnelMapSamples(definition, sessions, requestedStep, requestedMode);
+  const mapAnalytics = calculateFunnelMapSamples(definition, sessions, requestedStep, requestedMode, {
+    entryFromMs: fromMs,
+    entryToMs: toMs,
+  });
   const clustered = clusterFunnelMapSamples(mapAnalytics.samples);
 
   return {
@@ -6745,6 +7395,22 @@ async function getFunnelMapFromQuery(definition, searchParams) {
       : "mapped location of the selected step",
     clusters: clustered.clusters,
   };
+}
+
+function getFunnelAnalysisToMs(toMs, definitions) {
+  const rangeEnd = cleanTimestampMs(toMs);
+  if (!rangeEnd) return 0;
+  const maximumWindowMs = (Array.isArray(definitions) ? definitions : [])
+    .reduce((maximum, definition) => Math.max(maximum, getFunnelConversionWindowMs(definition)), 0);
+  return Math.min(rangeEnd + maximumWindowMs, Number.MAX_SAFE_INTEGER);
+}
+
+function isAnalyticsEventWithinRange(event, fromMs, toMs) {
+  const timestamp = getCustomEventTimestamp(event);
+  if (!timestamp) return false;
+  if (fromMs > 0 && timestamp < fromMs) return false;
+  if (toMs > 0 && timestamp > toMs) return false;
+  return true;
 }
 
 function clusterFunnelMapSamples(samples) {
@@ -12655,6 +13321,7 @@ async function deleteMongoUniverseData(universeId) {
     "custom_event_deletions",
     "event_definitions",
     "funnels",
+    "discord_integrations",
     "map_snapshots",
     "map_snapshot_chunks",
   ]) {
@@ -12691,11 +13358,21 @@ async function deleteLocalUniverseData(universeId) {
     if (nextDeletions.length !== deletions.length) await writeLocalCustomEventDeletionStore(nextDeletions);
     return deletions.length - nextDeletions.length;
   });
+  const deletedDiscordIntegrations = await withLocalDiscordIntegrationStoreLock(async () => {
+    const integrations = await readLocalDiscordIntegrationStore();
+    const nextIntegrations = integrations.filter((integration) => cleanInteger(integration.universeId) !== universeId);
+    if (nextIntegrations.length !== integrations.length) await writeLocalDiscordIntegrationStore(nextIntegrations);
+    return integrations.length - nextIntegrations.length;
+  });
+  for (const scopeKey of [...discordIntegrationCache.keys()]) {
+    if (scopeKey.endsWith(`:${universeId}`)) discordIntegrationCache.delete(scopeKey);
+  }
   return {
     mapSnapshot,
     funnels: deletedFunnels,
     eventDefinitions: deletedEventDefinitions,
     customEventDeletions: deletedCustomEventDeletions,
+    discordIntegrations: deletedDiscordIntegrations,
   };
 }
 

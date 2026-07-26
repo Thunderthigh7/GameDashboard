@@ -3,6 +3,10 @@ import {
   createDemoUniverseFixture,
   DEMO_SEED_VERSION,
 } from "../lib/demo-universe.mjs";
+import {
+  calculateFunnelAnalytics,
+  groupCustomEventsBySession,
+} from "../lib/funnels.mjs";
 
 const fixture = createDemoUniverseFixture({ referenceTime: Date.UTC(2026, 6, 19, 16, 0, 0) });
 const eventsByName = new Map();
@@ -98,6 +102,24 @@ assert.deepEqual(fixture.funnels.map((funnel) => funnel.name), [
   "Shop conversion",
 ]);
 
+const demoSessions = groupCustomEventsBySession(fixture.customEvents);
+const obbyFunnel = fixture.funnels.find((funnel) => funnel.name === "Obby completion");
+const obbyAnalytics = calculateFunnelAnalytics(obbyFunnel, demoSessions);
+const obbyStarts = eventsByName.get("obby_run_started")?.length || 0;
+const obbyCompletions = eventsByName.get("obby_completed")?.length || 0;
+assert.equal(obbyAnalytics.entrySessions, obbyStarts, "Obby funnel entries should reconcile with raw start events");
+assert.equal(obbyAnalytics.completedSessions, obbyCompletions, "Obby funnel completions should reconcile with raw completion events");
+assert.deepEqual(
+  obbyAnalytics.steps.map((step) => step.sessions),
+  [obbyStarts, obbyStarts, obbyCompletions],
+  "every demo Obby run should reach the first checkpoint and only completed runs should reach the final step",
+);
+assert.equal(
+  obbyAnalytics.overallConversion,
+  Math.round((obbyCompletions / obbyStarts) * 1000) / 10,
+  "the displayed Obby conversion should derive exactly from the raw session counts",
+);
+
 console.log("Demo universe analytics stories passed.", {
   seedVersion: DEMO_SEED_VERSION,
   customEvents: fixture.customEvents.length,
@@ -109,4 +131,5 @@ console.log("Demo universe analytics stories passed.", {
   voidEdgeDefeatPercent: Math.round(voidEdgeDefeatShare * 1_000) / 10,
   inventoryExitPercent: Math.round(inventoryExitShare * 1_000) / 10,
   priceObjectionPercent: Math.round(priceObjectionShare * 1_000) / 10,
+  obbyCompletionPercent: obbyAnalytics.overallConversion,
 });

@@ -4,6 +4,7 @@ import {
   MAX_DISCORD_MESSAGE_LENGTH,
   normalizeDiscordMessage,
   normalizeDiscordWebhookUrl,
+  sendDiscordWebhookAlert,
   sendDiscordWebhookMessage,
 } from "../lib/discord-webhooks.mjs";
 
@@ -67,6 +68,38 @@ assert.deepEqual(JSON.parse(requestOptions.body), {
 assert.equal(result.ok, true);
 assert.equal(result.messageId, "discord-message-1");
 
+let alertPayload = null;
+await sendDiscordWebhookAlert({
+  webhookUrl: validWebhookUrl,
+  alert: {
+    title: "Purchase spike",
+    description: "Purchases reached 25 in 15 min.",
+    color: 0x7c3cff,
+    timestamp: Date.UTC(2026, 6, 25, 12),
+    fields: [
+      { name: "Universe", value: "Demo universe" },
+      { name: "Observed", value: "25 / 15 min" },
+    ],
+  },
+  fetchImpl: async (_url, options) => {
+    alertPayload = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { id: "discord-alert-1" };
+      },
+    };
+  },
+});
+assert.equal(alertPayload.content, undefined);
+assert.deepEqual(alertPayload.allowed_mentions, { parse: [] });
+assert.equal(alertPayload.embeds[0].title, "Purchase spike");
+assert.equal(alertPayload.embeds[0].description, "Purchases reached 25 in 15 min.");
+assert.equal(alertPayload.embeds[0].color, 0x7c3cff);
+assert.equal(alertPayload.embeds[0].fields.length, 2);
+assert.equal(alertPayload.embeds[0].footer.text, "RoAnalytics");
+
 await assert.rejects(
   sendDiscordWebhookMessage({
     webhookUrl: validWebhookUrl,
@@ -90,18 +123,36 @@ const appSource = readFileSync(new URL("../public/app.js", import.meta.url), "ut
 const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 
-assert.match(indexSource, /id="discordWebhookUrl"[\s\S]*?type="password"[\s\S]*?maxlength="600"/);
-assert.match(indexSource, /id="discordMessage"[\s\S]*?maxlength="2000"/);
+assert.match(indexSource, /id="discordConnectionForm"[\s\S]*?id="discordWebhookUrl"[\s\S]*?type="password"[\s\S]*?maxlength="600"/);
 assert.match(indexSource, /id="discordSendStatus"[^>]*aria-live="polite"/);
-assert.match(indexSource, /id="discordSendButton"[^>]*type="submit"/);
-assert.match(appSource, /request\("\/api\/integrations\/discord\/send"/);
-assert.match(appSource, /discordSendStatus\.textContent = "Message sent to Discord\.";/);
+assert.match(indexSource, /id="discordTestButton"[^>]*type="button"/);
+assert.match(indexSource, /id="discordNewRuleButton"[^>]*type="button"/);
+assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"/);
+assert.match(indexSource, /\{\{game\}\}[\s\S]*?\{\{event\}\}[\s\S]*?\{\{count\}\}[\s\S]*?\{\{threshold\}\}/);
+assert.doesNotMatch(indexSource, /id="discordMessage"/);
+assert.match(appSource, /request\(`\/api\/integrations\/discord\?universeId=/);
+assert.match(appSource, /request\("\/api\/integrations\/discord\/connection"/);
+assert.match(appSource, /request\("\/api\/integrations\/discord\/test"/);
+assert.match(appSource, /request\(id[\s\S]*?"\/api\/integrations\/discord\/rules"/);
+assert.match(appSource, /function renderDiscordRuleRow\(rule\)/);
+assert.match(appSource, /Current \$\{escapeHtml\(formatCompactNumber\(rule\.currentCount \|\| 0\)\)\}/);
+assert.match(appSource, /function updateDiscordRulePreview\(\)/);
 assert.match(
   serverSource,
-  /url\.pathname === "\/api\/integrations\/discord\/send"[\s\S]*?handleDiscordWebhookSend\(req, res, auth\)/,
+  /url\.pathname === "\/api\/integrations\/discord"[\s\S]*?handleDiscordIntegrationGet\(req, res, auth, url\.searchParams\)/,
 );
+assert.match(serverSource, /url\.pathname === "\/api\/integrations\/discord\/connection"[\s\S]*?handleDiscordConnectionSave\(req, res, auth\)/);
+assert.match(serverSource, /url\.pathname === "\/api\/integrations\/discord\/test"[\s\S]*?handleDiscordConnectionTest\(req, res, auth\)/);
+assert.match(serverSource, /function normalizeDiscordAlertRule\(value, existingRule = null\)/);
+assert.match(serverSource, /createCipheriv\("aes-256-gcm"/, "saved webhook URLs should be encrypted at rest");
+assert.match(serverSource, /evaluateDiscordAlertsForPresence\(presence\.value, project\)/, "incoming Roblox data should evaluate saved Discord alerts");
+assert.match(serverSource, /countDiscordAlertEvents\(/, "rules should use actual stored analytics event counts");
+assert.match(serverSource, /sendDiscordWebhookAlert\(\{[\s\S]*?Observed[\s\S]*?Rule/, "automatic deliveries should be structured analytics alerts");
 assert.match(serverSource, /MAX_DISCORD_SENDS_PER_WINDOW = 10/);
-assert.match(styleSource, /\.discordComposerPanel\s*\{/);
+assert.match(serverSource, /MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20/);
+assert.match(styleSource, /\.discordConnectionPanel,/);
+assert.match(styleSource, /\.discordRuleRow\s*\{/);
+assert.match(styleSource, /\.discordAlertPreview\s*\{/);
 assert.match(styleSource, /\.discordSendStatus\[data-state="success"\]\s*\{/);
 
 console.log("Discord integration regression checks passed.");

@@ -3510,17 +3510,20 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .discordPage {
+  display: grid;
+  gap: 16px;
   align-content: start;
 }
 
-.discordComposerPanel {
-  width: min(780px, 100%);
+.discordConnectionPanel,
+.discordRulesPanel {
   overflow: hidden;
   padding: 0;
 }
 
-.discordComposerHeader {
-  display: flex;
+.discordConnectionHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 15px;
   border-bottom: 1px solid rgba(82, 100, 150, 0.3);
@@ -3528,6 +3531,34 @@ body[data-active-view="connect"] .topbar > div:first-child {
     radial-gradient(circle at 0 0, rgba(88, 101, 242, 0.16), transparent 44%),
     rgba(8, 16, 36, 0.44);
   padding: 24px 26px;
+}
+
+.discordConnectionHeader > div {
+  display: grid;
+  gap: 4px;
+}
+
+.discordConnectionHeader > div > span,
+.discordRulesHeader > div:first-child > span,
+.discordRuleDialogCard > header > div > span,
+.discordAlertPreview > span {
+  color: #9aa5c5;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.discordConnectionHeader h2,
+.discordRulesHeader h2,
+.discordRuleDialogCard h2 {
+  color: var(--text);
+  font-size: 21px;
+}
+
+.discordConnectionHeader p {
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .discordComposerIcon {
@@ -3553,33 +3584,41 @@ body[data-active-view="connect"] .topbar > div:first-child {
   stroke-width: 1.7;
 }
 
-.discordComposerHeader > div {
-  display: grid;
-  gap: 4px;
-}
-
-.discordComposerHeader > div > span {
-  color: #9aa5c5;
-  font-size: 10px;
+.discordConnectionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid rgba(251, 113, 133, 0.3);
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.16);
+  color: #fda4af;
+  padding: 0 11px;
+  font-size: 11px;
   font-weight: 850;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.discordComposerHeader h2 {
-  color: var(--text);
-  font-size: 21px;
+.discordConnectionBadge::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
 }
 
-.discordComposerHeader p {
-  font-size: 13px;
-  line-height: 1.45;
+.discordConnectionBadge[data-state="connected"] {
+  border-color: rgba(45, 212, 191, 0.32);
+  background: rgba(13, 148, 136, 0.13);
+  color: #5eead4;
 }
 
-.discordMessageForm {
+.discordConnectionForm {
   display: grid;
-  gap: 22px;
-  padding: 26px;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  align-items: end;
+  gap: 20px;
+  padding: 22px 26px 24px;
 }
 
 .discordFormField {
@@ -3592,6 +3631,15 @@ body[data-active-view="connect"] .topbar > div:first-child {
   color: #dce4ff;
   font-size: 13px;
   font-weight: 850;
+}
+
+.discordMessageLabel em {
+  color: #7f8cad;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .discordMessageLabel {
@@ -3608,7 +3656,8 @@ body[data-active-view="connect"] .topbar > div:first-child {
 }
 
 .discordFormField input,
-.discordFormField textarea {
+.discordFormField textarea,
+.discordFormField select {
   width: 100%;
   border: 1px solid rgba(82, 100, 150, 0.52);
   border-radius: 9px;
@@ -3619,25 +3668,42 @@ body[data-active-view="connect"] .topbar > div:first-child {
   transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
 }
 
-.discordFormField input {
+.discordFormField input,
+.discordFormField select {
   min-height: 46px;
   padding: 0 13px;
 }
 
+.discordFormField select {
+  appearance: none;
+  background-color: rgba(5, 12, 29, 0.78);
+  background-image:
+    linear-gradient(45deg, transparent 50%, #9ca9ca 50%),
+    linear-gradient(135deg, #9ca9ca 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 20px,
+    calc(100% - 12px) 20px;
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  padding-right: 34px;
+}
+
 .discordFormField textarea {
-  min-height: 220px;
+  min-height: 104px;
   resize: vertical;
   padding: 13px;
   line-height: 1.55;
 }
 
 .discordFormField input:hover,
-.discordFormField textarea:hover {
+.discordFormField textarea:hover,
+.discordFormField select:hover {
   border-color: rgba(113, 128, 184, 0.68);
 }
 
 .discordFormField input:focus,
-.discordFormField textarea:focus {
+.discordFormField textarea:focus,
+.discordFormField select:focus {
   border-color: rgba(139, 111, 255, 0.92);
   background: rgba(7, 14, 33, 0.92);
   box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.14);
@@ -3648,12 +3714,21 @@ body[data-active-view="connect"] .topbar > div:first-child {
   font-size: 11px;
 }
 
-.discordComposerActions {
+.discordConnectionActions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.discordConnectionActions > div {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding-top: 2px;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.discordDisconnectButton {
+  color: #fda4af;
 }
 
 .discordSendStatus {
@@ -3678,7 +3753,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .discordSendButton {
   flex: 0 0 auto;
   gap: 8px;
-  min-width: 170px;
+  min-width: 150px;
   background: linear-gradient(135deg, #6d5ce7, #5865f2);
 }
 
@@ -3695,6 +3770,313 @@ body[data-active-view="connect"] .topbar > div:first-child {
 .discordSendButton:disabled {
   opacity: 0.58;
   cursor: wait;
+}
+
+.discordRulesPanel {
+  min-height: 320px;
+}
+
+.discordRulesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid rgba(82, 100, 150, 0.3);
+  padding: 20px 24px;
+}
+
+.discordRulesHeader > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.discordRulesHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.discordRulesHeaderActions > strong {
+  color: #8f9cbe;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.discordNewRuleButton {
+  gap: 7px;
+  min-height: 38px;
+}
+
+.discordNewRuleButton svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.discordRulesStatus {
+  min-height: 0;
+  margin: 0;
+  color: #95a2c3;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.discordRulesPanel > .discordRulesStatus:not(:empty) {
+  border-bottom: 1px solid rgba(82, 100, 150, 0.24);
+  padding: 12px 24px;
+}
+
+.discordRulesStatus[data-state="error"] {
+  color: #fb7185;
+}
+
+.discordRulesStatus[data-state="success"] {
+  color: #52dfa1;
+}
+
+.discordRuleList {
+  display: grid;
+}
+
+.discordRuleEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  min-height: 220px;
+  place-content: center;
+  padding: 30px;
+  text-align: center;
+}
+
+.discordRuleEmpty strong {
+  color: #dce4ff;
+  font-size: 15px;
+}
+
+.discordRuleEmpty span {
+  color: #7f8cad;
+  font-size: 12px;
+}
+
+.discordRuleRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.25fr) minmax(250px, 1.45fr) minmax(130px, 0.65fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  border-bottom: 1px solid rgba(62, 78, 122, 0.36);
+  padding: 17px 24px;
+}
+
+.discordRuleRow:last-child {
+  border-bottom: 0;
+}
+
+.discordRuleIdentity,
+.discordRuleTrigger,
+.discordRuleDelivery {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.discordRuleIdentity strong,
+.discordRuleTrigger strong,
+.discordRuleDelivery strong {
+  overflow: hidden;
+  color: #f4f7ff;
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discordRuleIdentity span,
+.discordRuleTrigger span,
+.discordRuleDelivery span {
+  overflow: hidden;
+  color: #8f9cbe;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discordRuleIdentity > span:first-of-type {
+  color: #aa96ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.discordRuleDelivery span[data-state="error"] {
+  color: #fb7185;
+}
+
+.discordRuleActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.discordRuleActions button {
+  min-height: 34px;
+}
+
+.discordRuleToggle {
+  position: relative;
+  width: 42px;
+  min-width: 42px;
+  border: 1px solid rgba(88, 104, 153, 0.56);
+  border-radius: 999px;
+  background: #121d37;
+  padding: 0;
+}
+
+.discordRuleToggle::after {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #8490ad;
+  transform: translateY(-50%);
+  transition: left 150ms ease, background 150ms ease;
+  content: "";
+}
+
+.discordRuleToggle[aria-pressed="true"] {
+  border-color: rgba(124, 92, 255, 0.7);
+  background: rgba(75, 48, 158, 0.58);
+}
+
+.discordRuleToggle[aria-pressed="true"]::after {
+  left: 18px;
+  background: #b39bff;
+}
+
+.discordRuleDialog {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+
+.discordRuleDialog[hidden] {
+  display: none;
+}
+
+.discordRuleDialogBackdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(2, 5, 16, 0.76);
+  backdrop-filter: blur(5px);
+}
+
+.discordRuleDialogCard {
+  position: relative;
+  z-index: 1;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 44px);
+  overflow-y: auto;
+  border: 1px solid rgba(119, 99, 189, 0.58);
+  border-radius: 14px;
+  background: linear-gradient(160deg, #0d1730, #080f22 72%);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.5);
+}
+
+.discordRuleDialogCard > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(82, 100, 150, 0.3);
+  padding: 20px 22px;
+}
+
+.discordRuleDialogCard > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.discordRuleDialogCard .iconButton svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.discordRuleForm {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.discordRuleConditionGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.discordAlertPreview {
+  display: grid;
+  gap: 7px;
+  border-left: 3px solid #7c3cff;
+  border-radius: 8px;
+  background: rgba(5, 12, 29, 0.82);
+  padding: 15px 16px;
+}
+
+.discordAlertPreview > strong {
+  color: #fff;
+  font-size: 15px;
+}
+
+.discordAlertPreview > p {
+  margin: 0;
+  color: #abb6d5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.discordAlertPreview > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.discordAlertPreview > div > span {
+  display: grid;
+  gap: 3px;
+}
+
+.discordAlertPreview b {
+  color: #7f8cad;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.discordAlertPreview small {
+  overflow: hidden;
+  color: #e7ecff;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discordRuleForm > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .usageGrid {
@@ -6726,6 +7108,35 @@ body[data-active-view="funnels"] #pageSubtitle {
   scrollbar-width: thin;
 }
 
+.eventCatalog::-webkit-scrollbar,
+.funnelCatalog::-webkit-scrollbar {
+  width: 6px;
+}
+
+.eventCatalog::-webkit-scrollbar-track,
+.funnelCatalog::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.eventCatalog::-webkit-scrollbar-thumb,
+.funnelCatalog::-webkit-scrollbar-thumb {
+  min-height: 36px;
+  border-radius: 999px;
+  background: rgba(124, 60, 255, 0.42);
+}
+
+.eventCatalog::-webkit-scrollbar-thumb:hover,
+.funnelCatalog::-webkit-scrollbar-thumb:hover {
+  background: rgba(151, 102, 255, 0.68);
+}
+
+.eventCatalog::-webkit-scrollbar-button,
+.funnelCatalog::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .funnelCatalogItem {
   display: block;
   align-items: center;
@@ -7411,7 +7822,9 @@ body[data-active-view="funnels"] #pageSubtitle {
 .funnelStepChangeIdentity strong,
 .funnelStepChangeIdentity small,
 .funnelStepChangeAverage strong,
+.funnelStepChangeAverage small,
 .funnelStepChangeValue strong,
+.funnelStepChangeValue small,
 .funnelStepChangeDelta {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7439,6 +7852,13 @@ body[data-active-view="funnels"] #pageSubtitle {
   color: #f6f7ff;
   font-size: 18px;
   font-weight: 900;
+}
+
+.funnelStepChangeAverage small,
+.funnelStepChangeValue small {
+  color: #8995b2;
+  font-size: 10px;
+  font-weight: 750;
 }
 
 .funnelStepChangeDelta {
@@ -9051,6 +9471,30 @@ body.hasEventConfirmDialog {
 }
 
 @media (max-width: 860px) {
+  .discordConnectionForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .discordConnectionActions {
+    justify-items: stretch;
+  }
+
+  .discordConnectionActions > div {
+    justify-content: flex-start;
+  }
+
+  .discordRuleRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .discordRuleActions {
+    justify-content: flex-start;
+  }
+
+  .discordRuleConditionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .appShell {
     grid-template-columns: 1fr;
   }
@@ -9400,21 +9844,45 @@ body.hasEventConfirmDialog {
 }
 
 @media (max-width: 560px) {
-  .discordComposerHeader,
-  .discordMessageForm {
+  .discordConnectionHeader,
+  .discordConnectionForm,
+  .discordRulesHeader,
+  .discordRuleRow,
+  .discordRuleForm {
     padding: 20px;
   }
 
-  .discordComposerHeader {
-    align-items: flex-start;
+  .discordConnectionHeader {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .discordComposerActions {
+  .discordConnectionBadge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .discordConnectionForm,
+  .discordRuleConditionGrid,
+  .discordRuleRow,
+  .discordAlertPreview > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .discordConnectionActions,
+  .discordConnectionActions > div,
+  .discordRulesHeader,
+  .discordRulesHeaderActions {
     align-items: stretch;
+    width: 100%;
+  }
+
+  .discordConnectionActions > div,
+  .discordRulesHeader {
     flex-direction: column;
   }
 
-  .discordSendButton {
+  .discordConnectionActions .button,
+  .discordRulesHeaderActions .button {
     width: 100%;
   }
 

@@ -43,12 +43,38 @@ const usageUpgradeTitle = document.querySelector("#usageUpgradeTitle");
 const usageUpgradeMessage = document.querySelector("#usageUpgradeMessage");
 const usageUpgradeButton = document.querySelector("#usageUpgradeButton");
 const usagePlanOptions = document.querySelector("#usagePlanOptions");
-const discordMessageForm = document.querySelector("#discordMessageForm");
+const discordConnectionForm = document.querySelector("#discordConnectionForm");
 const discordWebhookUrl = document.querySelector("#discordWebhookUrl");
-const discordMessage = document.querySelector("#discordMessage");
-const discordMessageCount = document.querySelector("#discordMessageCount");
+const discordConnectionBadge = document.querySelector("#discordConnectionBadge");
 const discordSendStatus = document.querySelector("#discordSendStatus");
-const discordSendButton = document.querySelector("#discordSendButton");
+const discordSaveConnectionButton = document.querySelector("#discordSaveConnectionButton");
+const discordTestButton = document.querySelector("#discordTestButton");
+const discordDisconnectButton = document.querySelector("#discordDisconnectButton");
+const discordNewRuleButton = document.querySelector("#discordNewRuleButton");
+const discordRuleCount = document.querySelector("#discordRuleCount");
+const discordRulesStatus = document.querySelector("#discordRulesStatus");
+const discordRuleList = document.querySelector("#discordRuleList");
+const discordRuleDialog = document.querySelector("#discordRuleDialog");
+const discordRuleDialogBackdrop = document.querySelector("#discordRuleDialogBackdrop");
+const discordRuleCloseButton = document.querySelector("#discordRuleCloseButton");
+const discordRuleDialogTitle = document.querySelector("#discordRuleDialogTitle");
+const discordRuleForm = document.querySelector("#discordRuleForm");
+const discordRuleId = document.querySelector("#discordRuleId");
+const discordRuleName = document.querySelector("#discordRuleName");
+const discordRuleEvent = document.querySelector("#discordRuleEvent");
+const discordRuleOperator = document.querySelector("#discordRuleOperator");
+const discordRuleThreshold = document.querySelector("#discordRuleThreshold");
+const discordRuleWindow = document.querySelector("#discordRuleWindow");
+const discordRuleCooldown = document.querySelector("#discordRuleCooldown");
+const discordRuleMessage = document.querySelector("#discordRuleMessage");
+const discordRuleMessageCount = document.querySelector("#discordRuleMessageCount");
+const discordAlertPreviewTitle = document.querySelector("#discordAlertPreviewTitle");
+const discordAlertPreviewMessage = document.querySelector("#discordAlertPreviewMessage");
+const discordAlertPreviewEvent = document.querySelector("#discordAlertPreviewEvent");
+const discordAlertPreviewRule = document.querySelector("#discordAlertPreviewRule");
+const discordRuleFormStatus = document.querySelector("#discordRuleFormStatus");
+const discordRuleCancelButton = document.querySelector("#discordRuleCancelButton");
+const discordRuleSaveButton = document.querySelector("#discordRuleSaveButton");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -250,7 +276,9 @@ let authenticated = false;
 let authenticatedUser = null;
 let lastAdminPlans = [];
 let activeView = getViewFromHash();
-let discordSendBusy = false;
+let discordBusy = false;
+let discordIntegration = null;
+let discordIntegrationRequestSequence = 0;
 let aiChatBusy = false;
 let aiChatHistory = [];
 let heatmapModulePromise = null;
@@ -313,7 +341,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-53";
+const DASHBOARD_ASSET_VERSION = "20260725-56";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -378,7 +406,7 @@ const CHAT_REFRESH_MS = 5000;
 const CHAT_LOG_PAGE_SIZE = 25;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord"]);
 const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
@@ -450,16 +478,25 @@ function bindEvents() {
     const button = event.target.closest("[data-select-plan]");
     if (button) selectPlan(button.dataset.selectPlan || "");
   });
-  discordMessageForm?.addEventListener("submit", (event) => {
+  discordConnectionForm?.addEventListener("submit", (event) => {
     event.preventDefault();
-    sendDiscordMessage();
-  });
-  discordMessage?.addEventListener("input", () => {
-    updateDiscordMessageCount();
-    clearDiscordSendStatus();
+    saveDiscordConnection();
   });
   discordWebhookUrl?.addEventListener("input", clearDiscordSendStatus);
-  updateDiscordMessageCount();
+  discordTestButton?.addEventListener("click", testDiscordConnection);
+  discordDisconnectButton?.addEventListener("click", disconnectDiscordConnection);
+  discordNewRuleButton?.addEventListener("click", () => openDiscordRuleEditor());
+  discordRuleList?.addEventListener("click", handleDiscordRuleListClick);
+  discordRuleForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveDiscordAlertRule();
+  });
+  discordRuleCancelButton?.addEventListener("click", closeDiscordRuleEditor);
+  discordRuleCloseButton?.addEventListener("click", closeDiscordRuleEditor);
+  discordRuleDialogBackdrop?.addEventListener("click", closeDiscordRuleEditor);
+  discordRuleForm?.addEventListener("input", updateDiscordRulePreview);
+  discordRuleForm?.addEventListener("change", updateDiscordRulePreview);
+  document.addEventListener("keydown", handleDiscordRuleDialogKeydown);
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   connectNewGameButton?.addEventListener("click", () => {
     document.querySelector("#connectGameRow")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1018,9 +1055,12 @@ function setAuthenticated(value, user = null) {
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
     resetReconciliationView();
     resetUsageView();
-    setDiscordSendBusy(false);
-    discordMessageForm?.reset();
-    updateDiscordMessageCount();
+    setDiscordBusy(false);
+    discordConnectionForm?.reset();
+    discordIntegration = null;
+    discordIntegrationRequestSequence += 1;
+    closeDiscordRuleEditor();
+    renderDiscordIntegration();
     clearDiscordSendStatus();
     return;
   }
@@ -1080,6 +1120,7 @@ function setActiveView(view, options = {}) {
     closeEventMoreMenu();
     setEventDefinitionBuilderVisible(false);
   }
+  if (activeView !== "discord") closeDiscordRuleEditor();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "events"
@@ -1219,6 +1260,8 @@ function loadActiveViewData(view, options = {}) {
       loadFunnels();
     } else if (view === "chat") {
       loadChatLogs({ includeInsights: false });
+    } else if (view === "discord") {
+      loadDiscordIntegration();
     }
     return;
   }
@@ -1234,6 +1277,8 @@ function loadActiveViewData(view, options = {}) {
     loadSelectedAiReport();
   } else if (view === "chat") {
     loadChatLogs({ includeInsights: false });
+  } else if (view === "discord") {
+    loadDiscordIntegration();
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -1590,52 +1635,78 @@ function setReconciliationFormDisabled(disabled) {
   }
 }
 
-function updateDiscordMessageCount() {
-  if (!discordMessageCount) return;
-  const characterCount = String(discordMessage?.value || "").length;
-  discordMessageCount.textContent = `${characterCount.toLocaleString()} / 2,000`;
-}
-
 function clearDiscordSendStatus() {
-  if (!discordSendStatus || discordSendBusy) return;
+  if (!discordSendStatus || discordBusy) return;
   discordSendStatus.textContent = "";
   delete discordSendStatus.dataset.state;
 }
 
-function setDiscordSendBusy(busy) {
-  discordSendBusy = busy;
+function setDiscordBusy(busy) {
+  discordBusy = busy;
   if (discordWebhookUrl) discordWebhookUrl.disabled = busy;
-  if (discordMessage) discordMessage.disabled = busy;
-  if (discordSendButton) {
-    discordSendButton.disabled = busy;
-    discordSendButton.setAttribute("aria-busy", String(busy));
-    const label = discordSendButton.querySelector("span");
-    if (label) label.textContent = busy ? "Sending..." : "Send to Discord";
+  const connected = Boolean(discordIntegration?.connection?.connected);
+  if (discordSaveConnectionButton) {
+    discordSaveConnectionButton.disabled = busy;
+    discordSaveConnectionButton.setAttribute("aria-busy", String(busy));
+  }
+  if (discordTestButton) discordTestButton.disabled = busy || !connected;
+  if (discordDisconnectButton) discordDisconnectButton.disabled = busy || !connected;
+  if (discordNewRuleButton) discordNewRuleButton.disabled = busy || !connected;
+}
+
+async function loadDiscordIntegration() {
+  if (!authenticated || !selectedUniverseId || !discordRuleList) {
+    discordIntegration = null;
+    renderDiscordIntegration();
+    return;
+  }
+  const requestSequence = ++discordIntegrationRequestSequence;
+  const universeId = selectedUniverseId;
+  if (discordRulesStatus) {
+    discordRulesStatus.textContent = "Loading alerts...";
+    delete discordRulesStatus.dataset.state;
+  }
+  try {
+    const payload = await request(`/api/integrations/discord?universeId=${encodeURIComponent(universeId)}`);
+    if (requestSequence !== discordIntegrationRequestSequence || universeId !== selectedUniverseId) return;
+    discordIntegration = payload;
+    renderDiscordIntegration();
+    if (discordRulesStatus) discordRulesStatus.textContent = "";
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated || requestSequence !== discordIntegrationRequestSequence) return;
+    discordIntegration = null;
+    renderDiscordIntegration();
+    if (discordRulesStatus) {
+      discordRulesStatus.dataset.state = "error";
+      discordRulesStatus.textContent = formatRequestError(error);
+    }
   }
 }
 
-async function sendDiscordMessage() {
-  if (!authenticated || discordSendBusy || !discordMessageForm) return;
-  if (!discordMessageForm.reportValidity()) return;
-
-  setDiscordSendBusy(true);
+async function saveDiscordConnection() {
+  if (!authenticated || discordBusy || !selectedUniverseId || !discordConnectionForm) return;
+  if (!discordConnectionForm.reportValidity()) return;
+  setDiscordBusy(true);
   if (discordSendStatus) {
     discordSendStatus.dataset.state = "sending";
-    discordSendStatus.textContent = "Sending message...";
+    discordSendStatus.textContent = "Saving webhook...";
   }
-
   try {
-    await request("/api/integrations/discord/send", {
-      method: "POST",
+    const payload = await request("/api/integrations/discord/connection", {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        universeId: selectedUniverseId,
         webhookUrl: String(discordWebhookUrl?.value || "").trim(),
-        message: String(discordMessage?.value || ""),
       }),
     });
+    discordIntegration = payload;
+    if (discordWebhookUrl) discordWebhookUrl.value = "";
+    renderDiscordIntegration();
     if (discordSendStatus) {
       discordSendStatus.dataset.state = "success";
-      discordSendStatus.textContent = "Message sent to Discord.";
+      discordSendStatus.textContent = "Webhook connected.";
     }
   } catch (error) {
     handleAuthError(error);
@@ -1645,7 +1716,352 @@ async function sendDiscordMessage() {
       discordSendStatus.textContent = formatRequestError(error);
     }
   } finally {
-    setDiscordSendBusy(false);
+    setDiscordBusy(false);
+  }
+}
+
+async function testDiscordConnection() {
+  if (!authenticated || discordBusy || !selectedUniverseId || !discordIntegration?.connection?.connected) return;
+  setDiscordBusy(true);
+  if (discordSendStatus) {
+    discordSendStatus.dataset.state = "sending";
+    discordSendStatus.textContent = "Sending test alert...";
+  }
+  try {
+    await request("/api/integrations/discord/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: selectedUniverseId }),
+    });
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "success";
+      discordSendStatus.textContent = "Test alert delivered.";
+    }
+    await loadDiscordIntegration();
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "error";
+      discordSendStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setDiscordBusy(false);
+  }
+}
+
+async function disconnectDiscordConnection() {
+  if (!authenticated || discordBusy || !selectedUniverseId || !discordIntegration?.connection?.connected) return;
+  const confirmed = await showEventConfirmation({
+    title: "Disconnect Discord?",
+    description: "The saved webhook will be removed and every alert rule will be turned off.",
+    actionLabel: "Disconnect",
+    tone: "danger",
+  });
+  if (!confirmed) return;
+  setDiscordBusy(true);
+  try {
+    discordIntegration = await request(`/api/integrations/discord/connection?universeId=${encodeURIComponent(selectedUniverseId)}`, {
+      method: "DELETE",
+    });
+    renderDiscordIntegration();
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "success";
+      discordSendStatus.textContent = "Discord disconnected.";
+    }
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "error";
+      discordSendStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setDiscordBusy(false);
+  }
+}
+
+function renderDiscordIntegration() {
+  const connected = Boolean(discordIntegration?.connection?.connected);
+  const rules = Array.isArray(discordIntegration?.rules) ? discordIntegration.rules : [];
+  const maxRules = Number(discordIntegration?.limits?.rules) || 20;
+  if (discordConnectionBadge) {
+    discordConnectionBadge.dataset.state = connected ? "connected" : "disconnected";
+    discordConnectionBadge.textContent = connected
+      ? (discordIntegration.connection.webhookHint || "Connected")
+      : "Not connected";
+  }
+  if (discordWebhookUrl) {
+    discordWebhookUrl.placeholder = connected
+      ? "Paste a new webhook URL to replace the connection"
+      : "https://discord.com/api/webhooks/...";
+  }
+  if (discordTestButton) discordTestButton.disabled = discordBusy || !connected;
+  if (discordDisconnectButton) {
+    discordDisconnectButton.hidden = !connected;
+    discordDisconnectButton.disabled = discordBusy || !connected;
+  }
+  if (discordNewRuleButton) discordNewRuleButton.disabled = discordBusy || !connected || rules.length >= maxRules;
+  if (discordRuleCount) discordRuleCount.textContent = `${rules.length} / ${maxRules}`;
+  if (!discordRuleList) return;
+  if (!selectedUniverseId) {
+    discordRuleList.innerHTML = `
+      <div class="discordRuleEmpty">
+        <strong>Select a universe</strong>
+        <span>Discord alerts are configured separately for each game.</span>
+      </div>
+    `;
+  } else if (!connected) {
+    discordRuleList.innerHTML = `
+      <div class="discordRuleEmpty">
+        <strong>Connect Discord to create alerts</strong>
+        <span>Rules will monitor your Roblox events automatically.</span>
+      </div>
+    `;
+  } else if (!rules.length) {
+    discordRuleList.innerHTML = `
+      <div class="discordRuleEmpty">
+        <strong>No alert rules yet</strong>
+        <span>Create a rule for a high-value event, a spike, or missing activity.</span>
+      </div>
+    `;
+  } else {
+    discordRuleList.innerHTML = rules.map(renderDiscordRuleRow).join("");
+  }
+  setDiscordBusy(discordBusy);
+}
+
+function renderDiscordRuleRow(rule) {
+  const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
+  const windowLabel = formatDiscordAlertWindow(rule.windowMinutes);
+  const lastSent = rule.lastTriggeredAt ? formatRelativeTime(rule.lastTriggeredAt) : "Never sent";
+  const deliveryState = rule.lastError ? "error" : "";
+  return `
+    <article class="discordRuleRow" data-discord-rule-id="${escapeHtml(rule.id)}">
+      <div class="discordRuleIdentity">
+        <strong>${escapeHtml(rule.name)}</strong>
+        <span>${escapeHtml(rule.eventName)}</span>
+      </div>
+      <div class="discordRuleTrigger">
+        <strong>${escapeHtml(operatorLabel)} ${escapeHtml(formatCompactNumber(rule.threshold))} in ${escapeHtml(windowLabel)}</strong>
+        <span>Current ${escapeHtml(formatCompactNumber(rule.currentCount || 0))} · ${escapeHtml(formatEventName(rule.eventName))} · ${escapeHtml(formatDiscordAlertWindow(rule.cooldownMinutes))} cooldown</span>
+      </div>
+      <div class="discordRuleDelivery">
+        <strong>${rule.enabled ? "Active" : "Paused"}</strong>
+        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || lastSent)}</span>
+      </div>
+      <div class="discordRuleActions">
+        <button class="discordRuleToggle" type="button" data-discord-rule-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"></button>
+        <button class="button secondary compact" type="button" data-discord-rule-action="edit">Edit</button>
+        <button class="button secondary compact danger" type="button" data-discord-rule-action="delete">Delete</button>
+      </div>
+    </article>
+  `;
+}
+
+function formatDiscordAlertWindow(value) {
+  const minutes = Number(value) || 0;
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${minutes / 60} hr`;
+  return `${minutes / 1440} day`;
+}
+
+function openDiscordRuleEditor(rule = null) {
+  if (!discordRuleDialog || !discordIntegration?.connection?.connected) return;
+  const eventNames = [...new Set([
+    ...(discordIntegration.eventNames || []),
+    ...(rule?.eventName ? [rule.eventName] : []),
+  ])].filter(Boolean);
+  if (discordRuleEvent) {
+    discordRuleEvent.innerHTML = eventNames
+      .map((eventName) => `<option value="${escapeHtml(eventName)}">${escapeHtml(formatEventName(eventName))} · ${escapeHtml(eventName)}</option>`)
+      .join("");
+  }
+  if (discordRuleId) discordRuleId.value = rule?.id || "";
+  if (discordRuleName) discordRuleName.value = rule?.name || "";
+  if (discordRuleEvent) discordRuleEvent.value = rule?.eventName || eventNames[0] || "";
+  if (discordRuleOperator) discordRuleOperator.value = rule?.operator || "at_least";
+  if (discordRuleThreshold) discordRuleThreshold.value = String(rule?.threshold ?? 10);
+  if (discordRuleWindow) discordRuleWindow.value = String(rule?.windowMinutes || 15);
+  if (discordRuleCooldown) discordRuleCooldown.value = String(rule?.cooldownMinutes || 60);
+  if (discordRuleMessage) discordRuleMessage.value = rule?.messageTemplate || "";
+  if (discordRuleDialogTitle) discordRuleDialogTitle.textContent = rule ? "Edit alert" : "New alert";
+  if (discordRuleSaveButton) discordRuleSaveButton.textContent = rule ? "Save changes" : "Save alert";
+  if (discordRuleFormStatus) {
+    discordRuleFormStatus.textContent = "";
+    delete discordRuleFormStatus.dataset.state;
+  }
+  discordRuleDialog.hidden = false;
+  updateDiscordRulePreview();
+  window.setTimeout(() => discordRuleName?.focus(), 0);
+}
+
+function closeDiscordRuleEditor() {
+  if (!discordRuleDialog || discordRuleDialog.hidden) return;
+  discordRuleDialog.hidden = true;
+  setDiscordRuleFormBusy(false);
+}
+
+function handleDiscordRuleDialogKeydown(event) {
+  if (event.key === "Escape" && discordRuleDialog && !discordRuleDialog.hidden) closeDiscordRuleEditor();
+}
+
+function updateDiscordRulePreview() {
+  const operator = discordRuleOperator?.value === "at_most" ? "At most" : "At least";
+  const minimum = operator === "At most" ? 0 : 1;
+  if (discordRuleThreshold) discordRuleThreshold.min = String(minimum);
+  const threshold = Math.max(minimum, Number(discordRuleThreshold?.value) || minimum);
+  const eventName = String(discordRuleEvent?.value || "");
+  const eventLabel = formatEventName(eventName || "tracked_event");
+  const windowLabel = formatDiscordAlertWindow(discordRuleWindow?.value);
+  const title = String(discordRuleName?.value || "").trim() || `${eventLabel} alert`;
+  const template = String(discordRuleMessage?.value || "");
+  const sampleValues = {
+    game: knownUniverses.find((universe) => String(universe.id) === selectedUniverseId)?.name || "Selected universe",
+    event: eventLabel,
+    event_key: eventName,
+    count: String(threshold),
+    threshold: String(threshold),
+    window: windowLabel,
+  };
+  const previewMessage = template
+    ? template.replace(/\{\{(game|event|event_key|count|threshold|window)\}\}/g, (_, key) => sampleValues[key])
+    : `${eventLabel} recorded ${threshold.toLocaleString()} events in the last ${windowLabel}.`;
+  if (discordAlertPreviewTitle) discordAlertPreviewTitle.textContent = title;
+  if (discordAlertPreviewMessage) discordAlertPreviewMessage.textContent = previewMessage;
+  if (discordAlertPreviewEvent) discordAlertPreviewEvent.textContent = eventName || "Select an event";
+  if (discordAlertPreviewRule) discordAlertPreviewRule.textContent = `${operator} ${threshold.toLocaleString()} / ${windowLabel}`;
+  if (discordRuleMessageCount) discordRuleMessageCount.textContent = `${template.length.toLocaleString()} / 500`;
+}
+
+async function handleDiscordRuleListClick(event) {
+  const actionButton = event.target.closest("[data-discord-rule-action]");
+  const row = actionButton?.closest("[data-discord-rule-id]");
+  const rule = discordIntegration?.rules?.find((entry) => entry.id === row?.dataset.discordRuleId);
+  if (!actionButton || !rule || discordBusy) return;
+  const action = actionButton.dataset.discordRuleAction;
+  if (action === "edit") {
+    openDiscordRuleEditor(rule);
+  } else if (action === "toggle") {
+    await updateDiscordAlertRule(rule, { enabled: !rule.enabled });
+  } else if (action === "delete") {
+    const confirmed = await showEventConfirmation({
+      title: `Delete ${rule.name}?`,
+      description: "This Discord alert rule will be removed.",
+      actionLabel: "Delete alert",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    await deleteDiscordAlertRule(rule);
+  }
+}
+
+function getDiscordRulePayload(overrides = {}) {
+  return {
+    universeId: selectedUniverseId,
+    name: String(discordRuleName?.value || "").trim(),
+    eventName: String(discordRuleEvent?.value || ""),
+    operator: discordRuleOperator?.value === "at_most" ? "at_most" : "at_least",
+    threshold: Number(discordRuleThreshold?.value),
+    windowMinutes: Number(discordRuleWindow?.value),
+    cooldownMinutes: Number(discordRuleCooldown?.value),
+    messageTemplate: String(discordRuleMessage?.value || "").trim(),
+    ...overrides,
+  };
+}
+
+async function saveDiscordAlertRule() {
+  if (!authenticated || discordBusy || !selectedUniverseId || !discordRuleForm?.reportValidity()) return;
+  const id = String(discordRuleId?.value || "");
+  setDiscordRuleFormBusy(true);
+  try {
+    discordIntegration = await request(id
+      ? `/api/integrations/discord/rules/${encodeURIComponent(id)}`
+      : "/api/integrations/discord/rules", {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getDiscordRulePayload()),
+    });
+    closeDiscordRuleEditor();
+    renderDiscordIntegration();
+    if (discordRulesStatus) {
+      discordRulesStatus.dataset.state = "success";
+      discordRulesStatus.textContent = id ? "Alert updated." : "Alert created.";
+    }
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordRuleFormStatus) {
+      discordRuleFormStatus.dataset.state = "error";
+      discordRuleFormStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setDiscordRuleFormBusy(false);
+  }
+}
+
+async function updateDiscordAlertRule(rule, overrides) {
+  setDiscordBusy(true);
+  try {
+    discordIntegration = await request(`/api/integrations/discord/rules/${encodeURIComponent(rule.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        universeId: selectedUniverseId,
+        name: rule.name,
+        eventName: rule.eventName,
+        operator: rule.operator,
+        threshold: rule.threshold,
+        windowMinutes: rule.windowMinutes,
+        cooldownMinutes: rule.cooldownMinutes,
+        messageTemplate: rule.messageTemplate,
+        enabled: rule.enabled,
+        ...overrides,
+      }),
+    });
+    renderDiscordIntegration();
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordRulesStatus) {
+      discordRulesStatus.dataset.state = "error";
+      discordRulesStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setDiscordBusy(false);
+  }
+}
+
+async function deleteDiscordAlertRule(rule) {
+  setDiscordBusy(true);
+  try {
+    discordIntegration = await request(`/api/integrations/discord/rules/${encodeURIComponent(rule.id)}?universeId=${encodeURIComponent(selectedUniverseId)}`, {
+      method: "DELETE",
+    });
+    renderDiscordIntegration();
+    if (discordRulesStatus) {
+      discordRulesStatus.dataset.state = "success";
+      discordRulesStatus.textContent = "Alert deleted.";
+    }
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordRulesStatus) {
+      discordRulesStatus.dataset.state = "error";
+      discordRulesStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setDiscordBusy(false);
+  }
+}
+
+function setDiscordRuleFormBusy(busy) {
+  if (!discordRuleForm) return;
+  for (const element of discordRuleForm.elements) element.disabled = busy;
+  if (discordRuleSaveButton) {
+    discordRuleSaveButton.setAttribute("aria-busy", String(busy));
+    if (busy) discordRuleSaveButton.textContent = "Saving...";
+    else discordRuleSaveButton.textContent = discordRuleId?.value ? "Save changes" : "Save alert";
   }
 }
 
@@ -2639,6 +3055,11 @@ async function selectUniverse(value) {
   selectedFunnelTimelineSteps.clear();
   isCreatingFunnel = false;
   setFunnelBuilderVisible(false);
+  discordIntegration = null;
+  discordIntegrationRequestSequence += 1;
+  closeDiscordRuleEditor();
+  if (discordConnectionForm) discordConnectionForm.reset();
+  renderDiscordIntegration();
   renderChatSummary();
   setChatLiveState(selectedUniverseId ? "loading" : "waiting");
   renderRecentChatEmpty(selectedUniverseId ? "Loading recent chat..." : "Select a universe to view recent chat.");
@@ -6017,6 +6438,9 @@ function renderFunnelStepChanges(funnel) {
   const steps = getFunnelTimelineSteps(funnel)
     .filter((step) => Number(step.index) > 1)
     .map((step) => {
+      const averageCounts = getFunnelAggregateStepCounts(completedBuckets, step.index);
+      const startCounts = getFunnelBucketStepCounts(startBucket, step.index);
+      const endCounts = getFunnelBucketStepCounts(endBucket, step.index);
       const averageConversion = getFunnelAverageStepConversion(completedBuckets, step.index);
       const startConversion = getFunnelBucketStepConversion(startBucket, step.index);
       const endConversion = getFunnelBucketStepConversion(endBucket, step.index);
@@ -6028,6 +6452,12 @@ function renderFunnelStepChanges(funnel) {
         averageConversion,
         endConversion,
         changePercentagePoints,
+        averageReachedSessions: averageCounts.reachedSessions,
+        averageEligibleSessions: averageCounts.eligibleSessions,
+        startReachedSessions: startCounts.reachedSessions,
+        startEligibleSessions: startCounts.eligibleSessions,
+        endReachedSessions: endCounts.reachedSessions,
+        endEligibleSessions: endCounts.eligibleSessions,
       };
     });
 
@@ -6053,6 +6483,20 @@ function renderFunnelStepChangeRow(step) {
   const change = step.changePercentagePoints === null || step.changePercentagePoints === undefined
     ? ""
     : `<span class="funnelStepChangeDelta">(${formatFunnelPercentagePointChange(step.changePercentagePoints)})</span>`;
+  const averageCounts = formatFunnelConversionFraction(
+    step.averageReachedSessions,
+    step.averageEligibleSessions,
+  );
+  const startCounts = formatFunnelConversionFraction(
+    step.startReachedSessions,
+    step.startEligibleSessions,
+    { includeUnit: false },
+  );
+  const endCounts = formatFunnelConversionFraction(
+    step.endReachedSessions,
+    step.endEligibleSessions,
+    { includeUnit: false },
+  );
   return `
     <article class="funnelStepChangeRow ${signal}">
       <div class="funnelStepChangeIdentity">
@@ -6064,25 +6508,30 @@ function renderFunnelStepChangeRow(step) {
       </div>
       <div class="funnelStepChangeAverage">
         <strong>${formatFunnelPercentage(step.averageConversion)}</strong>
+        <small>${averageCounts}</small>
       </div>
       <div class="funnelStepChangeValue">
         <strong>${formatFunnelPercentage(step.endConversion)} ${change}</strong>
+        <small>End ${endCounts} &middot; Start ${startCounts}</small>
       </div>
     </article>`;
 }
 
 function getFunnelAverageStepConversion(buckets, stepIndex) {
+  const counts = getFunnelAggregateStepCounts(buckets, stepIndex);
+  if (counts.eligibleSessions <= 0) return null;
+  return Math.round((counts.reachedSessions / counts.eligibleSessions) * 1000) / 10;
+}
+
+function getFunnelAggregateStepCounts(buckets, stepIndex) {
   let reachedSessions = 0;
   let eligibleSessions = 0;
   for (const bucket of Array.isArray(buckets) ? buckets : []) {
-    const steps = Array.isArray(bucket?.steps) ? bucket.steps : [];
-    const currentStep = steps.find((step) => Number(step.index) === Number(stepIndex));
-    const previousStep = steps.find((step) => Number(step.index) === Number(stepIndex) - 1);
-    reachedSessions += Number(currentStep?.sessions) || 0;
-    eligibleSessions += Number(previousStep?.sessions) || 0;
+    const counts = getFunnelBucketStepCounts(bucket, stepIndex);
+    reachedSessions += counts.reachedSessions;
+    eligibleSessions += counts.eligibleSessions;
   }
-  if (eligibleSessions <= 0) return null;
-  return Math.round((reachedSessions / eligibleSessions) * 1000) / 10;
+  return { reachedSessions, eligibleSessions };
 }
 
 function getCompletedFunnelTimelineBuckets(funnel) {
@@ -6116,6 +6565,26 @@ function getFunnelBucketStepConversion(bucket, stepIndex) {
   return Math.round(((Number(currentStep.sessions) || 0) / eligibleSessions) * 1000) / 10;
 }
 
+function getFunnelBucketStepCounts(bucket, stepIndex) {
+  const steps = Array.isArray(bucket?.steps) ? bucket.steps : [];
+  const currentStep = steps.find((step) => Number(step.index) === Number(stepIndex));
+  const previousStep = steps.find((step) => Number(step.index) === Number(stepIndex) - 1);
+  return {
+    reachedSessions: Number(currentStep?.sessions) || 0,
+    eligibleSessions: Number(stepIndex) > 1
+      ? Number(previousStep?.sessions) || 0
+      : Number(bucket?.entrySessions) || 0,
+  };
+}
+
+function formatFunnelConversionFraction(reachedSessions, eligibleSessions, options = {}) {
+  const reached = Math.max(Number(reachedSessions) || 0, 0);
+  const eligible = Math.max(Number(eligibleSessions) || 0, 0);
+  if (eligible <= 0) return options.includeUnit === false ? "0 / 0" : "No eligible sessions";
+  const fraction = `${formatCompactNumber(reached)} / ${formatCompactNumber(eligible)}`;
+  return options.includeUnit === false ? fraction : `${fraction} sessions`;
+}
+
 function formatFunnelPercentagePointChange(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
   const difference = Number(value);
@@ -6147,7 +6616,7 @@ function renderFunnelResults(funnel) {
     ? `
       <div class="funnelResultsColumnHeader" aria-hidden="true">
         <span>Funnel step</span>
-        <span class="funnelBarColumnHeader"><span>Players</span><span>Total conversion</span></span>
+        <span class="funnelBarColumnHeader"><span>Sessions</span><span>Total conversion</span></span>
         <span>Median time</span>
         <span>Drop-off</span>
       </div>
