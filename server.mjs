@@ -2435,26 +2435,22 @@ function serializeRobloxLiveIntegration(integration, { universeId, eventNames = 
     deliveries: (normalized?.deliveries || [])
       .slice(-MAX_ROBLOX_LIVE_DELIVERIES)
       .reverse()
-      .map((delivery) => ({
-        id: cleanString(delivery?.id, 120),
-        ruleId: cleanString(delivery?.ruleId, 120),
-        title: cleanString(delivery?.title, 120),
-        actionKey: cleanString(delivery?.actionKey, 64),
-        trigger: cleanString(delivery?.trigger, 32),
-        status: normalizeRobloxLiveDeliveryStatus(delivery?.status),
-        sentAt: cleanInteger(delivery?.sentAt) || null,
-        expiresAt: cleanInteger(delivery?.expiresAt) || null,
-        error: cleanString(delivery?.error, 240),
-        acknowledgedServers: Object.keys(delivery?.acknowledgements || {}).length,
-        acknowledgements: Object.values(delivery?.acknowledgements || {})
-          .map((ack) => ({
-            jobId: cleanString(ack?.jobId, 128),
-            status: normalizeRobloxLiveAckStatus(ack?.status),
-            message: cleanString(ack?.message, 160),
-            processedAt: cleanInteger(ack?.processedAt) || null,
-          }))
-          .sort((left, right) => (right.processedAt || 0) - (left.processedAt || 0)),
-      })),
+      .map((delivery) => {
+        const status = getRobloxLiveDeliveryStatus(delivery);
+        return {
+          id: cleanString(delivery?.id, 120),
+          ruleId: cleanString(delivery?.ruleId, 120),
+          title: cleanString(delivery?.title, 120),
+          actionKey: cleanString(delivery?.actionKey, 64),
+          trigger: cleanString(delivery?.trigger, 32),
+          status,
+          sentAt: cleanInteger(delivery?.sentAt) || null,
+          expiresAt: cleanInteger(delivery?.expiresAt) || null,
+          error: cleanString(delivery?.error, 240),
+          confirmedAt: cleanInteger(delivery?.confirmation?.processedAt) || null,
+          confirmationMessage: cleanString(delivery?.confirmation?.message, 160),
+        };
+      }),
     eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
     limits: {
       rules: MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE,
@@ -2472,15 +2468,59 @@ function normalizeProviderStatusCode(error) {
 }
 
 function normalizeRobloxLiveDeliveryStatus(value) {
-  return ["published", "acknowledged", "partial", "failed", "expired"].includes(value)
-    ? value
-    : "published";
+  if (value === "confirmed" || value === "acknowledged" || value === "partial") return "confirmed";
+  if (value === "unconfirmed" || value === "expired") return "unconfirmed";
+  if (value === "failed") return "failed";
+  return "published";
 }
 
 function normalizeRobloxLiveAckStatus(value) {
   return ["executed", "failed", "unhandled", "expired", "duplicate", "test"].includes(value)
     ? value
     : "failed";
+}
+
+function isSuccessfulRobloxLiveAckStatus(value) {
+  return value === "executed" || value === "test" || value === "duplicate";
+}
+
+function normalizeRobloxLiveConfirmation(value) {
+  if (!value || typeof value !== "object") return null;
+  const status = normalizeRobloxLiveAckStatus(value.status);
+  if (!isSuccessfulRobloxLiveAckStatus(status)) return null;
+  const jobId = cleanString(value.jobId, 128);
+  const processedAt = cleanInteger(value.processedAt);
+  if (!jobId || !processedAt) return null;
+  return {
+    jobId,
+    status,
+    message: cleanString(value.message, 160),
+    processedAt,
+  };
+}
+
+function normalizeRobloxLiveNegativeAck(value) {
+  if (!value || typeof value !== "object") return null;
+  const status = normalizeRobloxLiveAckStatus(value.status);
+  if (isSuccessfulRobloxLiveAckStatus(status)) return null;
+  const jobId = cleanString(value.jobId, 128);
+  const processedAt = cleanInteger(value.processedAt);
+  if (!jobId || !processedAt) return null;
+  return {
+    jobId,
+    status,
+    message: cleanString(value.message, 160),
+    processedAt,
+  };
+}
+
+function getRobloxLiveDeliveryStatus(delivery) {
+  if (delivery?.confirmation) return "confirmed";
+  if (normalizeRobloxLiveDeliveryStatus(delivery?.status) === "failed") return "failed";
+  if (cleanInteger(delivery?.expiresAt) > 0 && cleanInteger(delivery.expiresAt) < Date.now()) {
+    return "unconfirmed";
+  }
+  return "published";
 }
 
 function normalizeStoredRobloxLiveIntegration(integration) {
@@ -2515,28 +2555,36 @@ function normalizeStoredRobloxLiveIntegration(integration) {
     }
   }
   const deliveries = (Array.isArray(integration.deliveries) ? integration.deliveries : [])
-    .map((delivery) => ({
-      id: cleanString(delivery?.id, 120),
-      ruleId: cleanString(delivery?.ruleId, 120),
-      title: cleanString(delivery?.title, 120),
-      actionKey: cleanString(delivery?.actionKey, 64),
-      trigger: cleanString(delivery?.trigger, 32),
-      status: normalizeRobloxLiveDeliveryStatus(delivery?.status),
-      sentAt: cleanInteger(delivery?.sentAt) || null,
-      expiresAt: cleanInteger(delivery?.expiresAt) || null,
-      error: cleanString(delivery?.error, 240),
-      acknowledgements: Object.fromEntries(
-        Object.entries(delivery?.acknowledgements || {})
-          .slice(0, MAX_ROBLOX_LIVE_ACKS_PER_PAYLOAD * 4)
-          .map(([jobId, ack]) => [cleanString(jobId, 128), {
-            jobId: cleanString(ack?.jobId || jobId, 128),
-            status: normalizeRobloxLiveAckStatus(ack?.status),
-            message: cleanString(ack?.message, 160),
-            processedAt: cleanInteger(ack?.processedAt) || null,
-          }])
-          .filter(([jobId]) => jobId),
-      ),
-    }))
+    .map((delivery) => {
+      const legacyAcks = Object.entries(delivery?.acknowledgements || {})
+        .map(([jobId, ack]) => ({
+          jobId: cleanString(ack?.jobId || jobId, 128),
+          status: normalizeRobloxLiveAckStatus(ack?.status),
+          message: cleanString(ack?.message, 160),
+          processedAt: cleanInteger(ack?.processedAt) || null,
+        }))
+        .filter((ack) => ack.jobId && ack.processedAt)
+        .sort((left, right) => left.processedAt - right.processedAt);
+      const confirmation = normalizeRobloxLiveConfirmation(delivery?.confirmation)
+        || legacyAcks.map(normalizeRobloxLiveConfirmation).find(Boolean)
+        || null;
+      const lastNegativeAck = normalizeRobloxLiveNegativeAck(delivery?.lastNegativeAck)
+        || legacyAcks.map(normalizeRobloxLiveNegativeAck).filter(Boolean).at(-1)
+        || null;
+      return {
+        id: cleanString(delivery?.id, 120),
+        ruleId: cleanString(delivery?.ruleId, 120),
+        title: cleanString(delivery?.title, 120),
+        actionKey: cleanString(delivery?.actionKey, 64),
+        trigger: cleanString(delivery?.trigger, 32),
+        status: confirmation ? "confirmed" : normalizeRobloxLiveDeliveryStatus(delivery?.status),
+        sentAt: cleanInteger(delivery?.sentAt) || null,
+        expiresAt: cleanInteger(delivery?.expiresAt) || null,
+        error: cleanString(delivery?.error, 240),
+        confirmation,
+        lastNegativeAck,
+      };
+    })
     .filter((delivery) => delivery.id)
     .slice(-MAX_ROBLOX_LIVE_DELIVERIES);
   return {
@@ -2799,7 +2847,8 @@ async function deliverRobloxLiveAction(integration, rule, trigger, { allowWhenPa
     sentAt,
     expiresAt: built.payload.expiresAt * 1000,
     error: "",
-    acknowledgements: {},
+    confirmation: null,
+    lastNegativeAck: null,
   };
   try {
     const accessToken = await getRobloxLiveAccessToken(integration);
@@ -3674,19 +3723,6 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
   }
 }
 
-function getRobloxLiveDeliveryStatusFromAcks(delivery) {
-  const statuses = Object.values(delivery?.acknowledgements || {}).map((ack) => ack.status);
-  if (!statuses.length) {
-    return cleanInteger(delivery?.expiresAt) < Date.now() ? "expired" : "published";
-  }
-  const succeeded = statuses.some((status) => status === "executed" || status === "test" || status === "duplicate");
-  const failed = statuses.some((status) => status === "failed" || status === "unhandled" || status === "expired");
-  if (succeeded && failed) return "partial";
-  if (succeeded) return "acknowledged";
-  if (statuses.every((status) => status === "expired")) return "expired";
-  return "failed";
-}
-
 async function processRobloxLiveAcknowledgements(presence, project) {
   updateRobloxLiveCapabilities(presence);
   if (!project?.ownerUserId || !presence?.liveActionAcks?.length) return 0;
@@ -3698,15 +3734,20 @@ async function processRobloxLiveAcknowledgements(presence, project) {
     if (!integration?.deliveries?.length) return;
     for (const ack of presence.liveActionAcks) {
       const delivery = integration.deliveries.find((entry) => entry.id === ack.deliveryId);
-      if (!delivery) continue;
-      delivery.acknowledgements ||= {};
-      delivery.acknowledgements[presence.jobId] = {
+      if (!delivery || delivery.confirmation || delivery.status === "failed") continue;
+      const normalizedAck = {
         jobId: presence.jobId,
         status: normalizeRobloxLiveAckStatus(ack.status),
         message: cleanString(ack.message, 160),
         processedAt: cleanTimestampMs(ack.processedAt) || Date.now(),
       };
-      delivery.status = getRobloxLiveDeliveryStatusFromAcks(delivery);
+      if (isSuccessfulRobloxLiveAckStatus(normalizedAck.status)) {
+        delivery.confirmation = normalizedAck;
+        delivery.status = "confirmed";
+      } else {
+        delivery.lastNegativeAck = normalizedAck;
+        delivery.status = getRobloxLiveDeliveryStatus(delivery);
+      }
       acknowledged += 1;
     }
     if (acknowledged > 0) {

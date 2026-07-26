@@ -2455,16 +2455,34 @@ function renderRobloxLiveRuleRow(rule) {
 }
 
 function renderRobloxLiveDeliveryRow(delivery) {
-  const acknowledgement = delivery.acknowledgedServers
-    ? `${delivery.acknowledgedServers} server${delivery.acknowledgedServers === 1 ? "" : "s"} acknowledged`
-    : "Waiting for a server acknowledgement";
+  const status = String(delivery.status || "published");
+  const confirmation = status === "confirmed"
+    ? "Confirmed by a live server"
+    : status === "unconfirmed"
+      ? "No live server confirmed it"
+      : status === "failed"
+        ? "Roblox rejected the publish"
+        : "Waiting for one live server";
+  const detail = delivery.error
+    || (delivery.confirmedAt
+      ? `Confirmed ${formatRelativeTime(delivery.confirmedAt)}`
+      : status === "unconfirmed"
+        ? "The confirmation window ended"
+        : `Confirmation window ends ${formatRelativeTime(delivery.expiresAt)}`);
   return `
     <article class="robloxLiveDeliveryRow">
       <div><strong>${escapeHtml(delivery.title || delivery.actionKey)}</strong><span>${escapeHtml(delivery.trigger || "manual")}</span></div>
-      <div><strong>${escapeHtml(delivery.actionKey)}</strong><span>${escapeHtml(acknowledgement)}</span></div>
-      <div><strong>${delivery.sentAt ? escapeHtml(formatRelativeTime(delivery.sentAt)) : "Unknown time"}</strong><span>${escapeHtml(delivery.error || `Expires ${formatRelativeTime(delivery.expiresAt)}`)}</span></div>
-      <b class="robloxLiveDeliveryStatus" data-state="${escapeHtml(delivery.status)}">${escapeHtml(delivery.status)}</b>
+      <div><strong>${escapeHtml(delivery.actionKey)}</strong><span>${escapeHtml(confirmation)}</span></div>
+      <div><strong>${delivery.sentAt ? escapeHtml(formatRelativeTime(delivery.sentAt)) : "Unknown time"}</strong><span>${escapeHtml(detail)}</span></div>
+      <b class="robloxLiveDeliveryStatus" data-state="${escapeHtml(status)}">${escapeHtml(formatRobloxLiveDeliveryStatus(status))}</b>
     </article>`;
+}
+
+function formatRobloxLiveDeliveryStatus(status) {
+  if (status === "confirmed") return "Confirmed";
+  if (status === "unconfirmed") return "No confirmation";
+  if (status === "failed") return "Publish failed";
+  return "Published";
 }
 
 function formatRobloxLiveInterval(value) {

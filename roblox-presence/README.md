@@ -118,4 +118,4 @@ PresenceService.RegisterLiveAction("hourly_event.start", function(parameters, co
 end)
 ```
 
-`PresenceService.Start()` subscribes each live server to the fixed `roanalytics-live-actions-v1` MessagingService topic. Registered keys and delivery acknowledgements are returned in the normal heartbeat. Keep handlers idempotent when practical because MessagingService delivery is best effort, and validate all parameters again before changing gameplay.
+`PresenceService.Start()` subscribes each live server to the fixed `roanalytics-live-actions-v1` MessagingService topic. Registered keys and delivery acknowledgements are returned in the normal scheduled heartbeat, so processing a live action never creates a separate HTTPS request. The dashboard confirms a delivery after the first successful server response and retains it in Recent deliveries. Keep handlers idempotent when practical because MessagingService delivery is best effort, and validate all parameters again before changing gameplay.

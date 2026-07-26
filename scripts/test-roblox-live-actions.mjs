@@ -109,11 +109,17 @@ assert.match(serverSource, /db\.collection\("roblox_live_integrations"\)/);
 assert.match(serverSource, /evaluateRobloxLiveEventRulesForPresence\(presence\.value, project\)/);
 assert.match(serverSource, /evaluateScheduledRobloxLiveActions/);
 assert.match(serverSource, /processRobloxLiveAcknowledgements\(presence\.value, project\)/);
+assert.match(serverSource, /if \(!delivery \|\| delivery\.confirmation \|\| delivery\.status === "failed"\) continue/);
+assert.match(serverSource, /delivery\.confirmation = normalizedAck[\s\S]*?delivery\.status = "confirmed"/);
+assert.match(serverSource, /function getRobloxLiveDeliveryStatus\(delivery\)[\s\S]*?return "unconfirmed"/);
 assert.match(serverSource, /MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20/);
 assert.match(indexSource, /data-dashboard-view="roblox-live"/);
 assert.match(indexSource, /id="robloxLiveMasterToggle"/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
 assert.match(appSource, /function renderRobloxLiveIntegration\(\)/);
+assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
+assert.match(appSource, /Confirmed by a live server/);
+assert.doesNotMatch(appSource, /acknowledgedServers/);
 assert.match(appSource, /\/api\/integrations\/roblox-live\/rules/);
 assert.match(styleSource, /\.robloxLiveRuleRow\s*\{/);
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);
@@ -121,6 +127,15 @@ assert.match(methodsSource, /MessagingService:SubscribeAsync/);
 assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
 assert.match(methodsSource, /liveActionKeys = getRegisteredLiveActionKeys\(\)/);
 assert.match(methodsSource, /liveActionAcks = getLiveActionAcksPayload\(\)/);
+const liveActionHandlerSource = methodsSource.match(
+  /local function handleLiveActionMessage\(message\)([\s\S]*?)function Methods\.RegisterLiveAction/,
+)?.[1] || "";
+assert.ok(liveActionHandlerSource);
+assert.doesNotMatch(
+  liveActionHandlerSource,
+  /SendHeartbeat/,
+  "live-action acknowledgements should wait for the existing scheduled heartbeat",
+);
 assert.match(apiSource, /function PresenceService\.RegisterLiveAction\(actionKey, handler\)/);
 assert.doesNotMatch(methodsSource, /function Methods\.RegisterLiveAction[\s\S]*?function Methods\.Start\(\)[\s\S]*?function Methods\.RegisterLiveAction/);
 

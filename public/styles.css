@@ -4532,7 +4532,7 @@ body[data-active-view="connect"] .topbar > div:first-child {
   text-transform: uppercase;
 }
 
-.robloxLiveDeliveryStatus[data-state="acknowledged"] {
+.robloxLiveDeliveryStatus[data-state="confirmed"] {
   border-color: rgba(62, 219, 178, 0.4);
   color: #52e5b6;
 }
@@ -4542,9 +4542,12 @@ body[data-active-view="connect"] .topbar > div:first-child {
   color: #bca7ff;
 }
 
-.robloxLiveDeliveryStatus[data-state="failed"],
-.robloxLiveDeliveryStatus[data-state="expired"],
-.robloxLiveDeliveryStatus[data-state="partial"] {
+.robloxLiveDeliveryStatus[data-state="unconfirmed"] {
+  border-color: rgba(245, 185, 66, 0.46);
+  color: #f7c86b;
+}
+
+.robloxLiveDeliveryStatus[data-state="failed"] {
   border-color: rgba(255, 98, 123, 0.4);
   color: #ff8499;
 }

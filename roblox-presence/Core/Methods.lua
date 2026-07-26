@@ -805,13 +805,11 @@ local function handleLiveActionMessage(message)
 	end
 	if actionKey == "roanalytics_test" then
 		queueLiveActionAck(deliveryId, "test", "Live-action subscriber is connected.")
-		task.defer(Methods.SendHeartbeat)
 		return
 	end
 	local handler = registeredLiveActions[actionKey]
 	if not handler then
 		queueLiveActionAck(deliveryId, "unhandled", "No handler is registered for this action key.")
-		task.defer(Methods.SendHeartbeat)
 		return
 	end
 
@@ -832,7 +830,6 @@ local function handleLiveActionMessage(message)
 			queueLiveActionAck(deliveryId, "failed", tostring(result))
 			warn("[PresenceService] Live action failed:", actionKey, result)
 		end
-		Methods.SendHeartbeat()
 	end)
 end
 
