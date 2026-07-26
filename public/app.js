@@ -4,6 +4,7 @@ const robloxLoginButtons = document.querySelectorAll("[data-roblox-login]");
 const loginStatus = document.querySelector("#loginStatus");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
+const adminNavGroup = document.querySelector("#adminNavGroup");
 const adminNavLink = document.querySelector("#adminNavLink");
 const refreshAdminUsersButton = document.querySelector("#refreshAdminUsersButton");
 const adminUserList = document.querySelector("#adminUserList");
@@ -305,7 +306,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-50";
+const DASHBOARD_ASSET_VERSION = "20260725-51";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -921,6 +922,7 @@ function setAuthenticated(value, user = null) {
   loadedViews.clear();
   document.body.classList.toggle("isLocked", !authenticated);
   accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
+  if (adminNavGroup) adminNavGroup.hidden = !authenticatedUser?.isAdmin;
   if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
   updateDemoUniverseControl();
   loginPanel.hidden = authenticated;
@@ -986,6 +988,7 @@ function setAuthenticated(value, user = null) {
     setAiChatBusy(false);
     renderAiChatWelcome();
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
+    if (adminNavGroup) adminNavGroup.hidden = true;
     if (adminNavLink) adminNavLink.hidden = true;
     if (adminUserList) adminUserList.innerHTML = "";
     if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
@@ -1082,6 +1085,7 @@ function setActiveView(view, options = {}) {
 
 function renderActiveView(options = {}) {
   document.body.dataset.activeView = activeView;
+  if (adminNavGroup) adminNavGroup.hidden = !authenticatedUser?.isAdmin;
 
   for (const panel of viewPanels) {
     panel.hidden = !authenticated || panel.dataset.viewPanel !== activeView;

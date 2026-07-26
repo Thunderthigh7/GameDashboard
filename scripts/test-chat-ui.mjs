@@ -22,6 +22,22 @@ assert.equal(chatPage.hasNext, true);
 assert.match(indexSource, /data-dashboard-view="chat"[\s\S]*?<span>Chats<\/span>/);
 assert.match(
   indexSource,
+  /id="generalNavLabel">General<\/h2>[\s\S]*?data-dashboard-view="overview"[\s\S]*?data-dashboard-view="connect"/,
+  "Overview and Connect Universe should share the General category",
+);
+assert.match(
+  indexSource,
+  /id="accountNavLabel">Account<\/h2>[\s\S]*?data-dashboard-view="usage"/,
+  "Usage should live in the Account category",
+);
+assert.match(
+  indexSource,
+  /id="adminNavGroup"[^>]*hidden[\s\S]*?id="adminNavLabel">Admin<\/h2>[\s\S]*?id="adminNavLink"/,
+  "the complete Admin category should be hidden by default",
+);
+assert.doesNotMatch(indexSource, /id="setupNavLabel"|class="navGroup overviewNavGroup"/);
+assert.match(
+  indexSource,
   /id="aiFeaturesNavLink"[\s\S]*?<span class="aiFeaturesNavLabel">AI Features<\/span>[\s\S]*?class="aiFeaturesAdminBadge"/,
 );
 assert.equal((indexSource.match(/id="commonQuestionList"/g) || []).length, 1);
@@ -51,6 +67,8 @@ assert.ok(!indexSource.slice(chatsStart, usageStart).includes("Top player questi
 assert.match(appSource, /chat:\s*\{\s*title:\s*"Chats",\s*subtitle:\s*"",/);
 assert.match(appSource, /"ai-runs":\s*\{\s*title:\s*"AI Features",/);
 assert.match(appSource, /const ADMIN_ONLY_VIEWS = new Set\(\["ai-runs", "admin"\]\);/);
+assert.match(appSource, /const adminNavGroup = document\.querySelector\("#adminNavGroup"\);/);
+assert.match(appSource, /adminNavGroup\.hidden = !authenticatedUser\?\.isAdmin/);
 assert.match(
   appSource,
   /const lacksAdminAccess = ADMIN_ONLY_VIEWS\.has\(requestedView\) && !authenticatedUser\?\.isAdmin;[\s\S]*activeView = lacksAdminAccess \? "overview" : requestedView;/,

@@ -236,10 +236,6 @@ body.isResizingLayout {
   gap: 6px;
 }
 
-.overviewNavGroup {
-  padding-bottom: 2px;
-}
-
 .navGroupLabel {
   display: flex;
   align-items: center;

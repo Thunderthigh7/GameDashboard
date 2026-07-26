@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-50/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-51/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -35,18 +35,31 @@
         </div>
 
         <nav class="sideNav" aria-label="Dashboard sections">
-          <div class="navGroup overviewNavGroup">
-            <a class="active" href="#overview" data-dashboard-view="overview">
-              <span class="navIconTile" aria-hidden="true">
-                <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                  <path d="M3.5 10.5 12 3.5l8.5 7" />
-                  <path d="M5.5 9.2V20h13V9.2" />
-                  <path d="M9.5 20v-6h5v6" />
-                </svg>
-              </span>
-              <span>Overview</span>
-            </a>
-          </div>
+          <section class="navGroup" aria-labelledby="generalNavLabel">
+            <h2 class="navGroupLabel" id="generalNavLabel">General</h2>
+            <div class="navGroupLinks">
+              <a class="active" href="#overview" data-dashboard-view="overview">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M3.5 10.5 12 3.5l8.5 7" />
+                    <path d="M5.5 9.2V20h13V9.2" />
+                    <path d="M9.5 20v-6h5v6" />
+                  </svg>
+                </span>
+                <span>Overview</span>
+              </a>
+              <a href="#connect" data-dashboard-view="connect">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="m9.5 14.5-2 2A3.2 3.2 0 0 1 3 12l3-3a3.2 3.2 0 0 1 4.5 0" />
+                    <path d="m14.5 9.5 2-2A3.2 3.2 0 0 1 21 12l-3 3a3.2 3.2 0 0 1-4.5 0" />
+                    <path d="m8.5 15.5 7-7" />
+                  </svg>
+                </span>
+                <span>Connect Universe</span>
+              </a>
+            </div>
+          </section>
 
           <section class="navGroup" aria-labelledby="analyticsNavLabel">
             <h2 class="navGroupLabel" id="analyticsNavLabel">Analytics</h2>
@@ -94,28 +107,9 @@
             </div>
           </section>
 
-          <section class="navGroup" aria-labelledby="setupNavLabel">
-            <h2 class="navGroupLabel" id="setupNavLabel">Setup</h2>
+          <section class="navGroup" aria-labelledby="accountNavLabel">
+            <h2 class="navGroupLabel" id="accountNavLabel">Account</h2>
             <div class="navGroupLinks">
-              <a href="#connect" data-dashboard-view="connect">
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <path d="m9.5 14.5-2 2A3.2 3.2 0 0 1 3 12l3-3a3.2 3.2 0 0 1 4.5 0" />
-                    <path d="m14.5 9.5 2-2A3.2 3.2 0 0 1 21 12l-3 3a3.2 3.2 0 0 1-4.5 0" />
-                    <path d="m8.5 15.5 7-7" />
-                  </svg>
-                </span>
-                <span>Connect Universe</span>
-              </a>
-              <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden>
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <path d="M12 3 20 6.5v5.8c0 4.2-3.1 7.2-8 8.7-4.9-1.5-8-4.5-8-8.7V6.5L12 3Z" />
-                    <path d="m12 9 2.5 2.5L12 14l-2.5-2.5L12 9Z" />
-                  </svg>
-                </span>
-                <span>Admin</span>
-              </a>
               <a href="#usage" data-dashboard-view="usage">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
@@ -124,6 +118,21 @@
                   </svg>
                 </span>
                 <span>Usage</span>
+              </a>
+            </div>
+          </section>
+
+          <section class="navGroup adminNavGroup" id="adminNavGroup" aria-labelledby="adminNavLabel" hidden>
+            <h2 class="navGroupLabel" id="adminNavLabel">Admin</h2>
+            <div class="navGroupLinks">
+              <a href="#admin" data-dashboard-view="admin" id="adminNavLink" hidden>
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 3 20 6.5v5.8c0 4.2-3.1 7.2-8 8.7-4.9-1.5-8-4.5-8-8.7V6.5L12 3Z" />
+                    <path d="m12 9 2.5 2.5L12 14l-2.5-2.5L12 9Z" />
+                  </svg>
+                </span>
+                <span>Admin</span>
               </a>
             </div>
           </section>
@@ -1345,6 +1354,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-50/app.js"></script>
+    <script defer src="/assets/20260725-51/app.js"></script>
   </body>
 </html>
