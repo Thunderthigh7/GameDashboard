@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-51/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-52/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -103,6 +103,22 @@
                   <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" /><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" /></svg>
                   <b>Admin</b>
                 </span>
+              </a>
+            </div>
+          </section>
+
+          <section class="navGroup" aria-labelledby="integrationsNavLabel">
+            <h2 class="navGroupLabel" id="integrationsNavLabel">Integrations</h2>
+            <div class="navGroupLinks">
+              <a href="#discord" data-dashboard-view="discord">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M7 6.5h10a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3h-3l-3 2-3-2H6a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4Z" />
+                    <circle cx="9" cy="12.5" r="1" />
+                    <circle cx="15" cy="12.5" r="1" />
+                  </svg>
+                </span>
+                <span>Discord</span>
               </a>
             </div>
           </section>
@@ -1102,6 +1118,8 @@
           </article>
         </section>
 
+        <section class="viewPage discordPage" data-view-panel="discord" hidden></section>
+
         <section class="viewPage usagePage" data-view-panel="usage" hidden>
           <section class="usageGrid">
             <article class="panel usageSummaryPanel">
@@ -1354,6 +1372,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-51/app.js"></script>
+    <script defer src="/assets/20260725-52/app.js"></script>
   </body>
 </html>

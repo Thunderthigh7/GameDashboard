@@ -306,7 +306,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-51";
+const DASHBOARD_ASSET_VERSION = "20260725-52";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -1032,6 +1032,7 @@ function getViewFromHash() {
   if (window.location.hash === "#funnels") return "funnels";
   if (window.location.hash === "#ai-runs") return "ai-runs";
   if (window.location.hash === "#chat") return "chat";
+  if (window.location.hash === "#discord") return "discord";
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#admin") return "admin";
@@ -1040,7 +1041,7 @@ function getViewFromHash() {
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
   if (lacksAdminAccess && (window.location.hash === "#admin" || window.location.hash === "#ai-runs")) {
@@ -1068,13 +1069,15 @@ function setActiveView(view, options = {}) {
             ? "#ai-runs"
             : activeView === "chat"
               ? "#chat"
-              : activeView === "usage"
-                ? "#usage"
-                : activeView === "connect"
-                  ? "#connect"
-                  : activeView === "admin"
-                    ? "#admin"
-                    : "#overview";
+              : activeView === "discord"
+                ? "#discord"
+                : activeView === "usage"
+                  ? "#usage"
+                  : activeView === "connect"
+                    ? "#connect"
+                    : activeView === "admin"
+                      ? "#admin"
+                      : "#overview";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -1125,6 +1128,10 @@ function renderActiveView(options = {}) {
     },
     chat: {
       title: "Chats",
+      subtitle: "",
+    },
+    discord: {
+      title: "Discord Alerts",
       subtitle: "",
     },
     usage: {

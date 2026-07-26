@@ -32,6 +32,21 @@ assert.match(
 );
 assert.match(
   indexSource,
+  /id="integrationsNavLabel">Integrations<\/h2>[\s\S]*?data-dashboard-view="discord"[\s\S]*?<span>Discord<\/span>/,
+  "Discord should live in the Integrations category",
+);
+assert.match(
+  indexSource,
+  /id="analyticsNavLabel"[\s\S]*?id="integrationsNavLabel"[\s\S]*?id="accountNavLabel"/,
+  "Integrations should sit between Analytics and Account",
+);
+assert.match(
+  indexSource,
+  /<section class="viewPage discordPage" data-view-panel="discord" hidden><\/section>/,
+  "the Discord page should remain intentionally empty",
+);
+assert.match(
+  indexSource,
   /id="adminNavGroup"[^>]*hidden[\s\S]*?id="adminNavLabel">Admin<\/h2>[\s\S]*?id="adminNavLink"/,
   "the complete Admin category should be hidden by default",
 );
@@ -65,6 +80,9 @@ assert.ok(
 );
 assert.ok(!indexSource.slice(chatsStart, usageStart).includes("Top player questions"));
 assert.match(appSource, /chat:\s*\{\s*title:\s*"Chats",\s*subtitle:\s*"",/);
+assert.match(appSource, /discord:\s*\{\s*title:\s*"Discord Alerts",\s*subtitle:\s*"",/);
+assert.match(appSource, /window\.location\.hash === "#discord"\) return "discord";/);
+assert.match(appSource, /view === "discord"/);
 assert.match(appSource, /"ai-runs":\s*\{\s*title:\s*"AI Features",/);
 assert.match(appSource, /const ADMIN_ONLY_VIEWS = new Set\(\["ai-runs", "admin"\]\);/);
 assert.match(appSource, /const adminNavGroup = document\.querySelector\("#adminNavGroup"\);/);
