@@ -47,7 +47,6 @@ const discordConnectionForm = document.querySelector("#discordConnectionForm");
 const discordWebhookSelect = document.querySelector("#discordWebhookSelect");
 const discordWebhookName = document.querySelector("#discordWebhookName");
 const discordWebhookUrl = document.querySelector("#discordWebhookUrl");
-const discordConnectionBadge = document.querySelector("#discordConnectionBadge");
 const discordSendStatus = document.querySelector("#discordSendStatus");
 const discordSaveConnectionButton = document.querySelector("#discordSaveConnectionButton");
 const discordTestButton = document.querySelector("#discordTestButton");
@@ -1914,11 +1913,6 @@ function renderDiscordIntegration() {
   const webhooks = Array.isArray(discordIntegration?.webhooks) ? discordIntegration.webhooks : [];
   const rules = Array.isArray(discordIntegration?.rules) ? discordIntegration.rules : [];
   const maxRules = Number(discordIntegration?.limits?.rules) || 20;
-  const maxWebhooks = Number(discordIntegration?.limits?.webhooks) || 10;
-  if (discordConnectionBadge) {
-    discordConnectionBadge.dataset.state = connected ? "connected" : "disconnected";
-    discordConnectionBadge.textContent = `${webhooks.length} / ${maxWebhooks} saved`;
-  }
   renderDiscordConnectionEditor();
   if (discordNewRuleButton) discordNewRuleButton.disabled = discordBusy || !connected || rules.length >= maxRules;
   if (discordRuleCount) discordRuleCount.textContent = `${rules.length} / ${maxRules}`;

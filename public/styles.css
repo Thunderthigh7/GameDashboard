@@ -839,6 +839,16 @@ body[data-active-view="connect"] .topbar > div:first-child {
   display: none;
 }
 
+body[data-active-view="discord"] .topbar,
+body[data-active-view="roblox-live"] .topbar {
+  margin-bottom: 12px;
+}
+
+body[data-active-view="discord"] .topbarActions,
+body[data-active-view="roblox-live"] .topbarActions {
+  display: none;
+}
+
 .connectUniversePanel {
   display: grid;
   gap: 16px;
@@ -3521,24 +3531,6 @@ body[data-active-view="connect"] .topbar > div:first-child {
   padding: 0;
 }
 
-.discordConnectionHeader {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 15px;
-  border-bottom: 1px solid rgba(82, 100, 150, 0.3);
-  background:
-    radial-gradient(circle at 0 0, rgba(88, 101, 242, 0.16), transparent 44%),
-    rgba(8, 16, 36, 0.44);
-  padding: 24px 26px;
-}
-
-.discordConnectionHeader > div {
-  display: grid;
-  gap: 4px;
-}
-
-.discordConnectionHeader > div > span,
 .discordRulesHeader > div:first-child > span,
 .discordRuleDialogCard > header > div > span,
 .discordAlertPreview > span {
@@ -3549,68 +3541,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
   text-transform: uppercase;
 }
 
-.discordConnectionHeader h2,
 .discordRulesHeader h2,
 .discordRuleDialogCard h2 {
   color: var(--text);
   font-size: 21px;
-}
-
-.discordConnectionHeader p {
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.discordComposerIcon {
-  display: grid;
-  flex: 0 0 auto;
-  width: 50px;
-  height: 50px;
-  place-items: center;
-  border: 1px solid rgba(129, 140, 248, 0.36);
-  border-radius: 13px;
-  background: linear-gradient(145deg, rgba(88, 101, 242, 0.32), rgba(88, 101, 242, 0.12));
-  color: #aeb5ff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 30px rgba(4, 8, 24, 0.22);
-}
-
-.discordComposerIcon svg {
-  width: 27px;
-  height: 27px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.7;
-}
-
-.discordConnectionBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  border: 1px solid rgba(251, 113, 133, 0.3);
-  border-radius: 999px;
-  background: rgba(127, 29, 29, 0.16);
-  color: #fda4af;
-  padding: 0 11px;
-  font-size: 11px;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.discordConnectionBadge::before {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-  content: "";
-}
-
-.discordConnectionBadge[data-state="connected"] {
-  border-color: rgba(45, 212, 191, 0.32);
-  background: rgba(13, 148, 136, 0.13);
-  color: #5eead4;
 }
 
 .discordConnectionForm {
@@ -10430,21 +10364,11 @@ body.hasEventConfirmDialog {
 }
 
 @media (max-width: 560px) {
-  .discordConnectionHeader,
   .discordConnectionForm,
   .discordRulesHeader,
   .discordRuleRow,
   .discordRuleForm {
     padding: 20px;
-  }
-
-  .discordConnectionHeader {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .discordConnectionBadge {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 
   .discordConnectionForm,
