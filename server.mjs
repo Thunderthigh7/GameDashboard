@@ -21,6 +21,11 @@ import {
   groupCustomEventsBySession,
 } from "./lib/funnels.mjs";
 import { paginateChatLogsPayload } from "./lib/chat-pagination.mjs";
+import {
+  normalizeDiscordMessage,
+  normalizeDiscordWebhookUrl,
+  sendDiscordWebhookMessage,
+} from "./lib/discord-webhooks.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,6 +62,8 @@ const MAX_CHAT_LOGS_PER_UNIVERSE = 2500;
 const MAX_CHAT_MESSAGES_FOR_INSIGHTS = 500;
 const MAX_AI_CHAT_MESSAGES_FOR_INSIGHTS = 200;
 const MAX_COMMON_QUESTIONS_RESPONSE = 5;
+const DISCORD_SEND_WINDOW_MS = 60 * 1000;
+const MAX_DISCORD_SENDS_PER_WINDOW = 10;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -391,6 +398,7 @@ let persistedMapUniverseIdsVersion = 0;
 let localFunnelStoreLock = Promise.resolve();
 let localEventDefinitionStoreLock = Promise.resolve();
 let localCustomEventDeletionStoreLock = Promise.resolve();
+const discordSendHistoryByUser = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
@@ -533,6 +541,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/account/plan" && req.method === "POST") {
       return handleAccountPlanUpdate(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/discord/send" && req.method === "POST") {
+      return handleDiscordWebhookSend(req, res, auth);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -1876,6 +1888,56 @@ async function handleAccountPlanUpdate(req, res, auth) {
   if (!updated) return sendJson(res, 404, { error: "Account not found." });
 
   return sendJson(res, 200, await getAccountUsageSummary(auth.userId));
+}
+
+async function handleDiscordWebhookSend(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  let webhookUrl;
+  let message;
+  try {
+    webhookUrl = normalizeDiscordWebhookUrl(body?.webhookUrl);
+    message = normalizeDiscordMessage(body?.message);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const retryAfterMs = claimDiscordSendSlot(auth.userId);
+  if (retryAfterMs > 0) {
+    return sendJson(res, 429, {
+      error: "Too many Discord messages. Wait a moment and try again.",
+      retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+    });
+  }
+
+  try {
+    return sendJson(res, 200, await sendDiscordWebhookMessage({ webhookUrl, message }));
+  } catch (error) {
+    const statusCode = Number(error?.statusCode);
+    return sendJson(
+      res,
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 502,
+      { error: error?.message || "Could not send the Discord message." },
+    );
+  }
+}
+
+function claimDiscordSendSlot(userId, now = Date.now()) {
+  const key = String(userId || "");
+  const cutoff = now - DISCORD_SEND_WINDOW_MS;
+  const recentSends = (discordSendHistoryByUser.get(key) || []).filter((timestamp) => timestamp > cutoff);
+  if (recentSends.length >= MAX_DISCORD_SENDS_PER_WINDOW) {
+    return Math.max(1000, recentSends[0] + DISCORD_SEND_WINDOW_MS - now);
+  }
+
+  recentSends.push(now);
+  discordSendHistoryByUser.set(key, recentSends);
+  return 0;
 }
 
 async function handleAdminUserPlanUpdate(req, res, adminUser) {

@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   indexSource,
-  /<section class="viewPage discordPage" data-view-panel="discord" hidden><\/section>/,
-  "the Discord page should remain intentionally empty",
+  /<section class="viewPage discordPage" data-view-panel="discord" hidden>[\s\S]*?id="discordMessageForm"[\s\S]*?id="discordSendButton"/,
+  "the Discord page should contain the webhook message composer",
 );
 assert.match(
   indexSource,

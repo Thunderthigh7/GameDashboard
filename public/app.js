@@ -43,6 +43,12 @@ const usageUpgradeTitle = document.querySelector("#usageUpgradeTitle");
 const usageUpgradeMessage = document.querySelector("#usageUpgradeMessage");
 const usageUpgradeButton = document.querySelector("#usageUpgradeButton");
 const usagePlanOptions = document.querySelector("#usagePlanOptions");
+const discordMessageForm = document.querySelector("#discordMessageForm");
+const discordWebhookUrl = document.querySelector("#discordWebhookUrl");
+const discordMessage = document.querySelector("#discordMessage");
+const discordMessageCount = document.querySelector("#discordMessageCount");
+const discordSendStatus = document.querySelector("#discordSendStatus");
+const discordSendButton = document.querySelector("#discordSendButton");
 const authError = document.querySelector("#authError");
 const universesStatus = document.querySelector("#universesStatus");
 const universeSelect = document.querySelector("#universeSelect");
@@ -244,6 +250,7 @@ let authenticated = false;
 let authenticatedUser = null;
 let lastAdminPlans = [];
 let activeView = getViewFromHash();
+let discordSendBusy = false;
 let aiChatBusy = false;
 let aiChatHistory = [];
 let heatmapModulePromise = null;
@@ -306,7 +313,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260725-52";
+const DASHBOARD_ASSET_VERSION = "20260725-53";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -443,6 +450,16 @@ function bindEvents() {
     const button = event.target.closest("[data-select-plan]");
     if (button) selectPlan(button.dataset.selectPlan || "");
   });
+  discordMessageForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendDiscordMessage();
+  });
+  discordMessage?.addEventListener("input", () => {
+    updateDiscordMessageCount();
+    clearDiscordSendStatus();
+  });
+  discordWebhookUrl?.addEventListener("input", clearDiscordSendStatus);
+  updateDiscordMessageCount();
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   connectNewGameButton?.addEventListener("click", () => {
     document.querySelector("#connectGameRow")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1001,6 +1018,10 @@ function setAuthenticated(value, user = null) {
     if (adminMonthlyCost) adminMonthlyCost.textContent = "$0.00";
     resetReconciliationView();
     resetUsageView();
+    setDiscordSendBusy(false);
+    discordMessageForm?.reset();
+    updateDiscordMessageCount();
+    clearDiscordSendStatus();
     return;
   }
 
@@ -1566,6 +1587,65 @@ function setReconciliationFormDisabled(disabled) {
     saveReconciliationButton,
   ]) {
     if (element) element.disabled = disabled || !authenticatedUser?.isAdmin;
+  }
+}
+
+function updateDiscordMessageCount() {
+  if (!discordMessageCount) return;
+  const characterCount = String(discordMessage?.value || "").length;
+  discordMessageCount.textContent = `${characterCount.toLocaleString()} / 2,000`;
+}
+
+function clearDiscordSendStatus() {
+  if (!discordSendStatus || discordSendBusy) return;
+  discordSendStatus.textContent = "";
+  delete discordSendStatus.dataset.state;
+}
+
+function setDiscordSendBusy(busy) {
+  discordSendBusy = busy;
+  if (discordWebhookUrl) discordWebhookUrl.disabled = busy;
+  if (discordMessage) discordMessage.disabled = busy;
+  if (discordSendButton) {
+    discordSendButton.disabled = busy;
+    discordSendButton.setAttribute("aria-busy", String(busy));
+    const label = discordSendButton.querySelector("span");
+    if (label) label.textContent = busy ? "Sending..." : "Send to Discord";
+  }
+}
+
+async function sendDiscordMessage() {
+  if (!authenticated || discordSendBusy || !discordMessageForm) return;
+  if (!discordMessageForm.reportValidity()) return;
+
+  setDiscordSendBusy(true);
+  if (discordSendStatus) {
+    discordSendStatus.dataset.state = "sending";
+    discordSendStatus.textContent = "Sending message...";
+  }
+
+  try {
+    await request("/api/integrations/discord/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        webhookUrl: String(discordWebhookUrl?.value || "").trim(),
+        message: String(discordMessage?.value || ""),
+      }),
+    });
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "success";
+      discordSendStatus.textContent = "Message sent to Discord.";
+    }
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    if (discordSendStatus) {
+      discordSendStatus.dataset.state = "error";
+      discordSendStatus.textContent = formatRequestError(error);
+    }
+  } finally {
+    setDiscordSendBusy(false);
   }
 }
 

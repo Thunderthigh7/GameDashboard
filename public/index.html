@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260725-52/styles.css">
+    <link rel="stylesheet" href="/assets/20260725-53/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1118,7 +1118,68 @@
           </article>
         </section>
 
-        <section class="viewPage discordPage" data-view-panel="discord" hidden></section>
+        <section class="viewPage discordPage" data-view-panel="discord" hidden>
+          <article class="panel discordComposerPanel">
+            <header class="discordComposerHeader">
+              <span class="discordComposerIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M7 6.5h10a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3h-3l-3 2-3-2H6a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4Z" />
+                  <circle cx="9" cy="12.5" r="1" />
+                  <circle cx="15" cy="12.5" r="1" />
+                </svg>
+              </span>
+              <div>
+                <span>Discord webhook</span>
+                <h2>Send a message</h2>
+                <p>Write the exact message you want sent to your Discord channel.</p>
+              </div>
+            </header>
+
+            <form class="discordMessageForm" id="discordMessageForm">
+              <label class="discordFormField" for="discordWebhookUrl">
+                <span>Webhook URL</span>
+                <input
+                  id="discordWebhookUrl"
+                  name="discordWebhookUrl"
+                  type="password"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  maxlength="600"
+                  placeholder="https://discord.com/api/webhooks/..."
+                  aria-describedby="discordWebhookNote"
+                  required
+                >
+                <small id="discordWebhookNote">Used for this send only. RoAnalytics does not save it yet.</small>
+              </label>
+
+              <label class="discordFormField" for="discordMessage">
+                <span class="discordMessageLabel">
+                  <b>Message</b>
+                  <small id="discordMessageCount">0 / 2,000</small>
+                </span>
+                <textarea
+                  id="discordMessage"
+                  name="discordMessage"
+                  maxlength="2000"
+                  placeholder="Type your Discord message..."
+                  required
+                ></textarea>
+              </label>
+
+              <footer class="discordComposerActions">
+                <p class="discordSendStatus" id="discordSendStatus" aria-live="polite"></p>
+                <button class="button discordSendButton" id="discordSendButton" type="submit">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m4 12 15-7-5 14-3-5-7-2Z" />
+                    <path d="m11 14 8-9" />
+                  </svg>
+                  <span>Send to Discord</span>
+                </button>
+              </footer>
+            </form>
+          </article>
+        </section>
 
         <section class="viewPage usagePage" data-view-panel="usage" hidden>
           <section class="usageGrid">
@@ -1372,6 +1433,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260725-52/app.js"></script>
+    <script defer src="/assets/20260725-53/app.js"></script>
   </body>
 </html>
