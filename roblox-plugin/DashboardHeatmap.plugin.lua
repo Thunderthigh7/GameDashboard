@@ -99,7 +99,7 @@ local function createButton(text, order)
 end
 
 createLabel("Dashboard secret", 1)
-local secretInput = createInput("", "Paste this game's secret from the website", 2)
+local secretInput = createInput("", "Paste this game's optional Studio map key", 2)
 
 local exportMapButton = createButton("Export Map To Dashboard", 3)
 exportMapButton.BackgroundColor3 = Color3.fromRGB(55, 121, 82)
@@ -109,7 +109,7 @@ local statusLabel = create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 4,
 	Size = UDim2.new(1, 0, 0, 70),
-	Text = "Paste the secret for this game, then export the current Workspace map.",
+	Text = "Paste the optional Studio map key shown after connecting or rotating, then export the current Workspace map.",
 	TextColor3 = Color3.fromRGB(139, 148, 158),
 	TextSize = 13,
 	TextWrapped = true,
@@ -137,7 +137,7 @@ end
 local function getDashboardSecret()
 	local secret = secretInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
 	if secret == "" then
-		error("Enter the project Roblox secret before exporting the map.")
+		error("Enter the optional Studio map key before exporting the map.")
 	end
 
 	return secret

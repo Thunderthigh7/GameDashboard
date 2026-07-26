@@ -1011,7 +1011,7 @@ function Methods.SendHeartbeat()
 			Method = "POST",
 			Headers = {
 				["Content-Type"] = "application/json",
-				["X-Dashboard-Secret"] = Settings.Secret,
+				["X-Dashboard-Secret"] = HttpService:GetSecret(Settings.SecretName),
 			},
 			Body = body,
 		})

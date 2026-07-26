@@ -36,6 +36,11 @@ import {
   revokeRobloxOAuthToken,
   ROBLOX_LIVE_ACTION_TOPIC,
 } from "./lib/roblox-live-actions.mjs";
+import {
+  deleteRobloxUniverseSecret,
+  ROANALYTICS_SECRET_NAME,
+  upsertRobloxUniverseSecret,
+} from "./lib/roblox-secret-store.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -66,8 +71,12 @@ const ROBLOX_OAUTH_CLIENT_ID = process.env.ROBLOX_OAUTH_CLIENT_ID || "";
 const ROBLOX_OAUTH_CLIENT_SECRET = process.env.ROBLOX_OAUTH_CLIENT_SECRET || "";
 const ROBLOX_OAUTH_REDIRECT_URI = process.env.ROBLOX_OAUTH_REDIRECT_URI || `${appBaseUrl}/api/roblox/oauth/callback`;
 const ROBLOX_OAUTH_SCOPES = process.env.ROBLOX_OAUTH_SCOPES || "openid profile";
+const ROBLOX_OAUTH_PROJECT_SCOPES = process.env.ROBLOX_OAUTH_PROJECT_SCOPES
+  || `${ROBLOX_OAUTH_SCOPES} universe.secret:read universe.secret:write`;
 const ROBLOX_OAUTH_LIVE_ACTION_SCOPES = process.env.ROBLOX_OAUTH_LIVE_ACTION_SCOPES
   || `${ROBLOX_OAUTH_SCOPES} universe-messaging-service:publish`;
+const ROANALYTICS_SECRET_DOMAIN = process.env.ROANALYTICS_SECRET_DOMAIN
+  || new URL(appBaseUrl).hostname;
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -439,6 +448,7 @@ const robloxLiveSendHistoryByUser = new Map();
 const robloxLiveIntegrationCache = new Map();
 const robloxLiveEvaluationLocks = new Map();
 const robloxLiveTokenRefreshLocks = new Map();
+const projectSecretTokenRefreshLocks = new Map();
 const robloxLiveCapabilitiesByUniverse = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
@@ -2727,6 +2737,153 @@ function decryptRobloxLiveOAuthToken(value) {
   ]).toString("utf8");
 }
 
+function getProjectSecretOAuthEncryptionKey() {
+  return crypto.createHash("sha256")
+    .update(`${DASHBOARD_PASSWORD}\0${PRESENCE_SECRET}\0roblox-secret-store-oauth-v1`)
+    .digest();
+}
+
+function encryptProjectSecretOAuthToken(value) {
+  const token = cleanString(value, 8192);
+  if (!token) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getProjectSecretOAuthEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function decryptProjectSecretOAuthToken(value) {
+  const encryptedValue = cleanString(value, 8192);
+  if (!encryptedValue) return "";
+  const [version, ivValue, tagValue, cipherValue] = encryptedValue.split(".");
+  if (version !== "v1" || !ivValue || !tagValue || !cipherValue) return "";
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    getProjectSecretOAuthEncryptionKey(),
+    Buffer.from(ivValue, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(cipherValue, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function createProjectSecretStoreOAuth(tokens, robloxUser, now = Date.now()) {
+  return {
+    accessToken: encryptProjectSecretOAuthToken(tokens.access_token),
+    refreshToken: encryptProjectSecretOAuthToken(tokens.refresh_token),
+    expiresAt: now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000,
+    scope: cleanString(tokens.scope, 500),
+    robloxUserId: cleanInteger(robloxUser.sub),
+    robloxUsername: cleanString(
+      robloxUser.preferred_username || robloxUser.name || robloxUser.nickname,
+      80,
+    ),
+    authorizationValid: true,
+    connectedAt: now,
+    lastRefreshedAt: now,
+    lastError: "",
+  };
+}
+
+function hasProjectSecretStoreAuthorization(project) {
+  try {
+    const scopes = cleanString(project?.robloxSecretStore?.oauth?.scope, 500).split(/\s+/);
+    return Boolean(
+      project?.robloxSecretStore?.oauth?.authorizationValid !== false
+      && decryptProjectSecretOAuthToken(project?.robloxSecretStore?.oauth?.accessToken)
+      && decryptProjectSecretOAuthToken(project?.robloxSecretStore?.oauth?.refreshToken)
+      && scopes.includes("universe.secret:read")
+      && scopes.includes("universe.secret:write"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function getProjectSecretStoreAccessToken(project) {
+  if (!hasProjectSecretStoreAuthorization(project)) {
+    const error = new Error("Authorize Roblox Secrets Store before installing the project secret.");
+    error.statusCode = 401;
+    throw error;
+  }
+  if (
+    cleanInteger(project.robloxSecretStore.oauth.expiresAt)
+    > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS
+  ) {
+    return decryptProjectSecretOAuthToken(project.robloxSecretStore.oauth.accessToken);
+  }
+
+  const scopeKey = cleanString(project.id, 120);
+  const previous = projectSecretTokenRefreshLocks.get(scopeKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(async () => {
+    const latest = await getProjectByIdForOwner(project.id, project.ownerUserId);
+    if (
+      latest?.robloxSecretStore?.oauth
+      && cleanInteger(latest.robloxSecretStore.oauth.expiresAt)
+        > cleanInteger(project.robloxSecretStore.oauth.expiresAt)
+    ) {
+      project.robloxSecretStore = { ...latest.robloxSecretStore };
+    }
+    if (
+      cleanInteger(project.robloxSecretStore.oauth.expiresAt)
+      > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS
+    ) {
+      return decryptProjectSecretOAuthToken(project.robloxSecretStore.oauth.accessToken);
+    }
+
+    try {
+      const tokens = await refreshRobloxOAuthTokens({
+        refreshToken: decryptProjectSecretOAuthToken(project.robloxSecretStore.oauth.refreshToken),
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+      const now = Date.now();
+      project.robloxSecretStore.oauth.accessToken = encryptProjectSecretOAuthToken(tokens.access_token);
+      project.robloxSecretStore.oauth.refreshToken = encryptProjectSecretOAuthToken(
+        tokens.refresh_token
+        || decryptProjectSecretOAuthToken(project.robloxSecretStore.oauth.refreshToken),
+      );
+      project.robloxSecretStore.oauth.expiresAt = now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000;
+      project.robloxSecretStore.oauth.scope = cleanString(
+        tokens.scope || project.robloxSecretStore.oauth.scope,
+        500,
+      );
+      project.robloxSecretStore.oauth.authorizationValid = true;
+      project.robloxSecretStore.oauth.lastRefreshedAt = now;
+      project.robloxSecretStore.oauth.lastError = "";
+      await updateProjectSecretStoreState(project.id, project.ownerUserId, {
+        robloxSecretStore: project.robloxSecretStore,
+      });
+      return tokens.access_token;
+    } catch (error) {
+      await markProjectSecretStoreAuthorizationInvalid(project, error);
+      throw error;
+    }
+  });
+  projectSecretTokenRefreshLocks.set(scopeKey, current);
+  try {
+    return await current;
+  } finally {
+    if (projectSecretTokenRefreshLocks.get(scopeKey) === current) {
+      projectSecretTokenRefreshLocks.delete(scopeKey);
+    }
+  }
+}
+
+async function markProjectSecretStoreAuthorizationInvalid(project, error) {
+  if (!project?.robloxSecretStore?.oauth) return;
+  project.robloxSecretStore.oauth.authorizationValid = false;
+  project.robloxSecretStore.oauth.lastError = cleanString(error?.message, 240)
+    || "Roblox Secrets Store authorization expired.";
+  project.robloxSecretStore.lastError = project.robloxSecretStore.oauth.lastError;
+  await updateProjectSecretStoreState(project.id, project.ownerUserId, {
+    robloxSecretStore: project.robloxSecretStore,
+  });
+}
+
 function hasRobloxLiveAuthorization(integration) {
   try {
     return Boolean(
@@ -4178,37 +4335,12 @@ async function handleProjectCreate(req, res, auth) {
     return sendJson(res, 403, { error: ownership.reason || "The logged-in Roblox account does not own this universe." });
   }
 
-  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
-  const project = {
-    id: crypto.randomUUID(),
-    ownerUserId: auth.userId,
-    universeId,
-    name: ownership.universeName || `Universe ${universeId}`,
-    secretHash: hashProjectSecret(projectSecret),
-    createdAt: Date.now(),
-    ownershipVerifiedAt: Date.now(),
-    ownershipMethod: "roblox-login",
-    robloxUserId,
-    robloxUsername: cleanString(user.robloxUsername || user.username, 80),
-    creatorType: ownership.creatorType,
-    creatorId: ownership.creatorId,
-    creatorName: ownership.creatorName,
-  };
-
-  try {
-    await createProject(project);
-  } catch (error) {
-    if (error.code === 11000) {
-      return sendJson(res, 409, { error: "This universe is already connected to an account." });
-    }
-
-    throw error;
-  }
-
-  return sendJson(res, 201, {
+  return sendJson(res, 202, {
     ok: true,
-    project: serializeProject(project),
-    secret: projectSecret,
+    authorizationUrl: getProjectSecretAuthorizationUrl({
+      universeId,
+      name: ownership.universeName || `Universe ${universeId}`,
+    }),
   });
 }
 
@@ -4222,9 +4354,72 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
     return sendJson(res, 400, { error: "Demo Universe does not use a Roblox ingestion secret." });
   }
 
+  if (!hasProjectSecretStoreAuthorization(project)) {
+    return sendJson(res, 202, {
+      ok: true,
+      authorizationRequired: true,
+      authorizationUrl: getProjectSecretAuthorizationUrl(project),
+    });
+  }
+
   const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+  const pendingSecretHash = hashProjectSecret(projectSecret);
   const updatedAt = Date.now();
-  await updateProjectSecretHash(project.id, auth.userId, hashProjectSecret(projectSecret), updatedAt);
+  await updateProjectSecretStoreState(project.id, auth.userId, {
+    pendingSecretHash,
+  });
+
+  let accessToken;
+  try {
+    accessToken = await getProjectSecretStoreAccessToken(project);
+  } catch (error) {
+    await updateProjectSecretStoreState(project.id, auth.userId, { pendingSecretHash: "" });
+    if (error?.statusCode === 401) {
+      return sendJson(res, 202, {
+        ok: true,
+        authorizationRequired: true,
+        authorizationUrl: getProjectSecretAuthorizationUrl(project),
+      });
+    }
+    throw error;
+  }
+
+  try {
+    await upsertRobloxUniverseSecret({
+      accessToken,
+      universeId: project.universeId,
+      secretValue: projectSecret,
+      domain: ROANALYTICS_SECRET_DOMAIN,
+    });
+  } catch (error) {
+    await updateProjectSecretStoreState(project.id, auth.userId, { pendingSecretHash: "" });
+    if (error?.statusCode === 401) {
+      await markProjectSecretStoreAuthorizationInvalid(project, error);
+      return sendJson(res, 202, {
+        ok: true,
+        authorizationRequired: true,
+        authorizationUrl: getProjectSecretAuthorizationUrl(project),
+      });
+    }
+    throw error;
+  }
+
+  project.robloxSecretStore = {
+    ...project.robloxSecretStore,
+    status: "installed",
+    secretId: ROANALYTICS_SECRET_NAME,
+    domain: ROANALYTICS_SECRET_DOMAIN,
+    installedAt: cleanInteger(project.robloxSecretStore?.installedAt) || updatedAt,
+    rotatedAt: updatedAt,
+    lastError: "",
+  };
+  await updateProjectSecretStoreState(project.id, auth.userId, {
+    secretHash: pendingSecretHash,
+    pendingSecretHash: "",
+    secretRotatedAt: updatedAt,
+    robloxSecretStore: project.robloxSecretStore,
+    ingestDisabled: false,
+  });
 
   return sendJson(res, 200, {
     ok: true,
@@ -4233,6 +4428,7 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
     name: project.name || `Universe ${cleanInteger(project.universeId)}`,
     regeneratedAt: updatedAt,
     secret: projectSecret,
+    secretStoreConfigured: true,
   });
 }
 
@@ -4245,6 +4441,19 @@ async function handleProjectUnlink(req, res, auth, projectId) {
   if (isDemoProject(project)) {
     return sendJson(res, 400, { error: "Demo Universe is protected because it is the admin preview dataset." });
   }
+
+  if (hasProjectSecretStoreAuthorization(project)) {
+    try {
+      const accessToken = await getProjectSecretStoreAccessToken(project);
+      await deleteRobloxUniverseSecret({
+        accessToken,
+        universeId: project.universeId,
+      });
+    } catch {
+      // Unlink still disables the credential because the dashboard no longer accepts its hash.
+    }
+  }
+
   const deletedData = await deleteUniverseAnalyticsData(project.universeId);
   await deleteProject(cleanProjectId, auth.userId);
 
@@ -4301,11 +4510,29 @@ async function handleRobloxOAuthStart(req, res, auth, searchParams) {
     });
   }
 
-  if (await getProjectByUniverseId(universeId)) {
+  const projectId = cleanString(searchParams.get("projectId"), 120);
+  const existingProject = projectId
+    ? await getProjectByIdForOwner(projectId, auth.userId)
+    : null;
+  if (projectId && (
+    !existingProject
+    || isDemoProject(existingProject)
+    || cleanInteger(existingProject.universeId) !== universeId
+  )) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Connected game not found",
+      message: "Return to Connect Universe and start secret setup again.",
+      backHref: "/#connect",
+    });
+  }
+
+  if (!projectId && await getProjectByUniverseId(universeId)) {
     return sendRobloxOAuthResult(res, {
       ok: false,
       title: "Universe already connected",
       message: "This universe is already connected to an account.",
+      backHref: "/#connect",
     });
   }
 
@@ -4314,11 +4541,12 @@ async function handleRobloxOAuthStart(req, res, auth, searchParams) {
   const codeVerifier = crypto.randomBytes(32).toString("base64url");
   const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
   setRobloxOAuthStateCookie(res, {
-    purpose: "project",
+    purpose: projectId ? "project-secret" : "project",
     state,
     nonce,
     codeVerifier,
     universeId,
+    projectId,
     name: cleanString(searchParams.get("name"), 80),
     userId: auth.userId,
     createdAt: Date.now(),
@@ -4328,6 +4556,7 @@ async function handleRobloxOAuthStart(req, res, auth, searchParams) {
     state,
     nonce,
     codeChallenge,
+    scopes: ROBLOX_OAUTH_PROJECT_SCOPES,
   }));
 }
 
@@ -4362,7 +4591,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       message: "Start the universe connection again from the dashboard.",
     });
   }
-  const oauthBackHref = oauthState.purpose === "roblox-live" ? "/#roblox-live" : "/";
+  const oauthBackHref = oauthState.purpose === "roblox-live" ? "/#roblox-live" : "/#connect";
 
   if (Date.now() - cleanInteger(oauthState.createdAt) > ROBLOX_OAUTH_STATE_MAX_AGE_MS) {
     return sendRobloxOAuthResult(res, {
@@ -4488,11 +4717,14 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       });
     }
 
-    if (oauthState.purpose !== "project" || !auth || oauthState.userId !== auth.userId) {
+    const isProjectSecretPurpose = oauthState.purpose === "project"
+      || oauthState.purpose === "project-secret";
+    if (!isProjectSecretPurpose || !auth || oauthState.userId !== auth.userId) {
       return sendRobloxOAuthResult(res, {
         ok: false,
         title: "Roblox verification expired",
         message: "Start the universe connection again from the dashboard.",
+        backHref: "/#connect",
       });
     }
 
@@ -4502,16 +4734,79 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         ok: false,
         title: "Invalid universe",
         message: "Start the universe connection again with a valid universe ID.",
+        backHref: "/#connect",
       });
     }
 
-    const gameLimit = await getConnectedGameLimitStatus(auth.userId);
-    if (!gameLimit.allowed) {
+    const grantedScopes = new Set(cleanString(tokens.scope, 500).split(/\s+/).filter(Boolean));
+    if (
+      !grantedScopes.has("universe.secret:read")
+      || !grantedScopes.has("universe.secret:write")
+    ) {
       return sendRobloxOAuthResult(res, {
         ok: false,
-        title: "Plan limit reached",
-        message: `Your ${gameLimit.planName} plan includes ${gameLimit.limit} connected game${gameLimit.limit === 1 ? "" : "s"}. Change plans before adding another game.`,
+        title: "Secrets Store permission missing",
+        message: "Authorize both Roblox Secrets Store permissions so RoAnalytics can install the game secret.",
+        backHref: "/#connect",
       });
+    }
+
+    const resources = await getRobloxOAuthTokenResources({
+      accessToken: tokens.access_token,
+      clientId: ROBLOX_OAUTH_CLIENT_ID,
+      clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+    });
+    if (!getAuthorizedRobloxUniverseIds(resources).has(String(universeId))) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Universe permission missing",
+        message: "The Roblox authorization did not include the selected universe.",
+        backHref: "/#connect",
+      });
+    }
+    if (!tokens.refresh_token) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Renewable authorization missing",
+        message: "Roblox did not return a refresh token. Start the connection again.",
+        backHref: "/#connect",
+      });
+    }
+
+    let project = oauthState.purpose === "project-secret"
+      ? await getProjectByIdForOwner(cleanString(oauthState.projectId, 120), auth.userId)
+      : null;
+    if (oauthState.purpose === "project-secret" && (
+      !project
+      || isDemoProject(project)
+      || cleanInteger(project.universeId) !== universeId
+    )) {
+      return sendRobloxOAuthResult(res, {
+        ok: false,
+        title: "Connected game not found",
+        message: "Return to Connect Universe and start secret setup again.",
+        backHref: "/#connect",
+      });
+    }
+
+    if (!project) {
+      if (await getProjectByUniverseId(universeId)) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Universe already connected",
+          message: "This universe is already connected to an account.",
+          backHref: "/#connect",
+        });
+      }
+      const gameLimit = await getConnectedGameLimitStatus(auth.userId);
+      if (!gameLimit.allowed) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Plan limit reached",
+          message: `Your ${gameLimit.planName} plan includes ${gameLimit.limit} connected game${gameLimit.limit === 1 ? "" : "s"}. Change plans before adding another game.`,
+          backHref: "/#connect",
+        });
+      }
     }
 
     const ownership = await verifyRobloxUniverseOwnership(universeId, cleanInteger(robloxUser.sub));
@@ -4520,34 +4815,88 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         ok: false,
         title: "Universe ownership not verified",
         message: ownership.reason || "The Roblox account you connected does not own this universe.",
+        backHref: "/#connect",
       });
     }
 
+    const now = Date.now();
     const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
-    const project = {
-      id: crypto.randomUUID(),
-      ownerUserId: auth.userId,
-      universeId,
-      name: cleanString(oauthState.name, 80) || ownership.universeName || `Universe ${universeId}`,
-      secretHash: hashProjectSecret(projectSecret),
-      createdAt: Date.now(),
-      ownershipVerifiedAt: Date.now(),
-      ownershipMethod: "roblox-oauth",
-      robloxUserId: cleanInteger(robloxUser.sub),
-      robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
-      creatorType: ownership.creatorType,
-      creatorId: ownership.creatorId,
-      creatorName: ownership.creatorName,
+    const pendingSecretHash = hashProjectSecret(projectSecret);
+    const robloxSecretStore = {
+      ...(project?.robloxSecretStore || {}),
+      status: "installing",
+      secretId: ROANALYTICS_SECRET_NAME,
+      domain: ROANALYTICS_SECRET_DOMAIN,
+      oauth: createProjectSecretStoreOAuth(tokens, robloxUser, now),
+      lastError: "",
     };
 
-    await createProject(project);
+    if (!project) {
+      project = {
+        id: crypto.randomUUID(),
+        ownerUserId: auth.userId,
+        universeId,
+        name: cleanString(oauthState.name, 80) || ownership.universeName || `Universe ${universeId}`,
+        secretHash: pendingSecretHash,
+        pendingSecretHash: "",
+        ingestDisabled: true,
+        robloxSecretStore,
+        createdAt: now,
+        ownershipVerifiedAt: now,
+        ownershipMethod: "roblox-oauth",
+        robloxUserId: cleanInteger(robloxUser.sub),
+        robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
+        creatorType: ownership.creatorType,
+        creatorId: ownership.creatorId,
+        creatorName: ownership.creatorName,
+      };
+      await createProject(project);
+    } else {
+      project.pendingSecretHash = pendingSecretHash;
+      project.robloxSecretStore = robloxSecretStore;
+      await updateProjectSecretStoreState(project.id, auth.userId, {
+        pendingSecretHash,
+        robloxSecretStore,
+      });
+    }
+
+    try {
+      await upsertRobloxUniverseSecret({
+        accessToken: tokens.access_token,
+        universeId,
+        secretValue: projectSecret,
+        domain: ROANALYTICS_SECRET_DOMAIN,
+      });
+    } catch (error) {
+      robloxSecretStore.status = "error";
+      robloxSecretStore.lastError = cleanString(error?.message, 240) || "Roblox secret installation failed.";
+      await updateProjectSecretStoreState(project.id, auth.userId, {
+        pendingSecretHash: "",
+        robloxSecretStore,
+      });
+      throw error;
+    }
+
+    robloxSecretStore.status = "installed";
+    robloxSecretStore.installedAt = cleanInteger(robloxSecretStore.installedAt) || now;
+    robloxSecretStore.rotatedAt = now;
+    robloxSecretStore.lastError = "";
+    await updateProjectSecretStoreState(project.id, auth.userId, {
+      secretHash: pendingSecretHash,
+      pendingSecretHash: "",
+      secretRotatedAt: now,
+      robloxSecretStore,
+      ingestDisabled: false,
+    });
+
     return sendRobloxOAuthResult(res, {
       ok: true,
-      title: "Universe connected",
-      message: "Copy this Roblox secret now. It is shown once.",
+      title: oauthState.purpose === "project" ? "Universe connected" : "Secret setup complete",
+      message: "RoAnalytics installed the game secret in Roblox automatically. Publish or start a collaborative test to send data.",
       secret: projectSecret,
       universeId,
       universeName: project.name,
+      backHref: "/#connect",
     });
   } catch (error) {
     if (error.code === 11000) {
@@ -4801,6 +5150,19 @@ function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OA
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
   return authorizeUrl.toString();
+}
+
+function getProjectSecretAuthorizationUrl(project) {
+  const universeId = cleanInteger(project?.universeId);
+  if (universeId <= 0) return "/#connect";
+  const params = new URLSearchParams({
+    universeId: String(universeId),
+  });
+  const projectId = cleanString(project?.id, 120);
+  const name = cleanString(project?.name, 80);
+  if (projectId) params.set("projectId", projectId);
+  if (name) params.set("name", name);
+  return `/api/roblox/oauth/start?${params.toString()}`;
 }
 
 function getAuthorizedRobloxUniverseIds(payload) {
@@ -5988,6 +6350,11 @@ async function getUniverseSummaries(ownerUserId = null) {
         projectId: project.id,
         name: project.name,
         isDemo: isDemoProject(project),
+        secretStoreConfigured: Boolean(project.secretStoreConfigured),
+        secretStoreAuthorizationValid: Boolean(project.secretStoreAuthorizationValid),
+        secretStoreStatus: project.secretStoreStatus || null,
+        secretStoreInstalledAt: cleanInteger(project.secretStoreInstalledAt) || null,
+        secretRotatedAt: cleanInteger(project.secretRotatedAt) || null,
         integrationStatus: buildUniverseIntegrationStatus(mergedSummary, recentFailuresByUniverseId.get(String(universeId))),
       });
     } else {
@@ -5996,6 +6363,11 @@ async function getUniverseSummaries(ownerUserId = null) {
         projectId: project.id,
         name: project.name,
         isDemo: isDemoProject(project),
+        secretStoreConfigured: Boolean(project.secretStoreConfigured),
+        secretStoreAuthorizationValid: Boolean(project.secretStoreAuthorizationValid),
+        secretStoreStatus: project.secretStoreStatus || null,
+        secretStoreInstalledAt: cleanInteger(project.secretStoreInstalledAt) || null,
+        secretRotatedAt: cleanInteger(project.secretRotatedAt) || null,
         integrationStatus: buildUniverseIntegrationStatus(summary, recentFailuresByUniverseId.get(String(universeId))),
       });
     }
@@ -14484,6 +14856,9 @@ async function getUserProjects(ownerUserId) {
             demoSeedVersion: 1,
             demoSeededAt: 1,
             demoReportGeneratedAt: 1,
+            secretRotatedAt: 1,
+            ingestDisabled: 1,
+            robloxSecretStore: 1,
           },
         },
       )
@@ -14509,6 +14884,22 @@ function serializeProject(project) {
     demoSeedVersion: isDemoProject(project) ? cleanInteger(project.demoSeedVersion) : null,
     demoSeededAt: isDemoProject(project) ? cleanInteger(project.demoSeededAt) : null,
     demoReportGeneratedAt: isDemoProject(project) ? cleanInteger(project.demoReportGeneratedAt) : null,
+    secretStoreConfigured: !isDemoProject(project)
+      && project?.robloxSecretStore?.status === "installed"
+      && cleanInteger(project?.robloxSecretStore?.installedAt) > 0
+      && !project?.ingestDisabled,
+    secretStoreAuthorizationValid: !isDemoProject(project)
+      && project?.robloxSecretStore?.oauth?.authorizationValid !== false
+      && Boolean(project?.robloxSecretStore?.oauth?.refreshToken),
+    secretStoreStatus: isDemoProject(project)
+      ? null
+      : cleanString(project?.robloxSecretStore?.status, 32) || "manual",
+    secretStoreInstalledAt: isDemoProject(project)
+      ? null
+      : cleanInteger(project?.robloxSecretStore?.installedAt) || null,
+    secretRotatedAt: isDemoProject(project)
+      ? null
+      : cleanInteger(project?.secretRotatedAt) || null,
   };
 }
 
@@ -14563,14 +14954,14 @@ async function getProjectFromRequestSecret(req, universeId) {
       { universeId: cleanUniverseId },
       { projection: { _id: 0 } },
     );
-    return project && !project.ingestDisabled && verifyProjectSecret(secret, project.secretHash) ? project : null;
+    return project && !project.ingestDisabled && verifyAnyProjectSecret(secret, project) ? project : null;
   }
 
   const projects = await readProjects();
   return projects.find((project) => (
     cleanInteger(project.universeId) === cleanUniverseId
     && !project.ingestDisabled
-    && verifyProjectSecret(secret, project.secretHash)
+    && verifyAnyProjectSecret(secret, project)
   )) || null;
 }
 
@@ -14592,6 +14983,11 @@ function verifyProjectSecret(secret, storedHash) {
   const candidate = hashProjectSecret(secret);
   if (Buffer.byteLength(candidate) !== Buffer.byteLength(String(storedHash || ""))) return false;
   return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(String(storedHash || "")));
+}
+
+function verifyAnyProjectSecret(secret, project) {
+  return verifyProjectSecret(secret, project?.secretHash)
+    || verifyProjectSecret(secret, project?.pendingSecretHash);
 }
 
 async function readProjects() {
@@ -14674,19 +15070,22 @@ async function updateDemoProjectSeedMetadata(project, metadata) {
   invalidateAdminResponseCache("users");
 }
 
-async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotatedAt) {
+async function updateProjectSecretStoreState(projectId, ownerUserId, fields) {
+  const cleanFields = fields && typeof fields === "object" && !Array.isArray(fields)
+    ? { ...fields }
+    : {};
   const db = await getMongoDb();
   if (db) {
     const result = await db.collection("projects").updateOne(
       { id: projectId, ownerUserId },
-      { $set: { secretHash, secretRotatedAt: rotatedAt } }
+      { $set: cleanFields }
     );
     if (!result.matchedCount) {
       const error = new Error("Project not found");
       error.code = "PROJECT_NOT_FOUND";
       throw error;
     }
-    return;
+    return result;
   }
 
   const projects = await readProjects();
@@ -14697,9 +15096,9 @@ async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotat
     throw error;
   }
 
-  project.secretHash = secretHash;
-  project.secretRotatedAt = rotatedAt;
+  Object.assign(project, cleanFields);
   await writeProjects(projects);
+  return project;
 }
 
 async function deleteProject(projectId, ownerUserId) {
@@ -15057,7 +15456,7 @@ function sendRobloxOAuthResult(res, result) {
     ? String(result.backHref)
     : "/";
   const secretHtml = result.secret
-    ? `<div class="secret"><span>Roblox secret</span><code>${escapeHtml(result.secret)}</code></div>`
+    ? `<div class="secret"><span>Optional Studio map key</span><code>${escapeHtml(result.secret)}</code><small>Live servers are already configured. Save this only if you use the current Studio map uploader.</small></div>`
     : "";
   const subtitle = result.universeName
     ? `<p class="muted">${escapeHtml(result.universeName)} (${escapeHtml(result.universeId)})</p>`
@@ -15077,6 +15476,7 @@ function sendRobloxOAuthResult(res, result) {
       .muted { color: #94a3b8; }
       .secret { display: grid; gap: 8px; margin-top: 16px; border: 1px solid #164e63; border-radius: 8px; background: rgba(34, 211, 238, 0.08); padding: 12px; }
       .secret span { color: #a5f3fc; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+      .secret small { color: #94a3b8; line-height: 1.45; }
       code { overflow-wrap: anywhere; border-radius: 6px; background: rgba(2, 6, 23, 0.75); color: #a5f3fc; padding: 10px; }
     </style>
   </head>

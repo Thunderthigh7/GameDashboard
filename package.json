@@ -17,10 +17,12 @@
     "test:chat": "node scripts/test-chat-ui.mjs",
     "test:discord": "node scripts/test-discord-integration.mjs",
     "test:roblox-live": "node scripts/test-roblox-live-actions.mjs",
+    "test:roblox-secret-store": "node scripts/test-roblox-secret-store.mjs",
     "test:releases": "node scripts/test-release-comparisons.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1080.0",
+    "libsodium-wrappers": "^0.8.4",
     "mongodb": "^6.0.0",
     "three": "^0.165.0"
   },
