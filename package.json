@@ -16,6 +16,7 @@
     "test:funnels": "node scripts/test-funnel-timeline.mjs",
     "test:chat": "node scripts/test-chat-ui.mjs",
     "test:discord": "node scripts/test-discord-integration.mjs",
+    "test:email": "node scripts/test-email-integration.mjs",
     "test:releases": "node scripts/test-release-comparisons.mjs"
   },
   "dependencies": {

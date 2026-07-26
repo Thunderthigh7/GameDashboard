@@ -26,6 +26,11 @@ import {
   normalizeDiscordWebhookUrl,
   sendDiscordWebhookAlert,
 } from "./lib/discord-webhooks.mjs";
+import {
+  normalizeEmailAddress,
+  normalizeEmailSubject,
+  sendTransactionalEmail,
+} from "./lib/email-delivery.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +46,7 @@ const funnelStorePath = path.join(__dirname, "data", "funnels.json");
 const eventDefinitionStorePath = path.join(__dirname, "data", "event-definitions.json");
 const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-deletions.json");
 const discordIntegrationStorePath = path.join(__dirname, "data", "discord-integrations.json");
+const emailIntegrationStorePath = path.join(__dirname, "data", "email-integrations.json");
 
 loadLocalEnv();
 
@@ -70,6 +76,15 @@ const MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20;
 const MAX_DISCORD_ALERT_DELIVERIES = 30;
 const DISCORD_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const DISCORD_ALERT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const EMAIL_SEND_WINDOW_MS = 60 * 1000;
+const MAX_EMAIL_SENDS_PER_WINDOW = 10;
+const MAX_EMAIL_RECIPIENTS_PER_UNIVERSE = 20;
+const MAX_EMAIL_ALERT_RULES_PER_UNIVERSE = 20;
+const MAX_EMAIL_ALERT_DELIVERIES = 30;
+const EMAIL_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const EMAIL_ALERT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const EMAIL_FROM = process.env.EMAIL_FROM || "";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -405,9 +420,13 @@ let localFunnelStoreLock = Promise.resolve();
 let localEventDefinitionStoreLock = Promise.resolve();
 let localCustomEventDeletionStoreLock = Promise.resolve();
 let localDiscordIntegrationStoreLock = Promise.resolve();
+let localEmailIntegrationStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
 const discordIntegrationCache = new Map();
 const discordAlertEvaluationLocks = new Map();
+const emailSendHistoryByUser = new Map();
+const emailIntegrationCache = new Map();
+const emailAlertEvaluationLocks = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
@@ -582,6 +601,38 @@ const server = http.createServer(async (req, res) => {
     }
     if (discordRuleMatch && req.method === "DELETE") {
       return handleDiscordAlertRuleDelete(req, res, auth, decodeURIComponent(discordRuleMatch[1]), url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/email" && req.method === "GET") {
+      return handleEmailIntegrationGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/email/recipient" && req.method === "PUT") {
+      return handleEmailRecipientSave(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/email/recipient" && req.method === "DELETE") {
+      return handleEmailRecipientDelete(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/integrations/email/recipient/select" && req.method === "PUT") {
+      return handleEmailRecipientSelect(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/email/test" && req.method === "POST") {
+      return handleEmailConnectionTest(req, res, auth);
+    }
+
+    if (url.pathname === "/api/integrations/email/rules" && req.method === "POST") {
+      return handleEmailAlertRuleSave(req, res, auth);
+    }
+
+    const emailRuleMatch = url.pathname.match(/^\/api\/integrations\/email\/rules\/([^/]+)$/);
+    if (emailRuleMatch && req.method === "PUT") {
+      return handleEmailAlertRuleSave(req, res, auth, decodeURIComponent(emailRuleMatch[1]));
+    }
+    if (emailRuleMatch && req.method === "DELETE") {
+      return handleEmailAlertRuleDelete(req, res, auth, decodeURIComponent(emailRuleMatch[1]), url.searchParams);
     }
 
     if (url.pathname === "/api/admin/users" && req.method === "GET") {
@@ -2740,6 +2791,742 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
   }
 }
 
+async function handleEmailIntegrationGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || (isDemoProject(project) && !isAdminUser(await findUserById(auth.userId)))) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const [integration, eventNames] = await Promise.all([
+    readEmailIntegration(auth.userId, universeId),
+    getDiscordAlertEventNames(auth.userId, universeId),
+  ]);
+  return sendJson(res, 200, serializeEmailIntegration(integration, { universeId, eventNames }));
+}
+
+async function handleEmailRecipientSave(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+
+  const now = Date.now();
+  const integration = await readEmailIntegration(auth.userId, universeId)
+    || createEmptyEmailIntegration(auth.userId, universeId);
+  const recipientId = cleanString(body?.recipientId, 120);
+  const savedRecipient = recipientId
+    ? integration.recipients.find((recipient) => recipient.id === recipientId)
+    : null;
+  if (recipientId && !savedRecipient) return sendJson(res, 404, { error: "Saved recipient not found." });
+  if (!savedRecipient && integration.recipients.length >= MAX_EMAIL_RECIPIENTS_PER_UNIVERSE) {
+    return sendJson(res, 409, { error: `A universe can have up to ${MAX_EMAIL_RECIPIENTS_PER_UNIVERSE} saved email recipients.` });
+  }
+
+  const name = cleanString(body?.name, 60);
+  if (!name) return sendJson(res, 400, { error: "Enter a name for this recipient." });
+  let emailAddress;
+  try {
+    emailAddress = normalizeEmailAddress(body?.email);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const nextRecipient = {
+    id: savedRecipient?.id || crypto.randomUUID(),
+    name,
+    email: encryptEmailRecipientAddress(emailAddress),
+    emailHint: getEmailAddressHint(emailAddress),
+    createdAt: cleanInteger(savedRecipient?.createdAt) || now,
+    updatedAt: now,
+    lastTestAt: cleanInteger(savedRecipient?.lastTestAt),
+  };
+  integration.recipients = savedRecipient
+    ? integration.recipients.map((recipient) => recipient.id === savedRecipient.id ? nextRecipient : recipient)
+    : [...integration.recipients, nextRecipient];
+  integration.selectedRecipientId = nextRecipient.id;
+  integration.updatedAt = now;
+  await saveEmailIntegration(integration);
+  return sendJson(res, 200, serializeEmailIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleEmailRecipientDelete(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const recipientId = cleanString(searchParams.get("recipientId"), 120);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  if (!recipientId) return sendJson(res, 400, { error: "Select a saved recipient to delete." });
+  const integration = await readEmailIntegration(auth.userId, universeId);
+  const previousLength = integration?.recipients?.length || 0;
+  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Saved recipient not found." });
+  integration.recipients = integration.recipients.filter((recipient) => recipient.id !== recipientId);
+  if (integration.recipients.length === previousLength) return sendJson(res, 404, { error: "Saved recipient not found." });
+  integration.selectedRecipientId = integration.selectedRecipientId === recipientId
+    ? (integration.recipients[0]?.id || "")
+    : integration.selectedRecipientId;
+  integration.rules = (integration.rules || []).map((rule) => (
+    rule.recipientId === recipientId
+      ? {
+        ...rule,
+        recipientId: "",
+        enabled: false,
+        lastError: "Select a delivery recipient.",
+        updatedAt: Date.now(),
+      }
+      : rule
+  ));
+  integration.updatedAt = Date.now();
+  await saveEmailIntegration(integration);
+  return sendJson(res, 200, serializeEmailIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleEmailRecipientSelect(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const recipientId = cleanString(body?.recipientId, 120);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readEmailIntegration(auth.userId, universeId);
+  if (!integration?.recipients?.some((recipient) => recipient.id === recipientId)) {
+    return sendJson(res, 404, { error: "Saved recipient not found." });
+  }
+  integration.selectedRecipientId = recipientId;
+  integration.updatedAt = Date.now();
+  await saveEmailIntegration(integration);
+  return sendJson(res, 200, serializeEmailIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleEmailConnectionTest(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || (isDemoProject(project) && !isAdminUser(await findUserById(auth.userId)))) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readEmailIntegration(auth.userId, universeId);
+  const recipientId = cleanString(body?.recipientId, 120) || integration?.selectedRecipientId;
+  const recipient = integration?.recipients?.find((entry) => entry.id === recipientId);
+  const emailAddress = getStoredEmailRecipientAddress(integration, recipientId);
+  if (!recipient || !emailAddress) return sendJson(res, 400, { error: "Select a saved email recipient first." });
+  if (!RESEND_API_KEY || !EMAIL_FROM) {
+    return sendJson(res, 503, { error: "Email delivery is not configured yet." });
+  }
+  const retryAfterMs = claimEmailSendSlot(auth.userId);
+  if (retryAfterMs > 0) return sendEmailRateLimitError(res, retryAfterMs);
+
+  try {
+    const title = "Email alerts connected";
+    const message = `RoAnalytics can now send automatic analytics alerts for ${project.name || `Universe ${universeId}`} to this address.`;
+    const result = await sendTransactionalEmail({
+      apiKey: RESEND_API_KEY,
+      from: EMAIL_FROM,
+      to: emailAddress,
+      subject: "RoAnalytics email alerts connected",
+      message,
+      html: renderEmailAlertHtml({
+        title,
+        message,
+        gameName: project.name || `Universe ${universeId}`,
+        eventLabel: "Connection test",
+        observed: "Ready",
+        ruleLabel: recipient.name,
+      }),
+      idempotencyKey: `roanalytics-email-test-${recipient.id}-${Date.now()}`,
+    });
+    integration.deliveries = appendEmailDelivery(integration.deliveries, {
+      id: crypto.randomUUID(),
+      type: "test",
+      status: "sent",
+      title: `${recipient.name} test`,
+      sentAt: result.sentAt,
+      recipientId,
+    });
+    integration.recipients = integration.recipients.map((entry) => (
+      entry.id === recipientId ? { ...entry, lastTestAt: result.sentAt } : entry
+    ));
+    integration.updatedAt = Date.now();
+    await saveEmailIntegration(integration);
+    return sendJson(res, 200, { ok: true, sentAt: result.sentAt });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode);
+    return sendJson(
+      res,
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 502,
+      { error: error?.message || "Could not send the test email." },
+    );
+  }
+}
+
+async function handleEmailAlertRuleSave(req, res, auth, requestedRuleId = "") {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readEmailIntegration(auth.userId, universeId);
+  if (!integration?.recipients?.length) {
+    return sendJson(res, 400, { error: "Save an email recipient before creating alerts." });
+  }
+  const ruleId = cleanString(requestedRuleId || body?.id, 120);
+  const existingRule = ruleId
+    ? (integration.rules || []).find((rule) => rule.id === ruleId)
+    : null;
+  if (ruleId && !existingRule) return sendJson(res, 404, { error: "Alert rule not found." });
+  if (!existingRule && (integration.rules || []).length >= MAX_EMAIL_ALERT_RULES_PER_UNIVERSE) {
+    return sendJson(res, 409, { error: `A universe can have up to ${MAX_EMAIL_ALERT_RULES_PER_UNIVERSE} email alerts.` });
+  }
+  const normalized = normalizeEmailAlertRule(body, existingRule, integration);
+  if (!normalized.ok) return sendJson(res, 400, { error: normalized.error });
+  integration.rules = existingRule
+    ? integration.rules.map((rule) => rule.id === existingRule.id ? normalized.value : rule)
+    : [...(integration.rules || []), normalized.value];
+  integration.updatedAt = Date.now();
+  await saveEmailIntegration(integration);
+  return sendJson(res, 200, serializeEmailIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+async function handleEmailAlertRuleDelete(req, res, auth, ruleId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const integration = await readEmailIntegration(auth.userId, universeId);
+  const previousLength = integration?.rules?.length || 0;
+  if (!integration || previousLength === 0) return sendJson(res, 404, { error: "Alert rule not found." });
+  integration.rules = integration.rules.filter((rule) => rule.id !== ruleId);
+  if (integration.rules.length === previousLength) return sendJson(res, 404, { error: "Alert rule not found." });
+  integration.updatedAt = Date.now();
+  await saveEmailIntegration(integration);
+  return sendJson(res, 200, serializeEmailIntegration(integration, {
+    universeId,
+    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
+  }));
+}
+
+function normalizeEmailAlertRule(value, existingRule = null, integration = null) {
+  const eventName = normalizeCustomEventName(value?.eventName);
+  if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
+  const name = cleanString(value?.name, 80) || `${formatDiscordEventName(eventName)} alert`;
+  const operator = cleanString(value?.operator, 24).toLowerCase();
+  if (operator !== "at_least" && operator !== "at_most") {
+    return { ok: false, error: "Choose whether the event count should be above or below the threshold." };
+  }
+  const threshold = Number(value?.threshold);
+  if (!Number.isSafeInteger(threshold) || threshold < (operator === "at_least" ? 1 : 0) || threshold > 1_000_000) {
+    return { ok: false, error: operator === "at_least" ? "Threshold must be between 1 and 1,000,000." : "Threshold must be between 0 and 1,000,000." };
+  }
+  const windowMinutes = Number(value?.windowMinutes);
+  if (!EMAIL_ALERT_WINDOWS_MINUTES.has(windowMinutes)) return { ok: false, error: "Choose a valid alert window." };
+  const cooldownMinutes = Number(value?.cooldownMinutes);
+  if (!EMAIL_ALERT_COOLDOWNS_MINUTES.has(cooldownMinutes)) return { ok: false, error: "Choose a valid cooldown." };
+  let subjectTemplate;
+  try {
+    subjectTemplate = normalizeEmailSubject(value?.subjectTemplate);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+  const messageTemplate = typeof value?.messageTemplate === "string" ? value.messageTemplate.trim() : "";
+  if (messageTemplate.length > 500) return { ok: false, error: "Alert message can contain up to 500 characters." };
+  const recipientId = value && Object.hasOwn(value, "recipientId")
+    ? cleanString(value.recipientId, 120)
+    : cleanString(existingRule?.recipientId, 120) || cleanString(integration?.selectedRecipientId, 120);
+  if (!integration?.recipients?.some((recipient) => recipient.id === recipientId)) {
+    return { ok: false, error: "Choose a saved recipient for this alert." };
+  }
+
+  const now = Date.now();
+  const changedCondition = Boolean(existingRule) && (
+    existingRule.eventName !== eventName
+    || existingRule.operator !== operator
+    || cleanInteger(existingRule.threshold) !== threshold
+    || cleanInteger(existingRule.windowMinutes) !== windowMinutes
+    || existingRule.recipientId !== recipientId
+  );
+  return {
+    ok: true,
+    value: {
+      id: cleanString(existingRule?.id, 120) || crypto.randomUUID(),
+      name,
+      eventName,
+      operator,
+      threshold,
+      windowMinutes,
+      cooldownMinutes,
+      recipientId,
+      subjectTemplate,
+      messageTemplate,
+      enabled: value?.enabled === undefined ? existingRule?.enabled !== false : Boolean(value.enabled),
+      lastConditionMet: changedCondition ? false : Boolean(existingRule?.lastConditionMet),
+      lastTriggeredAt: cleanInteger(existingRule?.lastTriggeredAt),
+      lastAttemptedAt: cleanInteger(existingRule?.lastAttemptedAt),
+      lastAttemptStatus: existingRule?.lastAttemptStatus === "failed" ? "failed" : "sent",
+      lastError: cleanString(existingRule?.lastError, 240),
+      createdAt: cleanInteger(existingRule?.createdAt) || now,
+      updatedAt: now,
+    },
+  };
+}
+
+function createEmptyEmailIntegration(ownerUserId, universeId) {
+  const now = Date.now();
+  return {
+    ownerUserId: cleanString(ownerUserId, 120),
+    universeId: cleanInteger(universeId),
+    emailSchemaVersion: 1,
+    recipients: [],
+    selectedRecipientId: "",
+    rules: [],
+    deliveries: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function normalizeStoredEmailIntegration(integration) {
+  if (!integration) return null;
+  const recipients = (Array.isArray(integration.recipients) ? integration.recipients : [])
+    .map((recipient) => ({
+      id: cleanString(recipient?.id, 120),
+      name: cleanString(recipient?.name, 60) || "Email alerts",
+      email: recipient?.email || null,
+      emailHint: cleanString(recipient?.emailHint, 254),
+      createdAt: cleanInteger(recipient?.createdAt),
+      updatedAt: cleanInteger(recipient?.updatedAt),
+      lastTestAt: cleanInteger(recipient?.lastTestAt),
+    }))
+    .filter((recipient) => recipient.id && recipient.email);
+  const selectedRecipientId = recipients.some((recipient) => recipient.id === integration.selectedRecipientId)
+    ? integration.selectedRecipientId
+    : (recipients[0]?.id || "");
+  return {
+    ...integration,
+    emailSchemaVersion: 1,
+    recipients,
+    selectedRecipientId,
+    rules: Array.isArray(integration.rules) ? integration.rules : [],
+    deliveries: Array.isArray(integration.deliveries) ? integration.deliveries : [],
+  };
+}
+
+function serializeEmailIntegration(integration, { universeId, eventNames = [] } = {}) {
+  const normalizedIntegration = normalizeStoredEmailIntegration(integration);
+  const cleanUniverseId = cleanInteger(universeId || normalizedIntegration?.universeId);
+  const recipients = normalizedIntegration?.recipients || [];
+  const recipientsById = new Map(recipients.map((recipient) => [recipient.id, recipient]));
+  const rules = normalizedIntegration?.rules || [];
+  return {
+    universeId: cleanUniverseId,
+    provider: {
+      configured: Boolean(RESEND_API_KEY && EMAIL_FROM),
+      name: "Resend",
+    },
+    connection: {
+      connected: recipients.length > 0,
+      count: recipients.length,
+      selectedRecipientId: cleanString(normalizedIntegration?.selectedRecipientId, 120),
+    },
+    recipients: recipients.map((recipient) => ({
+      id: recipient.id,
+      name: recipient.name,
+      email: getStoredEmailRecipientAddress(normalizedIntegration, recipient.id),
+      emailHint: recipient.emailHint,
+      createdAt: recipient.createdAt,
+      updatedAt: recipient.updatedAt,
+      lastTestAt: recipient.lastTestAt || null,
+    })),
+    rules: rules
+      .map((rule) => {
+        const eventName = normalizeCustomEventName(rule?.eventName);
+        const windowMinutes = cleanInteger(rule?.windowMinutes);
+        return {
+          id: cleanString(rule?.id, 120),
+          name: cleanString(rule?.name, 80),
+          eventName,
+          operator: rule?.operator === "at_most" ? "at_most" : "at_least",
+          threshold: cleanInteger(rule?.threshold),
+          windowMinutes,
+          cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
+          recipientId: cleanString(rule?.recipientId, 120),
+          recipientName: cleanString(recipientsById.get(rule?.recipientId)?.name, 60),
+          recipientEmail: getStoredEmailRecipientAddress(normalizedIntegration, rule?.recipientId),
+          currentCount: countDiscordAlertEvents(
+            cleanUniverseId,
+            eventName,
+            Date.now() - windowMinutes * 60 * 1000,
+            Date.now(),
+          ),
+          subjectTemplate: cleanString(rule?.subjectTemplate, 120),
+          messageTemplate: cleanString(rule?.messageTemplate, 500),
+          enabled: rule?.enabled !== false,
+          lastTriggeredAt: cleanInteger(rule?.lastTriggeredAt) || null,
+          lastError: cleanString(rule?.lastError, 240),
+          createdAt: cleanInteger(rule?.createdAt),
+          updatedAt: cleanInteger(rule?.updatedAt),
+        };
+      })
+      .sort((left, right) => right.updatedAt - left.updatedAt),
+    deliveries: (normalizedIntegration?.deliveries || [])
+      .slice(-MAX_EMAIL_ALERT_DELIVERIES)
+      .reverse()
+      .map((delivery) => ({
+        id: cleanString(delivery?.id, 120),
+        type: cleanString(delivery?.type, 32),
+        status: delivery?.status === "failed" ? "failed" : "sent",
+        title: cleanString(delivery?.title, 120),
+        sentAt: cleanInteger(delivery?.sentAt) || null,
+        error: cleanString(delivery?.error, 240),
+      })),
+    eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
+    limits: {
+      rules: MAX_EMAIL_ALERT_RULES_PER_UNIVERSE,
+      recipients: MAX_EMAIL_RECIPIENTS_PER_UNIVERSE,
+      messageLength: 500,
+      subjectLength: 120,
+      windowsMinutes: [...EMAIL_ALERT_WINDOWS_MINUTES],
+      cooldownsMinutes: [...EMAIL_ALERT_COOLDOWNS_MINUTES],
+    },
+  };
+}
+
+function getEmailIntegrationScopeKey(ownerUserId, universeId) {
+  return `${cleanString(ownerUserId, 120)}:${cleanInteger(universeId)}`;
+}
+
+async function readEmailIntegration(ownerUserId, universeId) {
+  const scopeKey = getEmailIntegrationScopeKey(ownerUserId, universeId);
+  if (emailIntegrationCache.has(scopeKey)) return emailIntegrationCache.get(scopeKey);
+  const db = await getMongoDb();
+  let integration = null;
+  if (db) {
+    integration = await db.collection("email_integrations").findOne(
+      { ownerUserId, universeId: cleanInteger(universeId) },
+      { projection: { _id: 0 } },
+    );
+  } else {
+    const integrations = await readLocalEmailIntegrationStore();
+    integration = integrations.find((entry) => (
+      entry.ownerUserId === ownerUserId
+      && cleanInteger(entry.universeId) === cleanInteger(universeId)
+    )) || null;
+  }
+  integration = normalizeStoredEmailIntegration(integration);
+  emailIntegrationCache.set(scopeKey, integration);
+  return integration;
+}
+
+async function saveEmailIntegration(integration) {
+  const normalizedIntegration = normalizeStoredEmailIntegration(integration);
+  const scopeKey = getEmailIntegrationScopeKey(normalizedIntegration?.ownerUserId, normalizedIntegration?.universeId);
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("email_integrations").replaceOne(
+      { ownerUserId: normalizedIntegration.ownerUserId, universeId: normalizedIntegration.universeId },
+      normalizedIntegration,
+      { upsert: true },
+    );
+  } else {
+    await withLocalEmailIntegrationStoreLock(async () => {
+      const integrations = await readLocalEmailIntegrationStore();
+      const index = integrations.findIndex((entry) => (
+        entry.ownerUserId === normalizedIntegration.ownerUserId
+        && cleanInteger(entry.universeId) === cleanInteger(normalizedIntegration.universeId)
+      ));
+      if (index >= 0) integrations[index] = normalizedIntegration;
+      else integrations.push(normalizedIntegration);
+      await writeLocalEmailIntegrationStore(integrations);
+    });
+  }
+  emailIntegrationCache.set(scopeKey, normalizedIntegration);
+  return normalizedIntegration;
+}
+
+async function readLocalEmailIntegrationStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(emailIntegrationStorePath, "utf8"));
+    return Array.isArray(payload.integrations) ? payload.integrations : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalEmailIntegrationStore(integrations) {
+  await fs.mkdir(path.dirname(emailIntegrationStorePath), { recursive: true });
+  await fs.writeFile(emailIntegrationStorePath, JSON.stringify({ integrations }, null, 2));
+}
+
+async function withLocalEmailIntegrationStoreLock(operation) {
+  const previous = localEmailIntegrationStoreLock;
+  let release;
+  localEmailIntegrationStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+function getEmailRecipientEncryptionKey() {
+  return crypto.createHash("sha256")
+    .update(`roanalytics:email-recipient:v1:${PRESENCE_SECRET}`)
+    .digest();
+}
+
+function encryptEmailRecipientAddress(emailAddress) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getEmailRecipientEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(emailAddress, "utf8"), cipher.final()]);
+  return {
+    version: 1,
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+  };
+}
+
+function decryptEmailRecipientAddress(value) {
+  if (!value || cleanInteger(value.version) !== 1) return "";
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    getEmailRecipientEncryptionKey(),
+    Buffer.from(String(value.iv || ""), "base64"),
+  );
+  decipher.setAuthTag(Buffer.from(String(value.tag || ""), "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(String(value.ciphertext || ""), "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+function getStoredEmailRecipientAddress(integration, recipientId = "") {
+  try {
+    const normalizedIntegration = normalizeStoredEmailIntegration(integration);
+    const selectedId = cleanString(recipientId, 120) || normalizedIntegration?.selectedRecipientId;
+    const recipient = normalizedIntegration?.recipients?.find((entry) => entry.id === selectedId);
+    return recipient?.email ? normalizeEmailAddress(decryptEmailRecipientAddress(recipient.email)) : "";
+  } catch (error) {
+    console.warn("Could not decrypt a stored email recipient:", error.message || error);
+    return "";
+  }
+}
+
+function getEmailAddressHint(emailAddress) {
+  const [localPart, domain] = String(emailAddress || "").split("@");
+  if (!localPart || !domain) return "Email recipient";
+  return `${localPart.slice(0, 1)}${localPart.length > 1 ? "***" : ""}@${domain}`;
+}
+
+function claimEmailSendSlot(userId, now = Date.now()) {
+  const key = String(userId || "");
+  const cutoff = now - EMAIL_SEND_WINDOW_MS;
+  const recentSends = (emailSendHistoryByUser.get(key) || []).filter((timestamp) => timestamp > cutoff);
+  if (recentSends.length >= MAX_EMAIL_SENDS_PER_WINDOW) {
+    return Math.max(1000, recentSends[0] + EMAIL_SEND_WINDOW_MS - now);
+  }
+  recentSends.push(now);
+  emailSendHistoryByUser.set(key, recentSends);
+  return 0;
+}
+
+function sendEmailRateLimitError(res, retryAfterMs) {
+  return sendJson(res, 429, {
+    error: "Too many email messages. Wait a moment and try again.",
+    retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+  });
+}
+
+function appendEmailDelivery(deliveries, delivery) {
+  return [...(Array.isArray(deliveries) ? deliveries : []), delivery]
+    .slice(-MAX_EMAIL_ALERT_DELIVERIES);
+}
+
+function renderEmailAlertTemplate(template, rule, context, fallback) {
+  const source = cleanString(template, 500) || fallback;
+  const replacements = {
+    game: context.gameName,
+    event: context.eventLabel,
+    event_key: rule.eventName,
+    count: context.count.toLocaleString("en-US"),
+    threshold: cleanInteger(rule.threshold).toLocaleString("en-US"),
+    window: context.windowLabel,
+  };
+  return source.replace(/\{\{(game|event|event_key|count|threshold|window)\}\}/g, (_, key) => replacements[key]);
+}
+
+function renderEmailAlertHtml({ title, message, gameName, eventLabel, observed, ruleLabel }) {
+  return `<!doctype html>
+  <html>
+    <body style="margin:0;background:#070d1c;color:#f7f8ff;font-family:Arial,sans-serif">
+      <div style="max-width:620px;margin:0 auto;padding:32px 18px">
+        <div style="border:1px solid #26345d;border-radius:14px;background:#0c1530;padding:26px">
+          <div style="color:#9e7cff;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">RoAnalytics alert</div>
+          <h1 style="margin:10px 0 8px;font-size:24px;line-height:1.25">${escapeHtml(title)}</h1>
+          <p style="margin:0 0 22px;color:#c4cbe0;font-size:15px;line-height:1.6">${escapeHtml(message)}</p>
+          <table style="width:100%;border-collapse:collapse;font-size:14px">
+            <tr><td style="padding:10px 0;color:#8793b2">Universe</td><td style="padding:10px 0;text-align:right;font-weight:700">${escapeHtml(gameName)}</td></tr>
+            <tr><td style="padding:10px 0;border-top:1px solid #202c4d;color:#8793b2">Event</td><td style="padding:10px 0;border-top:1px solid #202c4d;text-align:right;font-weight:700">${escapeHtml(eventLabel)}</td></tr>
+            <tr><td style="padding:10px 0;border-top:1px solid #202c4d;color:#8793b2">Observed</td><td style="padding:10px 0;border-top:1px solid #202c4d;text-align:right;font-weight:700">${escapeHtml(observed)}</td></tr>
+            <tr><td style="padding:10px 0;border-top:1px solid #202c4d;color:#8793b2">Rule</td><td style="padding:10px 0;border-top:1px solid #202c4d;text-align:right;font-weight:700">${escapeHtml(ruleLabel)}</td></tr>
+          </table>
+        </div>
+      </div>
+    </body>
+  </html>`;
+}
+
+async function evaluateEmailAlertsForPresence(presence, project) {
+  if (!RESEND_API_KEY || !EMAIL_FROM || !project?.ownerUserId || cleanInteger(presence?.universeId) <= 0) return;
+  const scopeKey = getEmailIntegrationScopeKey(project.ownerUserId, presence.universeId);
+  const previous = emailAlertEvaluationLocks.get(scopeKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(async () => {
+    const integration = await readEmailIntegration(project.ownerUserId, presence.universeId);
+    if (!integration?.recipients?.length || !integration.rules?.some((rule) => rule.enabled !== false)) return;
+    const now = Date.now();
+    let changed = false;
+    for (const rule of integration.rules) {
+      if (rule.enabled === false) continue;
+      const recipient = integration.recipients.find((entry) => entry.id === rule.recipientId);
+      const emailAddress = getStoredEmailRecipientAddress(integration, rule.recipientId);
+      if (!recipient || !emailAddress) {
+        rule.enabled = false;
+        rule.lastError = "Select a delivery recipient.";
+        rule.updatedAt = now;
+        changed = true;
+        continue;
+      }
+      const count = countDiscordAlertEvents(
+        presence.universeId,
+        rule.eventName,
+        now - cleanInteger(rule.windowMinutes) * 60 * 1000,
+        now,
+      );
+      const conditionMet = rule.operator === "at_most"
+        ? count <= cleanInteger(rule.threshold)
+        : count >= cleanInteger(rule.threshold);
+      if (Boolean(rule.lastConditionMet) !== conditionMet) {
+        rule.lastConditionMet = conditionMet;
+        changed = true;
+      }
+      const cooldownMs = cleanInteger(rule.cooldownMinutes) * 60 * 1000;
+      const lastAttemptedAt = cleanInteger(rule.lastAttemptedAt);
+      const retryDelayMs = rule.lastAttemptStatus === "failed"
+        ? Math.min(cooldownMs, 5 * 60 * 1000)
+        : cooldownMs;
+      if (!conditionMet || (lastAttemptedAt && now - lastAttemptedAt < retryDelayMs)) continue;
+      const retryAfterMs = claimEmailSendSlot(project.ownerUserId, now);
+      if (retryAfterMs > 0) {
+        rule.lastError = "Delivery paused by the email rate limit.";
+        rule.lastAttemptedAt = now;
+        rule.lastAttemptStatus = "failed";
+        changed = true;
+        continue;
+      }
+
+      const gameName = project.name || `Universe ${presence.universeId}`;
+      const eventLabel = formatDiscordEventName(rule.eventName);
+      const windowLabel = formatDiscordAlertWindow(cleanInteger(rule.windowMinutes));
+      const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
+      const fallbackMessage = `${eventLabel} recorded ${count.toLocaleString("en-US")} events in the last ${windowLabel}.`;
+      const context = { gameName, eventLabel, count, windowLabel };
+      const subject = renderEmailAlertTemplate(
+        rule.subjectTemplate,
+        rule,
+        context,
+        `${eventLabel} alert for ${gameName}`,
+      ).slice(0, 120);
+      const message = renderEmailAlertTemplate(rule.messageTemplate, rule, context, fallbackMessage);
+      try {
+        const result = await sendTransactionalEmail({
+          apiKey: RESEND_API_KEY,
+          from: EMAIL_FROM,
+          to: emailAddress,
+          subject,
+          message,
+          html: renderEmailAlertHtml({
+            title: rule.name,
+            message,
+            gameName,
+            eventLabel,
+            observed: `${count.toLocaleString("en-US")} / ${windowLabel}`,
+            ruleLabel: `${operatorLabel} ${cleanInteger(rule.threshold).toLocaleString("en-US")}`,
+          }),
+          idempotencyKey: `roanalytics-email-alert-${rule.id}-${Math.floor(now / 60_000)}`,
+        });
+        rule.lastTriggeredAt = result.sentAt;
+        rule.lastAttemptedAt = result.sentAt;
+        rule.lastAttemptStatus = "sent";
+        rule.lastError = "";
+        integration.deliveries = appendEmailDelivery(integration.deliveries, {
+          id: crypto.randomUUID(),
+          type: "alert",
+          status: "sent",
+          title: rule.name,
+          sentAt: result.sentAt,
+          recipientId: rule.recipientId,
+        });
+      } catch (error) {
+        rule.lastAttemptedAt = now;
+        rule.lastAttemptStatus = "failed";
+        rule.lastError = cleanString(error?.message, 240) || "Email delivery failed.";
+        integration.deliveries = appendEmailDelivery(integration.deliveries, {
+          id: crypto.randomUUID(),
+          type: "alert",
+          status: "failed",
+          title: rule.name,
+          sentAt: now,
+          error: rule.lastError,
+          recipientId: rule.recipientId,
+        });
+      }
+      changed = true;
+    }
+    if (changed) {
+      integration.updatedAt = Date.now();
+      await saveEmailIntegration(integration);
+    }
+  });
+  emailAlertEvaluationLocks.set(scopeKey, current);
+  try {
+    await current;
+  } finally {
+    if (emailAlertEvaluationLocks.get(scopeKey) === current) emailAlertEvaluationLocks.delete(scopeKey);
+  }
+}
+
 async function handleAdminUserPlanUpdate(req, res, adminUser) {
   let body;
   try {
@@ -3384,6 +4171,12 @@ async function handlePresenceHeartbeat(req, res) {
       evaluateDiscordAlertsForPresence(presence.value, project).catch((error) => {
         console.warn(
           `Could not evaluate Discord alerts for universe ${presence.value.universeId}:`,
+          error.message || error,
+        );
+      });
+      evaluateEmailAlertsForPresence(presence.value, project).catch((error) => {
+        console.warn(
+          `Could not evaluate email alerts for universe ${presence.value.universeId}:`,
           error.message || error,
         );
       });
@@ -13493,6 +14286,7 @@ async function deleteMongoUniverseData(universeId) {
     "event_definitions",
     "funnels",
     "discord_integrations",
+    "email_integrations",
     "map_snapshots",
     "map_snapshot_chunks",
   ]) {
@@ -13538,12 +14332,22 @@ async function deleteLocalUniverseData(universeId) {
   for (const scopeKey of [...discordIntegrationCache.keys()]) {
     if (scopeKey.endsWith(`:${universeId}`)) discordIntegrationCache.delete(scopeKey);
   }
+  const deletedEmailIntegrations = await withLocalEmailIntegrationStoreLock(async () => {
+    const integrations = await readLocalEmailIntegrationStore();
+    const nextIntegrations = integrations.filter((integration) => cleanInteger(integration.universeId) !== universeId);
+    if (nextIntegrations.length !== integrations.length) await writeLocalEmailIntegrationStore(nextIntegrations);
+    return integrations.length - nextIntegrations.length;
+  });
+  for (const scopeKey of [...emailIntegrationCache.keys()]) {
+    if (scopeKey.endsWith(`:${universeId}`)) emailIntegrationCache.delete(scopeKey);
+  }
   return {
     mapSnapshot,
     funnels: deletedFunnels,
     eventDefinitions: deletedEventDefinitions,
     customEventDeletions: deletedCustomEventDeletions,
     discordIntegrations: deletedDiscordIntegrations,
+    emailIntegrations: deletedEmailIntegrations,
   };
 }
 

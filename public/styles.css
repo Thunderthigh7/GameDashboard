@@ -3584,6 +3584,18 @@ body[data-active-view="connect"] .topbar > div:first-child {
   stroke-width: 1.7;
 }
 
+.emailPage .discordConnectionHeader {
+  background:
+    radial-gradient(circle at 0 0, rgba(45, 212, 191, 0.14), transparent 44%),
+    rgba(8, 16, 36, 0.44);
+}
+
+.emailComposerIcon {
+  border-color: rgba(45, 212, 191, 0.34);
+  background: linear-gradient(145deg, rgba(20, 184, 166, 0.28), rgba(13, 148, 136, 0.1));
+  color: #5eead4;
+}
+
 .discordConnectionBadge {
   display: inline-flex;
   align-items: center;
@@ -3761,6 +3773,10 @@ body[data-active-view="connect"] .topbar > div:first-child {
   gap: 8px;
   min-width: 150px;
   background: linear-gradient(135deg, #6d5ce7, #5865f2);
+}
+
+.emailSaveButton {
+  background: linear-gradient(135deg, #0f9f92, #147d87);
 }
 
 .discordSendButton svg {
@@ -7668,11 +7684,34 @@ body[data-active-view="funnels"] #pageSubtitle {
   cursor: help;
 }
 
+.funnelTimelineGapPath {
+  fill: none;
+  stroke-width: 2.2px;
+  stroke-dasharray: 5 6;
+  stroke-linecap: round;
+  opacity: 0.62;
+  cursor: help;
+}
+
+.funnelTimelineCoincidentGapMask {
+  fill: none;
+  stroke: #081023;
+  stroke-width: 4.6px;
+  stroke-linecap: butt;
+  pointer-events: none;
+}
+
 .funnelTimelineCoincidentPath {
   fill: none;
-  stroke-linecap: round;
+  stroke-width: 3.4px;
+  stroke-linecap: butt;
   stroke-linejoin: round;
   pointer-events: none;
+}
+
+.funnelTimelineCoincidentPath.isGap {
+  stroke-width: 2.6px;
+  opacity: 0.72;
 }
 
 .funnelTimelineCoincidentPoint {

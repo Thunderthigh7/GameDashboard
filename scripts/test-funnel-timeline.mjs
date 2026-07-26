@@ -114,7 +114,10 @@ assert.match(appSource, /function renderFunnelTimeline\(funnel\)/, "the Funnel t
 assert.match(appSource, /const rawPercentage = getFunnelBucketStepConversion\(bucket, stepIndex\)/, "the chart and table should use the same step-to-step conversion calculation");
 assert.doesNotMatch(appSource, /const rawPercentage = point\?\.percentage/, "the chart should not plot the from-start percentage as step conversion");
 assert.match(appSource, /function getFunnelTimelineCoincidentPathGroups\(seriesModels\)/, "coincident Funnel lines should be detected instead of hiding one another");
-assert.match(appSource, /strokeWidth = 2\.6 \+ \(\(entries\.length - index - 1\) \* 2\.4\)/, "coincident Funnel lines should use nested exact-value strokes");
+assert.match(appSource, /function getFunnelTimelineGapSegments\(points, left, right\)/, "missing-denominator buckets should produce visible continuity bridges");
+assert.match(appSource, /class="funnelTimelineGapPath"/, "Funnel series should draw their no-data intervals instead of disappearing");
+assert.match(appSource, /const dashSlots = entries\.length \+ \(hasGap \? 1 : 0\)/, "coincident Funnel lines should divide their exact path into visible color segments");
+assert.match(appSource, /stroke-dashoffset:\$\{dashOffset\}/, "every coincident Funnel line should receive its own non-overlapping dash position");
 assert.match(appSource, /function getFunnelTimelineCoincidentPointGroups\(seriesModels\)/, "coincident Funnel points should remain individually visible");
 assert.match(appSource, /class="funnelTimelineCoincidentPoint"/, "the chart should draw a visible marker ring for every coincident series");
 assert.match(appSource, /function getCompletedFunnelTimelineBuckets\(funnel\)/, "the chart and table should share completed cohort filtering");
@@ -157,7 +160,9 @@ assert.match(serverSource, /stepColors:\s*Array\.isArray\(funnel\?\.stepColors\)
 assert.match(serverSource, /body\?\.stepColors === undefined[\s\S]*?stepColors: existing\.stepColors/, "older Funnel saves should preserve existing step colors");
 assert.doesNotMatch(serverSource, /calculateFunnelStepChanges|getFunnelStepChangesForRange/, "the API should not fetch or calculate a separate previous period");
 assert.match(styleSource, /\.funnelTimelinePanel\s*\{/, "the Funnel chart should use a dedicated themed panel");
+assert.match(styleSource, /\.funnelTimelineGapPath\s*\{[\s\S]*?stroke-dasharray:\s*5 6/, "no-data Funnel bridges should be visually distinct from measured lines");
 assert.match(styleSource, /\.funnelTimelineCoincidentPath\s*\{/, "coincident Funnel lines should have dedicated non-distorting styling");
+assert.match(styleSource, /\.funnelTimelineCoincidentPath\s*\{[\s\S]*?stroke-linecap:\s*butt/, "alternating Funnel line colors should meet cleanly instead of visually merging");
 assert.match(styleSource, /\.funnelTimelineCoincidentPoint\s*\{[\s\S]*?fill:\s*#081023/, "coincident Funnel markers should expose each nested series color");
 assert.match(styleSource, /\.funnelTimelineStepMenu\s*\{/, "the step selector should use a themed menu");
 assert.match(styleSource, /\.funnelColorManagerRow\s*\{/, "the Funnel color manager should use themed step rows");
