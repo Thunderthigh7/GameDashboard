@@ -1,7 +1,7 @@
 local Settings = {}
 
 Settings.Endpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/presence"
-Settings.SecretName = "ROANALYTICS_SECRET"
+Settings.Secret = "paste-project-roblox-secret-here"
 
 Settings.HeartbeatInterval = 20
 Settings.MaxPlayersPerPayload = 100

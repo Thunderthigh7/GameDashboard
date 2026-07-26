@@ -23,12 +23,6 @@ ServerScriptService/
 
 This folder is synced by `default.project.json` and is not used by the website server. It does not emit routine warning or debug output.
 
-## Secure connection
-
-`Settings.SecretName` is fixed to `ROANALYTICS_SECRET`. Connecting the universe on the dashboard asks the owner for Roblox Secrets Store access and installs the matching value automatically. The heartbeat reads it at request time with `HttpService:GetSecret()`, so no credential is stored in this source tree.
-
-Cloud secrets work in published servers and collaborative testing. For ordinary local Play Solo, create a local Studio secret named `ROANALYTICS_SECRET` under **File -> Experience Settings -> Security -> Secrets**. Also enable HTTP requests for the experience.
-
 ## Automatic system events
 
 RoAnalytics records these events automatically with the same player session ID used by custom events:
@@ -74,7 +68,7 @@ RoAnalytics.Log("round_started", {
 })
 ```
 
-Do not require RoAnalytics from a `LocalScript`. Validate client actions through the game's normal server-authoritative networking before logging them.
+Do not require RoAnalytics or expose its project secret from a `LocalScript`. Validate client actions through the game's normal server-authoritative networking before logging them.
 
 ## Player context
 

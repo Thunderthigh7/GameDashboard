@@ -3111,13 +3111,14 @@ async function createProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ universeId }),
     });
+    showProjectSecret(data.secret || "", data.project);
     usageRequestSequence += 1;
     removeScopedSessionCache("account-usage", "current");
     loadedViews.delete("usage");
     removeScopedSessionCache("admin-users", "summary");
     loadedViews.delete("admin");
-    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Authorize key setup below to install the live secret.";
-    await loadUniverses({ preferredUniverseId: String(data.project?.universeId || universeId) });
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Copy the Roblox secret now.";
+    await loadUniverses();
     await loadOwnedGames();
   } catch (error) {
     handleAuthError(error);
@@ -3131,26 +3132,20 @@ async function regenerateProjectSecret(projectId, button) {
   if (!projectId) return;
   const universe = knownUniverses.find((entry) => String(entry.projectId || "") === String(projectId));
 
-  const originalText = button?.textContent || "Rotate key";
+  const originalText = button?.textContent || "Regenerate secret";
   if (button) {
     button.disabled = true;
-    button.textContent = universe?.secretStoreConfigured ? "Rotating..." : "Opening Roblox...";
+    button.textContent = "Regenerating...";
   }
   clearProjectSecretBox();
 
   try {
     const data = await request(`/api/projects/${encodeURIComponent(projectId)}/secret`, { method: "POST" });
-    if (data.authorizationUrl) {
-      if (ownedGamesStatus) ownedGamesStatus.textContent = "Opening Roblox to authorize secure key setup...";
-      window.location.assign(data.authorizationUrl);
-      return;
-    }
     showProjectSecret(data.secret || "", {
       name: data.name || universe?.name,
       universeId: data.universeId || universe?.id,
     });
-    if (ownedGamesStatus) ownedGamesStatus.textContent = `Secure key rotated in Roblox for ${universe?.name || "this game"}. No code change is needed.`;
-    await loadUniverses({ preferredUniverseId: String(data.universeId || universe?.id || "") });
+    if (ownedGamesStatus) ownedGamesStatus.textContent = `Secret regenerated for ${universe?.name || "this game"}. Update that Roblox config with this new key.`;
   } catch (error) {
     handleAuthError(error);
     if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
@@ -3184,7 +3179,7 @@ async function unlinkProject(projectId, button) {
     loadedViews.delete("usage");
     removeScopedSessionCache("admin-users", "summary");
     loadedViews.delete("admin");
-    if (ownedGamesStatus) ownedGamesStatus.textContent = `${label} was unlinked, its Roblox key was disabled, and its stored analytics data was deleted.`;
+    if (ownedGamesStatus) ownedGamesStatus.textContent = `${label} was unlinked and its stored analytics data was deleted.`;
     await loadUniverses();
     await loadOwnedGames();
   } catch (error) {
@@ -3206,10 +3201,10 @@ async function copyProjectSecret() {
     await navigator.clipboard.writeText(secret);
     if (copyProjectSecretButton) copyProjectSecretButton.textContent = "Copied";
     window.setTimeout(() => {
-      if (copyProjectSecretButton) copyProjectSecretButton.textContent = "Copy map key";
+      if (copyProjectSecretButton) copyProjectSecretButton.textContent = "Copy secret";
     }, 1400);
   } catch {
-    if (ownedGamesStatus) ownedGamesStatus.textContent = "Copy failed. Select the optional Studio map key and copy it manually.";
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Copy failed. Select the secret text and copy it manually.";
   }
 }
 
@@ -3435,8 +3430,6 @@ function renderConnectedGame(universe) {
   const artworkTone = (Math.abs(Number(id.slice(-2)) || 0) % 4) + 1;
   const artworkLabel = name.trim().charAt(0).toUpperCase() || "?";
   const isDemo = Boolean(universe.isDemo);
-  const secretStoreConfigured = Boolean(universe.secretStoreConfigured);
-  const secretActionLabel = secretStoreConfigured ? "Rotate key" : "Authorize key setup";
 
   return `
     <article class="connectedGameItem">
@@ -3447,7 +3440,7 @@ function renderConnectedGame(universe) {
             <strong>${escapeHtml(name)}${isDemo ? `<span class="demoUniverseBadge">Admin demo</span>` : ""}</strong>
             <span>${isDemo ? "Synthetic universe &middot; Private to your admin account" : `Universe ${escapeHtml(id)}`}</span>
           </div>
-          <span class="connectedGameConnection">${isDemo ? "Demo data ready" : secretStoreConfigured ? "Secure key installed" : "Key setup required"}</span>
+          <span class="connectedGameConnection">${isDemo ? "Demo data ready" : "Connected"}</span>
           <div class="connectedGameStatus ${escapeHtml(statusClass)}">
             <b>${escapeHtml(statusText)}</b>
             <span>${escapeHtml(status.mapUploaded || universe.hasMapSnapshot ? "Map uploaded" : "Map missing")}</span>
@@ -3465,7 +3458,7 @@ function renderConnectedGame(universe) {
       <div class="connectedGameActions">
         ${isDemo
           ? `<p class="demoUniverseActionNote"><strong>Synthetic preview</strong><span>No Roblox secret or live game is required.</span></p>`
-          : `<button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>${escapeHtml(secretActionLabel)}</button>
+          : `<button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>
              <button class="button danger compact" type="button" data-unlink-project="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Unlink</button>`}
       </div>
     </article>
@@ -3535,11 +3528,9 @@ function renderIntegrationStatusCard(options = {}) {
   if (isDemo) {
     integrationStatusMessage.textContent = "Complete synthetic analytics are ready: map, movement, deaths, leaves, chat, events, funnels, cohorts, and AI reports.";
   } else if (failedIngests > 0) {
-    integrationStatusMessage.textContent = "Data is coming in, but recent ingests failed. Rotate the secure key and check the server request status.";
+    integrationStatusMessage.textContent = "Data is coming in, but recent ingests failed. Check the game secret and server logs before a client test.";
   } else if (!hasAnyData) {
-    integrationStatusMessage.textContent = selectedUniverse.secretStoreConfigured
-      ? "Secure key installed. Publish the game or start a collaborative test to send data."
-      : "Authorize secure key setup before starting a live server.";
+    integrationStatusMessage.textContent = "Connected, waiting for Roblox data. Paste the secret into Settings.Secret and start a live server.";
   } else if (!status.mapUploaded && !selectedUniverse.hasMapSnapshot) {
     integrationStatusMessage.textContent = "Live data is coming in. Upload a map snapshot to make heatmaps easier to read.";
   } else {
@@ -3567,7 +3558,7 @@ function renderSetupChecklist(selectedUniverse = null) {
   const hasAnySignal = Boolean(signals.movement || signals.deaths || signals.leaves || signals.chat);
   const hasData = Boolean(Number(status.lastReceivedAt || universe?.lastSeenAt || 0));
   const hasMap = Boolean(status.mapUploaded || universe?.hasMapSnapshot);
-  const secretStoreConfigured = Boolean(universe?.secretStoreConfigured);
+  const secretVisible = Boolean(projectSecretBox && !projectSecretBox.hidden && projectSecretValue?.textContent);
   const isDemo = Boolean(universe?.isDemo);
 
   const steps = isDemo ? [
@@ -3589,12 +3580,10 @@ function renderSetupChecklist(selectedUniverse = null) {
       complete: knownUniverses.length > 0,
     },
     {
-      title: "Install secure key",
-      detail: secretStoreConfigured
-        ? "Installed automatically in Roblox Secrets Store."
-        : "Authorize Roblox once so RoAnalytics can install it.",
-      complete: secretStoreConfigured,
-      current: Boolean(universe && !secretStoreConfigured),
+      title: "Install the secret",
+      detail: hasData ? "Roblox is sending data with the installed secret." : secretVisible ? "Copy the visible secret into Settings.Secret now." : "Regenerate the secret if you need to copy it again.",
+      complete: hasData,
+      current: Boolean(universe && !hasData),
     },
     {
       title: "Start a live server",

@@ -18,35 +18,31 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 1. Open the Connect Universe tab.
 2. Pick one of the public games owned by your Roblox account or by a group you own.
 3. Click Connect game.
-4. Click Authorize key setup on the connected game.
-5. Approve the selected universe and the two Roblox Secrets Store permissions.
-6. RoAnalytics creates `ROANALYTICS_SECRET` in that universe automatically.
-7. Publish the game or start a collaborative test. No secret is pasted into Luau.
+4. Copy the Roblox secret that appears once.
+5. Put that secret in `RoAnalytics/Config/Settings.lua` as `Settings.Secret`.
+6. Use the same secret in the Studio heatmap plugin when exporting a map.
 
-Connecting a game never depends on Secrets Store authorization. If Roblox rejects that permission, the game remains connected and shows **Key setup required**. The OAuth callback shows the generated value once only for the current Studio heatmap plugin. Live servers are configured after key setup and do not need that value. Use Connect Universe -> Connected games -> Rotate key to replace it in both Roblox Secrets Store and the dashboard. Existing games created before automatic setup show **Authorize key setup**. Use Unlink to delete the stored analytics data, remove the Roblox secret when authorization is still valid, and stop accepting that game's key.
+The original secret is not shown again because only its hash is stored. Use Connect Universe -> Connected games -> Regenerate secret to replace the key for a connected game. The regenerated secret box names the exact game and universe it belongs to. Use Unlink to disconnect a game from the account and delete its stored analytics data; Roblox analytics requests using that game's secret will stop working.
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
-New accounts use Roblox OAuth. Universe connection uses the logged-in Roblox account and only allows public experiences owned by that account or by a group that account owns. In the Roblox OAuth app, enable `universe.secret:read` and `universe.secret:write`, keep the existing login and live-action permissions, add this redirect URL, and set these environment variables:
+New accounts use Roblox OAuth. Universe connection uses the logged-in Roblox account and only allows public experiences owned by that account or by a group that account owns. Configure a Roblox OAuth app in Creator Dashboard, add this redirect URL, and set these environment variables:
 
 ```env
 ROBLOX_OAUTH_CLIENT_ID=your-roblox-oauth-client-id
 ROBLOX_OAUTH_CLIENT_SECRET=your-roblox-oauth-client-secret
 ROBLOX_OAUTH_REDIRECT_URI=https://game-dashboard-zaya.onrender.com/api/roblox/oauth/callback
 ROBLOX_OAUTH_SCOPES=openid profile
-ROBLOX_OAUTH_PROJECT_SCOPES=openid profile universe.secret:read universe.secret:write
 ROBLOX_OAUTH_LIVE_ACTION_SCOPES=openid profile universe-messaging-service:publish
 ```
 
-The Secrets Store scopes are requested only during game connection or key reauthorization. The live-action scope is requested only when a universe owner authorizes **Integrations -> Roblox**. Access and rotating refresh tokens are encrypted at rest.
+The extra live-action scope is requested only when a universe owner authorizes **Integrations → Roblox**. The resulting access and rotating refresh tokens are encrypted at rest. Disconnecting the integration revokes the Roblox authorization.
 
 For local testing, use:
 
 ```env
 ROBLOX_OAUTH_REDIRECT_URI=http://localhost:3000/api/roblox/oauth/callback
 ```
-
-Roblox cloud secrets are available in published servers and collaborative testing. For ordinary local Play Solo, add a local Studio secret named `ROANALYTICS_SECRET` under **File -> Experience Settings -> Security -> Secrets**.
 
 To show the Admin user monitor, set this environment variable on Render:
 
