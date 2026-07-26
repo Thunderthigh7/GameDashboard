@@ -130,8 +130,11 @@ body[data-active-view="discord"]:not(.isLocked) .appShell {
 }
 
 body[data-active-view="events"]:not(.isLocked) .sidebar,
-body[data-active-view="funnels"]:not(.isLocked) .sidebar,
 body[data-active-view="discord"]:not(.isLocked) .sidebar {
+  display: none;
+}
+
+body[data-active-view="funnels"]:not(.isLocked) .sidebar {
   display: none;
 }
 
@@ -3563,14 +3566,26 @@ body[data-active-view="roblox-live"] .topbarActions {
   font-weight: 700;
 }
 
-.discordWebhookEditorHeader {
+.discordWebhookBuilder {
+  width: min(100%, 980px);
+  margin: 0 auto;
+}
+
+.discordWebhookBuilderHeader {
   display: grid;
-  gap: 5px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
   border-bottom: 1px solid rgba(82, 100, 150, 0.3);
   padding: 18px 26px;
 }
 
-.discordWebhookEditorHeader > span {
+.discordWebhookBuilderHeader > div {
+  display: grid;
+  gap: 5px;
+}
+
+.discordWebhookBuilderHeader > div > span {
   color: #9aa5c5;
   font-size: 10px;
   font-weight: 850;
@@ -3578,12 +3593,42 @@ body[data-active-view="roblox-live"] .topbarActions {
   text-transform: uppercase;
 }
 
-.discordWebhookEditorHeader h2 {
+.discordWebhookBuilderHeader h2 {
   overflow: hidden;
   color: var(--text);
   font-size: 21px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.discordWebhookBuilderBackButton {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(82, 100, 150, 0.52);
+  border-radius: 9px;
+  background: rgba(5, 12, 29, 0.78);
+  color: #c8d2ef;
+  cursor: pointer;
+}
+
+.discordWebhookBuilderBackButton:hover,
+.discordWebhookBuilderBackButton:focus-visible {
+  border-color: rgba(151, 102, 255, 0.72);
+  background: rgba(124, 60, 255, 0.14);
+  color: #fff;
+  outline: none;
+}
+
+.discordWebhookBuilderBackButton svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .discordConnectionPanel,
@@ -3794,6 +3839,8 @@ body[data-active-view="roblox-live"] .topbarActions {
 .discordRulesHeaderActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 12px;
 }
 
@@ -3836,6 +3883,10 @@ body[data-active-view="roblox-live"] .topbarActions {
 
 .discordRulesStatus[data-state="success"] {
   color: #52dfa1;
+}
+
+.discordRulesStatus[data-state="sending"] {
+  color: #b9c3df;
 }
 
 .discordRuleList {
@@ -3959,6 +4010,11 @@ body[data-active-view="roblox-live"] .topbarActions {
   background: #b39bff;
 }
 
+.discordRuleToggle:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .discordRuleDialog {
   position: fixed;
   z-index: 90;
@@ -4019,10 +4075,35 @@ body[data-active-view="roblox-live"] .topbarActions {
   padding: 22px;
 }
 
+.discordRuleEventFields {
+  display: grid;
+  gap: 18px;
+}
+
 .discordRuleConditionGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.discordRuleScheduleFields {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(124, 92, 214, 0.28);
+  border-radius: 10px;
+  background: rgba(87, 50, 166, 0.1);
+  padding: 14px;
+}
+
+.discordRuleScheduleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.discordRuleScheduleFields > p {
+  color: #8f9cbe;
+  font-size: 11px;
 }
 
 .discordAlertPreview {
@@ -10479,7 +10560,7 @@ body.hasEventConfirmDialog {
 }
 
 @media (max-width: 560px) {
-  .discordWebhookEditorHeader,
+  .discordWebhookBuilderHeader,
   .discordConnectionForm,
   .discordRulesHeader,
   .discordRuleRow,
@@ -10490,6 +10571,7 @@ body.hasEventConfirmDialog {
   .discordConnectionForm,
   .discordConnectionFields,
   .discordRuleConditionGrid,
+  .discordRuleScheduleGrid,
   .discordRuleRow,
   .discordAlertPreview > div {
     grid-template-columns: minmax(0, 1fr);

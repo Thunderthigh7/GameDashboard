@@ -83,6 +83,8 @@ const MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20;
 const MAX_DISCORD_ALERT_DELIVERIES = 30;
 const DISCORD_ALERT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const DISCORD_ALERT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
+const DISCORD_SCHEDULER_INTERVAL_MS = 30 * 1000;
+const DISCORD_SCHEDULE_RETRY_MS = 5 * 60 * 1000;
 const ROBLOX_LIVE_SEND_WINDOW_MS = 60 * 1000;
 const MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20;
 const MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE = 20;
@@ -1038,6 +1040,13 @@ server.listen(port, () => {
   console.log(`Dashboard running on ${appBaseUrl}`);
   console.log(`Roblox presence endpoint: ${appBaseUrl}/api/roblox/presence`);
 });
+
+const discordScheduler = setInterval(() => {
+  evaluateScheduledDiscordAlerts().catch((error) => {
+    console.warn("Could not evaluate scheduled Discord alerts:", error.message || error);
+  });
+}, DISCORD_SCHEDULER_INTERVAL_MS);
+discordScheduler.unref();
 
 const robloxLiveScheduler = setInterval(() => {
   evaluateScheduledRobloxLiveActions().catch((error) => {
@@ -3203,25 +3212,29 @@ function createEmptyDiscordIntegration(ownerUserId, universeId) {
 }
 
 function normalizeDiscordAlertRule(value, existingRule = null, integration = null) {
+  const triggerType = cleanString(value?.triggerType, 24) === "schedule" ? "schedule" : "event_count";
   const eventName = normalizeCustomEventName(value?.eventName);
-  if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
-  const name = cleanString(value?.name, 80) || `${formatDiscordEventName(eventName)} alert`;
-  const operator = cleanString(value?.operator, 24).toLowerCase();
-  if (operator !== "at_least" && operator !== "at_most") {
-    return { ok: false, error: "Choose whether the event count should be above or below the threshold." };
+  const operator = cleanString(value?.operator, 24).toLowerCase() === "at_most" ? "at_most" : "at_least";
+  const threshold = Number(value?.threshold ?? 10);
+  const windowMinutes = Number(value?.windowMinutes ?? 15);
+  const cooldownMinutes = Number(value?.cooldownMinutes ?? 60);
+  const scheduledFor = triggerType === "schedule" ? cleanInteger(value?.scheduledFor) : null;
+  if (triggerType === "event_count") {
+    if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
+    if (!Number.isSafeInteger(threshold) || threshold < (operator === "at_least" ? 1 : 0) || threshold > 1_000_000) {
+      return { ok: false, error: operator === "at_least" ? "Threshold must be between 1 and 1,000,000." : "Threshold must be between 0 and 1,000,000." };
+    }
+    if (!DISCORD_ALERT_WINDOWS_MINUTES.has(windowMinutes)) {
+      return { ok: false, error: "Choose a valid alert window." };
+    }
+    if (!DISCORD_ALERT_COOLDOWNS_MINUTES.has(cooldownMinutes)) {
+      return { ok: false, error: "Choose a valid cooldown." };
+    }
+  } else if (!scheduledFor || scheduledFor <= Date.now()) {
+    return { ok: false, error: "Choose a future Eastern Time for this scheduled alert." };
   }
-  const threshold = Number(value?.threshold);
-  if (!Number.isSafeInteger(threshold) || threshold < (operator === "at_least" ? 1 : 0) || threshold > 1_000_000) {
-    return { ok: false, error: operator === "at_least" ? "Threshold must be between 1 and 1,000,000." : "Threshold must be between 0 and 1,000,000." };
-  }
-  const windowMinutes = Number(value?.windowMinutes);
-  if (!DISCORD_ALERT_WINDOWS_MINUTES.has(windowMinutes)) {
-    return { ok: false, error: "Choose a valid alert window." };
-  }
-  const cooldownMinutes = Number(value?.cooldownMinutes);
-  if (!DISCORD_ALERT_COOLDOWNS_MINUTES.has(cooldownMinutes)) {
-    return { ok: false, error: "Choose a valid cooldown." };
-  }
+  const name = cleanString(value?.name, 80)
+    || (triggerType === "schedule" ? "Scheduled alert" : `${formatDiscordEventName(eventName)} alert`);
   const messageTemplate = typeof value?.messageTemplate === "string" ? value.messageTemplate.trim() : "";
   if (messageTemplate.length > 500) return { ok: false, error: "Alert message can contain up to 500 characters." };
   const webhookId = value && Object.hasOwn(value, "webhookId")
@@ -3233,30 +3246,44 @@ function normalizeDiscordAlertRule(value, existingRule = null, integration = nul
 
   const now = Date.now();
   const changedCondition = Boolean(existingRule) && (
-    existingRule.eventName !== eventName
+    (existingRule.triggerType === "schedule" ? "schedule" : "event_count") !== triggerType
+    || existingRule.eventName !== eventName
     || existingRule.operator !== operator
     || cleanInteger(existingRule.threshold) !== threshold
     || cleanInteger(existingRule.windowMinutes) !== windowMinutes
     || existingRule.webhookId !== webhookId
   );
+  const changedSchedule = Boolean(existingRule) && (
+    (existingRule.triggerType === "schedule" ? "schedule" : "event_count") !== triggerType
+    || cleanInteger(existingRule.scheduledFor) !== cleanInteger(scheduledFor)
+    || existingRule.webhookId !== webhookId
+  );
+  const resetAttemptState = changedCondition || changedSchedule;
   return {
     ok: true,
     value: {
       id: cleanString(existingRule?.id, 120) || crypto.randomUUID(),
       name,
+      triggerType,
       eventName,
       operator,
       threshold,
       windowMinutes,
       cooldownMinutes,
+      scheduledFor,
+      scheduleDeliveredAt: triggerType === "schedule" && !changedSchedule
+        ? cleanInteger(existingRule?.scheduleDeliveredAt)
+        : null,
       webhookId,
       messageTemplate,
-      enabled: value?.enabled === undefined ? existingRule?.enabled !== false : Boolean(value.enabled),
+      enabled: value?.enabled === undefined
+        ? (triggerType === "schedule" && changedSchedule ? true : existingRule?.enabled !== false)
+        : Boolean(value.enabled),
       lastConditionMet: changedCondition ? false : Boolean(existingRule?.lastConditionMet),
       lastTriggeredAt: cleanInteger(existingRule?.lastTriggeredAt),
-      lastAttemptedAt: cleanInteger(existingRule?.lastAttemptedAt),
-      lastAttemptStatus: existingRule?.lastAttemptStatus === "failed" ? "failed" : "sent",
-      lastError: cleanString(existingRule?.lastError, 240),
+      lastAttemptedAt: resetAttemptState ? null : cleanInteger(existingRule?.lastAttemptedAt),
+      lastAttemptStatus: resetAttemptState ? "sent" : existingRule?.lastAttemptStatus === "failed" ? "failed" : "sent",
+      lastError: resetAttemptState ? "" : cleanString(existingRule?.lastError, 240),
       createdAt: cleanInteger(existingRule?.createdAt) || now,
       updatedAt: now,
     },
@@ -3287,22 +3314,28 @@ function serializeDiscordIntegration(integration, { universeId, eventNames = [] 
     })),
     rules: rules
       .map((rule) => {
+        const triggerType = rule?.triggerType === "schedule" ? "schedule" : "event_count";
         const eventName = normalizeCustomEventName(rule?.eventName);
         const windowMinutes = cleanInteger(rule?.windowMinutes);
-        const currentCount = countDiscordAlertEvents(
-          cleanUniverseId,
-          eventName,
-          Date.now() - windowMinutes * 60 * 1000,
-          Date.now(),
-        );
+        const currentCount = triggerType === "event_count"
+          ? countDiscordAlertEvents(
+              cleanUniverseId,
+              eventName,
+              Date.now() - windowMinutes * 60 * 1000,
+              Date.now(),
+            )
+          : 0;
         return {
           id: cleanString(rule?.id, 120),
           name: cleanString(rule?.name, 80),
+          triggerType,
           eventName,
           operator: rule?.operator === "at_most" ? "at_most" : "at_least",
           threshold: cleanInteger(rule?.threshold),
           windowMinutes,
           cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
+          scheduledFor: cleanInteger(rule?.scheduledFor) || null,
+          scheduleDeliveredAt: cleanInteger(rule?.scheduleDeliveredAt) || null,
           webhookId: cleanString(rule?.webhookId, 120),
           webhookName: cleanString(webhooksById.get(rule?.webhookId)?.name, 60),
           currentCount,
@@ -3459,6 +3492,9 @@ function normalizeStoredDiscordIntegration(integration) {
   const migrateRuleTargets = cleanInteger(integration.discordSchemaVersion) < 2;
   const rules = (Array.isArray(integration.rules) ? integration.rules : []).map((rule) => ({
     ...rule,
+    triggerType: rule?.triggerType === "schedule" ? "schedule" : "event_count",
+    scheduledFor: rule?.triggerType === "schedule" ? cleanInteger(rule?.scheduledFor) : null,
+    scheduleDeliveredAt: rule?.triggerType === "schedule" ? cleanInteger(rule?.scheduleDeliveredAt) : null,
     webhookId: webhooks.some((webhook) => webhook.id === rule?.webhookId)
       ? rule.webhookId
       : (migrateRuleTargets ? selectedWebhookId : ""),
@@ -3617,7 +3653,7 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
     const now = Date.now();
     let changed = false;
     for (const rule of integration.rules) {
-      if (rule.enabled === false) continue;
+      if (rule.enabled === false || rule.triggerType === "schedule") continue;
       const savedWebhook = integration.webhooks.find((webhook) => webhook.id === rule.webhookId);
       const webhookUrl = getStoredDiscordWebhookUrl(integration, rule.webhookId);
       if (!savedWebhook || !webhookUrl) {
@@ -3720,6 +3756,166 @@ async function evaluateDiscordAlertsForPresence(presence, project) {
     await current;
   } finally {
     if (discordAlertEvaluationLocks.get(scopeKey) === current) discordAlertEvaluationLocks.delete(scopeKey);
+  }
+}
+
+function formatDiscordEasternTime(timestamp) {
+  const value = cleanInteger(timestamp);
+  if (!value) return "Unknown time";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
+function renderScheduledDiscordAlertMessage(rule, context) {
+  const defaultMessage = `Scheduled Discord alert for ${context.gameName}.`;
+  const template = cleanString(rule?.messageTemplate, 500);
+  if (!template) return defaultMessage;
+  const replacements = {
+    game: context.gameName,
+    scheduled_time: formatDiscordEasternTime(rule.scheduledFor),
+  };
+  return template.replace(/\{\{(game|scheduled_time)\}\}/g, (_, key) => replacements[key]);
+}
+
+async function getScheduledDiscordIntegrations() {
+  const db = await getMongoDb();
+  if (db) {
+    const documents = await db.collection("discord_integrations")
+      .find({
+        rules: { $elemMatch: { triggerType: "schedule", enabled: { $ne: false } } },
+      })
+      .project({ _id: 0 })
+      .toArray();
+    return documents.map(normalizeStoredDiscordIntegration).filter(Boolean);
+  }
+  return (await readLocalDiscordIntegrationStore())
+    .map(normalizeStoredDiscordIntegration)
+    .filter((integration) => integration?.rules?.some((rule) => (
+      rule.triggerType === "schedule"
+      && rule.enabled !== false
+      && !cleanInteger(rule.scheduleDeliveredAt)
+    )));
+}
+
+async function evaluateScheduledDiscordAlerts() {
+  const integrations = await getScheduledDiscordIntegrations();
+  for (const listedIntegration of integrations) {
+    const scopeKey = getDiscordIntegrationScopeKey(
+      listedIntegration.ownerUserId,
+      listedIntegration.universeId,
+    );
+    const previous = discordAlertEvaluationLocks.get(scopeKey) || Promise.resolve();
+    const current = previous.catch(() => {}).then(async () => {
+      const integration = await readDiscordIntegration(
+        listedIntegration.ownerUserId,
+        listedIntegration.universeId,
+      ) || listedIntegration;
+      if (!integration?.webhooks?.length) return;
+      const now = Date.now();
+      const project = await getProjectByUniverseIdForOwner(
+        integration.ownerUserId,
+        integration.universeId,
+      );
+      const gameName = project?.name || `Universe ${integration.universeId}`;
+      let changed = false;
+      for (const rule of integration.rules || []) {
+        if (
+          rule.enabled === false
+          || rule.triggerType !== "schedule"
+          || cleanInteger(rule.scheduleDeliveredAt)
+          || cleanInteger(rule.scheduledFor) > now
+        ) {
+          continue;
+        }
+        const lastAttemptedAt = cleanInteger(rule.lastAttemptedAt);
+        if (lastAttemptedAt && now - lastAttemptedAt < DISCORD_SCHEDULE_RETRY_MS) continue;
+        const savedWebhook = integration.webhooks.find((webhook) => webhook.id === rule.webhookId);
+        const webhookUrl = getStoredDiscordWebhookUrl(integration, rule.webhookId);
+        if (!savedWebhook || !webhookUrl) {
+          rule.enabled = false;
+          rule.lastError = "Select a delivery webhook.";
+          rule.updatedAt = now;
+          changed = true;
+          continue;
+        }
+        const retryAfterMs = claimDiscordSendSlot(integration.ownerUserId, now);
+        if (retryAfterMs > 0) {
+          rule.lastError = "Delivery paused by the Discord rate limit.";
+          rule.lastAttemptedAt = now;
+          rule.lastAttemptStatus = "failed";
+          rule.updatedAt = now;
+          changed = true;
+          continue;
+        }
+        rule.lastAttemptedAt = now;
+        try {
+          const result = await sendDiscordWebhookAlert({
+            webhookUrl,
+            alert: {
+              title: rule.name,
+              description: renderScheduledDiscordAlertMessage(rule, { gameName }),
+              color: 0x7c3cff,
+              timestamp: now,
+              fields: [
+                { name: "Universe", value: gameName },
+                { name: "Webhook", value: savedWebhook.name },
+                { name: "Scheduled time", value: `${formatDiscordEasternTime(rule.scheduledFor)}\nEastern Time (EST/EDT)` },
+              ],
+            },
+          });
+          rule.enabled = false;
+          rule.scheduleDeliveredAt = result.sentAt;
+          rule.lastTriggeredAt = result.sentAt;
+          rule.lastAttemptedAt = result.sentAt;
+          rule.lastAttemptStatus = "sent";
+          rule.lastError = "";
+          integration.deliveries = appendDiscordDelivery(integration.deliveries, {
+            id: crypto.randomUUID(),
+            type: "scheduled_alert",
+            status: "sent",
+            title: rule.name,
+            sentAt: result.sentAt,
+            webhookId: rule.webhookId,
+          });
+        } catch (error) {
+          rule.lastAttemptStatus = "failed";
+          rule.lastError = cleanString(error?.message, 240) || "Discord delivery failed.";
+          integration.deliveries = appendDiscordDelivery(integration.deliveries, {
+            id: crypto.randomUUID(),
+            type: "scheduled_alert",
+            status: "failed",
+            title: rule.name,
+            sentAt: now,
+            error: rule.lastError,
+            webhookId: rule.webhookId,
+          });
+        }
+        rule.updatedAt = Date.now();
+        changed = true;
+      }
+      if (changed) {
+        integration.updatedAt = Date.now();
+        await saveDiscordIntegration(integration);
+      }
+    });
+    discordAlertEvaluationLocks.set(scopeKey, current);
+    try {
+      await current;
+    } catch (error) {
+      console.warn(
+        `Could not evaluate scheduled Discord alerts for universe ${listedIntegration.universeId}:`,
+        error.message || error,
+      );
+    } finally {
+      if (discordAlertEvaluationLocks.get(scopeKey) === current) discordAlertEvaluationLocks.delete(scopeKey);
+    }
   }
 }
 

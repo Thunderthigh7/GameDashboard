@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260726-06/styles.css">
+    <link rel="stylesheet" href="/assets/20260726-07/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1149,10 +1149,15 @@
             </aside>
 
             <section class="discordDetailColumn">
-          <article class="panel discordConnectionPanel" aria-labelledby="discordWebhookEditorTitle">
-            <header class="discordWebhookEditorHeader">
-              <span>Webhook settings</span>
-              <h2 id="discordWebhookEditorTitle">New webhook</h2>
+          <article class="panel discordConnectionPanel discordWebhookBuilder" id="discordWebhookBuilder" aria-labelledby="discordWebhookEditorTitle" hidden>
+            <header class="discordWebhookBuilderHeader">
+              <button class="discordWebhookBuilderBackButton" id="discordWebhookCancelButton" type="button" aria-label="Back to webhook alerts">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+              </button>
+              <div>
+                <span>Discord webhook</span>
+                <h2 id="discordWebhookEditorTitle">Create webhook</h2>
+              </div>
             </header>
             <form class="discordConnectionForm" id="discordConnectionForm">
               <div class="discordConnectionFields">
@@ -1181,8 +1186,6 @@
               <footer class="discordConnectionActions">
                 <p class="discordSendStatus" id="discordSendStatus" aria-live="polite"></p>
                 <div>
-                  <button class="button secondary compact discordDisconnectButton" id="discordDisconnectButton" type="button" hidden>Delete selected</button>
-                  <button class="button secondary compact" id="discordTestButton" type="button" disabled>Test selected</button>
                   <button class="button discordSendButton" id="discordSaveConnectionButton" type="submit">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M5 4h12l2 2v14H5Z" />
@@ -1203,6 +1206,8 @@
               </div>
               <div class="discordRulesHeaderActions">
                 <strong id="discordRuleCount">0 / 20</strong>
+                <button class="button secondary compact" id="discordTestButton" type="button" disabled>Test webhook</button>
+                <button class="button secondary compact discordDisconnectButton" id="discordDisconnectButton" type="button" disabled>Delete webhook</button>
                 <button class="button discordNewRuleButton" id="discordNewRuleButton" type="button" disabled>
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 5v14M5 12h14" />
@@ -1240,15 +1245,19 @@
                   <span>Alert name</span>
                   <input id="discordRuleName" maxlength="80" placeholder="Purchase spike" required>
                 </label>
-                <label class="discordFormField" for="discordRuleEvent">
-                  <span>Tracked event</span>
-                  <select id="discordRuleEvent" required></select>
+                <label class="discordFormField" for="discordRuleTriggerType">
+                  <span>Trigger</span>
+                  <select id="discordRuleTriggerType">
+                    <option value="event_count">Event condition</option>
+                    <option value="schedule">Scheduled once</option>
+                  </select>
                 </label>
-                <label class="discordFormField" for="discordRuleWebhook">
-                  <span>Delivery webhook</span>
-                  <select id="discordRuleWebhook" required></select>
-                </label>
-                <div class="discordRuleConditionGrid">
+                <section class="discordRuleEventFields" id="discordRuleEventFields">
+                  <label class="discordFormField" for="discordRuleEvent">
+                    <span>Tracked event</span>
+                    <select id="discordRuleEvent" required></select>
+                  </label>
+                  <div class="discordRuleConditionGrid">
                   <label class="discordFormField" for="discordRuleOperator">
                     <span>Trigger when count is</span>
                     <select id="discordRuleOperator">
@@ -1280,22 +1289,36 @@
                       <option value="1440">24 hours</option>
                     </select>
                   </label>
-                </div>
+                  </div>
+                </section>
+                <section class="discordRuleScheduleFields" id="discordRuleScheduleFields" hidden>
+                  <div class="discordRuleScheduleGrid">
+                    <label class="discordFormField" for="discordRuleScheduleDate">
+                      <span>Send date</span>
+                      <input id="discordRuleScheduleDate" type="date">
+                    </label>
+                    <label class="discordFormField" for="discordRuleScheduleTime">
+                      <span>Send time</span>
+                      <input id="discordRuleScheduleTime" type="time" step="60">
+                    </label>
+                  </div>
+                  <p>Eastern Time (EST/EDT, UTC-5/UTC-4). The alert sends once at the selected time.</p>
+                </section>
                 <label class="discordFormField" for="discordRuleMessage">
                   <span class="discordMessageLabel">
                     <b>Message <em>Optional</em></b>
                     <small id="discordRuleMessageCount">0 / 500</small>
                   </span>
                   <textarea id="discordRuleMessage" maxlength="500" placeholder="{{event}} reached {{count}} in {{window}}."></textarea>
-                  <small>Available: {{game}}, {{event}}, {{event_key}}, {{count}}, {{threshold}}, {{window}}</small>
+                  <small id="discordRuleMessageHelp">Available: {{game}}, {{event}}, {{event_key}}, {{count}}, {{threshold}}, {{window}}</small>
                 </label>
                 <div class="discordAlertPreview">
                   <span>Discord preview</span>
                   <strong id="discordAlertPreviewTitle">Purchase spike</strong>
                   <p id="discordAlertPreviewMessage">This alert will show the observed event count and threshold.</p>
                   <div>
-                    <span><b>Event</b><small id="discordAlertPreviewEvent">Select an event</small></span>
-                    <span><b>Rule</b><small id="discordAlertPreviewRule">At least 10 / 15 min</small></span>
+                    <span><b id="discordAlertPreviewEventLabel">Event</b><small id="discordAlertPreviewEvent">Select an event</small></span>
+                    <span><b id="discordAlertPreviewRuleLabel">Rule</b><small id="discordAlertPreviewRule">At least 10 / 15 min</small></span>
                   </div>
                 </div>
                 <p class="discordRulesStatus" id="discordRuleFormStatus" aria-live="polite"></p>
@@ -1716,6 +1739,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260726-06/app.js"></script>
+    <script defer src="/assets/20260726-07/app.js"></script>
   </body>
 </html>
