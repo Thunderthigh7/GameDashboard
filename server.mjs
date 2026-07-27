@@ -484,7 +484,13 @@ const server = http.createServer(async (req, res) => {
       const user = auth ? await findUserById(auth.userId) : null;
       return sendJson(res, 200, {
         authenticated: Boolean(auth && user),
-        user: auth && user ? { username: user.username || auth.username, isAdmin: isAdminUser(user) } : null,
+        user: auth && user ? {
+          username: user.username || auth.username,
+          robloxUsername: cleanString(user.robloxUsername || user.username || auth.username, 80),
+          robloxDisplayName: cleanString(user.robloxDisplayName, 80),
+          robloxPicture: cleanRobloxThumbnailUrl(user.robloxPicture),
+          isAdmin: isAdminUser(user),
+        } : null,
       });
     }
 

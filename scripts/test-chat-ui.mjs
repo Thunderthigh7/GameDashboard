@@ -61,6 +61,21 @@ assert.match(
   "The selected-universe control should have a real thumbnail target",
 );
 assert.match(
+  indexSource,
+  /id="accountAvatarImage"[\s\S]*?id="accountName"/,
+  "The sidebar account chip should contain an avatar and Roblox name",
+);
+assert.match(
+  serverSource,
+  /robloxUsername:\s*cleanString[\s\S]*?robloxPicture:\s*cleanRobloxThumbnailUrl/,
+  "Authentication status should return the stored Roblox identity image",
+);
+assert.match(
+  appSource,
+  /function renderSidebarAccount[\s\S]*?authenticatedUser\?\.robloxUsername[\s\S]*?authenticatedUser\?\.robloxPicture/,
+  "The sidebar account chip should render the Roblox identity",
+);
+assert.match(
   appSource,
   /selectedUniverse\?\.thumbnailUrl/,
   "The selected-universe control should render its Roblox thumbnail",

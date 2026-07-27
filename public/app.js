@@ -1,4 +1,7 @@
 const accountBox = document.querySelector("#accountBox");
+const accountAvatarImage = document.querySelector("#accountAvatarImage");
+const accountAvatarFallback = document.querySelector("#accountAvatarFallback");
+const accountName = document.querySelector("#accountName");
 const loginPanel = document.querySelector("#loginPanel");
 const robloxLoginButtons = document.querySelectorAll("[data-roblox-login]");
 const loginStatus = document.querySelector("#loginStatus");
@@ -399,7 +402,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-13";
+const DASHBOARD_ASSET_VERSION = "20260727-14";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -516,6 +519,7 @@ function loadHeatmapModule() {
 }
 
 function bindEvents() {
+  accountAvatarImage?.addEventListener("error", handleAccountAvatarError);
   for (const button of robloxLoginButtons) button.addEventListener("click", () => {
     if (loginStatus) loginStatus.textContent = "Opening Roblox...";
     for (const loginButton of robloxLoginButtons) loginButton.disabled = true;
@@ -1061,7 +1065,7 @@ function setAuthenticated(value, user = null) {
   }
   loadedViews.clear();
   document.body.classList.toggle("isLocked", !authenticated);
-  accountBox.textContent = authenticatedUser?.username ? authenticatedUser.username : authenticated ? "Signed in" : "Signed out";
+  renderSidebarAccount();
   if (adminNavGroup) adminNavGroup.hidden = !authenticatedUser?.isAdmin;
   if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
   updateDemoUniverseControl();
@@ -1441,6 +1445,23 @@ function stopFunnelRefresh() {
     window.clearInterval(funnelRefreshTimer);
     funnelRefreshTimer = null;
   }
+}
+
+function renderSidebarAccount() {
+  const username = authenticatedUser?.robloxUsername || authenticatedUser?.username || (authenticated ? "Signed in" : "Signed out");
+  const pictureUrl = String(authenticatedUser?.robloxPicture || "");
+  if (accountName) accountName.textContent = username;
+  if (accountAvatarFallback) accountAvatarFallback.textContent = username.trim().charAt(0).toUpperCase() || "?";
+  if (!accountAvatarImage) return;
+  accountAvatarImage.hidden = !pictureUrl;
+  if (pictureUrl) accountAvatarImage.src = pictureUrl;
+  else accountAvatarImage.removeAttribute("src");
+}
+
+function handleAccountAvatarError() {
+  if (!accountAvatarImage) return;
+  accountAvatarImage.hidden = true;
+  accountAvatarImage.removeAttribute("src");
 }
 
 function startRobloxLiveRefresh() {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260727-13/styles.css">
+    <link rel="stylesheet" href="/assets/20260727-14/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -175,7 +175,13 @@
 
         <div class="sidebarFooter">
           <p class="status srOnly" id="universesStatus" aria-live="polite">Loading...</p>
-          <div class="account sidebarAccount" id="accountBox">Checking...</div>
+          <div class="account sidebarAccount" id="accountBox">
+            <span class="sidebarAccountAvatar" aria-hidden="true">
+              <img id="accountAvatarImage" alt="" hidden>
+              <span id="accountAvatarFallback">?</span>
+            </span>
+            <span class="sidebarAccountName" id="accountName">Checking...</span>
+          </div>
           <section class="authControls" id="authControls" hidden>
             <button class="sidebarLogoutButton" id="logoutButton" type="button">
               <span class="logoutIconTile" aria-hidden="true">
@@ -1745,6 +1751,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260727-13/app.js"></script>
+    <script defer src="/assets/20260727-14/app.js"></script>
   </body>
 </html>
