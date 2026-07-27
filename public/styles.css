@@ -4610,6 +4610,11 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   background: #4ae5ce;
 }
 
+.robloxLiveRuleToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .robloxLiveDeliveryTableHeader,
 .robloxLiveDeliveryRow {
   display: grid;

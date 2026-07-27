@@ -127,6 +127,17 @@ assert.match(serverSource, /createCipheriv\("aes-256-gcm"/);
 assert.match(serverSource, /db\.collection\("roblox_live_integrations"\)/);
 assert.match(serverSource, /evaluateRobloxLiveEventRulesForPresence\(presence\.value, project\)/);
 assert.match(serverSource, /evaluateScheduledRobloxLiveActions/);
+assert.match(serverSource, /triggerType === "schedule_once"/);
+assert.match(serverSource, /scheduleDeliveredAt/);
+assert.match(serverSource, /ROBLOX_LIVE_SCHEDULE_RETRY_MS/);
+assert.match(
+  serverSource,
+  /db\.collection\("roblox_live_integrations"\)[\s\S]*?triggerType:\s*\{\s*\$in:\s*\["schedule",\s*"schedule_once"\]\s*\}/,
+);
+assert.match(
+  serverSource,
+  /isOneTime[\s\S]*?deliverRobloxLiveAction[\s\S]*?"schedule_once"[\s\S]*?rule\.enabled = false/,
+);
 assert.match(serverSource, /code:\s*connectedProject \? "PROJECT_SECRET_MISMATCH" : "UNIVERSE_NOT_CONNECTED"/);
 assert.match(serverSource, /const secret = normalizeProjectSecret\(req\.headers\["x-dashboard-secret"\]\)/);
 assert.doesNotMatch(serverSource, /processRobloxLiveAcknowledgements|liveActionAcks|liveActionKeys|confirmationMessage|confirmedAt|lastNegativeAck/);
@@ -203,6 +214,10 @@ assert.doesNotMatch(indexSource, /robloxLiveMasterToggle|robloxLiveMasterState|>
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
 assert.match(
   indexSource,
+  /id="robloxLiveRuleTrigger"[\s\S]*?value="schedule_once">Scheduled once<[\s\S]*?id="robloxLiveScheduleOnceCondition"[\s\S]*?id="robloxLiveRuleScheduleDate"[\s\S]*?id="robloxLiveRuleScheduleTime"[\s\S]*?Eastern Standard Time/,
+);
+assert.match(
+  indexSource,
   /class="discordRuleDialogCard robloxLiveRuleDialogCard"[\s\S]*?<header>[\s\S]*?class="discordWebhookBuilderBackButton discordRuleBackButton" id="robloxLiveRuleCloseButton"[\s\S]*?id="robloxLiveRuleDialogTitle"/,
 );
 assert.doesNotMatch(indexSource, /class="iconButton" id="robloxLiveRuleCloseButton"/);
@@ -228,6 +243,11 @@ assert.doesNotMatch(
   /Action rule (?:created|updated|deleted)\.|Action (?:enabled|paused)\.|Action published to live Roblox servers\.|Roblox live actions disconnected\./,
 );
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
+assert.match(appSource, /function getRobloxLiveScheduledInputTimestamp\(\)/);
+assert.match(
+  appSource,
+  /robloxLiveRuleTrigger\?\.value === "schedule_once"[\s\S]*?Choose a future Eastern Time\./,
+);
 assert.doesNotMatch(appSource, /Confirmed by a live server|confirmation window|No confirmation|acknowledgedServers|runtime\.detectedActions/);
 assert.match(appSource, /function startRobloxLiveRefresh\(\)[\s\S]*?loadRobloxLiveIntegration\(\{ background: true \}\)/);
 assert.match(appSource, /const ROBLOX_LIVE_REFRESH_MS = 5000/);

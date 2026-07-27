@@ -100,6 +100,7 @@ const ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES = new Set([5, 15, 30, 60, 360, 720, 1440]);
 const ROBLOX_LIVE_EXPIRY_SECONDS = new Set([30, 60, 300, 900]);
 const ROBLOX_LIVE_SCHEDULER_INTERVAL_MS = 30 * 1000;
+const ROBLOX_LIVE_SCHEDULE_RETRY_MS = 5 * 60 * 1000;
 const ROBLOX_OAUTH_REFRESH_EARLY_MS = 60 * 1000;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
@@ -2188,7 +2189,12 @@ async function handleRobloxLiveRuleRun(req, res, auth, ruleId) {
 }
 
 function normalizeRobloxLiveRule(value, existingRule = null) {
-  const triggerType = value?.triggerType === "schedule" ? "schedule" : "event_count";
+  const requestedTriggerType = cleanString(value?.triggerType, 24);
+  const triggerType = requestedTriggerType === "schedule_once"
+    ? "schedule_once"
+    : requestedTriggerType === "schedule"
+      ? "schedule"
+      : "event_count";
   const name = cleanString(value?.name, 80) || "Live action";
   let actionKey;
   let parameters;
@@ -2209,6 +2215,7 @@ function normalizeRobloxLiveRule(value, existingRule = null) {
   let windowMinutes = 15;
   let cooldownMinutes = 60;
   let scheduleIntervalMinutes = 60;
+  let scheduledFor = null;
   if (triggerType === "event_count") {
     eventName = normalizeCustomEventName(value?.eventName);
     if (!eventName) return { ok: false, error: "Choose a valid tracked event." };
@@ -2226,10 +2233,17 @@ function normalizeRobloxLiveRule(value, existingRule = null) {
     if (!ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES.has(cooldownMinutes)) {
       return { ok: false, error: "Choose a valid cooldown." };
     }
-  } else {
+  } else if (triggerType === "schedule") {
     scheduleIntervalMinutes = Number(value?.scheduleIntervalMinutes);
     if (!ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES.has(scheduleIntervalMinutes)) {
       return { ok: false, error: "Choose a valid repeating interval." };
+    }
+  } else {
+    scheduledFor = cleanInteger(value?.scheduledFor);
+    const preservesExistingTime = existingRule?.triggerType === "schedule_once"
+      && cleanInteger(existingRule?.scheduledFor) === scheduledFor;
+    if (!scheduledFor || (scheduledFor <= Date.now() && !preservesExistingTime)) {
+      return { ok: false, error: "Choose a future Eastern Time for this scheduled action." };
     }
   }
 
@@ -2242,12 +2256,18 @@ function normalizeRobloxLiveRule(value, existingRule = null) {
     || cleanInteger(existingRule.threshold) !== threshold
     || cleanInteger(existingRule.windowMinutes) !== windowMinutes
     || cleanInteger(existingRule.scheduleIntervalMinutes) !== scheduleIntervalMinutes
+    || cleanInteger(existingRule.scheduledFor) !== cleanInteger(scheduledFor)
   );
   const scheduleChanged = triggerType === "schedule" && (
     existingRule?.triggerType !== "schedule"
     || cleanInteger(existingRule?.scheduleIntervalMinutes) !== scheduleIntervalMinutes
     || (existingRule?.enabled === false && enabled)
   );
+  const oneTimeScheduleChanged = triggerType === "schedule_once" && (
+    existingRule?.triggerType !== "schedule_once"
+    || cleanInteger(existingRule?.scheduledFor) !== scheduledFor
+  );
+  const resetAttemptState = conditionChanged || scheduleChanged || oneTimeScheduleChanged;
 
   return {
     ok: true,
@@ -2261,10 +2281,18 @@ function normalizeRobloxLiveRule(value, existingRule = null) {
       windowMinutes,
       cooldownMinutes,
       scheduleIntervalMinutes,
+      scheduledFor,
+      scheduleDeliveredAt: triggerType === "schedule_once" && !oneTimeScheduleChanged
+        ? cleanInteger(existingRule?.scheduleDeliveredAt) || null
+        : null,
       actionKey,
       parameters,
       expiresInSeconds,
-      enabled,
+      enabled: triggerType === "schedule_once"
+        && oneTimeScheduleChanged
+        && value?.enabled === undefined
+        ? true
+        : enabled,
       nextRunAt: triggerType === "schedule"
         ? (scheduleChanged || !cleanInteger(existingRule?.nextRunAt)
           ? now + scheduleIntervalMinutes * 60 * 1000
@@ -2272,9 +2300,11 @@ function normalizeRobloxLiveRule(value, existingRule = null) {
         : null,
       lastConditionMet: conditionChanged ? false : Boolean(existingRule?.lastConditionMet),
       lastTriggeredAt: cleanInteger(existingRule?.lastTriggeredAt) || null,
-      lastAttemptedAt: cleanInteger(existingRule?.lastAttemptedAt) || null,
-      lastAttemptStatus: existingRule?.lastAttemptStatus === "failed" ? "failed" : "published",
-      lastError: cleanString(existingRule?.lastError, 240),
+      lastAttemptedAt: resetAttemptState ? null : cleanInteger(existingRule?.lastAttemptedAt) || null,
+      lastAttemptStatus: resetAttemptState
+        ? "published"
+        : existingRule?.lastAttemptStatus === "failed" ? "failed" : "published",
+      lastError: resetAttemptState ? "" : cleanString(existingRule?.lastError, 240),
       createdAt: cleanInteger(existingRule?.createdAt) || now,
       updatedAt: now,
     },
@@ -2317,18 +2347,24 @@ function serializeRobloxLiveIntegration(integration, { universeId, eventNames = 
       .map((rule) => ({
         id: cleanString(rule?.id, 120),
         name: cleanString(rule?.name, 80),
-        triggerType: rule?.triggerType === "schedule" ? "schedule" : "event_count",
+        triggerType: rule?.triggerType === "schedule_once"
+          ? "schedule_once"
+          : rule?.triggerType === "schedule"
+            ? "schedule"
+            : "event_count",
         eventName: normalizeCustomEventName(rule?.eventName),
         operator: rule?.operator === "at_most" ? "at_most" : "at_least",
         threshold: cleanInteger(rule?.threshold),
         windowMinutes: cleanInteger(rule?.windowMinutes),
         cooldownMinutes: cleanInteger(rule?.cooldownMinutes),
         scheduleIntervalMinutes: cleanInteger(rule?.scheduleIntervalMinutes),
+        scheduledFor: cleanInteger(rule?.scheduledFor) || null,
+        scheduleDeliveredAt: cleanInteger(rule?.scheduleDeliveredAt) || null,
         actionKey: cleanString(rule?.actionKey, 64),
         parameters: rule?.parameters || {},
         expiresInSeconds: cleanInteger(rule?.expiresInSeconds),
         enabled: rule?.enabled !== false,
-        currentCount: rule?.triggerType === "schedule"
+        currentCount: rule?.triggerType !== "event_count"
           ? null
           : countDiscordAlertEvents(
             cleanUniverseId,
@@ -2397,12 +2433,16 @@ function normalizeStoredRobloxLiveIntegration(integration) {
       scheduleIntervalMinutes: ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES.has(cleanInteger(rule?.scheduleIntervalMinutes))
         ? cleanInteger(rule.scheduleIntervalMinutes)
         : 60,
+      scheduledFor: cleanInteger(rule?.scheduledFor) || null,
     }, rule);
     if (normalized.ok) {
       normalized.value.createdAt = cleanInteger(rule?.createdAt) || now;
       normalized.value.updatedAt = cleanInteger(rule?.updatedAt) || normalized.value.createdAt;
       normalized.value.nextRunAt = rule?.triggerType === "schedule"
         ? cleanInteger(rule?.nextRunAt) || normalized.value.nextRunAt
+        : null;
+      normalized.value.scheduleDeliveredAt = rule?.triggerType === "schedule_once"
+        ? cleanInteger(rule?.scheduleDeliveredAt) || null
         : null;
       normalized.value.lastConditionMet = Boolean(rule?.lastConditionMet);
       normalizedRules.push(normalized.value);
@@ -3762,7 +3802,12 @@ async function getScheduledRobloxLiveIntegrations() {
   if (db) {
     const documents = await db.collection("roblox_live_integrations")
       .find({
-        rules: { $elemMatch: { triggerType: "schedule", enabled: { $ne: false } } },
+        rules: {
+          $elemMatch: {
+            triggerType: { $in: ["schedule", "schedule_once"] },
+            enabled: { $ne: false },
+          },
+        },
       })
       .project({ _id: 0 })
       .toArray();
@@ -3771,7 +3816,10 @@ async function getScheduledRobloxLiveIntegrations() {
   return (await readLocalRobloxLiveIntegrationStore())
     .map(normalizeStoredRobloxLiveIntegration)
     .filter((integration) => (
-      integration?.rules?.some((rule) => rule.triggerType === "schedule" && rule.enabled !== false)
+      integration?.rules?.some((rule) => (
+        (rule.triggerType === "schedule" || rule.triggerType === "schedule_once")
+        && rule.enabled !== false
+      ))
     ));
 }
 
@@ -3792,24 +3840,51 @@ async function evaluateScheduledRobloxLiveActions() {
       const now = Date.now();
       let changed = false;
       for (const rule of integration.rules || []) {
-        if (rule.enabled === false || rule.triggerType !== "schedule") continue;
-        if (!cleanInteger(rule.nextRunAt)) {
-          rule.nextRunAt = now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
-          changed = true;
-          continue;
+        if (
+          rule.enabled === false
+          || (rule.triggerType !== "schedule" && rule.triggerType !== "schedule_once")
+        ) continue;
+        const isOneTime = rule.triggerType === "schedule_once";
+        if (isOneTime) {
+          if (
+            cleanInteger(rule.scheduleDeliveredAt)
+            || !cleanInteger(rule.scheduledFor)
+            || cleanInteger(rule.scheduledFor) > now
+          ) continue;
+          if (
+            rule.lastAttemptStatus === "failed"
+            && cleanInteger(rule.lastAttemptedAt) > 0
+            && now - cleanInteger(rule.lastAttemptedAt) < ROBLOX_LIVE_SCHEDULE_RETRY_MS
+          ) continue;
+        } else {
+          if (!cleanInteger(rule.nextRunAt)) {
+            rule.nextRunAt = now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
+            changed = true;
+            continue;
+          }
+          if (cleanInteger(rule.nextRunAt) > now) continue;
         }
-        if (cleanInteger(rule.nextRunAt) > now) continue;
         rule.lastAttemptedAt = now;
         try {
-          const result = await deliverRobloxLiveAction(integration, rule, "schedule");
+          const result = await deliverRobloxLiveAction(
+            integration,
+            rule,
+            isOneTime ? "schedule_once" : "schedule",
+          );
           rule.lastTriggeredAt = result.delivery.sentAt;
           rule.lastAttemptStatus = "published";
           rule.lastError = "";
+          if (isOneTime) {
+            rule.scheduleDeliveredAt = result.delivery.sentAt;
+            rule.enabled = false;
+          }
         } catch (error) {
           rule.lastAttemptStatus = "failed";
           rule.lastError = cleanString(error?.message, 240) || "Roblox live action failed.";
         }
-        rule.nextRunAt = now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
+        rule.nextRunAt = isOneTime
+          ? null
+          : now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
         rule.updatedAt = Date.now();
         changed = true;
       }

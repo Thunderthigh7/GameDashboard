@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260727-03/styles.css">
+    <link rel="stylesheet" href="/assets/20260727-04/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1428,6 +1428,7 @@
                     <span>Requirement</span>
                     <select id="robloxLiveRuleTrigger">
                       <option value="event_count">Event count</option>
+                      <option value="schedule_once">Scheduled once</option>
                       <option value="schedule">Repeating schedule</option>
                     </select>
                   </label>
@@ -1460,6 +1461,19 @@
                     <select id="robloxLiveRuleSchedule"><option value="5">5 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="360">6 hours</option><option value="720">12 hours</option><option value="1440">24 hours</option></select>
                   </label>
                 </div>
+                <section class="discordRuleScheduleFields" id="robloxLiveScheduleOnceCondition" hidden>
+                  <div class="discordRuleScheduleGrid">
+                    <label class="discordFormField" for="robloxLiveRuleScheduleDate">
+                      <span>Run date</span>
+                      <input id="robloxLiveRuleScheduleDate" type="date">
+                    </label>
+                    <label class="discordFormField" for="robloxLiveRuleScheduleTime">
+                      <span>Run time</span>
+                      <input id="robloxLiveRuleScheduleTime" type="time" step="60">
+                    </label>
+                  </div>
+                  <p>Eastern Standard Time</p>
+                </section>
                 <div class="robloxLiveActionConfig">
                   <label class="discordFormField" for="robloxLiveRuleActionKey">
                     <span>Registered action key</span>
@@ -1738,6 +1752,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260727-03/app.js"></script>
+    <script defer src="/assets/20260727-04/app.js"></script>
   </body>
 </html>

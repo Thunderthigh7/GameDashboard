@@ -112,12 +112,15 @@ const robloxLiveRuleName = document.querySelector("#robloxLiveRuleName");
 const robloxLiveRuleTrigger = document.querySelector("#robloxLiveRuleTrigger");
 const robloxLiveEventCondition = document.querySelector("#robloxLiveEventCondition");
 const robloxLiveScheduleCondition = document.querySelector("#robloxLiveScheduleCondition");
+const robloxLiveScheduleOnceCondition = document.querySelector("#robloxLiveScheduleOnceCondition");
 const robloxLiveRuleEvent = document.querySelector("#robloxLiveRuleEvent");
 const robloxLiveRuleOperator = document.querySelector("#robloxLiveRuleOperator");
 const robloxLiveRuleThreshold = document.querySelector("#robloxLiveRuleThreshold");
 const robloxLiveRuleWindow = document.querySelector("#robloxLiveRuleWindow");
 const robloxLiveRuleCooldown = document.querySelector("#robloxLiveRuleCooldown");
 const robloxLiveRuleSchedule = document.querySelector("#robloxLiveRuleSchedule");
+const robloxLiveRuleScheduleDate = document.querySelector("#robloxLiveRuleScheduleDate");
+const robloxLiveRuleScheduleTime = document.querySelector("#robloxLiveRuleScheduleTime");
 const robloxLiveRuleActionKey = document.querySelector("#robloxLiveRuleActionKey");
 const robloxLiveRuleExpiry = document.querySelector("#robloxLiveRuleExpiry");
 const robloxLiveRuleParameters = document.querySelector("#robloxLiveRuleParameters");
@@ -396,7 +399,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-03";
+const DASHBOARD_ASSET_VERSION = "20260727-04";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2209,6 +2212,12 @@ function getDiscordScheduledInputTimestamp() {
   return easternDateTimeInputToTimestamp(date && time ? `${date}T${time}` : "");
 }
 
+function getRobloxLiveScheduledInputTimestamp() {
+  const date = String(robloxLiveRuleScheduleDate?.value || "");
+  const time = String(robloxLiveRuleScheduleTime?.value || "");
+  return easternDateTimeInputToTimestamp(date && time ? `${date}T${time}` : "");
+}
+
 function openDiscordRuleEditor(rule = null) {
   const selectedWebhook = getEditingDiscordWebhook();
   if (!discordRuleDialog || !selectedWebhook) return;
@@ -2658,15 +2667,22 @@ function renderRobloxLiveIntegration() {
 }
 
 function renderRobloxLiveRuleRow(rule) {
-  const isScheduled = rule.triggerType === "schedule";
-  const requirement = isScheduled
-    ? `Every ${formatRobloxLiveInterval(rule.scheduleIntervalMinutes)}`
-    : `${rule.operator === "at_most" ? "At most" : "At least"} ${formatCompactNumber(rule.threshold)} in ${formatRobloxLiveInterval(rule.windowMinutes)}`;
+  const isRepeating = rule.triggerType === "schedule";
+  const isOneTime = rule.triggerType === "schedule_once";
+  const isScheduled = isRepeating || isOneTime;
+  const isCompleted = isOneTime && Boolean(rule.scheduleDeliveredAt);
+  const requirement = isOneTime
+    ? formatEasternDateTime(rule.scheduledFor)
+    : isRepeating
+      ? `Every ${formatRobloxLiveInterval(rule.scheduleIntervalMinutes)}`
+      : `${rule.operator === "at_most" ? "At most" : "At least"} ${formatCompactNumber(rule.threshold)} in ${formatRobloxLiveInterval(rule.windowMinutes)}`;
   const conditionDetail = rule.lastError
     ? `<span data-state="error">${escapeHtml(rule.lastError)}</span>`
-    : isScheduled
+    : isRepeating
       ? `<span>${rule.nextRunAt ? `Next run ${escapeHtml(formatRelativeTime(rule.nextRunAt))}` : "Waiting to schedule"}</span>`
-      : `<span>${escapeHtml(formatEventName(rule.eventName))}</span>`;
+      : isOneTime
+        ? `<span>${rule.scheduleDeliveredAt ? "Sent" : "Eastern Standard Time"}</span>`
+        : `<span>${escapeHtml(formatEventName(rule.eventName))}</span>`;
   return `
     <article class="robloxLiveRuleRow" data-roblox-live-rule-id="${escapeHtml(rule.id)}">
       <div class="robloxLiveRuleIdentity"><strong>${escapeHtml(rule.name)}</strong></div>
@@ -2675,7 +2691,7 @@ function renderRobloxLiveRuleRow(rule) {
       <div class="robloxLiveRuleMetric"><strong>${isScheduled ? "—" : escapeHtml(formatCompactNumber(rule.currentCount || 0))}</strong></div>
       <div class="robloxLiveRuleMetric"><strong>${isScheduled ? "—" : escapeHtml(formatRobloxLiveInterval(rule.cooldownMinutes))}</strong></div>
       <div class="robloxLiveRuleActions">
-        <button class="robloxLiveRuleToggle" type="button" data-roblox-live-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"></button>
+        <button class="robloxLiveRuleToggle" type="button" data-roblox-live-action="toggle" aria-label="${isCompleted ? "Completed" : rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"${isCompleted ? " disabled" : ""}></button>
         <button class="button secondary compact" type="button" data-roblox-live-action="run">Run now</button>
         <button class="button secondary compact" type="button" data-roblox-live-action="edit">Edit</button>
         <button class="button secondary compact danger" type="button" data-roblox-live-action="delete">Delete</button>
@@ -2687,8 +2703,10 @@ function renderRobloxLiveDeliveryRow(delivery) {
   const status = delivery.status === "failed" ? "failed" : "published";
   const trigger = delivery.trigger === "manual"
     ? "Manual"
-    : delivery.trigger === "schedule"
-      ? "Schedule"
+    : delivery.trigger === "schedule_once"
+      ? "Scheduled once"
+      : delivery.trigger === "schedule"
+        ? "Repeating schedule"
       : "Event";
   return `
     <article class="robloxLiveDeliveryRow">
@@ -2734,6 +2752,15 @@ function openRobloxLiveRuleEditor(rule = null) {
   if (robloxLiveRuleWindow) robloxLiveRuleWindow.value = String(rule?.windowMinutes || 15);
   if (robloxLiveRuleCooldown) robloxLiveRuleCooldown.value = String(rule?.cooldownMinutes || 60);
   if (robloxLiveRuleSchedule) robloxLiveRuleSchedule.value = String(rule?.scheduleIntervalMinutes || 60);
+  if (robloxLiveRuleScheduleDate && robloxLiveRuleScheduleTime) {
+    const earliest = Math.ceil((Date.now() + 60_000) / 60_000) * 60_000;
+    const defaultTime = Math.ceil((Date.now() + 60 * 60_000) / 60_000) * 60_000;
+    robloxLiveRuleScheduleDate.min = formatEasternDateInput(earliest);
+    robloxLiveRuleScheduleDate.value = formatEasternDateInput(rule?.scheduledFor || defaultTime);
+    robloxLiveRuleScheduleTime.value = formatEasternTimeInput(rule?.scheduledFor || defaultTime);
+    robloxLiveRuleScheduleDate.setCustomValidity("");
+    robloxLiveRuleScheduleTime.setCustomValidity("");
+  }
   if (robloxLiveRuleActionKey) robloxLiveRuleActionKey.value = rule?.actionKey || "";
   if (robloxLiveRuleExpiry) robloxLiveRuleExpiry.value = String(rule?.expiresInSeconds || 60);
   if (robloxLiveRuleParameters) robloxLiveRuleParameters.value = JSON.stringify(rule?.parameters || {}, null, 2);
@@ -2762,11 +2789,20 @@ function handleRobloxLiveDialogKeydown(event) {
 }
 
 function syncRobloxLiveRuleTriggerFields() {
-  const isSchedule = robloxLiveRuleTrigger?.value === "schedule";
-  if (robloxLiveEventCondition) robloxLiveEventCondition.hidden = isSchedule;
-  if (robloxLiveScheduleCondition) robloxLiveScheduleCondition.hidden = !isSchedule;
-  if (robloxLiveRuleEvent) robloxLiveRuleEvent.required = !isSchedule;
-  if (robloxLiveRuleThreshold) robloxLiveRuleThreshold.required = !isSchedule;
+  const triggerType = robloxLiveRuleTrigger?.value;
+  const isEvent = triggerType === "event_count";
+  const isRepeating = triggerType === "schedule";
+  const isOneTime = triggerType === "schedule_once";
+  if (robloxLiveEventCondition) robloxLiveEventCondition.hidden = !isEvent;
+  if (robloxLiveScheduleCondition) robloxLiveScheduleCondition.hidden = !isRepeating;
+  if (robloxLiveScheduleOnceCondition) robloxLiveScheduleOnceCondition.hidden = !isOneTime;
+  if (robloxLiveRuleEvent) robloxLiveRuleEvent.required = isEvent;
+  if (robloxLiveRuleThreshold) robloxLiveRuleThreshold.required = isEvent;
+  for (const input of [robloxLiveRuleScheduleDate, robloxLiveRuleScheduleTime]) {
+    if (!input) continue;
+    input.required = isOneTime;
+    if (!isOneTime) input.setCustomValidity("");
+  }
 }
 
 function syncRobloxLiveRuleThreshold() {
@@ -2791,6 +2827,7 @@ function getRobloxLiveRulePayload(rule = null, overrides = {}) {
     windowMinutes: rule?.windowMinutes ?? Number(robloxLiveRuleWindow?.value),
     cooldownMinutes: rule?.cooldownMinutes ?? Number(robloxLiveRuleCooldown?.value),
     scheduleIntervalMinutes: rule?.scheduleIntervalMinutes ?? Number(robloxLiveRuleSchedule?.value),
+    scheduledFor: rule?.scheduledFor ?? getRobloxLiveScheduledInputTimestamp(),
     actionKey: rule?.actionKey ?? String(robloxLiveRuleActionKey?.value || "").trim(),
     parameters: rule?.parameters ?? {},
     expiresInSeconds: rule?.expiresInSeconds ?? Number(robloxLiveRuleExpiry?.value),
@@ -2800,7 +2837,14 @@ function getRobloxLiveRulePayload(rule = null, overrides = {}) {
 }
 
 async function saveRobloxLiveRule() {
-  if (!authenticated || robloxLiveBusy || !selectedUniverseId || !robloxLiveRuleForm?.reportValidity()) return;
+  if (!authenticated || robloxLiveBusy || !selectedUniverseId || !robloxLiveRuleForm) return;
+  if (robloxLiveRuleTrigger?.value === "schedule_once" && robloxLiveRuleScheduleDate && robloxLiveRuleScheduleTime) {
+    const scheduledFor = getRobloxLiveScheduledInputTimestamp();
+    const validityMessage = scheduledFor > Date.now() ? "" : "Choose a future Eastern Time.";
+    robloxLiveRuleScheduleDate.setCustomValidity(validityMessage);
+    robloxLiveRuleScheduleTime.setCustomValidity(validityMessage);
+  }
+  if (!robloxLiveRuleForm.reportValidity()) return;
   let parameters;
   try {
     parameters = JSON.parse(String(robloxLiveRuleParameters?.value || "{}"));
