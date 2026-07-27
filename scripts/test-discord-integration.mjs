@@ -129,7 +129,8 @@ assert.match(indexSource, /id="discordSendStatus"[^>]*aria-live="polite"/);
 assert.match(indexSource, /id="discordTestButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordNewRuleButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordTopbarActions"[\s\S]*?id="discordTestButton"[\s\S]*?id="discordDisconnectButton"[\s\S]*?id="discordNewRuleButton"/);
-assert.match(indexSource, /class="discordRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Topic name<[\s\S]*?>Condition<[\s\S]*?>Actions</);
+assert.match(indexSource, /class="discordRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Condition<[\s\S]*?>Current<[\s\S]*?>Cooldown<[\s\S]*?>Actions</);
+assert.doesNotMatch(indexSource, />Topic name</);
 assert.doesNotMatch(indexSource, /Automatic monitoring|<h2>Alert rules<\/h2>/);
 assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleTriggerType"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"[\s\S]*?id="discordRuleScheduleDate"[\s\S]*?id="discordRuleScheduleTime"/);
 assert.match(indexSource, /Eastern Time \(EST\/EDT, UTC-5\/UTC-4\)/);
@@ -147,8 +148,7 @@ assert.match(appSource, /data-discord-webhook-id=/);
 assert.match(appSource, /webhookId:\s*getEditingDiscordWebhook\(\)\?\.id \|\| ""/);
 assert.match(appSource, /function easternDateTimeInputToTimestamp\(value\)/);
 assert.match(appSource, /function getDiscordPageHeading\(\)[\s\S]*?getEditingDiscordWebhook\(\)\?\.name/);
-assert.match(appSource, /class="discordRuleTopic"[\s\S]*?class="discordRuleCondition"/);
-assert.match(appSource, /Current \$\{formatCompactNumber\(rule\.currentCount \|\| 0\)\}/);
+assert.match(appSource, /class="discordRuleCondition"[\s\S]*?class="discordRuleMetric"[\s\S]*?formatCompactNumber\(rule\.currentCount \|\| 0\)[\s\S]*?class="discordRuleMetric"[\s\S]*?formatDiscordAlertWindow\(rule\.cooldownMinutes\)/);
 assert.match(appSource, /function updateDiscordRulePreview\(\)/);
 assert.match(
   serverSource,

@@ -401,7 +401,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-08";
+const DASHBOARD_ASSET_VERSION = "20260726-09";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2078,7 +2078,6 @@ function renderDiscordRuleRow(rule) {
   const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
   const windowLabel = formatDiscordAlertWindow(rule.windowMinutes);
   const lastSent = rule.lastTriggeredAt ? formatRelativeTime(rule.lastTriggeredAt) : "Never sent";
-  const deliveryState = rule.lastError ? "error" : "";
   const scheduleComplete = Boolean(rule.scheduleDeliveredAt);
   const statusLabel = scheduleComplete ? "Sent" : rule.enabled ? "Active" : "Paused";
   return `
@@ -2087,17 +2086,21 @@ function renderDiscordRuleRow(rule) {
         <strong>${escapeHtml(rule.name)}</strong>
         <span>${escapeHtml(`${statusLabel} · ${lastSent}`)}</span>
       </div>
-      <div class="discordRuleTopic">
-        <strong>${escapeHtml(isScheduled ? "—" : rule.eventName)}</strong>
-        <span>${escapeHtml(isScheduled ? "One-time schedule" : formatEventName(rule.eventName))}</span>
-      </div>
       <div class="discordRuleCondition">
         <strong>${isScheduled
           ? escapeHtml(formatEasternDateTime(rule.scheduledFor))
           : `${escapeHtml(operatorLabel)} ${escapeHtml(formatCompactNumber(rule.threshold))} in ${escapeHtml(windowLabel)}`}</strong>
-        <span data-state="${deliveryState}">${escapeHtml(rule.lastError || (isScheduled
-          ? `Eastern Time (EST/EDT) · ${scheduleComplete ? "Completed" : "Sends once"}`
-          : `Current ${formatCompactNumber(rule.currentCount || 0)} · ${formatDiscordAlertWindow(rule.cooldownMinutes)} cooldown`))}</span>
+        ${rule.lastError
+          ? `<span data-state="error">${escapeHtml(rule.lastError)}</span>`
+          : isScheduled
+            ? `<span>Eastern Time (EST/EDT) · ${scheduleComplete ? "Completed" : "Sends once"}</span>`
+            : ""}
+      </div>
+      <div class="discordRuleMetric">
+        <strong>${escapeHtml(isScheduled ? "—" : formatCompactNumber(rule.currentCount || 0))}</strong>
+      </div>
+      <div class="discordRuleMetric">
+        <strong>${escapeHtml(isScheduled ? "—" : formatDiscordAlertWindow(rule.cooldownMinutes))}</strong>
       </div>
       <div class="discordRuleActions">
         <button class="discordRuleToggle" type="button" data-discord-rule-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}" ${scheduleComplete ? "disabled" : ""}></button>

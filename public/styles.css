@@ -3903,9 +3903,10 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 .discordRuleRow {
   display: grid;
   grid-template-columns:
-    minmax(180px, 1.1fr)
-    minmax(190px, 1fr)
-    minmax(300px, 1.55fr)
+    minmax(180px, 1.15fr)
+    minmax(270px, 1.5fr)
+    minmax(100px, 0.55fr)
+    minmax(110px, 0.6fr)
     minmax(230px, auto);
   align-items: center;
   gap: 18px;
@@ -3959,16 +3960,16 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .discordRuleIdentity,
-.discordRuleTopic,
-.discordRuleCondition {
+.discordRuleCondition,
+.discordRuleMetric {
   display: grid;
   min-width: 0;
   gap: 4px;
 }
 
 .discordRuleIdentity strong,
-.discordRuleTopic strong,
-.discordRuleCondition strong {
+.discordRuleCondition strong,
+.discordRuleMetric strong {
   overflow: hidden;
   color: #f4f7ff;
   font-size: 14px;
@@ -3978,7 +3979,6 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .discordRuleIdentity span,
-.discordRuleTopic span,
 .discordRuleCondition span {
   overflow: hidden;
   color: #8f9cbe;
@@ -3988,9 +3988,9 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   white-space: nowrap;
 }
 
-.discordRuleTopic > strong {
-  color: #aa96ff;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+.discordRuleMetric strong {
+  color: #f8faff;
+  font-size: 15px;
 }
 
 .discordRuleCondition span[data-state="error"] {
