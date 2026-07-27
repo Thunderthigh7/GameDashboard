@@ -4016,8 +4016,8 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 
 .discordRuleToggle {
   position: relative;
-  width: 48px;
-  min-width: 48px;
+  width: 64px;
+  min-width: 64px;
   border: 1px solid rgba(88, 104, 153, 0.56);
   border-radius: 999px;
   background: #121d37;
@@ -4043,7 +4043,7 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 }
 
 .discordRuleToggle[aria-pressed="true"]::after {
-  left: 22px;
+  left: 38px;
   background: #b39bff;
 }
 
@@ -4472,10 +4472,11 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 .robloxLiveRuleRow {
   display: grid;
   grid-template-columns:
-    minmax(180px, 1.15fr)
-    minmax(270px, 1.5fr)
+    minmax(150px, 0.85fr)
+    minmax(190px, 1.05fr)
+    minmax(230px, 1.3fr)
+    minmax(90px, 0.45fr)
     minmax(100px, 0.55fr)
-    minmax(110px, 0.6fr)
     minmax(330px, auto);
   align-items: center;
   gap: 18px;
@@ -4510,6 +4511,7 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 }
 
 .robloxLiveRuleIdentity,
+.robloxLiveRuleTopic,
 .robloxLiveRuleCondition,
 .robloxLiveRuleMetric {
   display: grid;
@@ -4528,7 +4530,6 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   white-space: nowrap;
 }
 
-.robloxLiveRuleIdentity code,
 .robloxLiveRuleCondition span {
   overflow: hidden;
   color: #91a0bd;
@@ -4538,10 +4539,14 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   white-space: nowrap;
 }
 
-.robloxLiveRuleIdentity code {
+.robloxLiveRuleTopic code {
+  overflow: hidden;
   color: #54dfcc;
+  font-size: 14px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-weight: 700;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .robloxLiveRuleCondition span[data-state="error"] {
@@ -4569,8 +4574,8 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 
 .robloxLiveRuleToggle {
   position: relative;
-  width: 48px;
-  min-width: 48px;
+  width: 64px;
+  min-width: 64px;
   height: 40px;
   border: 1px solid rgba(88, 104, 153, 0.56);
   border-radius: 999px;
@@ -4597,7 +4602,7 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 }
 
 .robloxLiveRuleToggle[aria-pressed="true"]::after {
-  left: 22px;
+  left: 38px;
   transform: translateY(-50%);
   background: #4ae5ce;
 }

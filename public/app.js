@@ -396,7 +396,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-24";
+const DASHBOARD_ASSET_VERSION = "20260726-26";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2653,7 +2653,8 @@ function renderRobloxLiveRuleRow(rule) {
       : `<span>${escapeHtml(formatEventName(rule.eventName))}</span>`;
   return `
     <article class="robloxLiveRuleRow" data-roblox-live-rule-id="${escapeHtml(rule.id)}">
-      <div class="robloxLiveRuleIdentity"><strong>${escapeHtml(rule.name)}</strong><code>${escapeHtml(rule.actionKey)}</code></div>
+      <div class="robloxLiveRuleIdentity"><strong>${escapeHtml(rule.name)}</strong></div>
+      <div class="robloxLiveRuleTopic"><code>${escapeHtml(rule.actionKey)}</code></div>
       <div class="robloxLiveRuleCondition"><strong>${escapeHtml(requirement)}</strong>${conditionDetail}</div>
       <div class="robloxLiveRuleMetric"><strong>${isScheduled ? "—" : escapeHtml(formatCompactNumber(rule.currentCount || 0))}</strong></div>
       <div class="robloxLiveRuleMetric"><strong>${isScheduled ? "—" : escapeHtml(formatRobloxLiveInterval(rule.cooldownMinutes))}</strong></div>

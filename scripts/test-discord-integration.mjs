@@ -213,6 +213,7 @@ assert.match(styleSource, /\.discordWebhookCatalogPanel\s*\{/);
 assert.match(styleSource, /\.discordWorkspace\s*\{/);
 assert.match(styleSource, /\.discordRuleTableHeader,/);
 assert.match(styleSource, /\.discordRuleRow\s*\{/);
+assert.match(styleSource, /\.discordRuleToggle\s*\{[\s\S]*?width:\s*64px;[\s\S]*?min-width:\s*64px;/);
 assert.match(styleSource, /\.discordMessagePreview\s*\{/);
 assert.match(styleSource, /\.discordMessageMeta\s*\{/);
 assert.match(styleSource, /\.discordAlertPreviewFields\s*\{/);
