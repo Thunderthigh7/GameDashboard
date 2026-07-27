@@ -91,7 +91,8 @@ const discordPreviewEmbedTime = document.querySelector("#discordPreviewEmbedTime
 const discordRuleFormStatus = document.querySelector("#discordRuleFormStatus");
 const discordRuleCancelButton = document.querySelector("#discordRuleCancelButton");
 const discordRuleSaveButton = document.querySelector("#discordRuleSaveButton");
-const robloxLiveConnectionBadge = document.querySelector("#robloxLiveConnectionBadge");
+const robloxLiveAuthorization = document.querySelector("#robloxLiveAuthorization");
+const robloxLiveAuthorizationAlert = document.querySelector("#robloxLiveAuthorizationAlert");
 const robloxLiveAuthorizationTitle = document.querySelector("#robloxLiveAuthorizationTitle");
 const robloxLiveAuthorizationCopy = document.querySelector("#robloxLiveAuthorizationCopy");
 const robloxLiveAuthorizeButton = document.querySelector("#robloxLiveAuthorizeButton");
@@ -401,7 +402,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-13";
+const DASHBOARD_ASSET_VERSION = "20260726-14";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -1289,7 +1290,7 @@ function renderActiveView(options = {}) {
     },
     "roblox-live": {
       title: "Roblox Live Actions",
-      subtitle: "",
+      subtitle: "Trigger pre-coded server actions from live analytics or a fixed schedule.",
     },
     usage: {
       title: "Usage",
@@ -2624,23 +2625,29 @@ function renderRobloxLiveIntegration() {
   const deliveries = Array.isArray(robloxLiveIntegration?.deliveries) ? robloxLiveIntegration.deliveries : [];
   const connected = Boolean(connection.connected);
   const authorizationError = connection.authorizationValid === false && Boolean(connection.connectedAt);
-  if (robloxLiveConnectionBadge) {
-    robloxLiveConnectionBadge.dataset.state = authorizationError ? "error" : connected ? "connected" : "disconnected";
-    robloxLiveConnectionBadge.textContent = authorizationError
-      ? "Authorization expired"
+  if (robloxLiveAuthorization) {
+    robloxLiveAuthorization.dataset.state = authorizationError
+      ? "error"
       : connected
-        ? "Authorized"
-        : "Not authorized";
+        ? "connected"
+        : "disconnected";
+  }
+  if (robloxLiveAuthorizationAlert) {
+    robloxLiveAuthorizationAlert.hidden = connected && !authorizationError;
   }
   if (robloxLiveAuthorizationTitle) {
-    robloxLiveAuthorizationTitle.textContent = connected
-      ? `Connected as ${connection.robloxUsername || "Roblox user"}`
-      : "Authorize MessagingService";
+    robloxLiveAuthorizationTitle.textContent = authorizationError
+      ? "MessagingService authorization expired"
+      : connected
+        ? `Connected as ${connection.robloxUsername || "Roblox user"}`
+        : "Authorize MessagingService";
   }
   if (robloxLiveAuthorizationCopy) {
-    robloxLiveAuthorizationCopy.textContent = connected
-      ? "Scoped to this universe with renewable Open Cloud authorization."
-      : "Grant publish access for this universe. No Roblox code is stored here.";
+    robloxLiveAuthorizationCopy.textContent = authorizationError
+      ? "Authorize again to resume publishing actions."
+      : connected
+        ? "MessagingService publishing is authorized for this universe."
+        : "Required to publish actions to this universe.";
   }
   if (robloxLiveAuthorizeButton) {
     robloxLiveAuthorizeButton.textContent = connected ? "Reauthorize" : "Authorize Roblox";

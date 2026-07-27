@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260726-13/styles.css">
+    <link rel="stylesheet" href="/assets/20260726-14/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1145,7 +1145,7 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
                 <span>Back to dashboard</span>
               </a>
-              <h1 class="eventCatalogTitle discordCatalogTitle">Discord</h1>
+              <h1 class="eventCatalogTitle discordCatalogTitle">Discord Webhooks</h1>
               <div class="eventCatalogAction discordCatalogAction">
                 <button class="button eventNewButton" id="discordNewWebhookButton" type="button">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
@@ -1173,7 +1173,7 @@
             <form class="discordConnectionForm" id="discordConnectionForm">
               <div class="discordConnectionFields">
                 <label class="discordFormField" for="discordWebhookName">
-                  <span>Channel name</span>
+                  <span>Name</span>
                   <input id="discordWebhookName" maxlength="60" placeholder="Live operations" required>
                   <small>A clear label shown on alert rules.</small>
                 </label>
@@ -1347,27 +1347,19 @@
         </section>
 
         <section class="viewPage robloxLivePage" data-view-panel="roblox-live" hidden>
-          <article class="panel robloxLiveConnectionPanel">
-            <header class="robloxLiveConnectionHeader">
-              <span class="robloxLiveIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9Z" /><path d="m8.5 8.5 7 7M15.5 8.5l-7 7" /></svg>
-              </span>
-              <div>
-                <span>Roblox Open Cloud</span>
-                <h2>Live actions</h2>
-                <p>Trigger pre-coded server actions from live analytics or a fixed schedule.</p>
-              </div>
-              <span class="robloxLiveConnectionBadge" id="robloxLiveConnectionBadge" data-state="disconnected">Not authorized</span>
-            </header>
+          <div class="robloxLiveAuthorization" id="robloxLiveAuthorization" data-state="disconnected">
+            <span class="robloxLiveAuthorizationAlert" id="robloxLiveAuthorizationAlert" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3 22 20H2Z" /><path d="M12 9v5M12 17.5v.5" /></svg>
+            </span>
+            <div>
+              <strong id="robloxLiveAuthorizationTitle">Authorize MessagingService</strong>
+              <span id="robloxLiveAuthorizationCopy">Required to publish actions to this universe.</span>
+            </div>
+            <button class="button" id="robloxLiveAuthorizeButton" type="button">Authorize Roblox</button>
+          </div>
 
+          <article class="panel robloxLiveRuntimePanel">
             <div class="robloxLiveConnectionBody">
-              <div class="robloxLiveAuthorization">
-                <div>
-                  <strong id="robloxLiveAuthorizationTitle">Authorize MessagingService</strong>
-                  <span id="robloxLiveAuthorizationCopy">Grant publish access for this universe. No Roblox code is stored here.</span>
-                </div>
-                <button class="button" id="robloxLiveAuthorizeButton" type="button">Authorize Roblox</button>
-              </div>
               <div class="robloxLiveControlRow">
                 <label class="robloxLiveMasterToggle">
                   <input id="robloxLiveMasterToggle" type="checkbox" disabled>
@@ -1754,6 +1746,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260726-13/app.js"></script>
+    <script defer src="/assets/20260726-14/app.js"></script>
   </body>
 </html>

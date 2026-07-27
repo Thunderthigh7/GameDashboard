@@ -131,13 +131,24 @@ assert.match(
 assert.equal(project.tree.ServerScriptService.RoAnalytics.$path, "RoAnalytics");
 assert.equal(project.tree.ServerScriptService.Server, undefined, "RoAnalytics should be directly under ServerScriptService");
 assert.match(indexSource, /data-dashboard-view="roblox-live"/);
+assert.match(
+  indexSource,
+  /data-view-panel="roblox-live"[\s\S]*?id="robloxLiveAuthorization"[\s\S]*?id="robloxLiveAuthorizationAlert"[\s\S]*?id="robloxLiveAuthorizeButton"/,
+);
+assert.doesNotMatch(indexSource, /robloxLiveConnectionHeader|robloxLiveConnectionBadge|>Roblox Open Cloud<|<h2>Live actions<\/h2>/);
 assert.match(indexSource, /id="robloxLiveMasterToggle"/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
 assert.match(appSource, /function renderRobloxLiveIntegration\(\)/);
+assert.match(
+  appSource,
+  /"roblox-live":\s*\{[\s\S]*?title:\s*"Roblox Live Actions"[\s\S]*?subtitle:\s*"Trigger pre-coded server actions from live analytics or a fixed schedule\."/,
+);
+assert.match(appSource, /robloxLiveAuthorizationAlert\.hidden = connected && !authorizationError/);
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
 assert.match(appSource, /Confirmed by a live server/);
 assert.doesNotMatch(appSource, /acknowledgedServers/);
 assert.match(appSource, /\/api\/integrations\/roblox-live\/rules/);
+assert.match(styleSource, /\.robloxLiveAuthorizationAlert\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleRow\s*\{/);
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);
 assert.match(methodsSource, /MessagingService:SubscribeAsync/);
