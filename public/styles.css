@@ -4394,64 +4394,6 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   white-space: nowrap;
 }
 
-.robloxLiveMasterToggle {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: center;
-  column-gap: 10px;
-  cursor: pointer;
-}
-
-.robloxLiveMasterToggle input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.robloxLiveMasterToggle > span {
-  position: relative;
-  grid-row: 1 / span 2;
-  width: 42px;
-  height: 24px;
-  border: 1px solid #405073;
-  border-radius: 999px;
-  background: #151e37;
-  transition: 160ms ease;
-}
-
-.robloxLiveMasterToggle > span::after {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #8f9ab5;
-  content: "";
-  transition: 160ms ease;
-}
-
-.robloxLiveMasterToggle input:checked + span {
-  border-color: #38d7c2;
-  background: rgba(38, 206, 181, 0.26);
-}
-
-.robloxLiveMasterToggle input:checked + span::after {
-  transform: translateX(18px);
-  background: #54ebd5;
-}
-
-.robloxLiveMasterToggle b {
-  color: #f6f8ff;
-  font-size: 14px;
-}
-
-.robloxLiveMasterToggle small {
-  color: #94a1be;
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .robloxLiveStatus {
   margin: 2px 0 0;
   color: #9ca9c4;

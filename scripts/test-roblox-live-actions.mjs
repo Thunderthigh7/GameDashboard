@@ -143,11 +143,14 @@ assert.doesNotMatch(indexSource, /robloxLiveConnectionHeader|robloxLiveConnectio
 assert.doesNotMatch(indexSource, /robloxLiveRuntimePanel|robloxLiveTestButton|robloxLiveServerCount|robloxLiveActionCount|>Live servers<|>Detected actions</);
 assert.match(
   indexSource,
-  /class="robloxLiveSectionHeader"[\s\S]*?class="robloxLiveRulesControls"[\s\S]*?id="robloxLiveMasterToggle"[\s\S]*?id="robloxLiveRuleCount"[\s\S]*?id="robloxLiveNewRuleButton"/,
+  /class="robloxLiveSectionHeader"[\s\S]*?class="robloxLiveRulesControls"[\s\S]*?id="robloxLiveRuleCount"[\s\S]*?id="robloxLiveNewRuleButton"/,
 );
+assert.doesNotMatch(indexSource, /robloxLiveMasterToggle|robloxLiveMasterState|>Live actions<\/b>|>Paused<\/small>/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
 assert.doesNotMatch(indexSource, /id="robloxLiveTopic"|<span>Topic<\/span>/);
 assert.match(appSource, /function renderRobloxLiveIntegration\(\)/);
+assert.match(appSource, /setRobloxLiveStatus\(error\.status === 403 \? "" : formatRequestError\(error\), "error"\)/);
+assert.doesNotMatch(serverSource, /You do not have access to live actions for this universe/);
 assert.doesNotMatch(appSource, /const robloxLiveTopic|robloxLiveTopic\.textContent/);
 assert.match(
   appSource,
@@ -156,13 +159,20 @@ assert.match(
 assert.match(appSource, /robloxLiveAuthorizationAlert\.hidden = connected && !authorizationError/);
 assert.match(appSource, /robloxLiveAuthorizeButton\.hidden = connected && !authorizationError/);
 assert.match(appSource, /robloxLiveDisconnectButton\.hidden = !connected/);
-assert.doesNotMatch(appSource, /testRobloxLiveActions|robloxLiveTestButton|robloxLiveServerCount|robloxLiveActionCount/);
+assert.doesNotMatch(
+  appSource,
+  /testRobloxLiveActions|robloxLiveTestButton|robloxLiveServerCount|robloxLiveActionCount|robloxLiveMasterToggle|updateRobloxLiveMasterState/,
+);
 assert.doesNotMatch(appSource, /textContent = connected \? "Reauthorize"/);
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
 assert.match(appSource, /Confirmed by a live server/);
 assert.doesNotMatch(appSource, /acknowledgedServers/);
 assert.match(appSource, /\/api\/integrations\/roblox-live\/rules/);
 assert.doesNotMatch(serverSource, /\/api\/integrations\/roblox-live\/test|handleRobloxLiveConnectionTest/);
+assert.doesNotMatch(
+  serverSource,
+  /\/api\/integrations\/roblox-live\/settings|handleRobloxLiveSettingsUpdate|Roblox live actions are paused|integration\.enabled/,
+);
 assert.match(styleSource, /\.robloxLiveAuthorizationAlert\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleRow\s*\{/);
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);

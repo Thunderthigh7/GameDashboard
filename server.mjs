@@ -598,10 +598,6 @@ const server = http.createServer(async (req, res) => {
       return handleRobloxLiveOAuthDisconnect(req, res, auth, url.searchParams);
     }
 
-    if (url.pathname === "/api/integrations/roblox-live/settings" && req.method === "PUT") {
-      return handleRobloxLiveSettingsUpdate(req, res, auth);
-    }
-
     if (url.pathname === "/api/integrations/roblox-live/rules" && req.method === "POST") {
       return handleRobloxLiveRuleSave(req, res, auth);
     }
@@ -2014,7 +2010,7 @@ async function handleRobloxLiveIntegrationGet(req, res, auth, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
   if (!project || isDemoProject(project)) {
-    return sendJson(res, 403, { error: "You do not have access to live actions for this universe" });
+    return sendJson(res, 403, { error: "Universe unavailable" });
   }
   const [integration, eventNames] = await Promise.all([
     readRobloxLiveIntegration(auth.userId, universeId),
@@ -2087,40 +2083,7 @@ async function handleRobloxLiveOAuthDisconnect(req, res, auth, searchParams) {
     }
   }
   integration.oauth = null;
-  integration.enabled = false;
   integration.updatedAt = Date.now();
-  await saveRobloxLiveIntegration(integration);
-  return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
-    universeId,
-    eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
-  }));
-}
-
-async function handleRobloxLiveSettingsUpdate(req, res, auth) {
-  let body;
-  try {
-    body = await readJsonBody(req, 8 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const universeId = cleanInteger(body?.universeId);
-  if (!await userOwnsUniverse(auth.userId, universeId)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  const integration = await readRobloxLiveIntegration(auth.userId, universeId)
-    || createEmptyRobloxLiveIntegration(auth.userId, universeId);
-  const enabled = Boolean(body?.enabled);
-  if (enabled && !hasRobloxLiveAuthorization(integration)) {
-    return sendJson(res, 400, { error: "Authorize Roblox live actions before enabling them." });
-  }
-  integration.enabled = enabled;
-  integration.updatedAt = Date.now();
-  for (const rule of integration.rules || []) {
-    if (enabled && rule.enabled !== false && rule.triggerType === "schedule" && !cleanInteger(rule.nextRunAt)) {
-      rule.nextRunAt = Date.now() + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
-      rule.updatedAt = Date.now();
-    }
-  }
   await saveRobloxLiveIntegration(integration);
   return sendJson(res, 200, serializeRobloxLiveIntegration(integration, {
     universeId,
@@ -2196,7 +2159,6 @@ async function handleRobloxLiveRuleRun(req, res, auth, ruleId) {
   const integration = await readRobloxLiveIntegration(auth.userId, universeId);
   const rule = integration?.rules?.find((entry) => entry.id === ruleId);
   if (!rule) return sendJson(res, 404, { error: "Live action rule not found." });
-  if (!integration.enabled) return sendJson(res, 400, { error: "Enable Roblox live actions before running a rule." });
   try {
     const result = await deliverRobloxLiveAction(integration, rule, "manual");
     rule.lastTriggeredAt = result.delivery.sentAt;
@@ -2324,7 +2286,6 @@ function createEmptyRobloxLiveIntegration(ownerUserId, universeId) {
     universeId: cleanInteger(universeId),
     robloxLiveSchemaVersion: 1,
     topic: ROBLOX_LIVE_ACTION_TOPIC,
-    enabled: false,
     oauth: null,
     rules: [],
     deliveries: [],
@@ -2353,7 +2314,6 @@ function serializeRobloxLiveIntegration(integration, { universeId, eventNames = 
       oauthConfigured: isRobloxOAuthConfigured(),
       connected: hasRobloxLiveAuthorization(normalized),
       authorizationValid: normalized?.oauth?.authorizationValid !== false,
-      enabled: Boolean(normalized?.enabled),
       topic: ROBLOX_LIVE_ACTION_TOPIC,
       robloxUserId: cleanInteger(normalized?.oauth?.robloxUserId) || null,
       robloxUsername: cleanString(normalized?.oauth?.robloxUsername, 80),
@@ -2557,7 +2517,6 @@ function normalizeStoredRobloxLiveIntegration(integration) {
     universeId: cleanInteger(integration.universeId),
     robloxLiveSchemaVersion: 1,
     topic: ROBLOX_LIVE_ACTION_TOPIC,
-    enabled: Boolean(integration.enabled),
     oauth: integration.oauth && typeof integration.oauth === "object" ? {
       accessToken: cleanString(integration.oauth.accessToken, 8192),
       refreshToken: cleanString(integration.oauth.refreshToken, 8192),
@@ -2721,7 +2680,6 @@ async function getRobloxLiveAccessToken(integration) {
     const latest = robloxLiveIntegrationCache.get(scopeKey);
     if (latest?.oauth && cleanInteger(latest.oauth.expiresAt) > cleanInteger(integration.oauth.expiresAt)) {
       integration.oauth = { ...latest.oauth };
-      integration.enabled = latest.enabled;
       integration.updatedAt = latest.updatedAt;
     }
     if (cleanInteger(integration.oauth.expiresAt) > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS) {
@@ -2747,7 +2705,6 @@ async function getRobloxLiveAccessToken(integration) {
     } catch (error) {
       integration.oauth.authorizationValid = false;
       integration.oauth.lastError = cleanString(error?.message, 240) || "Roblox authorization expired.";
-      integration.enabled = false;
       integration.updatedAt = Date.now();
       await saveRobloxLiveIntegration(integration);
       throw error;
@@ -2779,11 +2736,6 @@ function appendRobloxLiveDelivery(deliveries, delivery) {
 }
 
 async function deliverRobloxLiveAction(integration, rule, trigger) {
-  if (!integration?.enabled) {
-    const error = new Error("Roblox live actions are paused.");
-    error.statusCode = 400;
-    throw error;
-  }
   const retryAfterMs = claimRobloxLiveSendSlot(integration.ownerUserId);
   if (retryAfterMs > 0) {
     const error = new Error(`Live actions are rate limited. Try again in ${Math.ceil(retryAfterMs / 1000)} seconds.`);
@@ -2832,7 +2784,6 @@ async function deliverRobloxLiveAction(integration, rule, trigger) {
     if (normalizeProviderStatusCode(error) === 401 && integration.oauth) {
       integration.oauth.authorizationValid = false;
       integration.oauth.lastError = delivery.error;
-      integration.enabled = false;
     }
     throw error;
   }
@@ -3920,7 +3871,7 @@ async function evaluateRobloxLiveEventRulesForPresence(presence, project) {
   const previous = robloxLiveEvaluationLocks.get(scopeKey) || Promise.resolve();
   const current = previous.catch(() => {}).then(async () => {
     const integration = await readRobloxLiveIntegration(project.ownerUserId, presence.universeId);
-    if (!integration?.enabled || !hasRobloxLiveAuthorization(integration)) return;
+    if (!hasRobloxLiveAuthorization(integration)) return;
     const eventRules = integration.rules?.filter((rule) => (
       rule.enabled !== false && rule.triggerType === "event_count"
     )) || [];
@@ -3965,7 +3916,6 @@ async function evaluateRobloxLiveEventRulesForPresence(presence, project) {
       }
       rule.updatedAt = Date.now();
       changed = true;
-      if (!integration.enabled) break;
     }
     if (changed) {
       integration.updatedAt = Date.now();
@@ -3980,12 +3930,11 @@ async function evaluateRobloxLiveEventRulesForPresence(presence, project) {
   }
 }
 
-async function getEnabledRobloxLiveIntegrations() {
+async function getScheduledRobloxLiveIntegrations() {
   const db = await getMongoDb();
   if (db) {
     const documents = await db.collection("roblox_live_integrations")
       .find({
-        enabled: true,
         rules: { $elemMatch: { triggerType: "schedule", enabled: { $ne: false } } },
       })
       .project({ _id: 0 })
@@ -3995,13 +3944,12 @@ async function getEnabledRobloxLiveIntegrations() {
   return (await readLocalRobloxLiveIntegrationStore())
     .map(normalizeStoredRobloxLiveIntegration)
     .filter((integration) => (
-      integration?.enabled
-      && integration.rules?.some((rule) => rule.triggerType === "schedule" && rule.enabled !== false)
+      integration?.rules?.some((rule) => rule.triggerType === "schedule" && rule.enabled !== false)
     ));
 }
 
 async function evaluateScheduledRobloxLiveActions() {
-  const integrations = await getEnabledRobloxLiveIntegrations();
+  const integrations = await getScheduledRobloxLiveIntegrations();
   for (const listedIntegration of integrations) {
     const scopeKey = getRobloxLiveIntegrationScopeKey(
       listedIntegration.ownerUserId,
@@ -4013,7 +3961,7 @@ async function evaluateScheduledRobloxLiveActions() {
         listedIntegration.ownerUserId,
         listedIntegration.universeId,
       ) || listedIntegration;
-      if (!integration.enabled || !hasRobloxLiveAuthorization(integration)) return;
+      if (!hasRobloxLiveAuthorization(integration)) return;
       const now = Date.now();
       let changed = false;
       for (const rule of integration.rules || []) {
@@ -4037,7 +3985,6 @@ async function evaluateScheduledRobloxLiveActions() {
         rule.nextRunAt = now + cleanInteger(rule.scheduleIntervalMinutes) * 60 * 1000;
         rule.updatedAt = Date.now();
         changed = true;
-        if (!integration.enabled) break;
       }
       if (changed) {
         integration.updatedAt = Date.now();
@@ -4625,13 +4572,12 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         lastRefreshedAt: now,
         lastError: "",
       };
-      integration.enabled = false;
       integration.updatedAt = now;
       await saveRobloxLiveIntegration(integration);
       return sendRobloxOAuthResult(res, {
         ok: true,
         title: "Roblox live actions authorized",
-        message: "Authorization is saved. Enable live actions when your in-game handlers are ready.",
+        message: "Authorization is saved. Live action rules are ready to use.",
         universeId,
         universeName: project.name || `Universe ${universeId}`,
         backHref: "/#roblox-live",
