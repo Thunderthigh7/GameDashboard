@@ -55,6 +55,15 @@ assert.doesNotMatch(
   indexSource.match(/id="setupChecklist"[\s\S]*?<\/ol>/)?.[0] || "",
   />Sign in with Roblox<|>Upload map</,
 );
+for (const selector of ["setupChecklistCard", "connectedGamesManager"]) {
+  const block = styleSource.match(new RegExp(`\\.${selector}\\s*\\{([\\s\\S]*?)\\}`))?.[1] || "";
+  assert.ok(block, `${selector} styles should exist`);
+  assert.doesNotMatch(
+    block,
+    /\b(?:border|border-radius|background|padding)\s*:/,
+    `${selector} should not render an outer card container`,
+  );
+}
 assert.match(
   indexSource,
   /id="accountNavLabel">Account<\/h2>[\s\S]*?data-dashboard-view="usage"/,

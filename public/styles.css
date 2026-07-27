@@ -1172,10 +1172,6 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 .setupChecklistCard {
   display: grid;
   gap: 14px;
-  border: 1px solid rgba(80, 99, 150, 0.4);
-  border-radius: 10px;
-  background: rgba(8, 18, 39, 0.72);
-  padding: 16px 18px 18px;
 }
 
 .setupChecklistHeader,
@@ -1413,10 +1409,6 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 .connectedGamesManager {
   display: grid;
   gap: 10px;
-  border: 1px solid rgba(80, 99, 150, 0.28);
-  border-radius: 10px;
-  background: rgba(5, 13, 29, 0.5);
-  padding: 14px;
 }
 
 .connectedGamesManager h3 {
