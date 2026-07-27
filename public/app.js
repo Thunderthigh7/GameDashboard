@@ -586,6 +586,12 @@ function bindEvents() {
   });
   copyProjectSecretButton?.addEventListener("click", copyProjectSecret);
   connectedGameList?.addEventListener("click", (event) => {
+    const selectButton = event.target.closest("[data-select-connected-universe]");
+    if (selectButton) {
+      selectUniverse(selectButton.dataset.selectConnectedUniverse || "");
+      return;
+    }
+
     const regenerateButton = event.target.closest("[data-regenerate-project-secret]");
     if (regenerateButton) {
       regenerateProjectSecret(regenerateButton.dataset.regenerateProjectSecret || "", regenerateButton);
@@ -3717,6 +3723,7 @@ function renderConnectedGame(universe) {
   const artworkTone = (Math.abs(Number(id.slice(-2)) || 0) % 4) + 1;
   const artworkLabel = name.trim().charAt(0).toUpperCase() || "?";
   const isDemo = Boolean(universe.isDemo);
+  const isSelected = id === selectedUniverseId;
 
   return `
     <article class="connectedGameItem">
@@ -3736,6 +3743,7 @@ function renderConnectedGame(universe) {
         ${renderIntegrationMetric("Failed ingests", `${formatCompactNumber(failedIngests)} / 24h`, failedIngests > 0 ? "danger" : "ok")}
       </div>
       <div class="connectedGameActions">
+        <button class="button ${isSelected ? "secondary" : ""} compact" type="button"${isSelected ? ` disabled aria-current="true"` : ` data-select-connected-universe="${escapeHtml(id)}"`}>${isSelected ? "Selected" : "Select"}</button>
         ${isDemo
           ? `<p class="demoUniverseActionNote"><strong>Synthetic preview</strong><span>No Roblox secret or live game is required.</span></p>`
           : `<button class="button secondary compact" type="button" data-regenerate-project-secret="${escapeHtml(projectId)}"${projectId ? "" : " disabled"}>Regenerate secret</button>

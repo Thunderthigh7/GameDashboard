@@ -40,6 +40,11 @@ assert.match(
   /class="connectUniverseHeader"[\s\S]*?<h2>Connect Universe<\/h2>[\s\S]*?id="connectNewGameButton"/,
   "Connect Universe and its primary action should share the top row",
 );
+assert.match(
+  styleSource,
+  /\.universeDropdownMenu::\-webkit\-scrollbar\-thumb[\s\S]*?background:\s*rgba\(124,\s*60,\s*255/,
+  "The universe selector should use the dashboard scrollbar theme",
+);
 assert.doesNotMatch(
   indexSource,
   /id="integrationStatusCard"|id="connectGameRow"|class="connectUniverseHelp"/,
@@ -54,6 +59,11 @@ assert.match(
   appSource,
   /renderIntegrationMetric\("Last data"[\s\S]*?renderIntegrationMetric\("Map"[\s\S]*?renderIntegrationMetric\("Failed ingests"/,
   "Each connected-game card should own its connection health metrics",
+);
+assert.match(
+  appSource,
+  /data-select-connected-universe[\s\S]*?selectUniverse\(selectButton\.dataset\.selectConnectedUniverse/,
+  "Connected-game cards should provide a direct universe selection action",
 );
 assert.match(
   appSource,
