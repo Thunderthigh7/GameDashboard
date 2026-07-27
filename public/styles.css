@@ -840,10 +840,6 @@ body.isResizingLayout {
 }
 
 body[data-active-view="connect"] .topbar {
-  justify-content: flex-end;
-}
-
-body[data-active-view="connect"] .topbar > div:first-child {
   display: none;
 }
 
@@ -902,17 +898,14 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   display: grid;
   gap: 16px;
   max-width: none;
-  padding: 22px;
-  background:
-    linear-gradient(145deg, rgba(12, 22, 46, 0.92), rgba(5, 12, 28, 0.9)),
-    var(--surface);
 }
 
 .connectUniverseHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
+  width: 100%;
 }
 
 .connectUniverseHeader h2 {

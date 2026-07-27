@@ -26,6 +26,21 @@ assert.match(
   "Overview and Connect Universe should share the General category",
 );
 assert.match(
+  styleSource,
+  /body\[data-active-view="connect"\] \.topbar\s*\{\s*display:\s*none;/,
+  "Connect Universe should start at the top without the global date-range header",
+);
+assert.doesNotMatch(
+  indexSource,
+  /class="panel connectUniversePanel"/,
+  "Connect Universe should not have an outer panel shell",
+);
+assert.match(
+  indexSource,
+  /class="connectUniverseHeader"[\s\S]*?<h2>Connect Universe<\/h2>[\s\S]*?id="connectNewGameButton"/,
+  "Connect Universe and its primary action should share the top row",
+);
+assert.match(
   indexSource,
   /id="accountNavLabel">Account<\/h2>[\s\S]*?data-dashboard-view="usage"/,
   "Usage should live in the Account category",
