@@ -4327,7 +4327,7 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 .robloxLiveControlRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 18px;
 }
 
@@ -4350,7 +4350,7 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .robloxLiveAuthorization[data-state="connected"] {
-  grid-template-columns: minmax(220px, 1fr) auto;
+  grid-template-columns: 1fr;
 }
 
 .robloxLiveAuthorization[data-state="error"] {
@@ -4405,7 +4405,7 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .robloxLiveControlRow {
-  min-height: 52px;
+  min-height: 34px;
 }
 
 .robloxLiveMasterToggle {
@@ -4538,7 +4538,8 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   border-bottom: 1px solid var(--line);
 }
 
-.robloxLiveSectionHeader > div:last-child {
+.robloxLiveSectionHeader > div:last-child,
+.robloxLiveRulesControls {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -4778,6 +4779,10 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   .robloxLiveSectionHeader {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .robloxLiveRulesControls {
+    flex-wrap: wrap;
   }
 
   .robloxLiveAuthorization {

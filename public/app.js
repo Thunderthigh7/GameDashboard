@@ -402,7 +402,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-14";
+const DASHBOARD_ASSET_VERSION = "20260726-16";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2650,7 +2650,8 @@ function renderRobloxLiveIntegration() {
         : "Required to publish actions to this universe.";
   }
   if (robloxLiveAuthorizeButton) {
-    robloxLiveAuthorizeButton.textContent = connected ? "Reauthorize" : "Authorize Roblox";
+    robloxLiveAuthorizeButton.hidden = connected && !authorizationError;
+    robloxLiveAuthorizeButton.textContent = "Authorize Roblox";
   }
   if (robloxLiveMasterToggle) robloxLiveMasterToggle.checked = Boolean(connection.enabled);
   if (robloxLiveMasterState) robloxLiveMasterState.textContent = connection.enabled ? "Running" : "Paused";

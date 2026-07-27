@@ -136,7 +136,10 @@ assert.match(
   /data-view-panel="roblox-live"[\s\S]*?id="robloxLiveAuthorization"[\s\S]*?id="robloxLiveAuthorizationAlert"[\s\S]*?id="robloxLiveAuthorizeButton"/,
 );
 assert.doesNotMatch(indexSource, /robloxLiveConnectionHeader|robloxLiveConnectionBadge|>Roblox Open Cloud<|<h2>Live actions<\/h2>/);
-assert.match(indexSource, /id="robloxLiveMasterToggle"/);
+assert.match(
+  indexSource,
+  /class="robloxLiveSectionHeader"[\s\S]*?class="robloxLiveRulesControls"[\s\S]*?id="robloxLiveMasterToggle"[\s\S]*?id="robloxLiveRuleCount"[\s\S]*?id="robloxLiveNewRuleButton"/,
+);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
 assert.match(appSource, /function renderRobloxLiveIntegration\(\)/);
 assert.match(
@@ -144,6 +147,8 @@ assert.match(
   /"roblox-live":\s*\{[\s\S]*?title:\s*"Roblox Live Actions"[\s\S]*?subtitle:\s*"Trigger pre-coded server actions from live analytics or a fixed schedule\."/,
 );
 assert.match(appSource, /robloxLiveAuthorizationAlert\.hidden = connected && !authorizationError/);
+assert.match(appSource, /robloxLiveAuthorizeButton\.hidden = connected && !authorizationError/);
+assert.doesNotMatch(appSource, /textContent = connected \? "Reauthorize"/);
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
 assert.match(appSource, /Confirmed by a live server/);
 assert.doesNotMatch(appSource, /acknowledgedServers/);
