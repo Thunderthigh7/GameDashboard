@@ -98,11 +98,7 @@ const robloxLiveAuthorizationCopy = document.querySelector("#robloxLiveAuthoriza
 const robloxLiveAuthorizeButton = document.querySelector("#robloxLiveAuthorizeButton");
 const robloxLiveMasterToggle = document.querySelector("#robloxLiveMasterToggle");
 const robloxLiveMasterState = document.querySelector("#robloxLiveMasterState");
-const robloxLiveTestButton = document.querySelector("#robloxLiveTestButton");
 const robloxLiveDisconnectButton = document.querySelector("#robloxLiveDisconnectButton");
-const robloxLiveServerCount = document.querySelector("#robloxLiveServerCount");
-const robloxLiveActionCount = document.querySelector("#robloxLiveActionCount");
-const robloxLiveTopic = document.querySelector("#robloxLiveTopic");
 const robloxLiveStatus = document.querySelector("#robloxLiveStatus");
 const robloxLiveRuleCount = document.querySelector("#robloxLiveRuleCount");
 const robloxLiveNewRuleButton = document.querySelector("#robloxLiveNewRuleButton");
@@ -402,7 +398,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-16";
+const DASHBOARD_ASSET_VERSION = "20260726-19";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -564,7 +560,6 @@ function bindEvents() {
   document.addEventListener("keydown", handleDiscordRuleDialogKeydown);
   robloxLiveAuthorizeButton?.addEventListener("click", authorizeRobloxLiveActions);
   robloxLiveMasterToggle?.addEventListener("change", updateRobloxLiveMasterState);
-  robloxLiveTestButton?.addEventListener("click", testRobloxLiveActions);
   robloxLiveDisconnectButton?.addEventListener("click", disconnectRobloxLiveActions);
   robloxLiveNewRuleButton?.addEventListener("click", () => openRobloxLiveRuleEditor());
   robloxLiveRuleList?.addEventListener("click", handleRobloxLiveRuleListClick);
@@ -1209,7 +1204,10 @@ function setActiveView(view, options = {}) {
     closeEventMoreMenu();
     setEventDefinitionBuilderVisible(false);
   }
-  if (activeView !== "discord") closeDiscordRuleEditor();
+  if (activeView !== "discord") {
+    closeDiscordRuleEditor();
+    if (discordTopbarActions) discordTopbarActions.hidden = true;
+  }
   if (activeView !== "roblox-live") closeRobloxLiveRuleEditor();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
@@ -2027,7 +2025,9 @@ function renderDiscordConnectionEditor() {
   if (activeView === "discord" && pageTitle) pageTitle.textContent = getDiscordPageHeading();
   if (discordWebhookBuilder) discordWebhookBuilder.hidden = !discordCreatingWebhook;
   if (discordRulesPanel) discordRulesPanel.hidden = discordCreatingWebhook;
-  if (discordTopbarActions) discordTopbarActions.hidden = discordCreatingWebhook || !selectedWebhook;
+  if (discordTopbarActions) {
+    discordTopbarActions.hidden = activeView !== "discord" || discordCreatingWebhook || !selectedWebhook;
+  }
   if (discordWebhookCatalog) {
     discordWebhookCatalog.innerHTML = webhooks.length
       ? webhooks.map((webhook) => {
@@ -2508,7 +2508,6 @@ function setRobloxLiveBusy(busy) {
   const connected = Boolean(robloxLiveIntegration?.connection?.connected);
   if (robloxLiveAuthorizeButton) robloxLiveAuthorizeButton.disabled = busy;
   if (robloxLiveMasterToggle) robloxLiveMasterToggle.disabled = busy || !connected;
-  if (robloxLiveTestButton) robloxLiveTestButton.disabled = busy || !connected;
   if (robloxLiveDisconnectButton) robloxLiveDisconnectButton.disabled = busy || !connected;
   if (robloxLiveNewRuleButton) {
     const ruleCount = robloxLiveIntegration?.rules?.length || 0;
@@ -2570,29 +2569,13 @@ async function updateRobloxLiveMasterState() {
   }
 }
 
-async function testRobloxLiveActions() {
-  if (!authenticated || robloxLiveBusy || !selectedUniverseId) return;
-  setRobloxLiveBusy(true);
-  setRobloxLiveStatus("Publishing connection test...", "sending");
-  try {
-    await request("/api/integrations/roblox-live/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ universeId: selectedUniverseId }),
-    });
-    await loadRobloxLiveIntegration();
-    setRobloxLiveStatus("Test published. A live server will acknowledge it on its next heartbeat.", "success");
-  } catch (error) {
-    handleAuthError(error);
-    if (!authenticated) return;
-    setRobloxLiveStatus(formatRequestError(error), "error");
-  } finally {
-    setRobloxLiveBusy(false);
-  }
-}
-
 async function disconnectRobloxLiveActions() {
-  if (!authenticated || robloxLiveBusy || !selectedUniverseId) return;
+  if (
+    !authenticated
+    || robloxLiveBusy
+    || !selectedUniverseId
+    || !robloxLiveIntegration?.connection?.connected
+  ) return;
   const confirmed = await showEventConfirmation({
     title: "Disconnect Roblox live actions?",
     description: "Rules stay saved, but publishing stops until you authorize Roblox again.",
@@ -2653,17 +2636,16 @@ function renderRobloxLiveIntegration() {
     robloxLiveAuthorizeButton.hidden = connected && !authorizationError;
     robloxLiveAuthorizeButton.textContent = "Authorize Roblox";
   }
+  if (robloxLiveDisconnectButton) {
+    robloxLiveDisconnectButton.hidden = !connected;
+  }
   if (robloxLiveMasterToggle) robloxLiveMasterToggle.checked = Boolean(connection.enabled);
   if (robloxLiveMasterState) robloxLiveMasterState.textContent = connection.enabled ? "Running" : "Paused";
-  if (robloxLiveServerCount) robloxLiveServerCount.textContent = formatCompactNumber(runtime.liveServers || 0);
-  if (robloxLiveActionCount) robloxLiveActionCount.textContent = formatCompactNumber(runtime.detectedActions?.length || 0);
-  if (robloxLiveTopic) robloxLiveTopic.textContent = connection.topic || "roanalytics-live-actions-v1";
   if (robloxLiveRuleCount) {
     robloxLiveRuleCount.textContent = `${rules.length} / ${Number(robloxLiveIntegration?.limits?.rules) || 20}`;
   }
   if (robloxLiveActionKeys) {
     robloxLiveActionKeys.innerHTML = (runtime.detectedActions || [])
-      .filter((action) => action.actionKey !== "roanalytics_test")
       .map((action) => `<option value="${escapeHtml(action.actionKey)}"></option>`)
       .join("");
   }
@@ -2682,7 +2664,7 @@ function renderRobloxLiveIntegration() {
   if (robloxLiveDeliveryList) {
     robloxLiveDeliveryList.innerHTML = deliveries.length
       ? deliveries.map(renderRobloxLiveDeliveryRow).join("")
-      : `<div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Tests and triggered actions appear here.</span></div>`;
+      : `<div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Triggered and manually run actions appear here.</span></div>`;
   }
   if (connection.lastError) setRobloxLiveStatus(connection.lastError, "error");
   setRobloxLiveBusy(robloxLiveBusy);

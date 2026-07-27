@@ -147,6 +147,15 @@ assert.match(indexSource, /id="discordSendStatus"[^>]*aria-live="polite"/);
 assert.match(indexSource, /id="discordTestButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordNewRuleButton"[^>]*type="button"/);
 assert.match(indexSource, /id="discordTopbarActions"[\s\S]*?id="discordTestButton"[\s\S]*?id="discordDisconnectButton"[\s\S]*?id="discordNewRuleButton"/);
+assert.match(
+  appSource,
+  /discordTopbarActions\.hidden = activeView !== "discord" \|\| discordCreatingWebhook \|\| !selectedWebhook/,
+);
+assert.match(styleSource, /\.discordTopbarActions\s*\{[\s\S]*?display:\s*none/);
+assert.match(
+  styleSource,
+  /body\[data-active-view="discord"\] \.discordTopbarActions:not\(\[hidden\]\)\s*\{[\s\S]*?display:\s*flex/,
+);
 assert.match(indexSource, /class="discordRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Condition<[\s\S]*?>Current<[\s\S]*?>Cooldown<[\s\S]*?>Actions</);
 assert.doesNotMatch(indexSource, />Topic name</);
 assert.doesNotMatch(indexSource, /Automatic monitoring|<h2>Alert rules<\/h2>/);

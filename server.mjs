@@ -602,10 +602,6 @@ const server = http.createServer(async (req, res) => {
       return handleRobloxLiveSettingsUpdate(req, res, auth);
     }
 
-    if (url.pathname === "/api/integrations/roblox-live/test" && req.method === "POST") {
-      return handleRobloxLiveConnectionTest(req, res, auth);
-    }
-
     if (url.pathname === "/api/integrations/roblox-live/rules" && req.method === "POST") {
       return handleRobloxLiveRuleSave(req, res, auth);
     }
@@ -2132,46 +2128,6 @@ async function handleRobloxLiveSettingsUpdate(req, res, auth) {
   }));
 }
 
-async function handleRobloxLiveConnectionTest(req, res, auth) {
-  let body;
-  try {
-    body = await readJsonBody(req, 8 * 1024);
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-  const universeId = cleanInteger(body?.universeId);
-  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
-  if (!project || isDemoProject(project)) {
-    return sendJson(res, 403, { error: "You do not have access to this universe" });
-  }
-  const integration = await readRobloxLiveIntegration(auth.userId, universeId);
-  if (!hasRobloxLiveAuthorization(integration)) {
-    return sendJson(res, 400, { error: "Authorize Roblox live actions first." });
-  }
-  try {
-    const result = await deliverRobloxLiveAction(integration, {
-      id: "",
-      name: "Connection test",
-      actionKey: "roanalytics_test",
-      parameters: {},
-      expiresInSeconds: 60,
-    }, "test", { allowWhenPaused: true });
-    integration.updatedAt = Date.now();
-    await saveRobloxLiveIntegration(integration);
-    return sendJson(res, 200, {
-      ok: true,
-      deliveryId: result.delivery.id,
-      publishedAt: result.delivery.sentAt,
-    });
-  } catch (error) {
-    integration.updatedAt = Date.now();
-    await saveRobloxLiveIntegration(integration);
-    return sendJson(res, normalizeProviderStatusCode(error), {
-      error: error?.message || "Could not publish the Roblox test action.",
-    });
-  }
-}
-
 async function handleRobloxLiveRuleSave(req, res, auth, requestedRuleId = "") {
   let body;
   try {
@@ -2822,8 +2778,8 @@ function appendRobloxLiveDelivery(deliveries, delivery) {
     .slice(-MAX_ROBLOX_LIVE_DELIVERIES);
 }
 
-async function deliverRobloxLiveAction(integration, rule, trigger, { allowWhenPaused = false } = {}) {
-  if (!allowWhenPaused && !integration?.enabled) {
+async function deliverRobloxLiveAction(integration, rule, trigger) {
+  if (!integration?.enabled) {
     const error = new Error("Roblox live actions are paused.");
     error.statusCode = 400;
     throw error;

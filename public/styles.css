@@ -876,12 +876,16 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .discordTopbarActions {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: flex-end;
   flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
+  display: flex;
 }
 
 .discordTopbarActions > strong {
@@ -4297,7 +4301,6 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   gap: 16px;
 }
 
-.robloxLiveRuntimePanel,
 .robloxLiveRulesPanel,
 .robloxLiveDeliveryPanel {
   overflow: hidden;
@@ -4316,19 +4319,6 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   margin: 3px 0 0;
   color: #fff;
   font-size: 20px;
-}
-
-.robloxLiveConnectionBody {
-  display: grid;
-  gap: 14px;
-  padding: 18px 22px 22px;
-}
-
-.robloxLiveControlRow {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 18px;
 }
 
 .robloxLiveAuthorization {
@@ -4350,7 +4340,7 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .robloxLiveAuthorization[data-state="connected"] {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(220px, 1fr) auto;
 }
 
 .robloxLiveAuthorization[data-state="error"] {
@@ -4402,10 +4392,6 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 
 .robloxLiveAuthorization .button {
   white-space: nowrap;
-}
-
-.robloxLiveControlRow {
-  min-height: 34px;
 }
 
 .robloxLiveMasterToggle {
@@ -4466,55 +4452,15 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   font-weight: 700;
 }
 
-.robloxLiveControlActions {
-  display: flex;
-  gap: 8px;
-}
-
-.robloxLiveRuntimeGrid {
-  display: grid;
-  grid-template-columns: 140px 160px minmax(240px, 1fr);
-  gap: 10px;
-}
-
-.robloxLiveRuntimeGrid > div {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  border: 1px solid #223152;
-  border-radius: 9px;
-  background: rgba(6, 13, 32, 0.52);
-  padding: 11px 13px;
-}
-
-.robloxLiveRuntimeGrid span {
-  color: #8998b7;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.robloxLiveRuntimeGrid strong {
-  overflow: hidden;
-  color: #fff;
-  font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.robloxLiveRuntimeGrid > div:last-child strong {
-  color: #55dfcc;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
-}
-
 .robloxLiveStatus {
-  min-height: 17px;
-  margin: 0;
+  margin: 2px 0 0;
   color: #9ca9c4;
   font-size: 12px;
   font-weight: 700;
+}
+
+.robloxLiveStatus:empty {
+  display: none;
 }
 
 .robloxLiveStatus[data-state="success"] {
@@ -4768,14 +4714,12 @@ body[data-active-view="discord"] .funnelTopbarFilters {
     justify-content: flex-end;
   }
 
-  .robloxLiveRuntimeGrid,
   .robloxLiveConditionGroup {
     grid-template-columns: 1fr 1fr;
   }
 }
 
 @media (max-width: 620px) {
-  .robloxLiveControlRow,
   .robloxLiveSectionHeader {
     align-items: stretch;
     flex-direction: column;
@@ -4799,7 +4743,6 @@ body[data-active-view="discord"] .funnelTopbarFilters {
     width: 100%;
   }
 
-  .robloxLiveRuntimeGrid,
   .robloxLiveRuleRow,
   .robloxLiveDeliveryRow,
   .robloxLiveEditorGrid,

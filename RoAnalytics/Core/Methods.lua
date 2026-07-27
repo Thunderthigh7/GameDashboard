@@ -701,7 +701,7 @@ local function normalizeLiveActionKey(value)
 end
 
 local function getRegisteredLiveActionKeys()
-	local actionKeys = { "roanalytics_test" }
+	local actionKeys = {}
 	for actionKey in registeredLiveActions do
 		table.insert(actionKeys, actionKey)
 	end
@@ -762,10 +762,6 @@ local function handleLiveActionMessage(message)
 		queueLiveActionAck(deliveryId, "expired", "Message expired before execution.")
 		return
 	end
-	if actionKey == "roanalytics_test" then
-		queueLiveActionAck(deliveryId, "test", "Live-action subscriber is connected.")
-		return
-	end
 	local handler = registeredLiveActions[actionKey]
 	if not handler then
 		queueLiveActionAck(deliveryId, "unhandled", "No handler is registered for this action key.")
@@ -792,7 +788,7 @@ end
 
 function Methods.RegisterLiveAction(actionKey, handler)
 	local normalizedKey = normalizeLiveActionKey(actionKey)
-	if not normalizedKey or normalizedKey == "roanalytics_test" then
+	if not normalizedKey then
 		error("RegisterLiveAction expected a valid custom action key", 2)
 	end
 	if typeof(handler) ~= "function" then

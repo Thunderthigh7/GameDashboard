@@ -135,24 +135,34 @@ assert.match(
   indexSource,
   /data-view-panel="roblox-live"[\s\S]*?id="robloxLiveAuthorization"[\s\S]*?id="robloxLiveAuthorizationAlert"[\s\S]*?id="robloxLiveAuthorizeButton"/,
 );
+assert.match(
+  indexSource,
+  /id="robloxLiveAuthorization"[\s\S]*?id="robloxLiveAuthorizationTitle"[\s\S]*?id="robloxLiveDisconnectButton"[\s\S]*?class="panel robloxLiveRulesPanel"/,
+);
 assert.doesNotMatch(indexSource, /robloxLiveConnectionHeader|robloxLiveConnectionBadge|>Roblox Open Cloud<|<h2>Live actions<\/h2>/);
+assert.doesNotMatch(indexSource, /robloxLiveRuntimePanel|robloxLiveTestButton|robloxLiveServerCount|robloxLiveActionCount|>Live servers<|>Detected actions</);
 assert.match(
   indexSource,
   /class="robloxLiveSectionHeader"[\s\S]*?class="robloxLiveRulesControls"[\s\S]*?id="robloxLiveMasterToggle"[\s\S]*?id="robloxLiveRuleCount"[\s\S]*?id="robloxLiveNewRuleButton"/,
 );
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
+assert.doesNotMatch(indexSource, /id="robloxLiveTopic"|<span>Topic<\/span>/);
 assert.match(appSource, /function renderRobloxLiveIntegration\(\)/);
+assert.doesNotMatch(appSource, /const robloxLiveTopic|robloxLiveTopic\.textContent/);
 assert.match(
   appSource,
   /"roblox-live":\s*\{[\s\S]*?title:\s*"Roblox Live Actions"[\s\S]*?subtitle:\s*"Trigger pre-coded server actions from live analytics or a fixed schedule\."/,
 );
 assert.match(appSource, /robloxLiveAuthorizationAlert\.hidden = connected && !authorizationError/);
 assert.match(appSource, /robloxLiveAuthorizeButton\.hidden = connected && !authorizationError/);
+assert.match(appSource, /robloxLiveDisconnectButton\.hidden = !connected/);
+assert.doesNotMatch(appSource, /testRobloxLiveActions|robloxLiveTestButton|robloxLiveServerCount|robloxLiveActionCount/);
 assert.doesNotMatch(appSource, /textContent = connected \? "Reauthorize"/);
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
 assert.match(appSource, /Confirmed by a live server/);
 assert.doesNotMatch(appSource, /acknowledgedServers/);
 assert.match(appSource, /\/api\/integrations\/roblox-live\/rules/);
+assert.doesNotMatch(serverSource, /\/api\/integrations\/roblox-live\/test|handleRobloxLiveConnectionTest/);
 assert.match(styleSource, /\.robloxLiveAuthorizationAlert\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleRow\s*\{/);
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);
@@ -160,6 +170,7 @@ assert.match(methodsSource, /MessagingService:SubscribeAsync/);
 assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
 assert.match(methodsSource, /liveActionKeys = getRegisteredLiveActionKeys\(\)/);
 assert.match(methodsSource, /liveActionAcks = getLiveActionAcksPayload\(\)/);
+assert.doesNotMatch(methodsSource, /roanalytics_test/);
 const liveActionHandlerSource = methodsSource.match(
   /local function handleLiveActionMessage\(message\)([\s\S]*?)function Methods\.RegisterLiveAction/,
 )?.[1] || "";

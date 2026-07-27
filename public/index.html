@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260726-16/styles.css">
+    <link rel="stylesheet" href="/assets/20260726-19/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1354,26 +1354,11 @@
             <div>
               <strong id="robloxLiveAuthorizationTitle">Authorize MessagingService</strong>
               <span id="robloxLiveAuthorizationCopy">Required to publish actions to this universe.</span>
-            </div>
-            <button class="button" id="robloxLiveAuthorizeButton" type="button">Authorize Roblox</button>
-          </div>
-
-          <article class="panel robloxLiveRuntimePanel">
-            <div class="robloxLiveConnectionBody">
-              <div class="robloxLiveControlRow">
-                <div class="robloxLiveControlActions">
-                  <button class="button secondary compact" id="robloxLiveTestButton" type="button" disabled>Send test</button>
-                  <button class="button secondary compact danger" id="robloxLiveDisconnectButton" type="button" disabled>Disconnect</button>
-                </div>
-              </div>
-              <div class="robloxLiveRuntimeGrid">
-                <div><span>Live servers</span><strong id="robloxLiveServerCount">0</strong></div>
-                <div><span>Detected actions</span><strong id="robloxLiveActionCount">0</strong></div>
-                <div><span>Topic</span><strong id="robloxLiveTopic">roanalytics-live-actions-v1</strong></div>
-              </div>
               <p class="robloxLiveStatus" id="robloxLiveStatus" aria-live="polite"></p>
             </div>
-          </article>
+            <button class="button" id="robloxLiveAuthorizeButton" type="button">Authorize Roblox</button>
+            <button class="button secondary compact danger" id="robloxLiveDisconnectButton" type="button" hidden disabled>Disconnect</button>
+          </div>
 
           <article class="panel robloxLiveRulesPanel">
             <header class="robloxLiveSectionHeader">
@@ -1408,7 +1393,7 @@
               </div>
             </header>
             <div class="robloxLiveDeliveryList" id="robloxLiveDeliveryList">
-              <div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Tests and triggered actions appear here.</span></div>
+              <div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Triggered and manually run actions appear here.</span></div>
             </div>
           </article>
 
@@ -1746,6 +1731,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260726-16/app.js"></script>
+    <script defer src="/assets/20260726-19/app.js"></script>
   </body>
 </html>
