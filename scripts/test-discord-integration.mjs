@@ -151,6 +151,7 @@ assert.match(indexSource, /class="discordRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>
 assert.doesNotMatch(indexSource, />Topic name</);
 assert.doesNotMatch(indexSource, /Automatic monitoring|<h2>Alert rules<\/h2>/);
 assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleTriggerType"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"[\s\S]*?id="discordRuleScheduleDate"[\s\S]*?id="discordRuleScheduleTime"/);
+assert.match(indexSource, /class="discordWebhookBuilderBackButton discordRuleBackButton"[^>]*id="discordRuleCloseButton"[\s\S]*?<path d="m15 5-7 7 7 7"/);
 assert.match(indexSource, />Eastern Standard Time</);
 assert.match(indexSource, /class="discordMessagePreview"[\s\S]*?class="discordMessageMeta"[\s\S]*?>RoAnalytics<[\s\S]*?>APP<[\s\S]*?id="discordAlertPreviewEmbed"[\s\S]*?id="discordAlertPreviewFields"[\s\S]*?>RoAnalytics<[\s\S]*?id="discordPreviewEmbedTime"/);
 assert.match(indexSource, /id="discordAlertPreviewMessage" hidden/);

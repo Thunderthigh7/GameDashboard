@@ -4082,10 +4082,10 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 }
 
 .discordRuleDialogCard > header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   border-bottom: 1px solid rgba(82, 100, 150, 0.3);
   padding: 20px 22px;
 }
@@ -4093,13 +4093,6 @@ body[data-active-view="discord"] .funnelTopbarFilters {
 .discordRuleDialogCard > header > div {
   display: grid;
   gap: 3px;
-}
-
-.discordRuleDialogCard .iconButton svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-width: 2;
 }
 
 .discordRuleForm {
