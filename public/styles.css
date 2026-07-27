@@ -3674,8 +3674,7 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   padding: 0;
 }
 
-.discordRuleDialogCard > header > div > span,
-.discordAlertPreview > span {
+.discordRuleDialogCard > header > div > span {
   color: #9aa5c5;
   font-size: 10px;
   font-weight: 850;
@@ -4140,53 +4139,158 @@ body[data-active-view="discord"] .funnelTopbarFilters {
   font-size: 11px;
 }
 
-.discordAlertPreview {
+.discordPreviewSection {
   display: grid;
-  gap: 7px;
-  border-left: 3px solid #7c3cff;
-  border-radius: 8px;
-  background: rgba(5, 12, 29, 0.82);
-  padding: 15px 16px;
+  gap: 9px;
 }
 
-.discordAlertPreview > strong {
-  color: #fff;
-  font-size: 15px;
-}
-
-.discordAlertPreview > p {
-  margin: 0;
-  color: #abb6d5;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.discordAlertPreview > div {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 3px;
-}
-
-.discordAlertPreview > div > span {
-  display: grid;
-  gap: 3px;
-}
-
-.discordAlertPreview b {
-  color: #7f8cad;
+.discordPreviewLabel {
+  color: #9aa5c5;
   font-size: 10px;
-  letter-spacing: 0.08em;
+  font-weight: 850;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
-.discordAlertPreview small {
-  overflow: hidden;
-  color: #e7ecff;
-  font-size: 11px;
+.discordMessagePreview {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 16px;
+  border: 1px solid #232428;
+  border-radius: 4px;
+  background: #313338;
+  padding: 16px;
+  font-family: "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.discordMessageAvatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #7c3cff, #5865f2);
+  color: #fff;
+  font-size: 17px;
   font-weight: 800;
+}
+
+.discordMessageBody {
+  min-width: 0;
+}
+
+.discordMessageMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.discordMessageMeta > strong {
+  color: #f2f3f5;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.discordMessageMeta > span {
+  border-radius: 3px;
+  background: #5865f2;
+  color: #fff;
+  padding: 1px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+}
+
+.discordMessageMeta > small {
+  color: #949ba4;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.discordAlertPreview {
+  --discord-embed-color: #7c3cff;
+  position: relative;
+  display: grid;
+  width: min(100%, 560px);
+  gap: 10px;
+  margin-top: 3px;
+  border: 1px solid #232428;
+  border-left: 4px solid var(--discord-embed-color);
+  border-radius: 4px;
+  background: #2b2d31;
+  padding: 12px 16px 12px 12px;
+}
+
+.discordAlertPreview > strong {
+  color: #f2f3f5;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.discordAlertPreview > p {
+  margin: -2px 0 0;
+  color: #dbdee1;
+  font-size: 14px;
+  line-height: 1.375;
+  white-space: pre-wrap;
+}
+
+.discordAlertPreviewFields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin-top: 2px;
+}
+
+.discordAlertPreviewField {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 2px;
+}
+
+.discordAlertPreviewField > strong {
+  overflow: hidden;
+  color: #f2f3f5;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.375;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.discordAlertPreviewField > span {
+  overflow-wrap: anywhere;
+  color: #dbdee1;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.375;
+}
+
+.discordAlertPreviewField code {
+  border-radius: 3px;
+  background: #1e1f22;
+  padding: 1px 3px;
+  color: #dbdee1;
+  font-family: Consolas, "Andale Mono WT", "Andale Mono", "Lucida Console", monospace;
+  font-size: 12px;
+}
+
+.discordAlertPreview > footer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: #b5bac1;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.discordAlertPreview > footer i {
+  color: #949ba4;
+  font-style: normal;
 }
 
 .discordRuleForm > footer {
@@ -10611,7 +10715,7 @@ body.hasEventConfirmDialog {
   .discordRuleConditionGrid,
   .discordRuleScheduleGrid,
   .discordRuleRow,
-  .discordAlertPreview > div {
+  .discordAlertPreviewFields {
     grid-template-columns: minmax(0, 1fr);
   }
 

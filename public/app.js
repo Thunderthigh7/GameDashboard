@@ -82,12 +82,12 @@ const discordRuleCooldown = document.querySelector("#discordRuleCooldown");
 const discordRuleMessage = document.querySelector("#discordRuleMessage");
 const discordRuleMessageCount = document.querySelector("#discordRuleMessageCount");
 const discordRuleMessageHelp = document.querySelector("#discordRuleMessageHelp");
+const discordAlertPreviewEmbed = document.querySelector("#discordAlertPreviewEmbed");
 const discordAlertPreviewTitle = document.querySelector("#discordAlertPreviewTitle");
 const discordAlertPreviewMessage = document.querySelector("#discordAlertPreviewMessage");
-const discordAlertPreviewEventLabel = document.querySelector("#discordAlertPreviewEventLabel");
-const discordAlertPreviewEvent = document.querySelector("#discordAlertPreviewEvent");
-const discordAlertPreviewRuleLabel = document.querySelector("#discordAlertPreviewRuleLabel");
-const discordAlertPreviewRule = document.querySelector("#discordAlertPreviewRule");
+const discordAlertPreviewFields = document.querySelector("#discordAlertPreviewFields");
+const discordPreviewMessageTime = document.querySelector("#discordPreviewMessageTime");
+const discordPreviewEmbedTime = document.querySelector("#discordPreviewEmbedTime");
 const discordRuleFormStatus = document.querySelector("#discordRuleFormStatus");
 const discordRuleCancelButton = document.querySelector("#discordRuleCancelButton");
 const discordRuleSaveButton = document.querySelector("#discordRuleSaveButton");
@@ -401,7 +401,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-10";
+const DASHBOARD_ASSET_VERSION = "20260726-12";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2090,7 +2090,7 @@ function renderDiscordRuleRow(rule) {
         ${rule.lastError
           ? `<span data-state="error">${escapeHtml(rule.lastError)}</span>`
           : isScheduled
-            ? `<span>Eastern Time (EST/EDT) · ${scheduleComplete ? "Completed" : "Sends once"}</span>`
+            ? `<span>Eastern Standard Time · ${scheduleComplete ? "Completed" : "Sends once"}</span>`
             : ""}
       </div>
       <div class="discordRuleMetric">
@@ -2265,6 +2265,14 @@ function syncDiscordRuleTriggerFields() {
   updateDiscordRulePreview();
 }
 
+function formatDiscordPreviewTimestamp(timestamp = Date.now()) {
+  const time = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+  return `Today at ${time}`;
+}
+
 function updateDiscordRulePreview() {
   const isScheduled = discordRuleTriggerType?.value === "schedule";
   const operator = discordRuleOperator?.value === "at_most" ? "At most" : "At least";
@@ -2279,30 +2287,64 @@ function updateDiscordRulePreview() {
   const title = String(discordRuleName?.value || "").trim() || (isScheduled ? "Scheduled alert" : `${eventLabel} alert`);
   const template = String(discordRuleMessage?.value || "");
   const selectedWebhook = getEditingDiscordWebhook();
+  const editingRuleId = String(discordRuleId?.value || "");
+  const editingRule = discordIntegration?.rules?.find((rule) => rule.id === editingRuleId);
+  const editingRuleCount = Number(editingRule?.currentCount);
+  const observedCount = Number.isFinite(editingRuleCount)
+    ? Math.max(0, editingRuleCount)
+    : threshold;
   const sampleValues = {
     game: knownUniverses.find((universe) => String(universe.id) === selectedUniverseId)?.name || "Selected universe",
     event: eventLabel,
     event_key: eventName,
-    count: String(threshold),
+    count: observedCount.toLocaleString(),
     threshold: String(threshold),
     window: windowLabel,
     scheduled_time: scheduledTimeLabel,
   };
   const previewMessage = template
     ? template.replace(/\{\{(game|event|event_key|count|threshold|window|scheduled_time)\}\}/g, (_, key) => sampleValues[key])
-    : isScheduled
-      ? `Scheduled Discord alert for ${sampleValues.game}.`
-      : `${eventLabel} recorded ${threshold.toLocaleString()} events in the last ${windowLabel}.`;
-  if (discordAlertPreviewTitle) discordAlertPreviewTitle.textContent = title;
-  if (discordAlertPreviewMessage) discordAlertPreviewMessage.textContent = previewMessage;
-  if (discordAlertPreviewEventLabel) discordAlertPreviewEventLabel.textContent = isScheduled ? "Send time" : "Event";
-  if (discordAlertPreviewEvent) discordAlertPreviewEvent.textContent = isScheduled ? scheduledTimeLabel : eventName || "Select an event";
-  if (discordAlertPreviewRuleLabel) discordAlertPreviewRuleLabel.textContent = isScheduled ? "Webhook" : "Rule";
-  if (discordAlertPreviewRule) {
-    discordAlertPreviewRule.textContent = isScheduled
-      ? selectedWebhook?.name || "Select a webhook"
-      : `${operator} ${threshold.toLocaleString()} / ${windowLabel}`;
+    : "";
+  const previewFields = isScheduled
+    ? [
+        { name: "Universe", value: sampleValues.game },
+        { name: "Webhook", value: selectedWebhook?.name || "Selected webhook" },
+        { name: "Scheduled time", value: `${scheduledTimeLabel}\nEastern Standard Time` },
+      ]
+    : [
+        { name: "Universe", value: sampleValues.game },
+        { name: "Webhook", value: selectedWebhook?.name || "Selected webhook" },
+        { name: "Event", value: `${eventLabel}\n\`${eventName || "tracked_event"}\`` },
+        { name: "Observed", value: `${observedCount.toLocaleString()} / ${windowLabel}` },
+        { name: "Rule", value: `${operator} ${threshold.toLocaleString()}` },
+      ];
+  const previewTimestamp = formatDiscordPreviewTimestamp();
+  if (discordAlertPreviewEmbed) {
+    discordAlertPreviewEmbed.style.setProperty(
+      "--discord-embed-color",
+      !isScheduled && discordRuleOperator?.value === "at_most" ? "#ffb52e" : "#7c3cff",
+    );
   }
+  if (discordAlertPreviewTitle) discordAlertPreviewTitle.textContent = title;
+  if (discordAlertPreviewMessage) {
+    discordAlertPreviewMessage.textContent = previewMessage;
+    discordAlertPreviewMessage.hidden = !previewMessage;
+  }
+  if (discordAlertPreviewFields) {
+    discordAlertPreviewFields.innerHTML = previewFields.map((field) => {
+      const value = escapeHtml(field.value)
+        .replace(/\n/g, "<br>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+      return `
+        <div class="discordAlertPreviewField">
+          <strong>${escapeHtml(field.name)}</strong>
+          <span>${value}</span>
+        </div>
+      `;
+    }).join("");
+  }
+  if (discordPreviewMessageTime) discordPreviewMessageTime.textContent = previewTimestamp;
+  if (discordPreviewEmbedTime) discordPreviewEmbedTime.textContent = previewTimestamp;
   if (discordRuleMessageCount) discordRuleMessageCount.textContent = `${template.length.toLocaleString()} / 500`;
 }
 

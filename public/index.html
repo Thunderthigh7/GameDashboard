@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260726-10/styles.css">
+    <link rel="stylesheet" href="/assets/20260726-12/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1313,15 +1313,29 @@
                   <textarea id="discordRuleMessage" maxlength="500" placeholder="{{event}} reached {{count}} in {{window}}."></textarea>
                   <small id="discordRuleMessageHelp">Available: {{game}}, {{event}}, {{event_key}}, {{count}}, {{threshold}}, {{window}}</small>
                 </label>
-                <div class="discordAlertPreview">
-                  <span>Discord preview</span>
-                  <strong id="discordAlertPreviewTitle">Purchase spike</strong>
-                  <p id="discordAlertPreviewMessage">This alert will show the observed event count and threshold.</p>
-                  <div>
-                    <span><b id="discordAlertPreviewEventLabel">Event</b><small id="discordAlertPreviewEvent">Select an event</small></span>
-                    <span><b id="discordAlertPreviewRuleLabel">Rule</b><small id="discordAlertPreviewRule">At least 10 / 15 min</small></span>
+                <section class="discordPreviewSection" aria-label="Discord message preview">
+                  <span class="discordPreviewLabel">Discord preview</span>
+                  <div class="discordMessagePreview">
+                    <span class="discordMessageAvatar" aria-hidden="true">R</span>
+                    <div class="discordMessageBody">
+                      <div class="discordMessageMeta">
+                        <strong>RoAnalytics</strong>
+                        <span>APP</span>
+                        <small id="discordPreviewMessageTime">Today at 12:00 PM</small>
+                      </div>
+                      <article class="discordAlertPreview" id="discordAlertPreviewEmbed">
+                        <strong id="discordAlertPreviewTitle">Purchase spike</strong>
+                        <p id="discordAlertPreviewMessage" hidden></p>
+                        <div class="discordAlertPreviewFields" id="discordAlertPreviewFields"></div>
+                        <footer>
+                          <span>RoAnalytics</span>
+                          <i aria-hidden="true">•</i>
+                          <span id="discordPreviewEmbedTime">Today at 12:00 PM</span>
+                        </footer>
+                      </article>
+                    </div>
                   </div>
-                </div>
+                </section>
                 <p class="discordRulesStatus" id="discordRuleFormStatus" aria-live="polite"></p>
                 <footer>
                   <button class="button secondary" id="discordRuleCancelButton" type="button">Cancel</button>
@@ -1740,6 +1754,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260726-10/app.js"></script>
+    <script defer src="/assets/20260726-12/app.js"></script>
   </body>
 </html>

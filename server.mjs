@@ -3628,9 +3628,8 @@ function formatDiscordAlertWindow(minutes) {
 }
 
 function renderDiscordAlertMessage(rule, context) {
-  const defaultMessage = `${context.eventLabel} recorded ${context.count.toLocaleString("en-US")} events in the last ${context.windowLabel}.`;
   const template = cleanString(rule?.messageTemplate, 500);
-  if (!template) return defaultMessage;
+  if (!template) return "";
   const replacements = {
     game: context.gameName,
     event: context.eventLabel,
@@ -3774,9 +3773,8 @@ function formatDiscordEasternTime(timestamp) {
 }
 
 function renderScheduledDiscordAlertMessage(rule, context) {
-  const defaultMessage = `Scheduled Discord alert for ${context.gameName}.`;
   const template = cleanString(rule?.messageTemplate, 500);
-  if (!template) return defaultMessage;
+  if (!template) return "";
   const replacements = {
     game: context.gameName,
     scheduled_time: formatDiscordEasternTime(rule.scheduledFor),
@@ -3866,7 +3864,7 @@ async function evaluateScheduledDiscordAlerts() {
               fields: [
                 { name: "Universe", value: gameName },
                 { name: "Webhook", value: savedWebhook.name },
-                { name: "Scheduled time", value: `${formatDiscordEasternTime(rule.scheduledFor)}\nEastern Time (EST/EDT)` },
+                { name: "Scheduled time", value: `${formatDiscordEasternTime(rule.scheduledFor)}\nEastern Standard Time` },
               ],
             },
           });

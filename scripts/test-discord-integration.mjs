@@ -93,12 +93,30 @@ await sendDiscordWebhookAlert({
   },
 });
 assert.equal(alertPayload.content, undefined);
+assert.equal(alertPayload.username, "RoAnalytics");
 assert.deepEqual(alertPayload.allowed_mentions, { parse: [] });
 assert.equal(alertPayload.embeds[0].title, "Purchase spike");
 assert.equal(alertPayload.embeds[0].description, "Purchases reached 25 in 15 min.");
 assert.equal(alertPayload.embeds[0].color, 0x7c3cff);
 assert.equal(alertPayload.embeds[0].fields.length, 2);
 assert.equal(alertPayload.embeds[0].footer.text, "RoAnalytics");
+
+let titleOnlyAlertPayload = null;
+await sendDiscordWebhookAlert({
+  webhookUrl: validWebhookUrl,
+  alert: { title: "Title only" },
+  fetchImpl: async (_url, options) => {
+    titleOnlyAlertPayload = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { id: "discord-alert-2" };
+      },
+    };
+  },
+});
+assert.equal(Object.hasOwn(titleOnlyAlertPayload.embeds[0], "description"), false);
 
 await assert.rejects(
   sendDiscordWebhookMessage({
@@ -134,6 +152,8 @@ assert.doesNotMatch(indexSource, />Topic name</);
 assert.doesNotMatch(indexSource, /Automatic monitoring|<h2>Alert rules<\/h2>/);
 assert.match(indexSource, /id="discordRuleForm"[\s\S]*?id="discordRuleTriggerType"[\s\S]*?id="discordRuleEvent"[\s\S]*?id="discordRuleThreshold"[\s\S]*?id="discordRuleCooldown"[\s\S]*?id="discordRuleScheduleDate"[\s\S]*?id="discordRuleScheduleTime"/);
 assert.match(indexSource, />Eastern Standard Time</);
+assert.match(indexSource, /class="discordMessagePreview"[\s\S]*?class="discordMessageMeta"[\s\S]*?>RoAnalytics<[\s\S]*?>APP<[\s\S]*?id="discordAlertPreviewEmbed"[\s\S]*?id="discordAlertPreviewFields"[\s\S]*?>RoAnalytics<[\s\S]*?id="discordPreviewEmbedTime"/);
+assert.match(indexSource, /id="discordAlertPreviewMessage" hidden/);
 assert.match(indexSource, /\{\{game\}\}[\s\S]*?\{\{event\}\}[\s\S]*?\{\{count\}\}[\s\S]*?\{\{threshold\}\}/);
 assert.doesNotMatch(indexSource, /id="discordMessage"/);
 assert.match(appSource, /request\(`\/api\/integrations\/discord\?universeId=/);
@@ -150,7 +170,9 @@ assert.match(appSource, /function easternDateTimeInputToTimestamp\(value\)/);
 assert.match(appSource, /function getDiscordPageHeading\(\)[\s\S]*?getEditingDiscordWebhook\(\)\?\.name/);
 assert.match(appSource, /class="discordRuleCondition"[\s\S]*?class="discordRuleMetric"[\s\S]*?formatCompactNumber\(rule\.currentCount \|\| 0\)[\s\S]*?class="discordRuleMetric"[\s\S]*?formatDiscordAlertWindow\(rule\.cooldownMinutes\)/);
 assert.doesNotMatch(appSource, /statusLabel} · \$\{lastSent}/);
-assert.match(appSource, /function updateDiscordRulePreview\(\)/);
+assert.match(appSource, /function updateDiscordRulePreview\(\)[\s\S]*?name: "Universe"[\s\S]*?name: "Webhook"[\s\S]*?name: "Event"[\s\S]*?name: "Observed"[\s\S]*?name: "Rule"/);
+assert.match(appSource, /name: "Scheduled time"[\s\S]*?Eastern Standard Time/);
+assert.match(appSource, /discordAlertPreviewMessage\.hidden = !previewMessage/);
 assert.match(
   serverSource,
   /url\.pathname === "\/api\/integrations\/discord"[\s\S]*?handleDiscordIntegrationGet\(req, res, auth, url\.searchParams\)/,
@@ -168,9 +190,12 @@ assert.match(serverSource, /createCipheriv\("aes-256-gcm"/, "saved webhook URLs 
 assert.match(serverSource, /evaluateDiscordAlertsForPresence\(presence\.value, project\)/, "incoming Roblox data should evaluate saved Discord alerts");
 assert.match(serverSource, /countDiscordAlertEvents\(/, "rules should use actual stored analytics event counts");
 assert.match(serverSource, /sendDiscordWebhookAlert\(\{[\s\S]*?Observed[\s\S]*?Rule/, "automatic deliveries should be structured analytics alerts");
+assert.match(serverSource, /function renderDiscordAlertMessage[\s\S]*?if \(!template\) return "";/, "event alerts should omit automatic title subtext");
+assert.match(serverSource, /function renderScheduledDiscordAlertMessage[\s\S]*?if \(!template\) return "";/, "scheduled alerts should omit automatic title subtext");
 assert.match(serverSource, /function evaluateScheduledDiscordAlerts\(\)/, "scheduled Discord alerts should run independently of incoming analytics");
 assert.match(serverSource, /scheduleDeliveredAt[\s\S]*?scheduled_alert/, "one-time schedules should persist completion and delivery history");
 assert.match(serverSource, /timeZone:\s*"America\/New_York"/, "scheduled alerts should use Eastern Time");
+assert.match(serverSource, /Scheduled time"[\s\S]*?Eastern Standard Time/, "the scheduled preview and delivered embed should use the same timezone copy");
 assert.match(serverSource, /MAX_DISCORD_SENDS_PER_WINDOW = 10/);
 assert.match(serverSource, /MAX_DISCORD_ALERT_RULES_PER_UNIVERSE = 20/);
 assert.match(styleSource, /\.discordConnectionPanel,/);
@@ -178,6 +203,9 @@ assert.match(styleSource, /\.discordWebhookCatalogPanel\s*\{/);
 assert.match(styleSource, /\.discordWorkspace\s*\{/);
 assert.match(styleSource, /\.discordRuleTableHeader,/);
 assert.match(styleSource, /\.discordRuleRow\s*\{/);
+assert.match(styleSource, /\.discordMessagePreview\s*\{/);
+assert.match(styleSource, /\.discordMessageMeta\s*\{/);
+assert.match(styleSource, /\.discordAlertPreviewFields\s*\{/);
 assert.match(styleSource, /\.discordAlertPreview\s*\{/);
 assert.match(styleSource, /\.discordSendStatus\[data-state="success"\]\s*\{/);
 
