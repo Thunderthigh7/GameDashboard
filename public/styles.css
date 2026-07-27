@@ -4666,7 +4666,7 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 .robloxLiveDeliveryKey code {
   overflow: hidden;
   color: #54dfcc;
-  font-size: 14px;
+  font-size: 15px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-weight: 800;
   text-overflow: ellipsis;
