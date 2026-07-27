@@ -24,7 +24,6 @@ local pendingMovementRollupOrder = {}
 local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
 local pendingCustomEvents = {}
-local pendingLiveActionAcks = {}
 local registeredLiveActions = {}
 local processedLiveActionIds = {}
 local processedLiveActionOrder = {}
@@ -700,28 +699,6 @@ local function normalizeLiveActionKey(value)
 	return actionKey
 end
 
-local function getRegisteredLiveActionKeys()
-	local actionKeys = {}
-	for actionKey in registeredLiveActions do
-		table.insert(actionKeys, actionKey)
-	end
-	table.sort(actionKeys)
-	return actionKeys
-end
-
-local function queueLiveActionAck(deliveryId, status, message)
-	table.insert(pendingLiveActionAcks, {
-		deliveryId = tostring(deliveryId or ""),
-		status = status,
-		message = string.sub(tostring(message or ""), 1, 160),
-		processedAt = os.time(),
-	})
-	local maximum = Settings.MaxPendingLiveActionAcks or 100
-	while #pendingLiveActionAcks > maximum do
-		table.remove(pendingLiveActionAcks, 1)
-	end
-end
-
 local function rememberLiveActionDelivery(deliveryId)
 	if processedLiveActionIds[deliveryId] then
 		return false
@@ -755,34 +732,28 @@ local function handleLiveActionMessage(message)
 		return
 	end
 	if not rememberLiveActionDelivery(deliveryId) then
-		queueLiveActionAck(deliveryId, "duplicate", "Already processed by this server.")
 		return
 	end
 	if tonumber(payload.expiresAt) == nil or os.time() > tonumber(payload.expiresAt) then
-		queueLiveActionAck(deliveryId, "expired", "Message expired before execution.")
 		return
 	end
 	local handler = registeredLiveActions[actionKey]
 	if not handler then
-		queueLiveActionAck(deliveryId, "unhandled", "No handler is registered for this action key.")
 		return
 	end
 
 	task.spawn(function()
-		local success, result = xpcall(function()
-			return handler(payload.parameters or {}, {
+		pcall(
+			handler,
+			payload.parameters or {},
+			{
 				deliveryId = deliveryId,
 				ruleId = tostring(payload.ruleId or ""),
 				trigger = tostring(payload.trigger or ""),
 				sentAt = tonumber(payload.sentAt),
 				expiresAt = tonumber(payload.expiresAt),
-			})
-		end, debug.traceback)
-		if success then
-			queueLiveActionAck(deliveryId, "executed", tostring(result or "Action executed."))
-		else
-			queueLiveActionAck(deliveryId, "failed", tostring(result))
-		end
+			}
+		)
 	end)
 end
 
@@ -917,15 +888,6 @@ local function getCustomEventsPayload()
 	return customEvents
 end
 
-local function getLiveActionAcksPayload()
-	local acknowledgements = {}
-	local maximum = Settings.MaxLiveActionAcksPerPayload or 50
-	for index = 1, math.min(#pendingLiveActionAcks, maximum) do
-		table.insert(acknowledgements, pendingLiveActionAcks[index])
-	end
-	return acknowledgements
-end
-
 local function clearSentChatLogs(count)
 	for _ = 1, math.min(count, #pendingChatLogs) do
 		table.remove(pendingChatLogs, 1)
@@ -963,12 +925,6 @@ local function clearSentCustomEvents(count)
 	end
 end
 
-local function clearSentLiveActionAcks(count)
-	for _ = 1, math.min(count, #pendingLiveActionAcks) do
-		table.remove(pendingLiveActionAcks, 1)
-	end
-end
-
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -986,8 +942,6 @@ local function buildPayload()
 		deathSamples = getDeathSamplesPayload(),
 		leaveSamples = getLeaveSamplesPayload(),
 		customEvents = getCustomEventsPayload(),
-		liveActionKeys = getRegisteredLiveActionKeys(),
-		liveActionAcks = getLiveActionAcksPayload(),
 	}
 end
 
@@ -1029,7 +983,6 @@ function Methods.SendHeartbeat()
 	clearSentDeathSamples(#payload.deathSamples)
 	clearSentLeaveSamples(#payload.leaveSamples)
 	clearSentCustomEvents(#payload.customEvents)
-	clearSentLiveActionAcks(#payload.liveActionAcks)
 
 	return true
 end

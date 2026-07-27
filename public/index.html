@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260727-01/styles.css">
+    <link rel="stylesheet" href="/assets/20260727-02/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1390,12 +1390,18 @@
           <article class="panel robloxLiveDeliveryPanel">
             <header class="robloxLiveSectionHeader">
               <div>
-                <span>Publish and first server confirmation</span>
                 <h2>Recent deliveries</h2>
               </div>
             </header>
+            <div class="robloxLiveDeliveryTableHeader" aria-hidden="true">
+              <span>Name</span>
+              <span>Action key</span>
+              <span>Trigger</span>
+              <span>Sent</span>
+              <span>Status</span>
+            </div>
             <div class="robloxLiveDeliveryList" id="robloxLiveDeliveryList">
-              <div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Triggered and manually run actions appear here.</span></div>
+              <div class="robloxLiveEmpty"><strong>No deliveries</strong></div>
             </div>
           </article>
 
@@ -1457,8 +1463,7 @@
                 <div class="robloxLiveActionConfig">
                   <label class="discordFormField" for="robloxLiveRuleActionKey">
                     <span>Registered action key</span>
-                    <input id="robloxLiveRuleActionKey" list="robloxLiveActionKeys" maxlength="64" placeholder="hourly_event.start" pattern="[A-Za-z][A-Za-z0-9_.:-]{0,63}" required>
-                    <datalist id="robloxLiveActionKeys"></datalist>
+                    <input id="robloxLiveRuleActionKey" maxlength="64" placeholder="hourly_event.start" pattern="[A-Za-z][A-Za-z0-9_.:-]{0,63}" required>
                     <small>Must match a key registered in your Roblox server code.</small>
                   </label>
                   <label class="discordFormField" for="robloxLiveRuleExpiry">
@@ -1733,6 +1738,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260727-01/app.js"></script>
+    <script defer src="/assets/20260727-02/app.js"></script>
   </body>
 </html>

@@ -109,15 +109,40 @@ assert.match(serverSource, /createCipheriv\("aes-256-gcm"/);
 assert.match(serverSource, /db\.collection\("roblox_live_integrations"\)/);
 assert.match(serverSource, /evaluateRobloxLiveEventRulesForPresence\(presence\.value, project\)/);
 assert.match(serverSource, /evaluateScheduledRobloxLiveActions/);
-assert.match(serverSource, /processRobloxLiveAcknowledgements\(presence\.value, project\)/);
-assert.match(serverSource, /if \(!delivery \|\| delivery\.confirmation \|\| delivery\.status === "failed"\) continue/);
-assert.match(serverSource, /delivery\.confirmation = normalizedAck[\s\S]*?delivery\.status = "confirmed"/);
-assert.match(serverSource, /function getRobloxLiveDeliveryStatus\(delivery\)[\s\S]*?return "unconfirmed"/);
+assert.doesNotMatch(serverSource, /processRobloxLiveAcknowledgements|liveActionAcks|liveActionKeys|confirmationMessage|confirmedAt|lastNegativeAck/);
 assert.match(serverSource, /MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20/);
+const alertEventCounterStart = serverSource.indexOf("function countDiscordAlertEvents(");
+const alertEventCounterEnd = serverSource.indexOf("\nfunction formatDiscordAlertWindow(", alertEventCounterStart);
+assert.ok(alertEventCounterStart >= 0 && alertEventCounterEnd > alertEventCounterStart);
+const countAlertEvents = Function(
+  `"use strict";
+  const deathSamplesByUniverseId = new Map();
+  const leaveSamplesByUniverseId = new Map();
+  const customEventsByUniverseId = new Map();
+  const chatLogsByUniverseId = new Map([["123", [
+    { sentAt: 1_000 },
+    { sentAt: 2_000 },
+    { sentAt: 4_000 },
+  ]]]);
+  const normalizeCustomEventName = (value) => String(value || "").trim().toLowerCase();
+  const cleanTimestampMs = (value) => Number(value) || 0;
+  ${serverSource.slice(alertEventCounterStart, alertEventCounterEnd)}
+  return countDiscordAlertEvents;`,
+)();
+assert.equal(
+  countAlertEvents(123, "chat_message", 1_500, 4_000),
+  2,
+  "Roblox rules should count stored chat messages in their selected window",
+);
 const presenceHeartbeatSource = serverSource.match(
   /async function handlePresenceHeartbeat\(req, res\)([\s\S]*?)async function handleMapSnapshotUpload/,
 )?.[1] || "";
 assert.ok(presenceHeartbeatSource);
+assert.doesNotMatch(
+  presenceHeartbeatSource,
+  /acknowledgedLiveActionCount|processRobloxLiveAcknowledgements/,
+  "presence heartbeats should not process or return live-action confirmations",
+);
 assert.doesNotMatch(
   presenceHeartbeatSource,
   /getRobloxHeatmap|heatmap:/,
@@ -149,6 +174,11 @@ assert.match(
   indexSource,
   /class="robloxLiveRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Action key<[\s\S]*?>Condition<[\s\S]*?>Current<[\s\S]*?>Cooldown<[\s\S]*?>Actions</,
 );
+assert.match(
+  indexSource,
+  /class="robloxLiveDeliveryTableHeader"[\s\S]*?>Name<[\s\S]*?>Action key<[\s\S]*?>Trigger<[\s\S]*?>Sent<[\s\S]*?>Status</,
+);
+assert.doesNotMatch(indexSource, /Publish and first server confirmation|robloxLiveActionKeys/);
 assert.doesNotMatch(indexSource, /robloxLiveMasterToggle|robloxLiveMasterState|>Live actions<\/b>|>Paused<\/small>/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
 assert.match(
@@ -178,8 +208,15 @@ assert.doesNotMatch(
   /Action rule (?:created|updated|deleted)\.|Action (?:enabled|paused)\.|Action published to live Roblox servers\.|Roblox live actions disconnected\./,
 );
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
-assert.match(appSource, /Confirmed by a live server/);
-assert.doesNotMatch(appSource, /acknowledgedServers/);
+assert.doesNotMatch(appSource, /Confirmed by a live server|confirmation window|No confirmation|acknowledgedServers|runtime\.detectedActions/);
+assert.match(appSource, /function startRobloxLiveRefresh\(\)[\s\S]*?loadRobloxLiveIntegration\(\{ background: true \}\)/);
+assert.match(appSource, /const ROBLOX_LIVE_REFRESH_MS = 5000/);
+const liveActionDeliveryRowSource = appSource.match(
+  /function renderRobloxLiveDeliveryRow\(delivery\)([\s\S]*?)function formatRobloxLiveDeliveryStatus/,
+)?.[1] || "";
+assert.ok(liveActionDeliveryRowSource);
+assert.match(liveActionDeliveryRowSource, /Manual[\s\S]*?Schedule[\s\S]*?Event/);
+assert.match(liveActionDeliveryRowSource, /class="robloxLiveDeliveryCell"[\s\S]*?class="robloxLiveDeliveryKey"/);
 assert.match(appSource, /\/api\/integrations\/roblox-live\/rules/);
 assert.doesNotMatch(serverSource, /\/api\/integrations\/roblox-live\/test|handleRobloxLiveConnectionTest/);
 assert.doesNotMatch(
@@ -190,6 +227,7 @@ assert.match(styleSource, /\.robloxLiveAuthorizationAlert\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleTableHeader,\s*\.robloxLiveRuleRow\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleRow\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleToggle\s*\{[\s\S]*?width:\s*64px;[\s\S]*?min-width:\s*64px;/);
+assert.match(styleSource, /\.robloxLiveDeliveryTableHeader,\s*\.robloxLiveDeliveryRow\s*\{/);
 const liveActionRuleRowSource = appSource.match(
   /function renderRobloxLiveRuleRow\(rule\)([\s\S]*?)function renderRobloxLiveDeliveryRow/,
 )?.[1] || "";
@@ -200,8 +238,7 @@ assert.doesNotMatch(liveActionRuleRowSource, /serverCount|detectedAction|live se
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);
 assert.match(methodsSource, /MessagingService:SubscribeAsync/);
 assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
-assert.match(methodsSource, /liveActionKeys = getRegisteredLiveActionKeys\(\)/);
-assert.match(methodsSource, /liveActionAcks = getLiveActionAcksPayload\(\)/);
+assert.doesNotMatch(methodsSource, /pendingLiveActionAcks|liveActionAcks|getLiveActionAcksPayload|liveActionKeys|getRegisteredLiveActionKeys|queueLiveActionAck/);
 assert.doesNotMatch(methodsSource, /roanalytics_test/);
 const liveActionHandlerSource = methodsSource.match(
   /local function handleLiveActionMessage\(message\)([\s\S]*?)function Methods\.RegisterLiveAction/,
@@ -209,8 +246,8 @@ const liveActionHandlerSource = methodsSource.match(
 assert.ok(liveActionHandlerSource);
 assert.doesNotMatch(
   liveActionHandlerSource,
-  /SendHeartbeat/,
-  "live-action acknowledgements should wait for the existing scheduled heartbeat",
+  /SendHeartbeat|queueLiveActionAck/,
+  "live actions should not add confirmation traffic to analytics heartbeats",
 );
 assert.match(apiSource, /function RoAnalytics\.RegisterLiveAction\(actionKey, handler\)/);
 assert.doesNotMatch(`${apiSource}\n${methodsSource}`, /\bwarn\s*\(|debugWarn/, "RoAnalytics should not emit warning logs");

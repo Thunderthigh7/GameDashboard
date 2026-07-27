@@ -33,8 +33,6 @@ Settings.MaxCustomEventStringLength = 240
 Settings.CollectRobloxPlayerSegments = true
 Settings.LiveActionsEnabled = true
 Settings.LiveActionsTopic = "roanalytics-live-actions-v1"
-Settings.MaxLiveActionAcksPerPayload = 50
-Settings.MaxPendingLiveActionAcks = 100
 Settings.MaxProcessedLiveActionIds = 250
 Settings.ShutdownFlushTimeout = 8
 

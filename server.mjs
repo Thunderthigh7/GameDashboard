@@ -89,14 +89,11 @@ const ROBLOX_LIVE_SEND_WINDOW_MS = 60 * 1000;
 const MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20;
 const MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE = 20;
 const MAX_ROBLOX_LIVE_DELIVERIES = 50;
-const MAX_ROBLOX_LIVE_ACKS_PER_PAYLOAD = 50;
-const MAX_ROBLOX_LIVE_ACTION_KEYS_PER_SERVER = 50;
 const ROBLOX_LIVE_EVENT_WINDOWS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const ROBLOX_LIVE_EVENT_COOLDOWNS_MINUTES = new Set([5, 15, 60, 360, 1440]);
 const ROBLOX_LIVE_SCHEDULE_INTERVALS_MINUTES = new Set([5, 15, 30, 60, 360, 720, 1440]);
 const ROBLOX_LIVE_EXPIRY_SECONDS = new Set([30, 60, 300, 900]);
 const ROBLOX_LIVE_SCHEDULER_INTERVAL_MS = 30 * 1000;
-const ROBLOX_LIVE_CAPABILITY_TTL_MS = 2 * 60 * 1000;
 const ROBLOX_OAUTH_REFRESH_EARLY_MS = 60 * 1000;
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
@@ -441,7 +438,6 @@ const robloxLiveSendHistoryByUser = new Map();
 const robloxLiveIntegrationCache = new Map();
 const robloxLiveEvaluationLocks = new Map();
 const robloxLiveTokenRefreshLocks = new Map();
-const robloxLiveCapabilitiesByUniverse = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
@@ -2297,17 +2293,6 @@ function createEmptyRobloxLiveIntegration(ownerUserId, universeId) {
 function serializeRobloxLiveIntegration(integration, { universeId, eventNames = [] } = {}) {
   const normalized = normalizeStoredRobloxLiveIntegration(integration);
   const cleanUniverseId = cleanInteger(universeId || normalized?.universeId);
-  const capabilities = getRobloxLiveCapabilities(cleanUniverseId);
-  const detectedKeys = new Map(capabilities.actions.map((action) => [action.actionKey, action]));
-  for (const rule of normalized?.rules || []) {
-    if (!detectedKeys.has(rule.actionKey)) {
-      detectedKeys.set(rule.actionKey, {
-        actionKey: rule.actionKey,
-        serverCount: 0,
-        lastSeenAt: null,
-      });
-    }
-  }
   return {
     universeId: cleanUniverseId,
     connection: {
@@ -2321,11 +2306,6 @@ function serializeRobloxLiveIntegration(integration, { universeId, eventNames = 
       expiresAt: cleanInteger(normalized?.oauth?.expiresAt) || null,
       connectedAt: cleanInteger(normalized?.oauth?.connectedAt) || null,
       lastError: cleanString(normalized?.oauth?.lastError, 240),
-    },
-    runtime: {
-      liveServers: capabilities.liveServers,
-      lastSeenAt: capabilities.lastSeenAt,
-      detectedActions: [...detectedKeys.values()].sort((left, right) => left.actionKey.localeCompare(right.actionKey)),
     },
     rules: (normalized?.rules || [])
       .map((rule) => ({
@@ -2360,22 +2340,16 @@ function serializeRobloxLiveIntegration(integration, { universeId, eventNames = 
     deliveries: (normalized?.deliveries || [])
       .slice(-MAX_ROBLOX_LIVE_DELIVERIES)
       .reverse()
-      .map((delivery) => {
-        const status = getRobloxLiveDeliveryStatus(delivery);
-        return {
-          id: cleanString(delivery?.id, 120),
-          ruleId: cleanString(delivery?.ruleId, 120),
-          title: cleanString(delivery?.title, 120),
-          actionKey: cleanString(delivery?.actionKey, 64),
-          trigger: cleanString(delivery?.trigger, 32),
-          status,
-          sentAt: cleanInteger(delivery?.sentAt) || null,
-          expiresAt: cleanInteger(delivery?.expiresAt) || null,
-          error: cleanString(delivery?.error, 240),
-          confirmedAt: cleanInteger(delivery?.confirmation?.processedAt) || null,
-          confirmationMessage: cleanString(delivery?.confirmation?.message, 160),
-        };
-      }),
+      .map((delivery) => ({
+        id: cleanString(delivery?.id, 120),
+        ruleId: cleanString(delivery?.ruleId, 120),
+        title: cleanString(delivery?.title, 120),
+        actionKey: cleanString(delivery?.actionKey, 64),
+        trigger: cleanString(delivery?.trigger, 32),
+        status: normalizeRobloxLiveDeliveryStatus(delivery?.status),
+        sentAt: cleanInteger(delivery?.sentAt) || null,
+        error: cleanString(delivery?.error, 240),
+      })),
     eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
     limits: {
       rules: MAX_ROBLOX_LIVE_RULES_PER_UNIVERSE,
@@ -2393,58 +2367,7 @@ function normalizeProviderStatusCode(error) {
 }
 
 function normalizeRobloxLiveDeliveryStatus(value) {
-  if (value === "confirmed" || value === "acknowledged" || value === "partial") return "confirmed";
-  if (value === "unconfirmed" || value === "expired") return "unconfirmed";
   if (value === "failed") return "failed";
-  return "published";
-}
-
-function normalizeRobloxLiveAckStatus(value) {
-  return ["executed", "failed", "unhandled", "expired", "duplicate", "test"].includes(value)
-    ? value
-    : "failed";
-}
-
-function isSuccessfulRobloxLiveAckStatus(value) {
-  return value === "executed" || value === "test" || value === "duplicate";
-}
-
-function normalizeRobloxLiveConfirmation(value) {
-  if (!value || typeof value !== "object") return null;
-  const status = normalizeRobloxLiveAckStatus(value.status);
-  if (!isSuccessfulRobloxLiveAckStatus(status)) return null;
-  const jobId = cleanString(value.jobId, 128);
-  const processedAt = cleanInteger(value.processedAt);
-  if (!jobId || !processedAt) return null;
-  return {
-    jobId,
-    status,
-    message: cleanString(value.message, 160),
-    processedAt,
-  };
-}
-
-function normalizeRobloxLiveNegativeAck(value) {
-  if (!value || typeof value !== "object") return null;
-  const status = normalizeRobloxLiveAckStatus(value.status);
-  if (isSuccessfulRobloxLiveAckStatus(status)) return null;
-  const jobId = cleanString(value.jobId, 128);
-  const processedAt = cleanInteger(value.processedAt);
-  if (!jobId || !processedAt) return null;
-  return {
-    jobId,
-    status,
-    message: cleanString(value.message, 160),
-    processedAt,
-  };
-}
-
-function getRobloxLiveDeliveryStatus(delivery) {
-  if (delivery?.confirmation) return "confirmed";
-  if (normalizeRobloxLiveDeliveryStatus(delivery?.status) === "failed") return "failed";
-  if (cleanInteger(delivery?.expiresAt) > 0 && cleanInteger(delivery.expiresAt) < Date.now()) {
-    return "unconfirmed";
-  }
   return "published";
 }
 
@@ -2480,36 +2403,16 @@ function normalizeStoredRobloxLiveIntegration(integration) {
     }
   }
   const deliveries = (Array.isArray(integration.deliveries) ? integration.deliveries : [])
-    .map((delivery) => {
-      const legacyAcks = Object.entries(delivery?.acknowledgements || {})
-        .map(([jobId, ack]) => ({
-          jobId: cleanString(ack?.jobId || jobId, 128),
-          status: normalizeRobloxLiveAckStatus(ack?.status),
-          message: cleanString(ack?.message, 160),
-          processedAt: cleanInteger(ack?.processedAt) || null,
-        }))
-        .filter((ack) => ack.jobId && ack.processedAt)
-        .sort((left, right) => left.processedAt - right.processedAt);
-      const confirmation = normalizeRobloxLiveConfirmation(delivery?.confirmation)
-        || legacyAcks.map(normalizeRobloxLiveConfirmation).find(Boolean)
-        || null;
-      const lastNegativeAck = normalizeRobloxLiveNegativeAck(delivery?.lastNegativeAck)
-        || legacyAcks.map(normalizeRobloxLiveNegativeAck).filter(Boolean).at(-1)
-        || null;
-      return {
-        id: cleanString(delivery?.id, 120),
-        ruleId: cleanString(delivery?.ruleId, 120),
-        title: cleanString(delivery?.title, 120),
-        actionKey: cleanString(delivery?.actionKey, 64),
-        trigger: cleanString(delivery?.trigger, 32),
-        status: confirmation ? "confirmed" : normalizeRobloxLiveDeliveryStatus(delivery?.status),
-        sentAt: cleanInteger(delivery?.sentAt) || null,
-        expiresAt: cleanInteger(delivery?.expiresAt) || null,
-        error: cleanString(delivery?.error, 240),
-        confirmation,
-        lastNegativeAck,
-      };
-    })
+    .map((delivery) => ({
+      id: cleanString(delivery?.id, 120),
+      ruleId: cleanString(delivery?.ruleId, 120),
+      title: cleanString(delivery?.title, 120),
+      actionKey: cleanString(delivery?.actionKey, 64),
+      trigger: cleanString(delivery?.trigger, 32),
+      status: normalizeRobloxLiveDeliveryStatus(delivery?.status),
+      sentAt: cleanInteger(delivery?.sentAt) || null,
+      error: cleanString(delivery?.error, 240),
+    }))
     .filter((delivery) => delivery.id)
     .slice(-MAX_ROBLOX_LIVE_DELIVERIES);
   return {
@@ -2762,10 +2665,7 @@ async function deliverRobloxLiveAction(integration, rule, trigger) {
     trigger: cleanString(trigger, 32),
     status: "published",
     sentAt,
-    expiresAt: built.payload.expiresAt * 1000,
     error: "",
-    confirmation: null,
-    lastNegativeAck: null,
   };
   try {
     const accessToken = await getRobloxLiveAccessToken(integration);
@@ -2787,44 +2687,6 @@ async function deliverRobloxLiveAction(integration, rule, trigger) {
     }
     throw error;
   }
-}
-
-function getRobloxLiveCapabilities(universeId) {
-  const now = Date.now();
-  const universeServers = robloxLiveCapabilitiesByUniverse.get(String(cleanInteger(universeId))) || new Map();
-  const actionServers = new Map();
-  let lastSeenAt = null;
-  for (const [jobId, server] of universeServers) {
-    if (now - cleanInteger(server?.lastSeenAt) > ROBLOX_LIVE_CAPABILITY_TTL_MS) {
-      universeServers.delete(jobId);
-      continue;
-    }
-    lastSeenAt = Math.max(lastSeenAt || 0, cleanInteger(server.lastSeenAt));
-    for (const actionKey of server.actionKeys || []) {
-      const entry = actionServers.get(actionKey) || { actionKey, serverCount: 0, lastSeenAt: null };
-      entry.serverCount += 1;
-      entry.lastSeenAt = Math.max(entry.lastSeenAt || 0, cleanInteger(server.lastSeenAt));
-      actionServers.set(actionKey, entry);
-    }
-  }
-  if (!universeServers.size) robloxLiveCapabilitiesByUniverse.delete(String(cleanInteger(universeId)));
-  return {
-    liveServers: universeServers.size,
-    lastSeenAt,
-    actions: [...actionServers.values()],
-  };
-}
-
-function updateRobloxLiveCapabilities(presence) {
-  const universeId = cleanInteger(presence?.universeId);
-  const jobId = cleanString(presence?.jobId, 128);
-  if (universeId <= 0 || !jobId) return;
-  const servers = robloxLiveCapabilitiesByUniverse.get(String(universeId)) || new Map();
-  servers.set(jobId, {
-    actionKeys: Array.isArray(presence.liveActionKeys) ? presence.liveActionKeys : [],
-    lastSeenAt: Date.now(),
-  });
-  robloxLiveCapabilitiesByUniverse.set(String(universeId), servers);
 }
 
 async function handleDiscordIntegrationGet(req, res, auth, searchParams) {
@@ -3824,47 +3686,6 @@ async function evaluateScheduledDiscordAlerts() {
   }
 }
 
-async function processRobloxLiveAcknowledgements(presence, project) {
-  updateRobloxLiveCapabilities(presence);
-  if (!project?.ownerUserId || !presence?.liveActionAcks?.length) return 0;
-  const scopeKey = getRobloxLiveIntegrationScopeKey(project.ownerUserId, presence.universeId);
-  const previous = robloxLiveEvaluationLocks.get(scopeKey) || Promise.resolve();
-  let acknowledged = 0;
-  const current = previous.catch(() => {}).then(async () => {
-    const integration = await readRobloxLiveIntegration(project.ownerUserId, presence.universeId);
-    if (!integration?.deliveries?.length) return;
-    for (const ack of presence.liveActionAcks) {
-      const delivery = integration.deliveries.find((entry) => entry.id === ack.deliveryId);
-      if (!delivery || delivery.confirmation || delivery.status === "failed") continue;
-      const normalizedAck = {
-        jobId: presence.jobId,
-        status: normalizeRobloxLiveAckStatus(ack.status),
-        message: cleanString(ack.message, 160),
-        processedAt: cleanTimestampMs(ack.processedAt) || Date.now(),
-      };
-      if (isSuccessfulRobloxLiveAckStatus(normalizedAck.status)) {
-        delivery.confirmation = normalizedAck;
-        delivery.status = "confirmed";
-      } else {
-        delivery.lastNegativeAck = normalizedAck;
-        delivery.status = getRobloxLiveDeliveryStatus(delivery);
-      }
-      acknowledged += 1;
-    }
-    if (acknowledged > 0) {
-      integration.updatedAt = Date.now();
-      await saveRobloxLiveIntegration(integration);
-    }
-  });
-  robloxLiveEvaluationLocks.set(scopeKey, current);
-  try {
-    await current;
-    return acknowledged;
-  } finally {
-    if (robloxLiveEvaluationLocks.get(scopeKey) === current) robloxLiveEvaluationLocks.delete(scopeKey);
-  }
-}
-
 async function evaluateRobloxLiveEventRulesForPresence(presence, project) {
   if (!project?.ownerUserId || cleanInteger(presence?.universeId) <= 0) return;
   const scopeKey = getRobloxLiveIntegrationScopeKey(project.ownerUserId, presence.universeId);
@@ -4711,9 +4532,6 @@ async function handlePresenceHeartbeat(req, res) {
     }),
   ]);
   const objectStorageResult = await persistPresenceToObjectStorage(presence.value, usageContext);
-  const acknowledgedLiveActionCount = project
-    ? await processRobloxLiveAcknowledgements(presence.value, project)
-    : 0;
   if (usageContext.userId && eventCount > 0) {
     await recordUsage({
       ...usageContext,
@@ -4773,7 +4591,6 @@ async function handlePresenceHeartbeat(req, res) {
     savedLeaveCount,
     savedVisitCount,
     savedCustomEventCount,
-    acknowledgedLiveActionCount,
   });
 }
 
@@ -4976,27 +4793,6 @@ function normalizePresence(body) {
   const leaveSamples = normalizeLeaveSamples(body.leaveSamples, context);
   const visitSamples = normalizeVisitSamples(cleanPlayers, context);
   const customEvents = normalizeCustomEvents(body.customEvents, context);
-  const liveActionKeys = [...new Set(
-    (Array.isArray(body.liveActionKeys) ? body.liveActionKeys : [])
-      .slice(0, MAX_ROBLOX_LIVE_ACTION_KEYS_PER_SERVER)
-      .map((value) => {
-        try {
-          return normalizeRobloxActionKey(value);
-        } catch {
-          return "";
-        }
-      })
-      .filter(Boolean),
-  )];
-  const liveActionAcks = (Array.isArray(body.liveActionAcks) ? body.liveActionAcks : [])
-    .slice(0, MAX_ROBLOX_LIVE_ACKS_PER_PAYLOAD)
-    .map((ack) => ({
-      deliveryId: cleanString(ack?.deliveryId, 120),
-      status: normalizeRobloxLiveAckStatus(ack?.status),
-      message: cleanString(ack?.message, 160),
-      processedAt: cleanTimestampMs(ack?.processedAt) || receivedAt,
-    }))
-    .filter((ack) => ack.deliveryId);
 
   return {
     ok: true,
@@ -5018,8 +4814,6 @@ function normalizePresence(body) {
       leaveSamples,
       visitSamples,
       customEvents,
-      liveActionKeys,
-      liveActionAcks,
     },
   };
 }
@@ -14959,7 +14753,6 @@ async function deleteLocalUniverseData(universeId) {
   for (const scopeKey of [...robloxLiveIntegrationCache.keys()]) {
     if (scopeKey.endsWith(`:${universeId}`)) robloxLiveIntegrationCache.delete(scopeKey);
   }
-  robloxLiveCapabilitiesByUniverse.delete(String(universeId));
   return {
     mapSnapshot,
     funnels: deletedFunnels,

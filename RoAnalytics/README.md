@@ -93,10 +93,9 @@ local RoAnalytics = require(ServerScriptService.RoAnalytics.API)
 RoAnalytics.RegisterLiveAction("hourly_event.start", function(parameters, context)
 	local eventId = tostring(parameters.eventId or "default")
 	-- Call your existing server-authoritative event service here.
-	return "Started " .. eventId
 end)
 ```
 
-`RoAnalytics.Start()` subscribes each live server to the fixed `roanalytics-live-actions-v1` MessagingService topic. Registered keys and delivery acknowledgements are included in the normal scheduled heartbeat, so processing a live action does not create a separate HTTPS request. The dashboard confirms a delivery after the first successful server response and retains it in Recent deliveries.
+`RoAnalytics.Start()` subscribes each live server to the fixed `roanalytics-live-actions-v1` MessagingService topic and routes messages to the matching registered action key. Live-action execution does not add any HTTPS requests or status fields to analytics heartbeats. Recent deliveries records whether Roblox Open Cloud accepted the publish; it does not claim that a game server executed it.
 
 Keep handlers idempotent when practical because MessagingService delivery is best effort, and validate parameters again before changing gameplay.

@@ -119,7 +119,6 @@ const robloxLiveRuleWindow = document.querySelector("#robloxLiveRuleWindow");
 const robloxLiveRuleCooldown = document.querySelector("#robloxLiveRuleCooldown");
 const robloxLiveRuleSchedule = document.querySelector("#robloxLiveRuleSchedule");
 const robloxLiveRuleActionKey = document.querySelector("#robloxLiveRuleActionKey");
-const robloxLiveActionKeys = document.querySelector("#robloxLiveActionKeys");
 const robloxLiveRuleExpiry = document.querySelector("#robloxLiveRuleExpiry");
 const robloxLiveRuleParameters = document.querySelector("#robloxLiveRuleParameters");
 const robloxLiveRuleFormStatus = document.querySelector("#robloxLiveRuleFormStatus");
@@ -334,6 +333,7 @@ let discordCreatingWebhook = false;
 let robloxLiveBusy = false;
 let robloxLiveIntegration = null;
 let robloxLiveIntegrationRequestSequence = 0;
+let robloxLiveRefreshTimer;
 let aiChatBusy = false;
 let aiChatHistory = [];
 let heatmapModulePromise = null;
@@ -396,7 +396,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-01";
+const DASHBOARD_ASSET_VERSION = "20260727-02";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -461,6 +461,7 @@ const CHAT_REFRESH_MS = 5000;
 const CHAT_LOG_PAGE_SIZE = 25;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
+const ROBLOX_LIVE_REFRESH_MS = 5000;
 const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live"]);
 const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
@@ -1325,6 +1326,7 @@ function updateViewRefreshTimers() {
     stopChatRefresh();
     stopEventRefresh();
     stopFunnelRefresh();
+    stopRobloxLiveRefresh();
     return;
   }
 
@@ -1336,6 +1338,9 @@ function updateViewRefreshTimers() {
 
   if (activeView === "funnels" && selectedUniverseId) startFunnelRefresh();
   else stopFunnelRefresh();
+
+  if (activeView === "roblox-live" && selectedUniverseId) startRobloxLiveRefresh();
+  else stopRobloxLiveRefresh();
 }
 
 function loadActiveViewData(view, options = {}) {
@@ -1423,6 +1428,22 @@ function stopFunnelRefresh() {
   if (funnelRefreshTimer) {
     window.clearInterval(funnelRefreshTimer);
     funnelRefreshTimer = null;
+  }
+}
+
+function startRobloxLiveRefresh() {
+  if (robloxLiveRefreshTimer || document.hidden) return;
+  robloxLiveRefreshTimer = window.setInterval(() => {
+    if (!robloxLiveBusy && robloxLiveRuleDialog?.hidden !== false) {
+      loadRobloxLiveIntegration({ background: true });
+    }
+  }, ROBLOX_LIVE_REFRESH_MS);
+}
+
+function stopRobloxLiveRefresh() {
+  if (robloxLiveRefreshTimer) {
+    window.clearInterval(robloxLiveRefreshTimer);
+    robloxLiveRefreshTimer = null;
   }
 }
 
@@ -2512,27 +2533,29 @@ function setRobloxLiveBusy(busy) {
   }
 }
 
-async function loadRobloxLiveIntegration() {
+async function loadRobloxLiveIntegration(options = {}) {
   if (!authenticated || !selectedUniverseId || !robloxLiveRuleList) {
     robloxLiveIntegration = null;
     renderRobloxLiveIntegration();
     return;
   }
   const sequence = ++robloxLiveIntegrationRequestSequence;
-  setRobloxLiveStatus("Loading live actions...", "sending");
+  if (!options.background) setRobloxLiveStatus("Loading live actions...", "sending");
   try {
     const universeId = selectedUniverseId;
     const payload = await request(`/api/integrations/roblox-live?universeId=${encodeURIComponent(universeId)}`);
     if (sequence !== robloxLiveIntegrationRequestSequence || universeId !== selectedUniverseId) return;
     robloxLiveIntegration = payload;
     renderRobloxLiveIntegration();
-    setRobloxLiveStatus("");
+    if (!options.background) setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated || sequence !== robloxLiveIntegrationRequestSequence) return;
-    robloxLiveIntegration = null;
-    renderRobloxLiveIntegration();
-    setRobloxLiveStatus(error.status === 403 ? "" : formatRequestError(error), "error");
+    if (!options.background) {
+      robloxLiveIntegration = null;
+      renderRobloxLiveIntegration();
+      setRobloxLiveStatus(error.status === 403 ? "" : formatRequestError(error), "error");
+    }
   }
 }
 
@@ -2576,7 +2599,6 @@ async function disconnectRobloxLiveActions() {
 
 function renderRobloxLiveIntegration() {
   const connection = robloxLiveIntegration?.connection || {};
-  const runtime = robloxLiveIntegration?.runtime || {};
   const rules = Array.isArray(robloxLiveIntegration?.rules) ? robloxLiveIntegration.rules : [];
   const deliveries = Array.isArray(robloxLiveIntegration?.deliveries) ? robloxLiveIntegration.deliveries : [];
   const connected = Boolean(connection.connected);
@@ -2615,12 +2637,6 @@ function renderRobloxLiveIntegration() {
   if (robloxLiveRuleCount) {
     robloxLiveRuleCount.textContent = `${rules.length} / ${Number(robloxLiveIntegration?.limits?.rules) || 20}`;
   }
-  if (robloxLiveActionKeys) {
-    robloxLiveActionKeys.innerHTML = (runtime.detectedActions || [])
-      .map((action) => `<option value="${escapeHtml(action.actionKey)}"></option>`)
-      .join("");
-  }
-
   if (robloxLiveRuleList) {
     if (!selectedUniverseId) {
       robloxLiveRuleList.innerHTML = `<div class="robloxLiveEmpty"><strong>Select a universe</strong><span>Live actions are configured per universe.</span></div>`;
@@ -2635,7 +2651,7 @@ function renderRobloxLiveIntegration() {
   if (robloxLiveDeliveryList) {
     robloxLiveDeliveryList.innerHTML = deliveries.length
       ? deliveries.map(renderRobloxLiveDeliveryRow).join("")
-      : `<div class="robloxLiveEmpty"><strong>No deliveries</strong><span>Triggered and manually run actions appear here.</span></div>`;
+      : `<div class="robloxLiveEmpty"><strong>No deliveries</strong></div>`;
   }
   if (connection.lastError) setRobloxLiveStatus(connection.lastError, "error");
   setRobloxLiveBusy(robloxLiveBusy);
@@ -2668,32 +2684,25 @@ function renderRobloxLiveRuleRow(rule) {
 }
 
 function renderRobloxLiveDeliveryRow(delivery) {
-  const status = String(delivery.status || "published");
-  const confirmation = status === "confirmed"
-    ? "Confirmed by a live server"
-    : status === "unconfirmed"
-      ? "No live server confirmed it"
-      : status === "failed"
-        ? "Roblox rejected the publish"
-        : "Waiting for one live server";
-  const detail = delivery.error
-    || (delivery.confirmedAt
-      ? `Confirmed ${formatRelativeTime(delivery.confirmedAt)}`
-      : status === "unconfirmed"
-        ? "The confirmation window ended"
-        : `Confirmation window ends ${formatRelativeTime(delivery.expiresAt)}`);
+  const status = delivery.status === "failed" ? "failed" : "published";
+  const trigger = delivery.trigger === "manual"
+    ? "Manual"
+    : delivery.trigger === "schedule"
+      ? "Schedule"
+      : "Event";
   return `
     <article class="robloxLiveDeliveryRow">
-      <div><strong>${escapeHtml(delivery.title || delivery.actionKey)}</strong><span>${escapeHtml(delivery.trigger || "manual")}</span></div>
-      <div><strong>${escapeHtml(delivery.actionKey)}</strong><span>${escapeHtml(confirmation)}</span></div>
-      <div><strong>${delivery.sentAt ? escapeHtml(formatRelativeTime(delivery.sentAt)) : "Unknown time"}</strong><span>${escapeHtml(detail)}</span></div>
-      <b class="robloxLiveDeliveryStatus" data-state="${escapeHtml(status)}">${escapeHtml(formatRobloxLiveDeliveryStatus(status))}</b>
+      <div class="robloxLiveDeliveryCell"><strong>${escapeHtml(delivery.title || delivery.actionKey)}</strong></div>
+      <div class="robloxLiveDeliveryKey"><code>${escapeHtml(delivery.actionKey)}</code></div>
+      <div class="robloxLiveDeliveryCell"><strong>${trigger}</strong></div>
+      <div class="robloxLiveDeliveryCell"><strong>${delivery.sentAt ? escapeHtml(formatRelativeTime(delivery.sentAt)) : "Unknown"}</strong></div>
+      <div class="robloxLiveDeliveryState">
+        <b class="robloxLiveDeliveryStatus" data-state="${status}"${delivery.error ? ` title="${escapeHtml(delivery.error)}"` : ""}>${escapeHtml(formatRobloxLiveDeliveryStatus(status))}</b>
+      </div>
     </article>`;
 }
 
 function formatRobloxLiveDeliveryStatus(status) {
-  if (status === "confirmed") return "Confirmed";
-  if (status === "unconfirmed") return "No confirmation";
   if (status === "failed") return "Publish failed";
   return "Published";
 }
