@@ -40,6 +40,21 @@ assert.match(
   /class="connectUniverseHeader"[\s\S]*?<h2>Connect Universe<\/h2>[\s\S]*?id="connectNewGameButton"/,
   "Connect Universe and its primary action should share the top row",
 );
+assert.doesNotMatch(
+  `${appSource}\n${styleSource}`,
+  /connectedGameSignals/,
+  "connected-game cards should not repeat per-signal badges",
+);
+assert.match(indexSource, /id="setupProgressText">0 \/ 4 complete</);
+assert.match(
+  indexSource,
+  /id="setupChecklist"[\s\S]*?>Connect a game<[\s\S]*?>Install the secret<[\s\S]*?>Start a live server<[\s\S]*?>Confirm signals<[\s\S]*?\(Upload map is optional\.\)/,
+  "First-run setup should show four required steps with map upload as optional",
+);
+assert.doesNotMatch(
+  indexSource.match(/id="setupChecklist"[\s\S]*?<\/ol>/)?.[0] || "",
+  />Sign in with Roblox<|>Upload map</,
+);
 assert.match(
   indexSource,
   /id="accountNavLabel">Account<\/h2>[\s\S]*?data-dashboard-view="usage"/,

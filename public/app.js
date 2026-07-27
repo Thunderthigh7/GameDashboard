@@ -399,7 +399,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-06";
+const DASHBOARD_ASSET_VERSION = "20260727-07";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -3709,13 +3709,6 @@ function renderConnectedGame(universe) {
           </div>
         </div>
       </div>
-      <div class="connectedGameSignals">
-        ${renderIntegrationSignal("Movement", Boolean(status.signals?.movement), status.counts?.movement)}
-        ${renderIntegrationSignal("Deaths", Boolean(status.signals?.deaths), status.counts?.deaths)}
-        ${renderIntegrationSignal("Leaves", Boolean(status.signals?.leaves), status.counts?.leaves)}
-        ${renderIntegrationSignal("Chat", Boolean(status.signals?.chat), status.counts?.chat)}
-        ${renderIntegrationSignal("Events", Boolean(status.signals?.events), status.counts?.events)}
-      </div>
       <div class="connectedGameActions">
         ${isDemo
           ? `<p class="demoUniverseActionNote"><strong>Synthetic preview</strong><span>No Roblox secret or live game is required.</span></p>`
@@ -3818,23 +3811,21 @@ function renderSetupChecklist(selectedUniverse = null) {
   const signals = status.signals || {};
   const hasAnySignal = Boolean(signals.movement || signals.deaths || signals.leaves || signals.chat);
   const hasData = Boolean(Number(status.lastReceivedAt || universe?.lastSeenAt || 0));
-  const hasMap = Boolean(status.mapUploaded || universe?.hasMapSnapshot);
   const secretVisible = Boolean(projectSecretBox && !projectSecretBox.hidden && projectSecretValue?.textContent);
   const isDemo = Boolean(universe?.isDemo);
 
+  const optionalMapDetail = "Upload map is optional.";
   const steps = isDemo ? [
-    { title: "Admin access", detail: "Private to your admin account.", complete: true },
-    { title: "Demo universe", detail: "Synthetic universe attached without Roblox ownership.", complete: true },
-    { title: "Analytics history", detail: "Realistic samples and historical rollups generated.", complete: true },
-    { title: "Live-server simulation", detail: "Active players, sessions, and signals are populated.", complete: true },
-    { title: "Events and funnels", detail: "System events, custom events, purchases, cohorts, and funnels are ready.", complete: true },
-    { title: "Map and AI", detail: "Demo world, heatmaps, insights, and reports are ready.", complete: true },
-  ] : [
+    { title: "Connect a game", detail: "Synthetic universe attached to your admin account.", complete: true },
+    { title: "Install the secret", detail: "Not required for the admin demo.", complete: true },
+    { title: "Start a live server", detail: "Live activity is simulated.", complete: true },
     {
-      title: "Sign in with Roblox",
-      detail: authenticated ? "Signed in." : "Use the Roblox account that owns the game.",
-      complete: authenticated,
+      title: "Confirm signals",
+      detail: getActiveSignalText(signals),
+      optionalDetail: optionalMapDetail,
+      complete: true,
     },
+  ] : [
     {
       title: "Connect a game",
       detail: knownUniverses.length ? `${knownUniverses.length} connected game${knownUniverses.length === 1 ? "" : "s"}.` : "Pick one owned public game from the list.",
@@ -3854,12 +3845,8 @@ function renderSetupChecklist(selectedUniverse = null) {
     {
       title: "Confirm signals",
       detail: hasAnySignal ? getActiveSignalText(signals) : "Movement should activate first; deaths, leaves, and chat activate when those events happen.",
+      optionalDetail: optionalMapDetail,
       complete: hasAnySignal,
-    },
-    {
-      title: "Upload map",
-      detail: hasMap ? "Map snapshot uploaded." : "Upload a map snapshot so heatmaps line up with the world.",
-      complete: hasMap,
     },
   ];
 
@@ -3876,6 +3863,7 @@ function renderSetupChecklist(selectedUniverse = null) {
       <div>
         <strong>${escapeHtml(step.title)}</strong>
         <p>${escapeHtml(step.detail)}</p>
+        ${step.optionalDetail ? `<small class="setupChecklistOptional">(${escapeHtml(step.optionalDetail)})</small>` : ""}
       </div>
     </li>
   `).join("");

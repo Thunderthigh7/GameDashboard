@@ -1246,7 +1246,7 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 
 .setupChecklist {
   display: grid;
-  grid-template-columns: repeat(6, minmax(145px, 1fr));
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
   gap: 10px;
   margin: 0;
   padding: 0;
@@ -1307,6 +1307,14 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   margin-top: 3px;
   font-size: 10px;
   line-height: 1.4;
+}
+
+.setupChecklistOptional {
+  display: block;
+  margin-top: 3px;
+  color: #7f8cad;
+  font-size: 9px;
+  line-height: 1.35;
 }
 
 .connectGameRow {
@@ -1568,29 +1576,6 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
 .connectedGameStatus .connectedGameWarning {
   color: var(--danger-text);
   font-weight: 750;
-}
-
-.connectedGameSignals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.connectedGameSignals span {
-  min-height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--placeholder-badge-bg);
-  color: var(--muted);
-  padding: 5px 8px;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.connectedGameSignals span.active {
-  border-color: rgba(53, 208, 131, 0.48);
-  background: rgba(53, 208, 131, 0.09);
-  color: var(--green);
 }
 
 .connectedGameActions {
@@ -10253,7 +10238,7 @@ body.hasEventConfirmDialog {
   }
 
   .setupChecklist {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .connectGameRow {
