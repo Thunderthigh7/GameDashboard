@@ -2,6 +2,7 @@ const accountBox = document.querySelector("#accountBox");
 const accountAvatarImage = document.querySelector("#accountAvatarImage");
 const accountAvatarFallback = document.querySelector("#accountAvatarFallback");
 const accountName = document.querySelector("#accountName");
+const sidebarAccountMenu = document.querySelector("#sidebarAccountMenu");
 const loginPanel = document.querySelector("#loginPanel");
 const robloxLoginButtons = document.querySelectorAll("[data-roblox-login]");
 const loginStatus = document.querySelector("#loginStatus");
@@ -316,7 +317,7 @@ const pageSubtitle = document.querySelector("#pageSubtitle");
 const viewNavLinks = document.querySelectorAll("[data-dashboard-view]");
 const viewPanels = document.querySelectorAll("[data-view-panel]");
 const protectedDashboardPanels = document.querySelectorAll(
-  ".sidebar, .topbar, #authControls, .viewPage"
+  ".sidebar, .topbar, .viewPage"
 );
 
 let chatRefreshTimer;
@@ -402,7 +403,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-14";
+const DASHBOARD_ASSET_VERSION = "20260727-16";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -520,6 +521,9 @@ function loadHeatmapModule() {
 
 function bindEvents() {
   accountAvatarImage?.addEventListener("error", handleAccountAvatarError);
+  accountBox?.addEventListener("click", toggleSidebarAccountMenu);
+  document.addEventListener("pointerdown", handleSidebarAccountOutsidePointer);
+  document.addEventListener("keydown", handleSidebarAccountEscape);
   for (const button of robloxLoginButtons) button.addEventListener("click", () => {
     if (loginStatus) loginStatus.textContent = "Opening Roblox...";
     for (const loginButton of robloxLoginButtons) loginButton.disabled = true;
@@ -527,6 +531,7 @@ function bindEvents() {
   });
 
   logoutButton.addEventListener("click", async () => {
+    closeSidebarAccountMenu();
     const cacheScope = resolveDashboardCacheScope();
     await request("/api/auth/logout", { method: "POST" });
     clearDashboardSessionCache(cacheScope);
@@ -1070,7 +1075,8 @@ function setAuthenticated(value, user = null) {
   if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
   updateDemoUniverseControl();
   loginPanel.hidden = authenticated;
-  authControls.hidden = !authenticated;
+  if (accountBox) accountBox.disabled = !authenticated;
+  closeSidebarAccountMenu();
   runChatInsightsButton.hidden = !authenticatedUser?.isAdmin;
   setAiChatBusy(false);
   for (const panel of protectedDashboardPanels) {
@@ -1456,6 +1462,32 @@ function renderSidebarAccount() {
   accountAvatarImage.hidden = !pictureUrl;
   if (pictureUrl) accountAvatarImage.src = pictureUrl;
   else accountAvatarImage.removeAttribute("src");
+}
+
+function toggleSidebarAccountMenu() {
+  if (!authenticated || !authControls || !accountBox) return;
+  const willOpen = authControls.hidden;
+  authControls.hidden = !willOpen;
+  accountBox.setAttribute("aria-expanded", String(willOpen));
+}
+
+function closeSidebarAccountMenu(options = {}) {
+  if (!authControls || !accountBox) return;
+  const wasOpen = !authControls.hidden;
+  authControls.hidden = true;
+  accountBox.setAttribute("aria-expanded", "false");
+  if (wasOpen && options.restoreFocus) accountBox.focus();
+}
+
+function handleSidebarAccountOutsidePointer(event) {
+  if (!authControls || authControls.hidden || sidebarAccountMenu?.contains(event.target)) return;
+  closeSidebarAccountMenu();
+}
+
+function handleSidebarAccountEscape(event) {
+  if (event.key !== "Escape" || !authControls || authControls.hidden) return;
+  event.preventDefault();
+  closeSidebarAccountMenu({ restoreFocus: true });
 }
 
 function handleAccountAvatarError() {

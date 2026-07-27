@@ -417,6 +417,11 @@ body.isResizingLayout {
   padding-top: 0;
 }
 
+.sidebarAccountMenu {
+  position: relative;
+  width: 100%;
+}
+
 .universeSelector {
   position: relative;
 }
@@ -613,30 +618,54 @@ body.isResizingLayout {
 
 .account.sidebarAccount {
   display: inline-flex;
-  gap: 9px;
-  justify-self: start;
-  width: auto;
+  justify-content: flex-start;
+  gap: 16px;
+  justify-self: stretch;
+  width: 100%;
   max-width: 100%;
-  min-height: 42px;
+  min-height: 58px;
   overflow: hidden;
+  border: 0;
+  background: transparent;
   color: #aeb9dd;
-  padding: 4px 12px 4px 5px;
+  padding: 0 10px;
+  font: inherit;
+  text-align: left;
   text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.account.sidebarAccount:hover,
+.account.sidebarAccount:focus-visible,
+.account.sidebarAccount[aria-expanded="true"] {
+  background: rgba(124, 60, 255, 0.1);
+  color: #fff;
+}
+
+.account.sidebarAccount:focus-visible {
+  outline: 2px solid rgba(151, 102, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.account.sidebarAccount:disabled {
+  cursor: default;
+  opacity: 0.68;
 }
 
 .sidebarAccountAvatar {
   position: relative;
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 52px;
+  height: 52px;
   overflow: hidden;
   place-items: center;
   flex: 0 0 auto;
   border: 1px solid rgba(169, 137, 255, 0.42);
-  border-radius: 8px;
+  border-radius: 12px;
   background: linear-gradient(145deg, rgba(124, 60, 255, 0.68), rgba(37, 60, 136, 0.76));
   color: #fff;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 850;
 }
 
@@ -654,13 +683,29 @@ body.isResizingLayout {
 }
 
 .sidebarAccountName {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   color: #d8def4;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebarAccountChevron {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: #8995b8;
+  transform: translateY(2px) rotate(225deg);
+  transition: transform 140ms ease;
+}
+
+.sidebarAccount[aria-expanded="true"] .sidebarAccountChevron {
+  transform: translateY(-2px) rotate(45deg);
 }
 
 .dashboardMain {
@@ -869,53 +914,61 @@ body.isResizingLayout {
   margin-top: 16px;
 }
 
-.authControls {
+.authControls.sidebarAccountDropdown {
+  position: absolute;
+  z-index: 120;
+  right: 8px;
+  bottom: calc(100% + 8px);
+  left: 8px;
+  display: block;
+  border: 1px solid rgba(91, 109, 164, 0.62);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(12, 23, 48, 0.99), rgba(7, 14, 31, 0.99));
+  box-shadow: 0 18px 44px rgba(0, 4, 16, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 6px;
+}
+
+.authControls.sidebarAccountDropdown[hidden] {
+  display: none;
+}
+
+.sidebarAccountDropdown .sidebarLogoutButton {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 11px;
   width: 100%;
-}
-
-.authControls .button,
-.sidebarLogoutButton {
-  width: 100%;
-}
-
-.sidebarLogoutButton {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 16px;
-  min-height: 58px;
-  border: 0;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: #c9ccdc;
-  padding: 0 10px;
+  padding: 5px 8px;
   font: inherit;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: color 160ms ease, transform 160ms ease;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 
-.logoutIconTile {
+.sidebarAccountDropdown .logoutIconTile {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 52px;
-  height: 52px;
+  width: 32px;
+  height: 32px;
   border: 1px solid rgba(255, 74, 98, 0.24);
-  border-radius: 12px;
+  border-radius: 8px;
   background: rgba(31, 13, 29, 0.28);
   color: #ff4a62;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 10px 24px rgba(0, 0, 0, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
-.logoutIcon {
+.sidebarAccountDropdown .logoutIcon {
   display: block;
-  width: 25px;
-  height: 25px;
+  width: 19px;
+  height: 19px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.9;
@@ -923,22 +976,22 @@ body.isResizingLayout {
   stroke-linejoin: round;
 }
 
-.sidebarLogoutButton:hover,
-.sidebarLogoutButton:focus-visible {
+.sidebarAccountDropdown .sidebarLogoutButton:hover,
+.sidebarAccountDropdown .sidebarLogoutButton:focus-visible {
+  border-color: rgba(255, 74, 98, 0.22);
+  background: rgba(255, 74, 98, 0.08);
   color: #fff;
 }
 
-.sidebarLogoutButton:hover .logoutIconTile,
-.sidebarLogoutButton:focus-visible .logoutIconTile {
+.sidebarAccountDropdown .sidebarLogoutButton:hover .logoutIconTile,
+.sidebarAccountDropdown .sidebarLogoutButton:focus-visible .logoutIconTile {
   border-color: rgba(255, 74, 98, 0.5);
   background: rgba(79, 19, 39, 0.34);
   box-shadow: 0 0 22px rgba(255, 58, 91, 0.12);
 }
 
-.sidebarLogoutButton:focus-visible {
-  outline: 2px solid rgba(255, 74, 98, 0.58);
-  outline-offset: 3px;
-  border-radius: 12px;
+.sidebarAccountDropdown .sidebarLogoutButton:focus-visible {
+  outline: none;
 }
 
 .projectForm {

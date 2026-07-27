@@ -76,6 +76,21 @@ assert.match(
   "The sidebar account chip should render the Roblox identity",
 );
 assert.match(
+  styleSource,
+  /\.account\.sidebarAccount\s*\{[\s\S]*?gap:\s*16px;[\s\S]*?min-height:\s*58px;[\s\S]*?padding:\s*0 10px;[\s\S]*?\.sidebarAccountAvatar\s*\{[\s\S]*?width:\s*52px;[\s\S]*?height:\s*52px;/,
+  "The Roblox account row should align with Logout and use the same icon size",
+);
+assert.match(
+  indexSource,
+  /id="accountBox"[^>]*aria-haspopup="menu"[\s\S]*?id="authControls"[^>]*role="menu" hidden[\s\S]*?id="logoutButton"[^>]*role="menuitem"/,
+  "Logout should live inside the profile account menu",
+);
+assert.match(
+  appSource,
+  /toggleSidebarAccountMenu[\s\S]*?handleSidebarAccountOutsidePointer[\s\S]*?handleSidebarAccountEscape/,
+  "The account menu should toggle and close on outside click or Escape",
+);
+assert.match(
   appSource,
   /selectedUniverse\?\.thumbnailUrl/,
   "The selected-universe control should render its Roblox thumbnail",
