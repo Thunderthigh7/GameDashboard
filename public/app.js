@@ -141,13 +141,12 @@ const createProjectButton = document.querySelector("#createProjectButton");
 const connectNewGameButton = document.querySelector("#connectNewGameButton");
 const createDemoUniverseButton = document.querySelector("#createDemoUniverseButton");
 const demoUniverseStatus = document.querySelector("#demoUniverseStatus");
-const refreshIntegrationStatusButton = document.querySelector("#refreshIntegrationStatusButton");
-const integrationStatusTitle = document.querySelector("#integrationStatusTitle");
-const integrationStatusState = document.querySelector("#integrationStatusState");
-const integrationStatusArtworkLabel = document.querySelector("#integrationStatusArtworkLabel");
-const integrationStatusGrid = document.querySelector("#integrationStatusGrid");
-const integrationSignalList = document.querySelector("#integrationSignalList");
-const integrationStatusMessage = document.querySelector("#integrationStatusMessage");
+const connectGameDialog = document.querySelector("#connectGameDialog");
+const connectGameDialogBackdrop = document.querySelector("#connectGameDialogBackdrop");
+const connectGameDialogCloseButton = document.querySelector("#connectGameDialogCloseButton");
+const connectGameDialogTitle = document.querySelector("#connectGameDialogTitle");
+const connectGameFormSection = document.querySelector("#connectGameFormSection");
+const setupChecklistCard = document.querySelector("#setupChecklistCard");
 const setupChecklist = document.querySelector("#setupChecklist");
 const setupProgressText = document.querySelector("#setupProgressText");
 const setupProgressTrack = document.querySelector("#setupProgressTrack");
@@ -531,7 +530,6 @@ function bindEvents() {
   });
 
   refreshUniversesButton?.addEventListener("click", loadUniverses);
-  refreshIntegrationStatusButton?.addEventListener("click", loadUniverses);
   refreshUsageButton?.addEventListener("click", () => loadAccountUsage({ force: true }));
   usagePlanOptions?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-select-plan]");
@@ -576,9 +574,11 @@ function bindEvents() {
   document.addEventListener("keydown", handleRobloxLiveDialogKeydown);
   refreshOwnedGamesButton?.addEventListener("click", loadOwnedGames);
   connectNewGameButton?.addEventListener("click", () => {
-    document.querySelector("#connectGameRow")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    window.setTimeout(() => ownedGameSelect?.focus({ preventScroll: true }), 260);
+    openConnectGameDialog();
   });
+  connectGameDialogCloseButton?.addEventListener("click", closeConnectGameDialog);
+  connectGameDialogBackdrop?.addEventListener("click", closeConnectGameDialog);
+  document.addEventListener("keydown", handleConnectGameDialogKeydown);
   createDemoUniverseButton?.addEventListener("click", createDemoUniverse);
   projectForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -3287,7 +3287,6 @@ function cacheCurrentUniverses() {
 async function loadUniverses(options = {}) {
   const requestSequence = ++universeRequestSequence;
   if (!options.background) universesStatus.textContent = "Loading universes...";
-  if (refreshIntegrationStatusButton) refreshIntegrationStatusButton.disabled = true;
 
   try {
     const data = await request("/api/universes");
@@ -3308,10 +3307,6 @@ async function loadUniverses(options = {}) {
       renderSetupChecklist();
     }
     return false;
-  } finally {
-    if (requestSequence === universeRequestSequence && refreshIntegrationStatusButton) {
-      refreshIntegrationStatusButton.disabled = false;
-    }
   }
 }
 
@@ -3379,7 +3374,7 @@ async function createProject() {
     removeScopedSessionCache("admin-users", "summary");
     loadedViews.delete("admin");
     if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Copy the Roblox secret now.";
-    await loadUniverses();
+    await loadUniverses({ preferredUniverseId: universeId });
     await loadOwnedGames();
   } catch (error) {
     handleAuthError(error);
@@ -3473,6 +3468,8 @@ function clearProjectSecretBox() {
   if (projectSecretBox) projectSecretBox.hidden = true;
   if (projectSecretValue) projectSecretValue.textContent = "";
   if (projectSecretTarget) projectSecretTarget.textContent = "";
+  if (connectGameFormSection) connectGameFormSection.hidden = false;
+  if (connectGameDialogTitle) connectGameDialogTitle.textContent = "Connect game";
   renderSetupChecklist();
 }
 
@@ -3486,7 +3483,36 @@ function showProjectSecret(secret, project) {
       : `For: ${name}`;
   }
   if (projectSecretBox) projectSecretBox.hidden = !secret;
+  if (secret) openConnectGameDialog({ secretMode: true, resetSecret: false });
   renderSetupChecklist();
+}
+
+function openConnectGameDialog(options = {}) {
+  if (!connectGameDialog) return;
+  const secretMode = Boolean(options.secretMode);
+  if (options.resetSecret !== false && !secretMode) clearProjectSecretBox();
+  connectGameDialog.hidden = false;
+  if (connectGameFormSection) connectGameFormSection.hidden = secretMode;
+  if (connectGameDialogTitle) connectGameDialogTitle.textContent = secretMode ? "Install the secret" : "Connect game";
+  if (!secretMode) {
+    loadOwnedGames();
+    window.setTimeout(() => ownedGameSelect?.focus({ preventScroll: true }), 0);
+  } else {
+    window.setTimeout(() => copyProjectSecretButton?.focus({ preventScroll: true }), 0);
+  }
+}
+
+function closeConnectGameDialog() {
+  if (!connectGameDialog || connectGameDialog.hidden) return;
+  connectGameDialog.hidden = true;
+  clearProjectSecretBox();
+  connectNewGameButton?.focus({ preventScroll: true });
+}
+
+function handleConnectGameDialogKeydown(event) {
+  if (event.key !== "Escape" || !connectGameDialog || connectGameDialog.hidden) return;
+  event.preventDefault();
+  closeConnectGameDialog();
 }
 
 async function loadOwnedGames() {
@@ -3686,8 +3712,8 @@ function renderConnectedGame(universe) {
   const status = universe.integrationStatus || {};
   const failedIngests = Number(status.failedIngests24h || 0);
   const lastReceivedAt = Number(status.lastReceivedAt || universe.lastSeenAt || 0);
-  const statusClass = lastReceivedAt ? "ok" : "waiting";
-  const statusText = lastReceivedAt ? `Last data ${formatRelativeTime(lastReceivedAt)}` : "Waiting for data";
+  const lastDataText = lastReceivedAt ? formatRelativeTime(lastReceivedAt) : "Waiting";
+  const mapText = status.mapUploaded || universe.hasMapSnapshot ? "Uploaded" : "Missing";
   const artworkTone = (Math.abs(Number(id.slice(-2)) || 0) % 4) + 1;
   const artworkLabel = name.trim().charAt(0).toUpperCase() || "?";
   const isDemo = Boolean(universe.isDemo);
@@ -3702,12 +3728,12 @@ function renderConnectedGame(universe) {
             <span>${isDemo ? "Synthetic universe &middot; Private to your admin account" : `Universe ${escapeHtml(id)}`}</span>
           </div>
           <span class="connectedGameConnection">${isDemo ? "Demo data ready" : "Connected"}</span>
-          <div class="connectedGameStatus ${escapeHtml(statusClass)}">
-            <b>${escapeHtml(statusText)}</b>
-            <span>${escapeHtml(status.mapUploaded || universe.hasMapSnapshot ? "Map uploaded" : "Map missing")}</span>
-            ${failedIngests > 0 ? `<span class="connectedGameWarning">${escapeHtml(formatCompactNumber(failedIngests))} failed ingest${failedIngests === 1 ? "" : "s"}</span>` : ""}
-          </div>
         </div>
+      </div>
+      <div class="connectedGameMetrics">
+        ${renderIntegrationMetric("Last data", lastDataText, lastReceivedAt ? "ok" : "waiting")}
+        ${renderIntegrationMetric("Map", mapText, mapText === "Uploaded" ? "ok" : "waiting")}
+        ${renderIntegrationMetric("Failed ingests", `${formatCompactNumber(failedIngests)} / 24h`, failedIngests > 0 ? "danger" : "ok")}
       </div>
       <div class="connectedGameActions">
         ${isDemo
@@ -3719,86 +3745,8 @@ function renderConnectedGame(universe) {
   `;
 }
 
-function renderIntegrationStatusCard(options = {}) {
-  if (!integrationStatusTitle || !integrationStatusState || !integrationStatusGrid || !integrationSignalList || !integrationStatusMessage) return;
-
-  if (options.error) {
-    integrationStatusTitle.textContent = "Unable to check status";
-    setIntegrationStatusState("Status unavailable", "warning");
-    if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = "!";
-    integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", "--")
-      + renderIntegrationMetric("Map", "--")
-      + renderIntegrationMetric("Failed ingests", "--");
-    integrationSignalList.innerHTML = "";
-    integrationStatusMessage.textContent = options.error;
-    renderSetupChecklist();
-    return;
-  }
-
-  const selectedUniverse = selectedUniverseId
-    ? knownUniverses.find((universe) => String(universe.id || "") === selectedUniverseId)
-    : knownUniverses[0];
-
-  if (!selectedUniverse) {
-    integrationStatusTitle.textContent = "No game connected";
-    setIntegrationStatusState("Waiting for game", "waiting");
-    if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = "?";
-    integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", "--")
-      + renderIntegrationMetric("Map", "--")
-      + renderIntegrationMetric("Failed ingests", "--");
-    integrationSignalList.innerHTML = renderIntegrationSignal("Movement", false)
-      + renderIntegrationSignal("Deaths", false)
-      + renderIntegrationSignal("Leaves", false)
-      + renderIntegrationSignal("Chat", false)
-      + renderIntegrationSignal("Events", false);
-    integrationStatusMessage.textContent = authenticated
-      ? "Connect a Roblox game to start receiving analytics data."
-      : "Sign in to check integration status.";
-    renderSetupChecklist();
-    return;
-  }
-
-  const status = selectedUniverse.integrationStatus || {};
-  const signals = status.signals || {};
-  const counts = status.counts || {};
-  const name = String(selectedUniverse.name || `Universe ${selectedUniverse.id || ""}`);
-  const lastReceivedAt = Number(status.lastReceivedAt || selectedUniverse.lastSeenAt || 0);
-  const failedIngests = Number(status.failedIngests24h || 0);
-  const hasAnyData = lastReceivedAt > 0 || Number(selectedUniverse.totalSamples || 0) > 0;
-  const isDemo = Boolean(selectedUniverse.isDemo);
-
-  integrationStatusTitle.textContent = name;
-  setIntegrationStatusState(isDemo ? "Admin demo" : status.connected === false ? "Not connected" : "Connected", status.connected === false && !isDemo ? "warning" : "ok");
-  if (integrationStatusArtworkLabel) integrationStatusArtworkLabel.textContent = name.trim().charAt(0).toUpperCase() || "?";
-  integrationStatusGrid.innerHTML = renderIntegrationMetric("Last data", lastReceivedAt ? formatRelativeTime(lastReceivedAt) : "Waiting")
-    + renderIntegrationMetric("Map", status.mapUploaded || selectedUniverse.hasMapSnapshot ? "Uploaded" : "Missing")
-    + renderIntegrationMetric("Failed ingests", `${formatCompactNumber(failedIngests)} / 24h`, failedIngests > 0 ? "danger" : "ok");
-  integrationSignalList.innerHTML = renderIntegrationSignal("Movement", Boolean(signals.movement), counts.movement)
-    + renderIntegrationSignal("Deaths", Boolean(signals.deaths), counts.deaths)
-    + renderIntegrationSignal("Leaves", Boolean(signals.leaves), counts.leaves)
-    + renderIntegrationSignal("Chat", Boolean(signals.chat), counts.chat)
-    + renderIntegrationSignal("Events", Boolean(signals.events), counts.events);
-
-  if (isDemo) {
-    integrationStatusMessage.textContent = "Complete synthetic analytics are ready: map, movement, deaths, leaves, chat, events, funnels, cohorts, and AI reports.";
-  } else if (failedIngests > 0) {
-    integrationStatusMessage.textContent = "Data is coming in, but recent ingests failed. Check the game secret and server logs before a client test.";
-  } else if (!hasAnyData) {
-    integrationStatusMessage.textContent = "Connected, waiting for Roblox data. Paste the secret into Settings.Secret and start a live server.";
-  } else if (!status.mapUploaded && !selectedUniverse.hasMapSnapshot) {
-    integrationStatusMessage.textContent = "Live data is coming in. Upload a map snapshot to make heatmaps easier to read.";
-  } else {
-    integrationStatusMessage.textContent = "Integration is receiving Roblox analytics data.";
-  }
-
-  renderSetupChecklist(selectedUniverse);
-}
-
-function setIntegrationStatusState(label, tone = "ok") {
-  if (!integrationStatusState) return;
-  integrationStatusState.textContent = label;
-  integrationStatusState.classList.remove("waiting", "warning");
-  if (tone === "waiting" || tone === "warning") integrationStatusState.classList.add(tone);
+function renderIntegrationStatusCard() {
+  renderConnectedGames();
 }
 
 function renderSetupChecklist(selectedUniverse = null) {
@@ -3852,6 +3800,7 @@ function renderSetupChecklist(selectedUniverse = null) {
 
   const completedSteps = steps.filter((step) => step.complete).length;
   const progressPercent = Math.round((completedSteps / steps.length) * 100);
+  if (setupChecklistCard) setupChecklistCard.hidden = completedSteps === steps.length;
   if (setupProgressText) setupProgressText.textContent = `${completedSteps} / ${steps.length} complete`;
   if (setupProgressPercent) setupProgressPercent.textContent = `${progressPercent}%`;
   if (setupProgressBar) setupProgressBar.style.width = `${progressPercent}%`;
@@ -3882,11 +3831,6 @@ function getActiveSignalText(signals = {}) {
 function renderIntegrationMetric(label, value, status = "") {
   const statusClass = status ? ` class="${escapeHtml(status)}"` : "";
   return `<div${statusClass}><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
-}
-
-function renderIntegrationSignal(label, active, count = null) {
-  const countText = count === null || count === undefined ? "" : ` ${formatCompactNumber(count)}`;
-  return `<span class="${active ? "active" : ""}">${escapeHtml(label)}${escapeHtml(countText)}</span>`;
 }
 
 async function selectUniverse(value) {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260727-08/styles.css">
+    <link rel="stylesheet" href="/assets/20260727-09/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1579,30 +1579,13 @@
                 <p class="status demoUniverseStatus" id="demoUniverseStatus" aria-live="polite" hidden></p>
               </div>
             </div>
-            <article class="integrationStatusCard" id="integrationStatusCard">
-              <div class="integrationStatusHeader">
-                <div class="integrationGameSummary">
-                  <span class="integrationGameArtwork" aria-hidden="true">
-                    <span id="integrationStatusArtworkLabel">?</span>
-                  </span>
-                  <div class="integrationGameDetails">
-                    <strong id="integrationStatusTitle">No game connected</strong>
-                    <span class="integrationConnectionState waiting" id="integrationStatusState">Waiting for game</span>
-                    <div class="integrationSignalList" id="integrationSignalList" aria-label="Active Roblox analytics signals"></div>
-                  </div>
-                </div>
-                <div class="integrationStatusGrid" id="integrationStatusGrid">
-                  <div><span>Last data</span><strong>--</strong></div>
-                  <div><span>Map</span><strong>--</strong></div>
-                  <div><span>Failed ingests</span><strong>--</strong></div>
-                </div>
-                <button class="button secondary compact integrationRefreshButton" id="refreshIntegrationStatusButton" type="button">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.1 9A7 7 0 0 0 6.4 6.4L4 9M5.9 15A7 7 0 0 0 17.6 17.6L20 15"/></svg>
-                  Refresh
-                </button>
+            <section class="connectedGamesManager">
+              <div class="connectedGamesHeader">
+                <h3>Connected games</h3>
+                <p>Connection health and setup for every Roblox game.</p>
               </div>
-              <p class="status" id="integrationStatusMessage">Connect a Roblox game to start receiving analytics data.</p>
-            </article>
+              <div class="connectedGameList" id="connectedGameList"></div>
+            </section>
             <article class="setupChecklistCard" id="setupChecklistCard">
               <div class="setupChecklistHeader">
                 <div class="setupChecklistIntro">
@@ -1624,43 +1607,49 @@
                 <li><span></span><div><strong>Confirm signals</strong><p>Movement, deaths, leaves, or chat should become active.</p><small class="setupChecklistOptional">(Upload map is optional.)</small></div></li>
               </ol>
             </article>
-            <article class="connectGameRow" id="connectGameRow">
-              <div class="connectGameCopy">
-                <h3>Connect another game</h3>
-                <p>Select a game from your account to start sending analytics.</p>
-              </div>
-              <form class="projectForm connectUniverseForm" id="projectForm">
-                <div class="fieldGroup">
-                  <label class="srOnly" for="ownedGameSelect">Owned game</label>
-                  <select id="ownedGameSelect" disabled>
-                    <option value="">Loading owned games...</option>
-                  </select>
+
+            <div class="discordRuleDialog connectGameDialog" id="connectGameDialog" hidden>
+              <button class="discordRuleDialogBackdrop" id="connectGameDialogBackdrop" type="button" aria-label="Close connect game"></button>
+              <section class="discordRuleDialogCard connectGameDialogCard" role="dialog" aria-modal="true" aria-labelledby="connectGameDialogTitle">
+                <header>
+                  <button class="discordWebhookBuilderBackButton discordRuleBackButton" id="connectGameDialogCloseButton" type="button" aria-label="Back to connected games">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
+                  </button>
+                  <div>
+                    <span>Roblox universe</span>
+                    <h2 id="connectGameDialogTitle">Connect game</h2>
+                  </div>
+                </header>
+                <div class="connectGameDialogBody">
+                  <div class="connectGameFormSection" id="connectGameFormSection">
+                    <p>Select one of the Roblox games owned by your account.</p>
+                    <form class="projectForm connectUniverseForm" id="projectForm">
+                      <div class="fieldGroup">
+                        <label for="ownedGameSelect">Game</label>
+                        <select id="ownedGameSelect" disabled>
+                          <option value="">Loading owned games...</option>
+                        </select>
+                      </div>
+                      <button class="button compact" id="createProjectButton" type="submit">Connect game</button>
+                    </form>
+                    <div class="connectUniverseActions">
+                      <button class="button secondary compact refreshGamesButton" id="refreshOwnedGamesButton" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.1 9A7 7 0 0 0 6.4 6.4L4 9M5.9 15A7 7 0 0 0 17.6 17.6L20 15"/></svg>
+                        Refresh games
+                      </button>
+                      <p class="status" id="ownedGamesStatus">Loading Roblox games...</p>
+                    </div>
+                  </div>
+                  <div class="projectSecretBox" id="projectSecretBox" hidden>
+                    <strong>Roblox secret</strong>
+                    <span id="projectSecretTarget"></span>
+                    <p>Paste this into <code>Settings.Secret</code> now. This secret is shown once.</p>
+                    <code id="projectSecretValue"></code>
+                    <button class="button compact" id="copyProjectSecretButton" type="button">Copy secret</button>
+                  </div>
                 </div>
-                <button class="button compact" id="createProjectButton" type="submit">Connect game</button>
-              </form>
-              <div class="connectUniverseActions">
-                <button class="button secondary compact refreshGamesButton" id="refreshOwnedGamesButton" type="button">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.1 9A7 7 0 0 0 6.4 6.4L4 9M5.9 15A7 7 0 0 0 17.6 17.6L20 15"/></svg>
-                  Refresh games
-                </button>
-                <p class="status" id="ownedGamesStatus">Loading Roblox games...</p>
-              </div>
-            </article>
-            <div class="projectSecretBox" id="projectSecretBox" hidden>
-              <strong>Roblox secret</strong>
-              <span id="projectSecretTarget"></span>
-              <p>Use this in your Roblox analytics config. It is shown once.</p>
-              <code id="projectSecretValue"></code>
-              <button class="button secondary compact" id="copyProjectSecretButton" type="button">Copy secret</button>
+              </section>
             </div>
-            <section class="connectedGamesManager">
-              <div class="connectedGamesHeader">
-                <h3>Connected games</h3>
-                <p>These games are connected and sending data to RoAnalytics.</p>
-              </div>
-              <div class="connectedGameList" id="connectedGameList"></div>
-            </section>
-            <p class="connectUniverseHelp">Need help? Complete the first-run steps above, or regenerate a game secret below.</p>
           </section>
         </section>
 
@@ -1750,6 +1739,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260727-08/app.js"></script>
+    <script defer src="/assets/20260727-09/app.js"></script>
   </body>
 </html>

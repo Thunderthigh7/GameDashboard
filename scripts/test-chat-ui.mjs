@@ -41,6 +41,31 @@ assert.match(
   "Connect Universe and its primary action should share the top row",
 );
 assert.doesNotMatch(
+  indexSource,
+  /id="integrationStatusCard"|id="connectGameRow"|class="connectUniverseHelp"/,
+  "Connect Universe should not repeat status, connection, or help containers",
+);
+assert.match(
+  indexSource,
+  /id="connectedGameList"[\s\S]*?id="setupChecklistCard"[\s\S]*?id="connectGameDialog" hidden/,
+  "Connected games should lead the page and the connection flow should live in a modal",
+);
+assert.match(
+  appSource,
+  /renderIntegrationMetric\("Last data"[\s\S]*?renderIntegrationMetric\("Map"[\s\S]*?renderIntegrationMetric\("Failed ingests"/,
+  "Each connected-game card should own its connection health metrics",
+);
+assert.match(
+  appSource,
+  /setupChecklistCard\.hidden = completedSteps === steps\.length/,
+  "Completed first-run setup should leave the page automatically",
+);
+assert.match(
+  appSource,
+  /function showProjectSecret[\s\S]*?openConnectGameDialog\(\{ secretMode: true, resetSecret: false \}\)/,
+  "Generated secrets should only open in the focused connect-game flow",
+);
+assert.doesNotMatch(
   `${appSource}\n${styleSource}`,
   /connectedGameSignals/,
   "connected-game cards should not repeat per-signal badges",
