@@ -23,6 +23,14 @@ ServerScriptService/
 
 This folder is synced by `default.project.json` and is not used by the website server. It does not emit routine warning or debug output.
 
+`RoAnalytics.SendHeartbeat()` returns `success, errorMessage, statusCode`. It does not print routine logs. For a manual connection check:
+
+```lua
+local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
+local success, errorMessage, statusCode = RoAnalytics.SendHeartbeat()
+print(success, errorMessage, statusCode)
+```
+
 ## Automatic system events
 
 RoAnalytics records these events automatically with the same player session ID used by custom events:

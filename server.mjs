@@ -36,6 +36,12 @@ import {
   revokeRobloxOAuthToken,
   ROBLOX_LIVE_ACTION_TOPIC,
 } from "./lib/roblox-live-actions.mjs";
+import {
+  generateProjectSecret,
+  hashProjectSecret,
+  normalizeProjectSecret,
+  verifyProjectSecret,
+} from "./lib/project-secrets.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -4096,7 +4102,7 @@ async function handleProjectCreate(req, res, auth) {
     return sendJson(res, 403, { error: ownership.reason || "The logged-in Roblox account does not own this universe." });
   }
 
-  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+  const projectSecret = generateProjectSecret();
   const project = {
     id: crypto.randomUUID(),
     ownerUserId: auth.userId,
@@ -4140,7 +4146,7 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
     return sendJson(res, 400, { error: "Demo Universe does not use a Roblox ingestion secret." });
   }
 
-  const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+  const projectSecret = generateProjectSecret();
   const updatedAt = Date.now();
   await updateProjectSecretHash(project.id, auth.userId, hashProjectSecret(projectSecret), updatedAt);
 
@@ -4440,7 +4446,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       });
     }
 
-    const projectSecret = `roa_${crypto.randomBytes(24).toString("base64url")}`;
+    const projectSecret = generateProjectSecret();
     const project = {
       id: crypto.randomUUID(),
       ownerUserId: auth.userId,
@@ -4501,7 +4507,14 @@ async function handlePresenceHeartbeat(req, res) {
 
   const project = await getProjectFromRequestSecret(req, presence.value.universeId);
   if (!project && !isValidPresenceSecret(req)) {
-    return sendJson(res, 401, { error: "Invalid presence secret" });
+    const connectedProject = await getProjectByUniverseId(presence.value.universeId);
+    return sendJson(res, 401, {
+      error: connectedProject
+        ? "The Roblox secret does not match this connected universe."
+        : "This Roblox universe is not connected to RoAnalytics.",
+      code: connectedProject ? "PROJECT_SECRET_MISMATCH" : "UNIVERSE_NOT_CONNECTED",
+      universeId: presence.value.universeId,
+    });
   }
 
   if (project) {
@@ -14441,8 +14454,8 @@ async function userOwnsUniverse(ownerUserId, universeId) {
 }
 
 async function getProjectFromRequestSecret(req, universeId) {
-  const secret = req.headers["x-dashboard-secret"];
-  if (typeof secret !== "string" || !secret) return null;
+  const secret = normalizeProjectSecret(req.headers["x-dashboard-secret"]);
+  if (!secret) return null;
 
   const cleanUniverseId = cleanInteger(universeId);
   if (cleanUniverseId <= 0) return null;
@@ -14472,16 +14485,6 @@ async function getConnectedUniverseIds() {
   return new Set(projects
     .map((project) => String(cleanInteger(project.universeId)))
     .filter((id) => id !== "0"));
-}
-
-function hashProjectSecret(secret) {
-  return crypto.createHash("sha256").update(String(secret || "")).digest("base64url");
-}
-
-function verifyProjectSecret(secret, storedHash) {
-  const candidate = hashProjectSecret(secret);
-  if (Buffer.byteLength(candidate) !== Buffer.byteLength(String(storedHash || ""))) return false;
-  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(String(storedHash || "")));
 }
 
 async function readProjects() {

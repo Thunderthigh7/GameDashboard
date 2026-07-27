@@ -9,6 +9,24 @@ import {
   refreshRobloxOAuthTokens,
   ROBLOX_LIVE_ACTION_TOPIC,
 } from "../lib/roblox-live-actions.mjs";
+import {
+  generateProjectSecret,
+  hashProjectSecret,
+  normalizeProjectSecret,
+  verifyProjectSecret,
+} from "../lib/project-secrets.mjs";
+
+const firstProjectSecret = generateProjectSecret();
+const rotatedProjectSecret = generateProjectSecret();
+const firstProjectSecretHash = hashProjectSecret(firstProjectSecret);
+const rotatedProjectSecretHash = hashProjectSecret(rotatedProjectSecret);
+assert.match(firstProjectSecret, /^roa_[A-Za-z0-9_-]{32}$/);
+assert.notEqual(firstProjectSecret, rotatedProjectSecret);
+assert.equal(normalizeProjectSecret(` \r\n${firstProjectSecret}\t`), firstProjectSecret);
+assert.equal(verifyProjectSecret(firstProjectSecret, firstProjectSecretHash), true);
+assert.equal(verifyProjectSecret(` ${firstProjectSecret}\n`, firstProjectSecretHash), true);
+assert.equal(verifyProjectSecret(firstProjectSecret, rotatedProjectSecretHash), false);
+assert.equal(verifyProjectSecret(rotatedProjectSecret, rotatedProjectSecretHash), true);
 
 assert.equal(normalizeRobloxActionKey(" Hourly_Event.Start "), "hourly_event.start");
 assert.throws(() => normalizeRobloxActionKey("1bad"), /start with a letter/);
@@ -109,6 +127,8 @@ assert.match(serverSource, /createCipheriv\("aes-256-gcm"/);
 assert.match(serverSource, /db\.collection\("roblox_live_integrations"\)/);
 assert.match(serverSource, /evaluateRobloxLiveEventRulesForPresence\(presence\.value, project\)/);
 assert.match(serverSource, /evaluateScheduledRobloxLiveActions/);
+assert.match(serverSource, /code:\s*connectedProject \? "PROJECT_SECRET_MISMATCH" : "UNIVERSE_NOT_CONNECTED"/);
+assert.match(serverSource, /const secret = normalizeProjectSecret\(req\.headers\["x-dashboard-secret"\]\)/);
 assert.doesNotMatch(serverSource, /processRobloxLiveAcknowledgements|liveActionAcks|liveActionKeys|confirmationMessage|confirmedAt|lastNegativeAck/);
 assert.match(serverSource, /MAX_ROBLOX_LIVE_SENDS_PER_WINDOW = 20/);
 const alertEventCounterStart = serverSource.indexOf("function countDiscordAlertEvents(");
@@ -236,6 +256,10 @@ assert.match(liveActionRuleRowSource, /class="robloxLiveRuleIdentity"[\s\S]*?rul
 assert.match(liveActionRuleRowSource, /class="robloxLiveRuleMetric"[\s\S]*?rule\.currentCount/);
 assert.doesNotMatch(liveActionRuleRowSource, /serverCount|detectedAction|live server|>Enabled<|>Paused</);
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);
+assert.match(methodsSource, /return false, "A heartbeat is already in progress\.", nil/);
+assert.match(methodsSource, /return false, getHeartbeatResponseError\(response\), tonumber\(response\.StatusCode\)/);
+assert.match(methodsSource, /return true, nil, tonumber\(response\.StatusCode\)/);
+assert.match(methodsSource, /\["X-Dashboard-Secret"\] = dashboardSecret/);
 assert.match(methodsSource, /MessagingService:SubscribeAsync/);
 assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
 assert.doesNotMatch(methodsSource, /pendingLiveActionAcks|liveActionAcks|getLiveActionAcksPayload|liveActionKeys|getRegisteredLiveActionKeys|queueLiveActionAck/);

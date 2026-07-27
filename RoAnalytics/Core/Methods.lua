@@ -925,6 +925,36 @@ local function clearSentCustomEvents(count)
 	end
 end
 
+local function getDashboardSecret()
+	return string.match(tostring(Settings.Secret or ""), "^%s*(.-)%s*$") or ""
+end
+
+local function getHeartbeatResponseError(response)
+	local fallback = "Heartbeat request failed."
+	if typeof(response) ~= "table" then
+		return fallback
+	end
+
+	local body = tostring(response.Body or "")
+	if body ~= "" then
+		local decodedOk, decoded = pcall(function()
+			return HttpService:JSONDecode(body)
+		end)
+		if decodedOk and typeof(decoded) == "table" and tostring(decoded.error or "") ~= "" then
+			return tostring(decoded.error)
+		end
+	end
+
+	local statusCode = tonumber(response.StatusCode)
+	local statusMessage = tostring(response.StatusMessage or "")
+	if statusCode then
+		return "Heartbeat request failed with HTTP " .. tostring(statusCode)
+			.. (statusMessage ~= "" and (" " .. statusMessage) or "")
+			.. "."
+	end
+	return fallback
+end
+
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -947,13 +977,18 @@ end
 
 function Methods.SendHeartbeat()
 	if sending then
-		return false
+		return false, "A heartbeat is already in progress.", nil
 	end
 
 	sending = true
 
 	local payload = buildPayload()
 	local body = HttpService:JSONEncode(payload)
+	local dashboardSecret = getDashboardSecret()
+	if dashboardSecret == "" or dashboardSecret == "paste-project-roblox-secret-here" then
+		sending = false
+		return false, "Set Settings.Secret to this universe's generated RoAnalytics secret.", nil
+	end
 
 	local success, response = pcall(function()
 		return HttpService:RequestAsync({
@@ -961,7 +996,7 @@ function Methods.SendHeartbeat()
 			Method = "POST",
 			Headers = {
 				["Content-Type"] = "application/json",
-				["X-Dashboard-Secret"] = Settings.Secret,
+				["X-Dashboard-Secret"] = dashboardSecret,
 			},
 			Body = body,
 		})
@@ -970,11 +1005,11 @@ function Methods.SendHeartbeat()
 	sending = false
 
 	if not success then
-		return false
+		return false, tostring(response), nil
 	end
 
 	if not response.Success then
-		return false
+		return false, getHeartbeatResponseError(response), tonumber(response.StatusCode)
 	end
 
 	clearSentChatLogs(#payload.chatLogs)
@@ -984,7 +1019,7 @@ function Methods.SendHeartbeat()
 	clearSentLeaveSamples(#payload.leaveSamples)
 	clearSentCustomEvents(#payload.customEvents)
 
-	return true
+	return true, nil, tonumber(response.StatusCode)
 end
 
 function Methods.FlushBeforeShutdown()
