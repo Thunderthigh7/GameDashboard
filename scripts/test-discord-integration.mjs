@@ -172,6 +172,10 @@ assert.match(appSource, /request\("\/api\/integrations\/discord\/connection\/sel
 assert.match(appSource, /request\("\/api\/integrations\/discord\/test"/);
 assert.match(appSource, /request\(id[\s\S]*?"\/api\/integrations\/discord\/rules"/);
 assert.match(appSource, /function renderDiscordRuleRow\(rule\)/);
+assert.match(
+  appSource,
+  /function renderDiscordRuleRow\(rule\)[\s\S]*?formatEventName\(rule\.eventName\)/,
+);
 assert.match(appSource, /function renderDiscordConnectionEditor\(\)/);
 assert.match(appSource, /function startNewDiscordWebhook\(\)/);
 assert.match(appSource, /data-discord-webhook-id=/);

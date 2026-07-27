@@ -399,7 +399,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-04";
+const DASHBOARD_ASSET_VERSION = "20260727-05";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2113,7 +2113,7 @@ function renderDiscordRuleRow(rule) {
           ? `<span data-state="error">${escapeHtml(rule.lastError)}</span>`
           : isScheduled
             ? `<span>Eastern Standard Time · ${scheduleComplete ? "Completed" : "Sends once"}</span>`
-            : ""}
+            : `<span>${escapeHtml(formatEventName(rule.eventName))}</span>`}
       </div>
       <div class="discordRuleMetric">
         <strong>${escapeHtml(isScheduled ? "—" : formatCompactNumber(rule.currentCount || 0))}</strong>
