@@ -401,7 +401,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-09";
+const DASHBOARD_ASSET_VERSION = "20260726-10";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2077,14 +2077,11 @@ function renderDiscordRuleRow(rule) {
   const isScheduled = rule.triggerType === "schedule";
   const operatorLabel = rule.operator === "at_most" ? "At most" : "At least";
   const windowLabel = formatDiscordAlertWindow(rule.windowMinutes);
-  const lastSent = rule.lastTriggeredAt ? formatRelativeTime(rule.lastTriggeredAt) : "Never sent";
   const scheduleComplete = Boolean(rule.scheduleDeliveredAt);
-  const statusLabel = scheduleComplete ? "Sent" : rule.enabled ? "Active" : "Paused";
   return `
     <article class="discordRuleRow" data-discord-rule-id="${escapeHtml(rule.id)}">
       <div class="discordRuleIdentity">
         <strong>${escapeHtml(rule.name)}</strong>
-        <span>${escapeHtml(`${statusLabel} · ${lastSent}`)}</span>
       </div>
       <div class="discordRuleCondition">
         <strong>${isScheduled
