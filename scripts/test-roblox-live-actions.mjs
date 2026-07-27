@@ -147,7 +147,7 @@ assert.match(
 );
 assert.match(
   indexSource,
-  /class="robloxLiveRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Topic<[\s\S]*?>Condition<[\s\S]*?>Current<[\s\S]*?>Cooldown<[\s\S]*?>Actions</,
+  /class="robloxLiveRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Action key<[\s\S]*?>Condition<[\s\S]*?>Current<[\s\S]*?>Cooldown<[\s\S]*?>Actions</,
 );
 assert.doesNotMatch(indexSource, /robloxLiveMasterToggle|robloxLiveMasterState|>Live actions<\/b>|>Paused<\/small>/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
