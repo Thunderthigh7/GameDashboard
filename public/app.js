@@ -396,7 +396,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260726-21";
+const DASHBOARD_ASSET_VERSION = "20260726-24";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2564,7 +2564,7 @@ async function disconnectRobloxLiveActions() {
       { method: "DELETE" },
     );
     renderRobloxLiveIntegration();
-    setRobloxLiveStatus("Roblox live actions disconnected.", "success");
+    setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
@@ -2642,27 +2642,21 @@ function renderRobloxLiveIntegration() {
 }
 
 function renderRobloxLiveRuleRow(rule) {
-  const requirement = rule.triggerType === "schedule"
+  const isScheduled = rule.triggerType === "schedule";
+  const requirement = isScheduled
     ? `Every ${formatRobloxLiveInterval(rule.scheduleIntervalMinutes)}`
-    : `${rule.operator === "at_most" ? "At most" : "At least"} ${formatCompactNumber(rule.threshold)} ${formatEventName(rule.eventName)} / ${formatRobloxLiveInterval(rule.windowMinutes)}`;
-  const runStatus = rule.lastError
-    ? rule.lastError
-    : rule.lastTriggeredAt
-      ? `Last run ${formatRelativeTime(rule.lastTriggeredAt)}`
-      : rule.triggerType === "schedule" && rule.nextRunAt
-        ? `Next run ${formatRelativeTime(rule.nextRunAt)}`
-        : "Never run";
-  const status = rule.triggerType === "event_count"
-    ? `Current ${formatCompactNumber(rule.currentCount || 0)} · ${runStatus}`
-    : runStatus;
-  const detectedAction = robloxLiveIntegration?.runtime?.detectedActions
-    ?.find((action) => action.actionKey === rule.actionKey);
-  const serverCount = Number(detectedAction?.serverCount) || 0;
+    : `${rule.operator === "at_most" ? "At most" : "At least"} ${formatCompactNumber(rule.threshold)} in ${formatRobloxLiveInterval(rule.windowMinutes)}`;
+  const conditionDetail = rule.lastError
+    ? `<span data-state="error">${escapeHtml(rule.lastError)}</span>`
+    : isScheduled
+      ? `<span>${rule.nextRunAt ? `Next run ${escapeHtml(formatRelativeTime(rule.nextRunAt))}` : "Waiting to schedule"}</span>`
+      : `<span>${escapeHtml(formatEventName(rule.eventName))}</span>`;
   return `
     <article class="robloxLiveRuleRow" data-roblox-live-rule-id="${escapeHtml(rule.id)}">
-      <div class="robloxLiveRuleIdentity"><strong>${escapeHtml(rule.name)}</strong><span>${rule.enabled ? "Enabled" : "Paused"}</span></div>
-      <div class="robloxLiveRuleRequirement"><strong>${escapeHtml(requirement)}</strong><span>${escapeHtml(status)}</span></div>
-      <div class="robloxLiveRuleTarget"><code>${escapeHtml(rule.actionKey)}</code><span>${serverCount} live server${serverCount === 1 ? "" : "s"} detect this key · ${escapeHtml(formatRobloxLiveExpiry(rule.expiresInSeconds))} expiry</span></div>
+      <div class="robloxLiveRuleIdentity"><strong>${escapeHtml(rule.name)}</strong><code>${escapeHtml(rule.actionKey)}</code></div>
+      <div class="robloxLiveRuleCondition"><strong>${escapeHtml(requirement)}</strong>${conditionDetail}</div>
+      <div class="robloxLiveRuleMetric"><strong>${isScheduled ? "—" : escapeHtml(formatCompactNumber(rule.currentCount || 0))}</strong></div>
+      <div class="robloxLiveRuleMetric"><strong>${isScheduled ? "—" : escapeHtml(formatRobloxLiveInterval(rule.cooldownMinutes))}</strong></div>
       <div class="robloxLiveRuleActions">
         <button class="robloxLiveRuleToggle" type="button" data-roblox-live-action="toggle" aria-label="${rule.enabled ? "Pause" : "Enable"} ${escapeHtml(rule.name)}" aria-pressed="${rule.enabled ? "true" : "false"}"></button>
         <button class="button secondary compact" type="button" data-roblox-live-action="run">Run now</button>
@@ -2708,11 +2702,6 @@ function formatRobloxLiveInterval(value) {
   if (minutes < 60) return `${minutes} min`;
   if (minutes < 1440) return `${minutes / 60} hr`;
   return `${minutes / 1440} day`;
-}
-
-function formatRobloxLiveExpiry(value) {
-  const seconds = Number(value) || 60;
-  return seconds < 60 ? `${seconds} sec` : `${seconds / 60} min`;
 }
 
 function openRobloxLiveRuleEditor(rule = null) {
@@ -2827,7 +2816,7 @@ async function saveRobloxLiveRule() {
     });
     closeRobloxLiveRuleEditor();
     renderRobloxLiveIntegration();
-    setRobloxLiveStatus(id ? "Action rule updated." : "Action rule created.", "success");
+    setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
@@ -2870,7 +2859,7 @@ async function updateRobloxLiveRule(rule, overrides) {
       body: JSON.stringify(getRobloxLiveRulePayload(rule, overrides)),
     });
     renderRobloxLiveIntegration();
-    setRobloxLiveStatus(overrides.enabled ? "Action enabled." : "Action paused.", "success");
+    setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
@@ -2893,7 +2882,7 @@ async function runRobloxLiveRule(rule) {
       },
     );
     renderRobloxLiveIntegration();
-    setRobloxLiveStatus("Action published to live Roblox servers.", "success");
+    setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;
@@ -2911,7 +2900,7 @@ async function deleteRobloxLiveRule(rule) {
       { method: "DELETE" },
     );
     renderRobloxLiveIntegration();
-    setRobloxLiveStatus("Action rule deleted.", "success");
+    setRobloxLiveStatus("");
   } catch (error) {
     handleAuthError(error);
     if (!authenticated) return;

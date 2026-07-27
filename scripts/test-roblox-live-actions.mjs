@@ -145,8 +145,17 @@ assert.match(
   indexSource,
   /class="robloxLiveSectionHeader"[\s\S]*?class="robloxLiveRulesControls"[\s\S]*?id="robloxLiveRuleCount"[\s\S]*?id="robloxLiveNewRuleButton"/,
 );
+assert.match(
+  indexSource,
+  /class="robloxLiveRuleTableHeader"[\s\S]*?>Name<[\s\S]*?>Condition<[\s\S]*?>Current<[\s\S]*?>Cooldown<[\s\S]*?>Actions</,
+);
 assert.doesNotMatch(indexSource, /robloxLiveMasterToggle|robloxLiveMasterState|>Live actions<\/b>|>Paused<\/small>/);
 assert.match(indexSource, /id="robloxLiveRuleForm"[\s\S]*?id="robloxLiveRuleActionKey"[\s\S]*?id="robloxLiveRuleParameters"/);
+assert.match(
+  indexSource,
+  /class="discordRuleDialogCard robloxLiveRuleDialogCard"[\s\S]*?<header>[\s\S]*?class="discordWebhookBuilderBackButton discordRuleBackButton" id="robloxLiveRuleCloseButton"[\s\S]*?id="robloxLiveRuleDialogTitle"/,
+);
+assert.doesNotMatch(indexSource, /class="iconButton" id="robloxLiveRuleCloseButton"/);
 assert.doesNotMatch(indexSource, /id="robloxLiveTopic"|<span>Topic<\/span>/);
 assert.match(appSource, /function renderRobloxLiveIntegration\(\)/);
 assert.match(appSource, /setRobloxLiveStatus\(error\.status === 403 \? "" : formatRequestError\(error\), "error"\)/);
@@ -164,6 +173,10 @@ assert.doesNotMatch(
   /testRobloxLiveActions|robloxLiveTestButton|robloxLiveServerCount|robloxLiveActionCount|robloxLiveMasterToggle|updateRobloxLiveMasterState/,
 );
 assert.doesNotMatch(appSource, /textContent = connected \? "Reauthorize"/);
+assert.doesNotMatch(
+  appSource,
+  /Action rule (?:created|updated|deleted)\.|Action (?:enabled|paused)\.|Action published to live Roblox servers\.|Roblox live actions disconnected\./,
+);
 assert.match(appSource, /function formatRobloxLiveDeliveryStatus\(status\)/);
 assert.match(appSource, /Confirmed by a live server/);
 assert.doesNotMatch(appSource, /acknowledgedServers/);
@@ -174,7 +187,14 @@ assert.doesNotMatch(
   /\/api\/integrations\/roblox-live\/settings|handleRobloxLiveSettingsUpdate|Roblox live actions are paused|integration\.enabled/,
 );
 assert.match(styleSource, /\.robloxLiveAuthorizationAlert\s*\{/);
+assert.match(styleSource, /\.robloxLiveRuleTableHeader,\s*\.robloxLiveRuleRow\s*\{/);
 assert.match(styleSource, /\.robloxLiveRuleRow\s*\{/);
+const liveActionRuleRowSource = appSource.match(
+  /function renderRobloxLiveRuleRow\(rule\)([\s\S]*?)function renderRobloxLiveDeliveryRow/,
+)?.[1] || "";
+assert.ok(liveActionRuleRowSource);
+assert.match(liveActionRuleRowSource, /class="robloxLiveRuleMetric"[\s\S]*?rule\.currentCount/);
+assert.doesNotMatch(liveActionRuleRowSource, /serverCount|detectedAction|live server|>Enabled<|>Paused</);
 assert.match(methodsSource, /function Methods\.RegisterLiveAction\(actionKey, handler\)/);
 assert.match(methodsSource, /MessagingService:SubscribeAsync/);
 assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
