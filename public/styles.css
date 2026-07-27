@@ -266,6 +266,28 @@ body.isResizingLayout {
   opacity: 0.7;
 }
 
+.adminOnlySectionIcon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(169, 137, 255, 0.52);
+  border-radius: 6px;
+  background: rgba(124, 60, 255, 0.18);
+  color: #cdbaff;
+}
+
+.adminOnlySectionIcon svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .sideNav a {
   display: flex;
   align-items: center;
@@ -446,10 +468,24 @@ body.isResizingLayout {
 }
 
 .gameThumb {
+  display: block;
+  overflow: hidden;
   width: 42px;
   height: 42px;
   border-radius: 8px;
   background: linear-gradient(135deg, #3b82f6, #22c55e);
+}
+
+.gameThumb img,
+.connectedGameArtwork img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gameThumb img[hidden] {
+  display: none;
 }
 
 .universeSelectorText {
@@ -1189,6 +1225,10 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   margin-top: 3px;
   font-size: 10px;
   line-height: 1.4;
+}
+
+.connectedGameArtwork.hasImage::after {
+  display: none;
 }
 
 .setupChecklistOptional {

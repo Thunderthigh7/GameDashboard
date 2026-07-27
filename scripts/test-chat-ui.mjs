@@ -45,6 +45,31 @@ assert.match(
   /\.universeDropdownMenu::\-webkit\-scrollbar\-thumb[\s\S]*?background:\s*rgba\(124,\s*60,\s*255/,
   "The universe selector should use the dashboard scrollbar theme",
 );
+assert.match(
+  serverSource,
+  /thumbnails\.roblox\.com\/v1\/games\/icons/,
+  "The server should resolve icons through Roblox's game thumbnail endpoint",
+);
+assert.match(
+  serverSource,
+  /thumbnailUrl:\s*iconUrlsByUniverseId/,
+  "Universe summaries should include cached Roblox game icon URLs",
+);
+assert.match(
+  indexSource,
+  /id="selectedUniverseThumbnail"/,
+  "The selected-universe control should have a real thumbnail target",
+);
+assert.match(
+  appSource,
+  /selectedUniverse\?\.thumbnailUrl/,
+  "The selected-universe control should render its Roblox thumbnail",
+);
+assert.match(
+  appSource,
+  /data-game-thumbnail/,
+  "Connect Universe cards should render Roblox thumbnails",
+);
 assert.doesNotMatch(
   indexSource,
   /id="integrationStatusCard"|id="connectGameRow"|class="connectUniverseHelp"/,
@@ -121,7 +146,7 @@ assert.match(
 );
 assert.match(
   indexSource,
-  /id="adminNavGroup"[^>]*hidden[\s\S]*?id="adminNavLabel">Admin<\/h2>[\s\S]*?id="adminNavLink"/,
+  /id="adminNavGroup"[^>]*hidden[\s\S]*?id="adminNavLabel"[\s\S]*?>Admin<[\s\S]*?class="adminOnlySectionIcon"[\s\S]*?aria-label="Admin only"[\s\S]*?id="adminNavLink"/,
   "the complete Admin category should be hidden by default",
 );
 assert.doesNotMatch(indexSource, /id="setupNavLabel"|class="navGroup overviewNavGroup"/);

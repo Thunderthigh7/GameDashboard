@@ -430,6 +430,10 @@ const adminResponseRequests = new Map();
 const adminResponseVersions = new Map();
 const LOCAL_USAGE_SNAPSHOT_STORE_LOCK_KEY = "__local_monthly_usage_store__";
 const OBJECT_STORAGE_ROLLUP_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_CACHE_MS", 60 * 1000);
+const ROBLOX_GAME_ICON_CACHE_MS = cleanEnvInteger("ROBLOX_GAME_ICON_CACHE_MS", 6 * 60 * 60 * 1000);
+const ROBLOX_GAME_ICON_CACHE_LIMIT = cleanEnvInteger("ROBLOX_GAME_ICON_CACHE_LIMIT", 500);
+const robloxGameIconCache = new Map();
+const robloxGameIconRequests = new Map();
 let persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
 let persistedMapUniverseIdsRequest = null;
 let persistedMapUniverseIdsVersion = 0;
@@ -5937,7 +5941,10 @@ async function getUniverseSummaries(ownerUserId = null) {
     .filter((universeId) => universeId > 0);
   if (!universeIds.length) return { universes: [] };
 
-  const [persistedMapIds, recentFailuresByUniverseId, rollupEntries] = await Promise.all([
+  const liveUniverseIds = universeIds.filter((universeId) => (
+    !isDemoProject(projectsByUniverseId.get(String(universeId)))
+  ));
+  const [persistedMapIds, recentFailuresByUniverseId, rollupEntries, iconUrlsByUniverseId] = await Promise.all([
     getPersistedMapUniverseIds(universeIds),
     getRecentIntegrationFailuresByUniverse(ownerUserId, universeIds),
     mapWithConcurrency(universeIds, UNIVERSE_ROLLUP_READ_CONCURRENCY, async (universeId) => (
@@ -5946,6 +5953,7 @@ async function getUniverseSummaries(ownerUserId = null) {
         isDemoProject(projectsByUniverseId.get(String(universeId))) ? null : await getObjectStorageRollup(universeId),
       ]
     )),
+    getRobloxGameIconUrls(liveUniverseIds),
   ]);
   const persistedMapUniverseIds = new Set(persistedMapIds.map(String));
   for (const universeId of mapSnapshotsByUniverseId.keys()) persistedMapUniverseIds.add(String(universeId));
@@ -5966,6 +5974,7 @@ async function getUniverseSummaries(ownerUserId = null) {
         projectId: project.id,
         name: project.name,
         isDemo: isDemoProject(project),
+        thumbnailUrl: iconUrlsByUniverseId.get(String(universeId)) || "",
         integrationStatus: buildUniverseIntegrationStatus(mergedSummary, recentFailuresByUniverseId.get(String(universeId))),
       });
     } else {
@@ -5974,6 +5983,7 @@ async function getUniverseSummaries(ownerUserId = null) {
         projectId: project.id,
         name: project.name,
         isDemo: isDemoProject(project),
+        thumbnailUrl: iconUrlsByUniverseId.get(String(universeId)) || "",
         integrationStatus: buildUniverseIntegrationStatus(summary, recentFailuresByUniverseId.get(String(universeId))),
       });
     }
@@ -5984,6 +5994,93 @@ async function getUniverseSummaries(ownerUserId = null) {
   return {
     universes,
   };
+}
+
+async function getRobloxGameIconUrls(universeIds = []) {
+  const ids = [...new Set(universeIds.map(cleanInteger).filter((universeId) => universeId > 0))];
+  const iconUrls = new Map();
+  const missingIds = [];
+  const now = Date.now();
+
+  for (const universeId of ids) {
+    const cached = robloxGameIconCache.get(String(universeId));
+    if (cached && cached.expiresAt > now) {
+      iconUrls.set(String(universeId), cached.imageUrl);
+    } else {
+      if (cached) robloxGameIconCache.delete(String(universeId));
+      missingIds.push(universeId);
+    }
+  }
+
+  for (let index = 0; index < missingIds.length; index += 100) {
+    const batchIds = missingIds.slice(index, index + 100);
+    const batchKey = batchIds.slice().sort((a, b) => a - b).join(",");
+    let request = robloxGameIconRequests.get(batchKey);
+    if (!request) {
+      request = fetchRobloxGameIconBatch(batchIds)
+        .finally(() => robloxGameIconRequests.delete(batchKey));
+      robloxGameIconRequests.set(batchKey, request);
+    }
+
+    const resolved = await request;
+    for (const universeId of batchIds) {
+      const imageUrl = resolved.get(String(universeId)) || "";
+      iconUrls.set(String(universeId), imageUrl);
+      robloxGameIconCache.delete(String(universeId));
+      robloxGameIconCache.set(String(universeId), {
+        imageUrl,
+        expiresAt: now + (imageUrl ? ROBLOX_GAME_ICON_CACHE_MS : 5 * 60 * 1000),
+      });
+    }
+  }
+
+  while (robloxGameIconCache.size > ROBLOX_GAME_ICON_CACHE_LIMIT) {
+    robloxGameIconCache.delete(robloxGameIconCache.keys().next().value);
+  }
+
+  return iconUrls;
+}
+
+async function fetchRobloxGameIconBatch(universeIds) {
+  const iconUrls = new Map();
+  if (!universeIds.length) return iconUrls;
+
+  const url = new URL("https://thumbnails.roblox.com/v1/games/icons");
+  url.searchParams.set("universeIds", universeIds.join(","));
+  url.searchParams.set("returnPolicy", "PlaceHolder");
+  url.searchParams.set("size", "150x150");
+  url.searchParams.set("format", "Png");
+  url.searchParams.set("isCircular", "false");
+
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const payload = await readJsonResponse(response);
+    if (!response.ok) return iconUrls;
+
+    for (const entry of Array.isArray(payload.data) ? payload.data : []) {
+      const universeId = cleanInteger(entry.targetId);
+      const imageUrl = cleanRobloxThumbnailUrl(entry.imageUrl);
+      if (universeId > 0 && imageUrl) iconUrls.set(String(universeId), imageUrl);
+    }
+  } catch {
+    return iconUrls;
+  }
+
+  return iconUrls;
+}
+
+function cleanRobloxThumbnailUrl(value) {
+  const cleanValue = cleanString(value, 2048);
+  if (!cleanValue) return "";
+
+  try {
+    const url = new URL(cleanValue);
+    if (url.protocol !== "https:") return "";
+    if (url.hostname !== "rbxcdn.com" && !url.hostname.endsWith(".rbxcdn.com")) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 async function getRecentIntegrationFailuresByUniverse(ownerUserId = null, universeIds = [], sinceMs = Date.now() - 24 * 60 * 60 * 1000) {

@@ -158,6 +158,7 @@ const projectSecretTarget = document.querySelector("#projectSecretTarget");
 const copyProjectSecretButton = document.querySelector("#copyProjectSecretButton");
 const connectedGameList = document.querySelector("#connectedGameList");
 const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
+const selectedUniverseThumbnail = document.querySelector("#selectedUniverseThumbnail");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
 const chatLogList = document.querySelector("#chatLogList");
 const chatMessageCount = document.querySelector("#chatMessageCount");
@@ -398,7 +399,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-08";
+const DASHBOARD_ASSET_VERSION = "20260727-13";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -585,6 +586,8 @@ function bindEvents() {
     createProject();
   });
   copyProjectSecretButton?.addEventListener("click", copyProjectSecret);
+  selectedUniverseThumbnail?.addEventListener("error", handleSelectedUniverseThumbnailError);
+  connectedGameList?.addEventListener("error", handleConnectedGameThumbnailError, true);
   connectedGameList?.addEventListener("click", (event) => {
     const selectButton = event.target.closest("[data-select-connected-universe]");
     if (selectButton) {
@@ -3724,11 +3727,15 @@ function renderConnectedGame(universe) {
   const artworkLabel = name.trim().charAt(0).toUpperCase() || "?";
   const isDemo = Boolean(universe.isDemo);
   const isSelected = id === selectedUniverseId;
+  const thumbnailUrl = String(universe.thumbnailUrl || "");
 
   return `
     <article class="connectedGameItem">
       <div class="connectedGamePrimary">
-        <span class="connectedGameArtwork tone${escapeHtml(artworkTone)}" aria-hidden="true"><span>${escapeHtml(artworkLabel)}</span></span>
+        <span class="connectedGameArtwork tone${escapeHtml(artworkTone)}${thumbnailUrl ? " hasImage" : ""}" aria-hidden="true">
+          ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="" loading="lazy" data-game-thumbnail>` : ""}
+          <span>${escapeHtml(artworkLabel)}</span>
+        </span>
         <div class="connectedGameInfo">
           <div class="connectedGameTitle">
             <strong>${escapeHtml(name)}${isDemo ? `<span class="demoUniverseBadge">Admin demo</span>` : ""}</strong>
@@ -3751,6 +3758,19 @@ function renderConnectedGame(universe) {
       </div>
     </article>
   `;
+}
+
+function handleSelectedUniverseThumbnailError() {
+  if (!selectedUniverseThumbnail) return;
+  selectedUniverseThumbnail.hidden = true;
+  selectedUniverseThumbnail.removeAttribute("src");
+}
+
+function handleConnectedGameThumbnailError(event) {
+  const image = event.target.closest?.("[data-game-thumbnail]");
+  if (!image) return;
+  image.parentElement?.classList.remove("hasImage");
+  image.remove();
 }
 
 function renderIntegrationStatusCard() {
@@ -7676,8 +7696,18 @@ function updateSelectedUniverse() {
     const selectedUniverse = knownUniverses.find((universe) => String(universe.id || "") === selectedUniverseId);
     selectedUniverseLabel.textContent = selectedUniverse?.name || `Universe ${selectedUniverseId}`;
     universeSelect.value = selectedUniverseId;
+    const thumbnailUrl = String(selectedUniverse?.thumbnailUrl || "");
+    if (selectedUniverseThumbnail) {
+      selectedUniverseThumbnail.hidden = !thumbnailUrl;
+      if (thumbnailUrl) selectedUniverseThumbnail.src = thumbnailUrl;
+      else selectedUniverseThumbnail.removeAttribute("src");
+    }
   } else {
     selectedUniverseLabel.textContent = "No universe selected";
+    if (selectedUniverseThumbnail) {
+      selectedUniverseThumbnail.hidden = true;
+      selectedUniverseThumbnail.removeAttribute("src");
+    }
   }
   syncUniverseSelectorControl();
 }
