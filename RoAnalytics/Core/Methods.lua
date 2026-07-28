@@ -663,6 +663,12 @@ local function watchPlayer(player)
 	if player.Character then
 		watchCharacter(player, player.Character)
 	end
+
+	if started then
+		task.defer(function()
+			Methods.SendHeartbeat()
+		end)
+	end
 end
 
 local function untrackPlayer(player)
@@ -697,6 +703,34 @@ local function normalizeLiveActionKey(value)
 		return nil
 	end
 	return actionKey
+end
+
+local function applyModerationCommand(parameters)
+	if typeof(parameters) ~= "table" then
+		return
+	end
+
+	local action = string.lower(tostring(parameters.action or ""))
+	if action ~= "kick" and action ~= "ban" then
+		return
+	end
+
+	local userId = tonumber(parameters.userId)
+	if not userId or userId <= 0 then
+		return
+	end
+
+	local player = Players:GetPlayerByUserId(userId)
+	if not player then
+		return
+	end
+
+	local reason = string.match(tostring(parameters.reason or ""), "^%s*(.-)%s*$") or ""
+	if reason == "" then
+		reason = "No reason provided."
+	end
+	local heading = if action == "ban" then "You are banned from this experience." else "You were kicked from this experience."
+	player:Kick(heading .. "\nReason: " .. reason)
 end
 
 local function rememberLiveActionDelivery(deliveryId)
@@ -737,6 +771,10 @@ local function handleLiveActionMessage(message)
 	if tonumber(payload.expiresAt) == nil or os.time() > tonumber(payload.expiresAt) then
 		return
 	end
+	if actionKey == "roanalytics.moderation" then
+		task.spawn(applyModerationCommand, payload.parameters or {})
+		return
+	end
 	local handler = registeredLiveActions[actionKey]
 	if not handler then
 		return
@@ -761,6 +799,9 @@ function Methods.RegisterLiveAction(actionKey, handler)
 	local normalizedKey = normalizeLiveActionKey(actionKey)
 	if not normalizedKey then
 		error("RegisterLiveAction expected a valid custom action key", 2)
+	end
+	if normalizedKey == "roanalytics.moderation" then
+		error("roanalytics.moderation is reserved for built-in player moderation", 2)
 	end
 	if typeof(handler) ~= "function" then
 		error("RegisterLiveAction expected a handler function", 2)
@@ -955,6 +996,27 @@ local function getHeartbeatResponseError(response)
 	return fallback
 end
 
+local function applyHeartbeatModeration(response)
+	if typeof(response) ~= "table" or tostring(response.Body or "") == "" then
+		return
+	end
+
+	local decodedOk, decoded = pcall(function()
+		return HttpService:JSONDecode(response.Body)
+	end)
+	if not decodedOk or typeof(decoded) ~= "table" or typeof(decoded.moderation) ~= "table" then
+		return
+	end
+
+	local commands = decoded.moderation.commands
+	if typeof(commands) ~= "table" then
+		return
+	end
+	for _, command in commands do
+		applyModerationCommand(command)
+	end
+end
+
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -1012,6 +1074,7 @@ function Methods.SendHeartbeat()
 		return false, getHeartbeatResponseError(response), tonumber(response.StatusCode)
 	end
 
+	applyHeartbeatModeration(response)
 	clearSentChatLogs(#payload.chatLogs)
 	clearSentMovementSamples(#payload.movementSamples)
 	clearSentMovementRollups(#payload.movementRollups)

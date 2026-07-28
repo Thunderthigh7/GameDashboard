@@ -58,6 +58,7 @@ const eventDefinitionStorePath = path.join(__dirname, "data", "event-definitions
 const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-deletions.json");
 const discordIntegrationStorePath = path.join(__dirname, "data", "discord-integrations.json");
 const robloxLiveIntegrationStorePath = path.join(__dirname, "data", "roblox-live-integrations.json");
+const playerModerationStorePath = path.join(__dirname, "data", "player-moderation.json");
 
 loadLocalEnv();
 
@@ -102,6 +103,11 @@ const ROBLOX_LIVE_EXPIRY_SECONDS = new Set([30, 60, 300, 900]);
 const ROBLOX_LIVE_SCHEDULER_INTERVAL_MS = 30 * 1000;
 const ROBLOX_LIVE_SCHEDULE_RETRY_MS = 5 * 60 * 1000;
 const ROBLOX_OAUTH_REFRESH_EARLY_MS = 60 * 1000;
+const PLAYER_MODERATION_LIVE_WINDOW_MS = 65 * 1000;
+const PLAYER_MODERATION_KICK_WINDOW_MS = 2 * 60 * 1000;
+const MAX_PLAYER_MODERATION_HISTORY = 1000;
+const MAX_PLAYER_MODERATION_RESPONSE_HISTORY = 250;
+const PLAYER_MODERATION_ACTION_KEY = "roanalytics.moderation";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -428,6 +434,7 @@ const rawObjectStorageCleanupByUniverse = new Map();
 const adminResponseCache = new Map();
 const adminResponseRequests = new Map();
 const adminResponseVersions = new Map();
+const livePresenceByUniverseId = new Map();
 const LOCAL_USAGE_SNAPSHOT_STORE_LOCK_KEY = "__local_monthly_usage_store__";
 const OBJECT_STORAGE_ROLLUP_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_CACHE_MS", 60 * 1000);
 const ROBLOX_GAME_ICON_CACHE_MS = cleanEnvInteger("ROBLOX_GAME_ICON_CACHE_MS", 6 * 60 * 60 * 1000);
@@ -442,6 +449,7 @@ let localEventDefinitionStoreLock = Promise.resolve();
 let localCustomEventDeletionStoreLock = Promise.resolve();
 let localDiscordIntegrationStoreLock = Promise.resolve();
 let localRobloxLiveIntegrationStoreLock = Promise.resolve();
+let localPlayerModerationStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
 const discordIntegrationCache = new Map();
 const discordAlertEvaluationLocks = new Map();
@@ -680,6 +688,24 @@ const server = http.createServer(async (req, res) => {
       }
 
       return handleAdminUserPlanUpdate(req, res, user);
+    }
+
+    if (url.pathname === "/api/admin/player-moderation" && req.method === "GET") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      return handlePlayerModerationGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/admin/player-moderation/actions" && req.method === "POST") {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) {
+        return sendJson(res, 403, { error: "Admin access required" });
+      }
+
+      return handlePlayerModerationAction(req, res, auth, user);
     }
 
     if (url.pathname === "/api/admin/demo-universe" && req.method === "POST") {
@@ -1379,6 +1405,10 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("custom_event_deletions").createIndex({ universeId: 1, eventName: 1 }, { unique: true }),
     db.collection("discord_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
     db.collection("roblox_live_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
+    db.collection("player_moderation_actions").createIndex({ id: 1 }, { unique: true }),
+    db.collection("player_moderation_actions").createIndex({ ownerUserId: 1, universeId: 1, createdAt: -1 }),
+    db.collection("player_bans").createIndex({ ownerUserId: 1, universeId: 1, userId: 1 }, { unique: true }),
+    db.collection("player_bans").createIndex({ ownerUserId: 1, universeId: 1, active: 1, updatedAt: -1 }),
   ]);
 }
 
@@ -3917,6 +3947,129 @@ async function evaluateScheduledRobloxLiveActions() {
   }
 }
 
+async function handlePlayerModerationGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+
+  return sendJson(res, 200, await getPlayerModerationSnapshot(auth.userId, universeId));
+}
+
+async function handlePlayerModerationAction(req, res, auth, adminUser) {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+
+  const actionType = cleanString(body?.action, 16).toLowerCase();
+  if (!["kick", "ban", "unban"].includes(actionType)) {
+    return sendJson(res, 400, { error: "Choose Kick, Ban, or Unban." });
+  }
+
+  const userId = cleanInteger(body?.userId);
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    return sendJson(res, 400, { error: "Choose a valid Roblox player." });
+  }
+
+  const reason = cleanString(body?.reason, 240);
+  if (reason.length < 3) {
+    return sendJson(res, 400, { error: "Enter a clear reason with at least 3 characters." });
+  }
+
+  const now = Date.now();
+  const player = findLiveModerationPlayer(auth.userId, universeId, userId);
+  const existingBan = await getActivePlayerBan(auth.userId, universeId, userId);
+  if (actionType === "kick" && !player) {
+    return sendJson(res, 409, { error: "That player is no longer online." });
+  }
+  if (actionType === "unban" && !existingBan) {
+    return sendJson(res, 409, { error: "That player is not currently banned." });
+  }
+  const username = cleanString(
+    player?.username || existingBan?.username || body?.username,
+    64,
+  ) || `User ${userId}`;
+  const displayName = cleanString(
+    player?.displayName || existingBan?.displayName || body?.displayName,
+    64,
+  );
+  const action = {
+    id: crypto.randomUUID(),
+    ownerUserId: auth.userId,
+    universeId,
+    userId,
+    username,
+    displayName,
+    action: actionType,
+    reason,
+    createdAt: now,
+    createdByUserId: cleanString(adminUser?.id, 120),
+    createdByUsername: getAdminResetLabel(adminUser),
+    deliveryStatus: actionType === "unban" ? "saved" : "heartbeat",
+    deliveryError: "",
+  };
+
+  await savePlayerModerationAction(action);
+
+  if (actionType !== "unban") {
+    try {
+      const published = await publishPlayerModerationAction(project, action);
+      if (published) action.deliveryStatus = "published";
+    } catch (error) {
+      action.deliveryError = cleanString(error?.message, 240);
+    }
+    await updatePlayerModerationActionDelivery(action);
+  }
+
+  return sendJson(res, 200, {
+    ...await getPlayerModerationSnapshot(auth.userId, universeId),
+    actionResult: serializePlayerModerationAction(action),
+  });
+}
+
+async function publishPlayerModerationAction(project, action) {
+  const integration = await readRobloxLiveIntegration(project.ownerUserId, project.universeId);
+  if (!hasRobloxLiveAuthorization(integration)) return false;
+
+  const retryAfterMs = claimRobloxLiveSendSlot(project.ownerUserId);
+  if (retryAfterMs > 0) return false;
+
+  const sentAt = Date.now();
+  const built = buildRobloxLiveActionMessage({
+    deliveryId: action.id,
+    universeId: project.universeId,
+    ruleId: action.id,
+    actionKey: PLAYER_MODERATION_ACTION_KEY,
+    parameters: {
+      action: action.action,
+      userId: action.userId,
+      reason: action.reason,
+      moderationId: action.id,
+    },
+    sentAt,
+    expiresInSeconds: 120,
+    trigger: "player_moderation",
+  });
+  const accessToken = await getRobloxLiveAccessToken(integration);
+  await publishRobloxUniverseMessage({
+    accessToken,
+    universeId: project.universeId,
+    topic: ROBLOX_LIVE_ACTION_TOPIC,
+    message: built.message,
+  });
+  return true;
+}
+
 async function handleAdminUserPlanUpdate(req, res, adminUser) {
   let body;
   try {
@@ -4590,7 +4743,7 @@ async function handlePresenceHeartbeat(req, res) {
     return sendJson(res, 400, { error: presence.error });
   }
 
-  const project = await getProjectFromRequestSecret(req, presence.value.universeId);
+  let project = await getProjectFromRequestSecret(req, presence.value.universeId);
   if (!project && !isValidPresenceSecret(req)) {
     const connectedProject = await getProjectByUniverseId(presence.value.universeId);
     return sendJson(res, 401, {
@@ -4601,10 +4754,14 @@ async function handlePresenceHeartbeat(req, res) {
       universeId: presence.value.universeId,
     });
   }
+  if (!project && isValidPresenceSecret(req)) {
+    project = await getProjectByUniverseId(presence.value.universeId);
+  }
 
   if (project) {
     presence.value.ownerUserId = project.ownerUserId;
     presence.value.projectId = project.id;
+    rememberLivePresence(presence.value);
   }
 
   const usageContext = getUsageContextFromProject(project, presence.value.universeId);
@@ -4665,6 +4822,9 @@ async function handlePresenceHeartbeat(req, res) {
       });
     });
   }
+  const moderationCommands = project
+    ? await getHeartbeatModerationCommands(presence.value, project)
+    : [];
 
   return sendJson(res, 200, {
     ok: true,
@@ -4689,6 +4849,9 @@ async function handlePresenceHeartbeat(req, res) {
     savedLeaveCount,
     savedVisitCount,
     savedCustomEventCount,
+    moderation: {
+      commands: moderationCommands,
+    },
   });
 }
 
@@ -14045,6 +14208,408 @@ function invalidateAdminResponseCache(...cacheKeys) {
     adminResponseVersions.set(key, cleanFiniteInteger(adminResponseVersions.get(key)) + 1);
     adminResponseCache.delete(key);
     adminResponseRequests.delete(key);
+  }
+}
+
+function rememberLivePresence(presence) {
+  const universeId = cleanInteger(presence?.universeId);
+  const jobId = cleanString(presence?.jobId, 128);
+  const ownerUserId = cleanString(presence?.ownerUserId, 120);
+  if (universeId <= 0 || !jobId || !ownerUserId) return;
+
+  const servers = livePresenceByUniverseId.get(universeId) || new Map();
+  servers.set(jobId, {
+    ownerUserId,
+    universeId,
+    placeId: cleanInteger(presence.placeId),
+    jobId,
+    receivedAt: cleanInteger(presence.receivedAt) || Date.now(),
+    serverStartedAt: cleanInteger(presence.serverStartedAt),
+    players: (Array.isArray(presence.players) ? presence.players : []).map((player) => ({
+      userId: cleanInteger(player.userId),
+      username: cleanString(player.username, 64),
+      displayName: cleanString(player.displayName, 64),
+      joinedAt: cleanInteger(player.joinedAt),
+    })).filter((player) => player.userId > 0),
+  });
+  livePresenceByUniverseId.set(universeId, servers);
+  pruneLivePresence(universeId);
+}
+
+function pruneLivePresence(universeId, now = Date.now()) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const servers = livePresenceByUniverseId.get(cleanUniverseId);
+  if (!servers) return;
+  const cutoff = now - PLAYER_MODERATION_LIVE_WINDOW_MS;
+  for (const [jobId, presence] of servers) {
+    if (cleanInteger(presence.receivedAt) < cutoff) servers.delete(jobId);
+  }
+  if (servers.size === 0) livePresenceByUniverseId.delete(cleanUniverseId);
+}
+
+function getLiveModerationPlayers(ownerUserId, universeId) {
+  pruneLivePresence(universeId);
+  const servers = livePresenceByUniverseId.get(cleanInteger(universeId));
+  if (!servers) return [];
+
+  const players = [];
+  for (const presence of servers.values()) {
+    if (presence.ownerUserId !== ownerUserId) continue;
+    for (const player of presence.players) {
+      players.push({
+        ...player,
+        placeId: presence.placeId,
+        jobId: presence.jobId,
+        serverStartedAt: presence.serverStartedAt,
+        lastSeenAt: presence.receivedAt,
+      });
+    }
+  }
+  return players.sort((a, b) => (
+    cleanInteger(b.joinedAt) - cleanInteger(a.joinedAt)
+    || String(a.username).localeCompare(String(b.username))
+  ));
+}
+
+function findLiveModerationPlayer(ownerUserId, universeId, userId) {
+  const cleanUserId = cleanInteger(userId);
+  return getLiveModerationPlayers(ownerUserId, universeId)
+    .find((player) => player.userId === cleanUserId) || null;
+}
+
+async function getPlayerModerationSnapshot(ownerUserId, universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const [records, bans] = await Promise.all([
+    readPlayerModerationActions(ownerUserId, cleanUniverseId, {
+      limit: MAX_PLAYER_MODERATION_HISTORY,
+    }),
+    readPlayerBans(ownerUserId, cleanUniverseId, { activeOnly: true }),
+  ]);
+  const livePlayers = getLiveModerationPlayers(ownerUserId, cleanUniverseId);
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  return {
+    universeId: cleanUniverseId,
+    livePlayers,
+    activeBans: bans.map(serializePlayerBan),
+    history: records.slice(0, MAX_PLAYER_MODERATION_RESPONSE_HISTORY).map(serializePlayerModerationAction),
+    stats: {
+      online: livePlayers.length,
+      activeBans: bans.length,
+      actions24h: records.filter((action) => cleanInteger(action.createdAt) >= dayAgo).length,
+    },
+    refreshedAt: Date.now(),
+  };
+}
+
+function serializePlayerModerationAction(action) {
+  return {
+    id: cleanString(action?.id, 120),
+    universeId: cleanInteger(action?.universeId),
+    userId: cleanInteger(action?.userId),
+    username: cleanString(action?.username, 64),
+    displayName: cleanString(action?.displayName, 64),
+    action: cleanString(action?.action, 16).toLowerCase(),
+    reason: cleanString(action?.reason, 240),
+    createdAt: cleanInteger(action?.createdAt),
+    createdByUsername: cleanString(action?.createdByUsername, 120),
+    deliveryStatus: cleanString(action?.deliveryStatus, 24),
+    deliveryError: cleanString(action?.deliveryError, 240),
+  };
+}
+
+function serializePlayerBan(ban) {
+  return {
+    id: cleanString(ban?.id, 120),
+    universeId: cleanInteger(ban?.universeId),
+    userId: cleanInteger(ban?.userId),
+    username: cleanString(ban?.username, 64),
+    displayName: cleanString(ban?.displayName, 64),
+    reason: cleanString(ban?.reason, 240),
+    bannedAt: cleanInteger(ban?.bannedAt),
+    bannedByUsername: cleanString(ban?.bannedByUsername, 120),
+  };
+}
+
+function normalizeStoredPlayerModerationAction(action) {
+  const serialized = serializePlayerModerationAction(action);
+  return {
+    ...serialized,
+    ownerUserId: cleanString(action?.ownerUserId, 120),
+    createdByUserId: cleanString(action?.createdByUserId, 120),
+  };
+}
+
+function normalizeStoredPlayerBan(ban) {
+  return {
+    id: cleanString(ban?.id, 120),
+    ownerUserId: cleanString(ban?.ownerUserId, 120),
+    universeId: cleanInteger(ban?.universeId),
+    userId: cleanInteger(ban?.userId),
+    username: cleanString(ban?.username, 64),
+    displayName: cleanString(ban?.displayName, 64),
+    reason: cleanString(ban?.reason, 240),
+    active: ban?.active !== false,
+    bannedAt: cleanInteger(ban?.bannedAt),
+    bannedByUserId: cleanString(ban?.bannedByUserId, 120),
+    bannedByUsername: cleanString(ban?.bannedByUsername, 120),
+    unbannedAt: cleanInteger(ban?.unbannedAt) || null,
+    unbannedByUserId: cleanString(ban?.unbannedByUserId, 120),
+    unbannedByUsername: cleanString(ban?.unbannedByUsername, 120),
+    unbanReason: cleanString(ban?.unbanReason, 240),
+    updatedAt: cleanInteger(ban?.updatedAt),
+  };
+}
+
+async function savePlayerModerationAction(action) {
+  const normalizedAction = normalizeStoredPlayerModerationAction(action);
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("player_moderation_actions").insertOne(normalizedAction);
+    if (normalizedAction.action === "ban") {
+      await db.collection("player_bans").updateOne(
+        {
+          ownerUserId: normalizedAction.ownerUserId,
+          universeId: normalizedAction.universeId,
+          userId: normalizedAction.userId,
+        },
+        {
+          $set: {
+            id: normalizedAction.id,
+            ownerUserId: normalizedAction.ownerUserId,
+            universeId: normalizedAction.universeId,
+            userId: normalizedAction.userId,
+            username: normalizedAction.username,
+            displayName: normalizedAction.displayName,
+            reason: normalizedAction.reason,
+            active: true,
+            bannedAt: normalizedAction.createdAt,
+            bannedByUserId: normalizedAction.createdByUserId,
+            bannedByUsername: normalizedAction.createdByUsername,
+            unbannedAt: null,
+            unbannedByUserId: "",
+            unbannedByUsername: "",
+            unbanReason: "",
+            updatedAt: normalizedAction.createdAt,
+          },
+        },
+        { upsert: true },
+      );
+    } else if (normalizedAction.action === "unban") {
+      await db.collection("player_bans").updateOne(
+        {
+          ownerUserId: normalizedAction.ownerUserId,
+          universeId: normalizedAction.universeId,
+          userId: normalizedAction.userId,
+        },
+        {
+          $set: {
+            active: false,
+            unbannedAt: normalizedAction.createdAt,
+            unbannedByUserId: normalizedAction.createdByUserId,
+            unbannedByUsername: normalizedAction.createdByUsername,
+            unbanReason: normalizedAction.reason,
+            updatedAt: normalizedAction.createdAt,
+          },
+        },
+      );
+    }
+    return normalizedAction;
+  }
+
+  return withLocalPlayerModerationStoreLock(async () => {
+    const store = await readLocalPlayerModerationStore();
+    store.actions.unshift(normalizedAction);
+    const banIndex = store.bans.findIndex((ban) => (
+      ban.ownerUserId === normalizedAction.ownerUserId
+      && cleanInteger(ban.universeId) === normalizedAction.universeId
+      && cleanInteger(ban.userId) === normalizedAction.userId
+    ));
+    if (normalizedAction.action === "ban") {
+      const ban = normalizeStoredPlayerBan({
+        id: normalizedAction.id,
+        ownerUserId: normalizedAction.ownerUserId,
+        universeId: normalizedAction.universeId,
+        userId: normalizedAction.userId,
+        username: normalizedAction.username,
+        displayName: normalizedAction.displayName,
+        reason: normalizedAction.reason,
+        active: true,
+        bannedAt: normalizedAction.createdAt,
+        bannedByUserId: normalizedAction.createdByUserId,
+        bannedByUsername: normalizedAction.createdByUsername,
+        updatedAt: normalizedAction.createdAt,
+      });
+      if (banIndex >= 0) store.bans[banIndex] = ban;
+      else store.bans.push(ban);
+    } else if (normalizedAction.action === "unban" && banIndex >= 0) {
+      store.bans[banIndex] = normalizeStoredPlayerBan({
+        ...store.bans[banIndex],
+        active: false,
+        unbannedAt: normalizedAction.createdAt,
+        unbannedByUserId: normalizedAction.createdByUserId,
+        unbannedByUsername: normalizedAction.createdByUsername,
+        unbanReason: normalizedAction.reason,
+        updatedAt: normalizedAction.createdAt,
+      });
+    }
+    await writeLocalPlayerModerationStore(store);
+    return normalizedAction;
+  });
+}
+
+async function updatePlayerModerationActionDelivery(action) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("player_moderation_actions").updateOne(
+      { id: action.id, ownerUserId: action.ownerUserId },
+      { $set: {
+        deliveryStatus: cleanString(action.deliveryStatus, 24),
+        deliveryError: cleanString(action.deliveryError, 240),
+      } },
+    );
+    return;
+  }
+
+  await withLocalPlayerModerationStoreLock(async () => {
+    const store = await readLocalPlayerModerationStore();
+    const record = store.actions.find((entry) => entry.id === action.id);
+    if (record) {
+      record.deliveryStatus = cleanString(action.deliveryStatus, 24);
+      record.deliveryError = cleanString(action.deliveryError, 240);
+      await writeLocalPlayerModerationStore(store);
+    }
+  });
+}
+
+async function readPlayerModerationActions(ownerUserId, universeId, options = {}) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const db = await getMongoDb();
+  if (db) {
+    const filter = { ownerUserId, universeId: cleanUniverseId };
+    if (options.since) filter.createdAt = { $gte: cleanInteger(options.since) };
+    if (options.actions?.length) filter.action = { $in: options.actions };
+    if (options.userIds?.length) filter.userId = { $in: options.userIds.map(cleanInteger) };
+    return db.collection("player_moderation_actions")
+      .find(filter)
+      .project({ _id: 0 })
+      .sort({ createdAt: -1 })
+      .limit(options.limit || MAX_PLAYER_MODERATION_RESPONSE_HISTORY)
+      .toArray();
+  }
+
+  const store = await readLocalPlayerModerationStore();
+  return store.actions
+    .filter((action) => (
+      action.ownerUserId === ownerUserId
+      && cleanInteger(action.universeId) === cleanUniverseId
+      && (!options.since || cleanInteger(action.createdAt) >= cleanInteger(options.since))
+      && (!options.actions?.length || options.actions.includes(action.action))
+      && (!options.userIds?.length || options.userIds.includes(cleanInteger(action.userId)))
+    ))
+    .sort((a, b) => cleanInteger(b.createdAt) - cleanInteger(a.createdAt))
+    .slice(0, options.limit || MAX_PLAYER_MODERATION_RESPONSE_HISTORY);
+}
+
+async function readPlayerBans(ownerUserId, universeId, options = {}) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const db = await getMongoDb();
+  if (db) {
+    const filter = { ownerUserId, universeId: cleanUniverseId };
+    if (options.activeOnly) filter.active = true;
+    if (options.userIds?.length) filter.userId = { $in: options.userIds.map(cleanInteger) };
+    return db.collection("player_bans")
+      .find(filter)
+      .project({ _id: 0 })
+      .sort({ updatedAt: -1 })
+      .toArray();
+  }
+
+  const store = await readLocalPlayerModerationStore();
+  return store.bans
+    .filter((ban) => (
+      ban.ownerUserId === ownerUserId
+      && cleanInteger(ban.universeId) === cleanUniverseId
+      && (!options.activeOnly || ban.active === true)
+      && (!options.userIds?.length || options.userIds.includes(cleanInteger(ban.userId)))
+    ))
+    .sort((a, b) => cleanInteger(b.updatedAt) - cleanInteger(a.updatedAt));
+}
+
+async function getActivePlayerBan(ownerUserId, universeId, userId) {
+  return (await readPlayerBans(ownerUserId, universeId, {
+    activeOnly: true,
+    userIds: [cleanInteger(userId)],
+  }))[0] || null;
+}
+
+async function getHeartbeatModerationCommands(presence, project) {
+  const userIds = (presence.players || []).map((player) => cleanInteger(player.userId)).filter((id) => id > 0);
+  if (!userIds.length || !project) return [];
+
+  const [bans, kicks] = await Promise.all([
+    readPlayerBans(project.ownerUserId, presence.universeId, { activeOnly: true, userIds }),
+    readPlayerModerationActions(project.ownerUserId, presence.universeId, {
+      since: Date.now() - PLAYER_MODERATION_KICK_WINDOW_MS,
+      actions: ["kick"],
+      userIds,
+      limit: userIds.length,
+    }),
+  ]);
+  const commandsByUserId = new Map();
+  for (const kick of kicks) {
+    commandsByUserId.set(cleanInteger(kick.userId), {
+      id: cleanString(kick.id, 120),
+      action: "kick",
+      userId: cleanInteger(kick.userId),
+      reason: cleanString(kick.reason, 240),
+    });
+  }
+  for (const ban of bans) {
+    commandsByUserId.set(cleanInteger(ban.userId), {
+      id: cleanString(ban.id, 120),
+      action: "ban",
+      userId: cleanInteger(ban.userId),
+      reason: cleanString(ban.reason, 240),
+    });
+  }
+  return [...commandsByUserId.values()];
+}
+
+async function readLocalPlayerModerationStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(playerModerationStorePath, "utf8"));
+    return {
+      actions: Array.isArray(payload.actions)
+        ? payload.actions.map(normalizeStoredPlayerModerationAction)
+        : [],
+      bans: Array.isArray(payload.bans)
+        ? payload.bans.map(normalizeStoredPlayerBan)
+        : [],
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return { actions: [], bans: [] };
+    throw error;
+  }
+}
+
+async function writeLocalPlayerModerationStore(store) {
+  await fs.mkdir(path.dirname(playerModerationStorePath), { recursive: true });
+  await fs.writeFile(playerModerationStorePath, JSON.stringify({
+    actions: store.actions,
+    bans: store.bans,
+  }, null, 2));
+}
+
+async function withLocalPlayerModerationStoreLock(operation) {
+  const previous = localPlayerModerationStoreLock;
+  let release;
+  localPlayerModerationStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
   }
 }
 

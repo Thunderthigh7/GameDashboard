@@ -107,3 +107,9 @@ end)
 `RoAnalytics.Start()` subscribes each live server to the fixed `roanalytics-live-actions-v1` MessagingService topic and routes messages to the matching registered action key. Live-action execution does not add any HTTPS requests or status fields to analytics heartbeats. Recent deliveries records whether Roblox Open Cloud accepted the publish; it does not claim that a game server executed it.
 
 Keep handlers idempotent when practical because MessagingService delivery is best effort, and validate parameters again before changing gameplay.
+
+## Player moderation
+
+Kick and ban commands from the admin-only **Player Moderation** page are built in. Do not register a handler for `roanalytics.moderation`.
+
+An authorized Roblox Open Cloud connection delivers the action immediately through the existing MessagingService subscription. The normal heartbeat response also contains moderation commands, so permanent bans are enforced on future joins and Kick/Ban still have a fallback if an immediate publish is missed. Every action requires a reason and is stored in the dashboard's moderation history.

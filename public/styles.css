@@ -4973,6 +4973,304 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   justify-self: start;
 }
 
+body[data-active-view="moderation"] .topbarActions {
+  display: none;
+}
+
+.playerModerationPage {
+  align-content: start;
+}
+
+.playerModerationStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 210px)) 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.playerModerationStats article {
+  display: grid;
+  gap: 5px;
+  min-height: 82px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 14px 16px;
+}
+
+.playerModerationStats span,
+.playerModerationTableHeader span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.playerModerationStats strong {
+  align-self: end;
+  color: #fff;
+  font-size: 1.65rem;
+}
+
+.playerModerationStats > button {
+  align-self: center;
+  justify-self: end;
+}
+
+.playerModerationStatus,
+.playerModerationFormStatus {
+  min-height: 18px;
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.playerModerationStatus[data-state="error"],
+.playerModerationFormStatus[data-state="error"] {
+  color: #ff8095;
+}
+
+.playerModerationStatus[data-state="success"],
+.playerModerationFormStatus[data-state="success"] {
+  color: #45e6bd;
+}
+
+.playerModerationPanel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.playerModerationSectionHeader {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.playerModerationSectionHeader h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.08rem;
+}
+
+.playerModerationSectionHeader p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.playerModerationTableHeader,
+.playerModerationRow {
+  display: grid;
+  gap: 16px;
+  align-items: center;
+}
+
+.playerModerationTableHeader {
+  min-height: 42px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(8, 15, 38, 0.42);
+}
+
+.playerModerationLiveGrid {
+  grid-template-columns: minmax(180px, 1.4fr) minmax(130px, 0.8fr) minmax(130px, 0.7fr) minmax(180px, auto);
+}
+
+.playerModerationBanGrid {
+  grid-template-columns: minmax(180px, 1.1fr) minmax(240px, 1.8fr) minmax(150px, 0.8fr) minmax(90px, auto);
+}
+
+.playerModerationHistoryGrid {
+  grid-template-columns: minmax(170px, 1.1fr) minmax(80px, 0.55fr) minmax(260px, 2fr) minmax(120px, 0.75fr) minmax(150px, 0.85fr);
+}
+
+.playerModerationRow {
+  min-height: 70px;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(78, 95, 143, 0.28);
+}
+
+.playerModerationRow:last-child {
+  border-bottom: 0;
+}
+
+.playerModerationIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.playerModerationIdentity strong,
+.playerModerationReason,
+.playerModerationMeta strong {
+  color: #fff;
+  font-size: 0.93rem;
+}
+
+.playerModerationIdentity span,
+.playerModerationMeta span,
+.playerModerationReason small {
+  color: var(--muted);
+  font-size: 0.77rem;
+}
+
+.playerModerationIdentity strong,
+.playerModerationIdentity span,
+.playerModerationReason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playerModerationReason {
+  line-height: 1.45;
+}
+
+.playerModerationActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.playerModerationActionButton {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: #f2efff;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.playerModerationActionButton:hover {
+  border-color: rgba(142, 100, 255, 0.75);
+  background: rgba(108, 57, 225, 0.16);
+}
+
+.playerModerationActionButton.danger {
+  border-color: rgba(255, 92, 119, 0.42);
+  color: #ff9aaa;
+}
+
+.playerModerationActionBadge {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 25px;
+  align-items: center;
+  border: 1px solid rgba(133, 94, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(105, 55, 222, 0.15);
+  color: #c6adff;
+  padding: 0 9px;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.playerModerationActionBadge[data-action="ban"] {
+  border-color: rgba(255, 92, 119, 0.45);
+  background: rgba(255, 70, 99, 0.12);
+  color: #ff8da1;
+}
+
+.playerModerationActionBadge[data-action="unban"] {
+  border-color: rgba(52, 219, 178, 0.45);
+  background: rgba(35, 190, 151, 0.12);
+  color: #50e3bd;
+}
+
+.playerModerationEmpty {
+  display: grid;
+  place-items: center;
+  min-height: 92px;
+  color: var(--muted);
+  padding: 20px;
+  text-align: center;
+}
+
+.playerModerationDialogCard {
+  width: min(560px, calc(100vw - 30px));
+}
+
+.playerModerationForm {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.playerModerationTarget {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(12, 20, 48, 0.72);
+  padding: 14px 15px;
+}
+
+.playerModerationTarget strong {
+  color: #fff;
+  font-size: 1rem;
+}
+
+.playerModerationTarget span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.playerModerationForm textarea {
+  min-height: 116px;
+  resize: vertical;
+}
+
+.playerModerationForm .discordFormField > small {
+  justify-self: end;
+}
+
+.playerModerationForm footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .playerModerationStats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .playerModerationStats > button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .playerModerationTableHeader {
+    display: none;
+  }
+
+  .playerModerationRow.playerModerationLiveGrid,
+  .playerModerationRow.playerModerationBanGrid,
+  .playerModerationRow.playerModerationHistoryGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .playerModerationActions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .playerModerationStats {
+    grid-template-columns: 1fr;
+  }
+
+  .playerModerationStats > button {
+    grid-column: auto;
+  }
+}
+
 .adminPanel {
   display: grid;
   gap: 16px;

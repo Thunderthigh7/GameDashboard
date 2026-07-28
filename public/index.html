@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260727-16/styles.css">
+    <link rel="stylesheet" href="/assets/20260727-17/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -167,7 +167,16 @@
                     <path d="m12 9 2.5 2.5L12 14l-2.5-2.5L12 9Z" />
                   </svg>
                 </span>
-                <span>Admin</span>
+                <span>Dashboard users</span>
+              </a>
+              <a href="#moderation" data-dashboard-view="moderation" id="moderationNavLink" hidden>
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 3 20 6.5v5.8c0 4.2-3.1 7.2-8 8.7-4.9-1.5-8-4.5-8-8.7V6.5L12 3Z" />
+                    <path d="M9 12h6M12 9v6" />
+                  </svg>
+                </span>
+                <span>Player moderation</span>
               </a>
             </div>
           </section>
@@ -1668,6 +1677,107 @@
           </section>
         </section>
 
+        <section class="viewPage playerModerationPage" data-view-panel="moderation" hidden>
+          <div class="playerModerationStats" aria-label="Player moderation summary">
+            <article>
+              <span>Online now</span>
+              <strong id="moderationOnlineCount">0</strong>
+            </article>
+            <article>
+              <span>Active bans</span>
+              <strong id="moderationActiveBanCount">0</strong>
+            </article>
+            <article>
+              <span>Actions in 24h</span>
+              <strong id="moderationActionCount">0</strong>
+            </article>
+            <button class="button secondary compact" id="refreshModerationButton" type="button">Refresh</button>
+          </div>
+
+          <p class="playerModerationStatus" id="playerModerationStatus" aria-live="polite"></p>
+
+          <section class="panel playerModerationPanel">
+            <header class="playerModerationSectionHeader">
+              <div>
+                <h2>Live players</h2>
+                <p>Kick or permanently ban a player currently reported by RoAnalytics.</p>
+              </div>
+            </header>
+            <div class="playerModerationTableHeader playerModerationLiveGrid" aria-hidden="true">
+              <span>Player</span>
+              <span>Server</span>
+              <span>Joined</span>
+              <span>Actions</span>
+            </div>
+            <div class="playerModerationTable" id="moderationLivePlayerList"></div>
+          </section>
+
+          <section class="panel playerModerationPanel">
+            <header class="playerModerationSectionHeader">
+              <div>
+                <h2>Active bans</h2>
+                <p>Banned players are removed again whenever they join this universe.</p>
+              </div>
+            </header>
+            <div class="playerModerationTableHeader playerModerationBanGrid" aria-hidden="true">
+              <span>Player</span>
+              <span>Reason</span>
+              <span>Banned</span>
+              <span>Actions</span>
+            </div>
+            <div class="playerModerationTable" id="moderationActiveBanList"></div>
+          </section>
+
+          <section class="panel playerModerationPanel playerModerationHistoryPanel">
+            <header class="playerModerationSectionHeader">
+              <div>
+                <h2>Moderation history</h2>
+                <p>Every kick, ban, and unban with the recorded reason.</p>
+              </div>
+            </header>
+            <div class="playerModerationTableHeader playerModerationHistoryGrid" aria-hidden="true">
+              <span>Player</span>
+              <span>Action</span>
+              <span>Reason</span>
+              <span>Admin</span>
+              <span>Time</span>
+            </div>
+            <div class="playerModerationTable" id="moderationHistoryList"></div>
+          </section>
+
+          <div class="discordRuleDialog playerModerationDialog" id="playerModerationDialog" hidden>
+            <button class="discordRuleDialogBackdrop" id="playerModerationDialogBackdrop" type="button" aria-label="Close moderation action"></button>
+            <section class="discordRuleDialogCard playerModerationDialogCard" role="dialog" aria-modal="true" aria-labelledby="playerModerationDialogTitle">
+              <header>
+                <button class="discordWebhookBuilderBackButton discordRuleBackButton" id="playerModerationDialogCloseButton" type="button" aria-label="Back to player moderation">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+                </button>
+                <div>
+                  <span>Player moderation</span>
+                  <h2 id="playerModerationDialogTitle">Kick player</h2>
+                </div>
+              </header>
+              <form class="playerModerationForm" id="playerModerationForm">
+                <input id="playerModerationAction" type="hidden">
+                <input id="playerModerationUserId" type="hidden">
+                <input id="playerModerationUsername" type="hidden">
+                <input id="playerModerationDisplayName" type="hidden">
+                <div class="playerModerationTarget" id="playerModerationTarget"></div>
+                <label class="discordFormField" for="playerModerationReason">
+                  <span id="playerModerationReasonLabel">Reason</span>
+                  <textarea id="playerModerationReason" maxlength="240" placeholder="Explain why this action is necessary." required></textarea>
+                  <small><span id="playerModerationReasonCount">0</span> / 240</small>
+                </label>
+                <p class="playerModerationFormStatus" id="playerModerationFormStatus" aria-live="polite"></p>
+                <footer>
+                  <button class="button secondary" id="playerModerationCancelButton" type="button">Cancel</button>
+                  <button class="button danger" id="playerModerationSubmitButton" type="submit">Kick player</button>
+                </footer>
+              </form>
+            </section>
+          </div>
+        </section>
+
         <section class="viewPage" data-view-panel="admin" hidden>
           <section class="panel adminPanel">
             <div class="sectionHeader">
@@ -1754,6 +1864,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260727-16/app.js"></script>
+    <script defer src="/assets/20260727-17/app.js"></script>
   </body>
 </html>

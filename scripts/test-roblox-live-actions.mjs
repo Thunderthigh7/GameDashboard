@@ -51,6 +51,24 @@ assert.equal(built.payload.version, 1);
 assert.equal(built.payload.actionKey, "hourly_event.start");
 assert.equal(built.payload.expiresAt - built.payload.sentAt, 60);
 
+const moderationMessage = buildRobloxLiveActionMessage({
+  deliveryId: "moderation-1",
+  universeId: 10544353786,
+  ruleId: "moderation-1",
+  actionKey: "roanalytics.moderation",
+  parameters: {
+    action: "ban",
+    userId: 123456,
+    reason: "Repeated exploit attempts",
+    moderationId: "moderation-1",
+  },
+  expiresInSeconds: 120,
+  trigger: "player_moderation",
+});
+assert.equal(moderationMessage.payload.actionKey, "roanalytics.moderation");
+assert.equal(moderationMessage.payload.parameters.action, "ban");
+assert.equal(moderationMessage.payload.parameters.userId, 123456);
+
 let publishUrl = "";
 let publishOptions = null;
 await publishRobloxUniverseMessage({
@@ -282,6 +300,17 @@ assert.match(methodsSource, /return true, nil, tonumber\(response\.StatusCode\)/
 assert.match(methodsSource, /\["X-Dashboard-Secret"\] = dashboardSecret/);
 assert.match(methodsSource, /MessagingService:SubscribeAsync/);
 assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
+assert.match(methodsSource, /actionKey == "roanalytics\.moderation"/);
+assert.match(methodsSource, /applyHeartbeatModeration\(response\)/);
+assert.match(methodsSource, /player:Kick\(heading \.\. "\\nReason: " \.\. reason\)/);
+assert.match(serverSource, /url\.pathname === "\/api\/admin\/player-moderation"/);
+assert.match(serverSource, /db\.collection\("player_moderation_actions"\)/);
+assert.match(serverSource, /db\.collection\("player_bans"\)/);
+assert.match(serverSource, /getHeartbeatModerationCommands\(presence\.value, project\)/);
+assert.match(indexSource, /data-dashboard-view="moderation"/);
+assert.match(indexSource, /data-view-panel="moderation"[\s\S]*?id="moderationLivePlayerList"[\s\S]*?id="moderationActiveBanList"[\s\S]*?id="moderationHistoryList"/);
+assert.match(appSource, /function loadPlayerModeration\(options = \{\}\)/);
+assert.match(appSource, /function savePlayerModerationAction\(\)/);
 assert.doesNotMatch(methodsSource, /pendingLiveActionAcks|liveActionAcks|getLiveActionAcksPayload|liveActionKeys|getRegisteredLiveActionKeys|queueLiveActionAck/);
 assert.doesNotMatch(methodsSource, /roanalytics_test/);
 const liveActionHandlerSource = methodsSource.match(

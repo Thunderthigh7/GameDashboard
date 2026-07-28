@@ -10,6 +10,7 @@ const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const adminNavGroup = document.querySelector("#adminNavGroup");
 const adminNavLink = document.querySelector("#adminNavLink");
+const moderationNavLink = document.querySelector("#moderationNavLink");
 const refreshAdminUsersButton = document.querySelector("#refreshAdminUsersButton");
 const adminUserList = document.querySelector("#adminUserList");
 const adminUsersStatus = document.querySelector("#adminUsersStatus");
@@ -32,6 +33,30 @@ const saveReconciliationButton = document.querySelector("#saveReconciliationButt
 const reconciliationStats = document.querySelector("#reconciliationStats");
 const reconciliationList = document.querySelector("#reconciliationList");
 const reconciliationStatus = document.querySelector("#reconciliationStatus");
+const refreshModerationButton = document.querySelector("#refreshModerationButton");
+const moderationOnlineCount = document.querySelector("#moderationOnlineCount");
+const moderationActiveBanCount = document.querySelector("#moderationActiveBanCount");
+const moderationActionCount = document.querySelector("#moderationActionCount");
+const playerModerationStatus = document.querySelector("#playerModerationStatus");
+const moderationLivePlayerList = document.querySelector("#moderationLivePlayerList");
+const moderationActiveBanList = document.querySelector("#moderationActiveBanList");
+const moderationHistoryList = document.querySelector("#moderationHistoryList");
+const playerModerationDialog = document.querySelector("#playerModerationDialog");
+const playerModerationDialogBackdrop = document.querySelector("#playerModerationDialogBackdrop");
+const playerModerationDialogCloseButton = document.querySelector("#playerModerationDialogCloseButton");
+const playerModerationDialogTitle = document.querySelector("#playerModerationDialogTitle");
+const playerModerationForm = document.querySelector("#playerModerationForm");
+const playerModerationAction = document.querySelector("#playerModerationAction");
+const playerModerationUserId = document.querySelector("#playerModerationUserId");
+const playerModerationUsername = document.querySelector("#playerModerationUsername");
+const playerModerationDisplayName = document.querySelector("#playerModerationDisplayName");
+const playerModerationTarget = document.querySelector("#playerModerationTarget");
+const playerModerationReasonLabel = document.querySelector("#playerModerationReasonLabel");
+const playerModerationReason = document.querySelector("#playerModerationReason");
+const playerModerationReasonCount = document.querySelector("#playerModerationReasonCount");
+const playerModerationFormStatus = document.querySelector("#playerModerationFormStatus");
+const playerModerationCancelButton = document.querySelector("#playerModerationCancelButton");
+const playerModerationSubmitButton = document.querySelector("#playerModerationSubmitButton");
 const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
@@ -354,6 +379,9 @@ let aiAutomationSettingsRequestSequence = 0;
 let usageRequestSequence = 0;
 let adminUsersRequestSequence = 0;
 let reconciliationRequestSequence = 0;
+let playerModerationRequestSequence = 0;
+let playerModerationRefreshTimer;
+let playerModerationBusy = false;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -403,7 +431,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-16";
+const DASHBOARD_ASSET_VERSION = "20260727-17";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -469,8 +497,9 @@ const CHAT_LOG_PAGE_SIZE = 25;
 const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const ROBLOX_LIVE_REFRESH_MS = 5000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live"]);
-const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin"]);
+const PLAYER_MODERATION_REFRESH_MS = 5000;
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation"]);
+const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin", "moderation"]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
@@ -779,6 +808,18 @@ function bindEvents() {
   aiAutomationToggle?.addEventListener("change", saveAiAutomationSettings);
   aiReportSelect?.addEventListener("change", loadSelectedAiReport);
   refreshAdminUsersButton?.addEventListener("click", () => loadAdminUsers({ force: true }));
+  refreshModerationButton?.addEventListener("click", () => loadPlayerModeration({ force: true }));
+  moderationLivePlayerList?.addEventListener("click", handlePlayerModerationTableAction);
+  moderationActiveBanList?.addEventListener("click", handlePlayerModerationTableAction);
+  playerModerationForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    savePlayerModerationAction();
+  });
+  playerModerationReason?.addEventListener("input", updatePlayerModerationReasonCount);
+  playerModerationDialogCloseButton?.addEventListener("click", closePlayerModerationDialog);
+  playerModerationCancelButton?.addEventListener("click", closePlayerModerationDialog);
+  playerModerationDialogBackdrop?.addEventListener("click", closePlayerModerationDialog);
+  document.addEventListener("keydown", handlePlayerModerationDialogKeydown);
   refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1043,6 +1084,7 @@ function abortActiveDashboardRequests() {
   usageRequestSequence += 1;
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
+  playerModerationRequestSequence += 1;
   customEventsRequestSequence += 1;
   funnelRequestSequence += 1;
   aiReportPayloadCache.clear();
@@ -1064,7 +1106,7 @@ function setAuthenticated(value, user = null) {
   authenticatedUser = authenticated ? user : null;
   if (ADMIN_ONLY_VIEWS.has(activeView) && !authenticatedUser?.isAdmin) {
     activeView = "overview";
-    if (window.location.hash === "#admin" || window.location.hash === "#ai-runs") {
+    if (window.location.hash === "#admin" || window.location.hash === "#ai-runs" || window.location.hash === "#moderation") {
       window.history.replaceState(null, "", "#overview");
     }
   }
@@ -1073,6 +1115,7 @@ function setAuthenticated(value, user = null) {
   renderSidebarAccount();
   if (adminNavGroup) adminNavGroup.hidden = !authenticatedUser?.isAdmin;
   if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
+  if (moderationNavLink) moderationNavLink.hidden = !authenticatedUser?.isAdmin;
   updateDemoUniverseControl();
   loginPanel.hidden = authenticated;
   if (accountBox) accountBox.disabled = !authenticated;
@@ -1095,6 +1138,8 @@ function setAuthenticated(value, user = null) {
     stopChatRefresh();
     stopEventRefresh();
     stopFunnelRefresh();
+    stopRobloxLiveRefresh();
+    stopPlayerModerationRefresh();
     renderChatSummary();
     setChatLiveState("waiting");
     renderRecentChatEmpty("Sign in to view recent chat.");
@@ -1140,6 +1185,7 @@ function setAuthenticated(value, user = null) {
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
     if (adminNavGroup) adminNavGroup.hidden = true;
     if (adminNavLink) adminNavLink.hidden = true;
+    if (moderationNavLink) moderationNavLink.hidden = true;
     if (adminUserList) adminUserList.innerHTML = "";
     if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
     if (adminTotalUsers) adminTotalUsers.textContent = "0";
@@ -1165,6 +1211,13 @@ function setAuthenticated(value, user = null) {
     setRobloxLiveBusy(false);
     closeRobloxLiveRuleEditor();
     renderRobloxLiveIntegration();
+    closePlayerModerationDialog({ force: true });
+    renderPlayerModeration({
+      livePlayers: [],
+      activeBans: [],
+      history: [],
+      stats: {},
+    });
     return;
   }
 
@@ -1200,16 +1253,17 @@ function getViewFromHash() {
   if (window.location.hash === "#roblox-live") return "roblox-live";
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
+  if (window.location.hash === "#moderation") return "moderation";
   if (window.location.hash === "#admin") return "admin";
   return "overview";
 }
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "usage" || view === "connect" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
-  if (lacksAdminAccess && (window.location.hash === "#admin" || window.location.hash === "#ai-runs")) {
+  if (lacksAdminAccess && (window.location.hash === "#admin" || window.location.hash === "#ai-runs" || window.location.hash === "#moderation")) {
     window.history.replaceState(null, "", "#overview");
   }
   if (previousView !== activeView) closeDateRangePicker();
@@ -1229,27 +1283,10 @@ function setActiveView(view, options = {}) {
     if (discordTopbarActions) discordTopbarActions.hidden = true;
   }
   if (activeView !== "roblox-live") closeRobloxLiveRuleEditor();
+  if (activeView !== "moderation") closePlayerModerationDialog({ force: true });
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
-    const nextHash = activeView === "events"
-        ? "#events"
-        : activeView === "funnels"
-          ? "#funnels"
-          : activeView === "ai-runs"
-            ? "#ai-runs"
-            : activeView === "chat"
-              ? "#chat"
-              : activeView === "discord"
-                ? "#discord"
-                : activeView === "roblox-live"
-                  ? "#roblox-live"
-                  : activeView === "usage"
-                    ? "#usage"
-                    : activeView === "connect"
-                      ? "#connect"
-                      : activeView === "admin"
-                        ? "#admin"
-                        : "#overview";
+    const nextHash = activeView === "overview" ? "#overview" : `#${activeView}`;
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -1268,6 +1305,9 @@ function renderActiveView(options = {}) {
 
   for (const link of viewNavLinks) {
     if (link.dataset.dashboardView === "admin") {
+      link.hidden = !authenticatedUser?.isAdmin;
+    }
+    if (link.dataset.dashboardView === "moderation") {
       link.hidden = !authenticatedUser?.isAdmin;
     }
     if (link.dataset.dashboardView === "ai-runs") {
@@ -1318,8 +1358,12 @@ function renderActiveView(options = {}) {
       title: "Connect Universe",
       subtitle: "Add a Roblox game after verifying ownership with Roblox.",
     },
+    moderation: {
+      title: "Player Moderation",
+      subtitle: "Kick and permanently ban Roblox players with a complete reason history.",
+    },
     admin: {
-      title: "Admin",
+      title: "Dashboard Users",
       subtitle: "Monitor RoAnalytics accounts and connected universes.",
     },
   };
@@ -1349,6 +1393,7 @@ function updateViewRefreshTimers() {
     stopEventRefresh();
     stopFunnelRefresh();
     stopRobloxLiveRefresh();
+    stopPlayerModerationRefresh();
     return;
   }
 
@@ -1363,6 +1408,9 @@ function updateViewRefreshTimers() {
 
   if (activeView === "roblox-live" && selectedUniverseId) startRobloxLiveRefresh();
   else stopRobloxLiveRefresh();
+
+  if (activeView === "moderation" && selectedUniverseId) startPlayerModerationRefresh();
+  else stopPlayerModerationRefresh();
 }
 
 function loadActiveViewData(view, options = {}) {
@@ -1384,6 +1432,8 @@ function loadActiveViewData(view, options = {}) {
       loadDiscordIntegration();
     } else if (view === "roblox-live") {
       loadRobloxLiveIntegration();
+    } else if (view === "moderation") {
+      loadPlayerModeration();
     }
     return;
   }
@@ -1403,6 +1453,8 @@ function loadActiveViewData(view, options = {}) {
     loadDiscordIntegration();
   } else if (view === "roblox-live") {
     loadRobloxLiveIntegration();
+  } else if (view === "moderation") {
+    loadPlayerModeration();
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -1510,6 +1562,250 @@ function stopRobloxLiveRefresh() {
     window.clearInterval(robloxLiveRefreshTimer);
     robloxLiveRefreshTimer = null;
   }
+}
+
+function startPlayerModerationRefresh() {
+  if (playerModerationRefreshTimer || document.hidden) return;
+  playerModerationRefreshTimer = window.setInterval(() => {
+    if (!playerModerationBusy && playerModerationDialog?.hidden !== false) {
+      loadPlayerModeration({ background: true });
+    }
+  }, PLAYER_MODERATION_REFRESH_MS);
+}
+
+function stopPlayerModerationRefresh() {
+  if (playerModerationRefreshTimer) {
+    window.clearInterval(playerModerationRefreshTimer);
+    playerModerationRefreshTimer = null;
+  }
+}
+
+async function loadPlayerModeration(options = {}) {
+  if (!authenticatedUser?.isAdmin || !selectedUniverseId || !moderationLivePlayerList) return;
+  const requestSequence = ++playerModerationRequestSequence;
+  playerModerationBusy = true;
+  if (!options.background) setPlayerModerationStatus("Loading...");
+  setPlayerModerationControlsDisabled(true);
+
+  try {
+    const data = await request(`/api/admin/player-moderation?universeId=${encodeURIComponent(selectedUniverseId)}`);
+    if (
+      requestSequence !== playerModerationRequestSequence
+      || activeView !== "moderation"
+      || String(data.universeId) !== String(selectedUniverseId)
+    ) return;
+    renderPlayerModeration(data);
+    setPlayerModerationStatus("");
+  } catch (error) {
+    if (requestSequence !== playerModerationRequestSequence) return;
+    handleAuthError(error);
+    if (!authenticated) return;
+    setPlayerModerationStatus(error.message, "error");
+  } finally {
+    if (requestSequence === playerModerationRequestSequence) {
+      playerModerationBusy = false;
+      setPlayerModerationControlsDisabled(false);
+    }
+  }
+}
+
+function renderPlayerModeration(data) {
+  const livePlayers = Array.isArray(data?.livePlayers) ? data.livePlayers : [];
+  const activeBans = Array.isArray(data?.activeBans) ? data.activeBans : [];
+  const history = Array.isArray(data?.history) ? data.history : [];
+  if (moderationOnlineCount) moderationOnlineCount.textContent = formatCompactNumber(data?.stats?.online || 0);
+  if (moderationActiveBanCount) moderationActiveBanCount.textContent = formatCompactNumber(data?.stats?.activeBans || 0);
+  if (moderationActionCount) moderationActionCount.textContent = formatCompactNumber(data?.stats?.actions24h || 0);
+
+  if (moderationLivePlayerList) {
+    moderationLivePlayerList.innerHTML = livePlayers.length
+      ? livePlayers.map(renderModerationLivePlayer).join("")
+      : `<div class="playerModerationEmpty">No live players reported in the last minute.</div>`;
+  }
+  if (moderationActiveBanList) {
+    moderationActiveBanList.innerHTML = activeBans.length
+      ? activeBans.map(renderModerationActiveBan).join("")
+      : `<div class="playerModerationEmpty">No active bans.</div>`;
+  }
+  if (moderationHistoryList) {
+    moderationHistoryList.innerHTML = history.length
+      ? history.map(renderModerationHistoryRecord).join("")
+      : `<div class="playerModerationEmpty">No moderation actions yet.</div>`;
+  }
+}
+
+function renderModerationLivePlayer(player) {
+  const username = String(player.username || `User ${player.userId}`);
+  const displayName = String(player.displayName || "");
+  const jobId = String(player.jobId || "");
+  const serverLabel = jobId ? `${jobId.slice(0, 8)}...` : "Unknown";
+  return `
+    <article class="playerModerationRow playerModerationLiveGrid">
+      ${renderModerationIdentity(username, displayName, player.userId)}
+      <div class="playerModerationMeta"><strong>${escapeHtml(serverLabel)}</strong><span>Place ${escapeHtml(player.placeId || "-")}</span></div>
+      <div class="playerModerationMeta"><strong>${escapeHtml(formatRelativeTime(player.joinedAt))}</strong><span>Last seen ${escapeHtml(formatRelativeTime(player.lastSeenAt))}</span></div>
+      <div class="playerModerationActions">
+        <button class="playerModerationActionButton" type="button" data-player-moderation-action="kick" data-player-id="${escapeHtml(player.userId)}" data-player-username="${escapeHtml(username)}" data-player-display-name="${escapeHtml(displayName)}">Kick</button>
+        <button class="playerModerationActionButton danger" type="button" data-player-moderation-action="ban" data-player-id="${escapeHtml(player.userId)}" data-player-username="${escapeHtml(username)}" data-player-display-name="${escapeHtml(displayName)}">Ban</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderModerationActiveBan(ban) {
+  const username = String(ban.username || `User ${ban.userId}`);
+  const displayName = String(ban.displayName || "");
+  return `
+    <article class="playerModerationRow playerModerationBanGrid">
+      ${renderModerationIdentity(username, displayName, ban.userId)}
+      <div class="playerModerationReason">${escapeHtml(ban.reason || "No reason recorded.")}</div>
+      <div class="playerModerationMeta"><strong>${escapeHtml(formatRelativeTime(ban.bannedAt))}</strong><span>${escapeHtml(ban.bannedByUsername || "Admin")}</span></div>
+      <div class="playerModerationActions">
+        <button class="playerModerationActionButton" type="button" data-player-moderation-action="unban" data-player-id="${escapeHtml(ban.userId)}" data-player-username="${escapeHtml(username)}" data-player-display-name="${escapeHtml(displayName)}">Unban</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderModerationHistoryRecord(record) {
+  const username = String(record.username || `User ${record.userId}`);
+  const displayName = String(record.displayName || "");
+  return `
+    <article class="playerModerationRow playerModerationHistoryGrid">
+      ${renderModerationIdentity(username, displayName, record.userId)}
+      <span class="playerModerationActionBadge" data-action="${escapeHtml(record.action)}">${escapeHtml(record.action)}</span>
+      <div class="playerModerationReason">${escapeHtml(record.reason || "No reason recorded.")}</div>
+      <div class="playerModerationMeta"><strong>${escapeHtml(record.createdByUsername || "Admin")}</strong></div>
+      <div class="playerModerationMeta"><strong>${escapeHtml(formatRelativeTime(record.createdAt))}</strong><span>${escapeHtml(formatFullDate(record.createdAt))}</span></div>
+    </article>
+  `;
+}
+
+function renderModerationIdentity(username, displayName, userId) {
+  const primary = displayName && displayName !== username ? displayName : username;
+  const secondary = displayName && displayName !== username
+    ? `@${username} / ${userId}`
+    : String(userId);
+  return `<div class="playerModerationIdentity"><strong>${escapeHtml(primary)}</strong><span>${escapeHtml(secondary)}</span></div>`;
+}
+
+function handlePlayerModerationTableAction(event) {
+  const button = event.target.closest("[data-player-moderation-action]");
+  if (!button || button.disabled) return;
+  openPlayerModerationDialog({
+    action: button.dataset.playerModerationAction,
+    userId: button.dataset.playerId,
+    username: button.dataset.playerUsername,
+    displayName: button.dataset.playerDisplayName,
+  });
+}
+
+function openPlayerModerationDialog(target) {
+  if (!playerModerationDialog || !target?.action) return;
+  const action = String(target.action).toLowerCase();
+  const actionLabel = action === "unban" ? "Unban" : action === "ban" ? "Ban" : "Kick";
+  playerModerationAction.value = action;
+  playerModerationUserId.value = String(target.userId || "");
+  playerModerationUsername.value = String(target.username || "");
+  playerModerationDisplayName.value = String(target.displayName || "");
+  playerModerationDialogTitle.textContent = `${actionLabel} player`;
+  playerModerationReasonLabel.textContent = action === "unban" ? "Reason for unbanning" : "Reason";
+  playerModerationSubmitButton.textContent = `${actionLabel} player`;
+  playerModerationSubmitButton.classList.toggle("danger", action !== "unban");
+  playerModerationReason.value = "";
+  playerModerationTarget.innerHTML = renderModerationIdentity(
+    target.username || `User ${target.userId}`,
+    target.displayName || "",
+    target.userId,
+  );
+  setPlayerModerationFormStatus("");
+  updatePlayerModerationReasonCount();
+  playerModerationDialog.hidden = false;
+  window.setTimeout(() => playerModerationReason?.focus(), 0);
+}
+
+function closePlayerModerationDialog(options = {}) {
+  if (!playerModerationDialog || playerModerationDialog.hidden || (playerModerationBusy && !options.force)) return;
+  playerModerationDialog.hidden = true;
+  playerModerationForm?.reset();
+  setPlayerModerationFormStatus("");
+  updatePlayerModerationReasonCount();
+}
+
+function handlePlayerModerationDialogKeydown(event) {
+  if (event.key !== "Escape" || playerModerationDialog?.hidden !== false) return;
+  event.preventDefault();
+  closePlayerModerationDialog();
+}
+
+function updatePlayerModerationReasonCount() {
+  if (playerModerationReasonCount) {
+    playerModerationReasonCount.textContent = String(playerModerationReason?.value?.length || 0);
+  }
+}
+
+async function savePlayerModerationAction() {
+  if (!authenticatedUser?.isAdmin || playerModerationBusy || !selectedUniverseId) return;
+  const reason = String(playerModerationReason?.value || "").trim();
+  if (reason.length < 3) {
+    setPlayerModerationFormStatus("Enter a clear reason with at least 3 characters.", "error");
+    playerModerationReason?.focus();
+    return;
+  }
+
+  playerModerationBusy = true;
+  setPlayerModerationControlsDisabled(true);
+  setPlayerModerationFormStatus("");
+  try {
+    const data = await request("/api/admin/player-moderation/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        universeId: Number(selectedUniverseId),
+        action: playerModerationAction.value,
+        userId: Number(playerModerationUserId.value),
+        username: playerModerationUsername.value,
+        displayName: playerModerationDisplayName.value,
+        reason,
+      }),
+    });
+    renderPlayerModeration(data);
+    playerModerationBusy = false;
+    playerModerationDialog.hidden = true;
+    playerModerationForm.reset();
+    setPlayerModerationStatus("");
+  } catch (error) {
+    handleAuthError(error);
+    if (!authenticated) return;
+    setPlayerModerationFormStatus(error.message, "error");
+  } finally {
+    playerModerationBusy = false;
+    setPlayerModerationControlsDisabled(false);
+  }
+}
+
+function setPlayerModerationControlsDisabled(disabled) {
+  if (refreshModerationButton) refreshModerationButton.disabled = disabled;
+  if (playerModerationReason) playerModerationReason.disabled = disabled;
+  if (playerModerationCancelButton) playerModerationCancelButton.disabled = disabled;
+  if (playerModerationSubmitButton) playerModerationSubmitButton.disabled = disabled;
+  for (const button of document.querySelectorAll("[data-player-moderation-action]")) {
+    button.disabled = disabled;
+  }
+}
+
+function setPlayerModerationStatus(message, state = "") {
+  if (!playerModerationStatus) return;
+  playerModerationStatus.textContent = message;
+  if (state) playerModerationStatus.dataset.state = state;
+  else delete playerModerationStatus.dataset.state;
+}
+
+function setPlayerModerationFormStatus(message, state = "") {
+  if (!playerModerationFormStatus) return;
+  playerModerationFormStatus.textContent = message;
+  if (state) playerModerationFormStatus.dataset.state = state;
+  else delete playerModerationFormStatus.dataset.state;
 }
 
 async function loadAdminUsers(options = {}) {
@@ -3974,6 +4270,14 @@ async function selectUniverse(value) {
   closeDiscordRuleEditor();
   if (discordConnectionForm) discordConnectionForm.reset();
   renderDiscordIntegration();
+  playerModerationRequestSequence += 1;
+  closePlayerModerationDialog({ force: true });
+  renderPlayerModeration({
+    livePlayers: [],
+    activeBans: [],
+    history: [],
+    stats: {},
+  });
   renderChatSummary();
   setChatLiveState(selectedUniverseId ? "loading" : "waiting");
   renderRecentChatEmpty(selectedUniverseId ? "Loading recent chat..." : "Select a universe to view recent chat.");
