@@ -37,6 +37,25 @@ import {
   ROBLOX_LIVE_ACTION_TOPIC,
 } from "./lib/roblox-live-actions.mjs";
 import {
+  acceptRobloxGroupJoinRequest,
+  assignRobloxGroupRole,
+  declineRobloxGroupJoinRequest,
+  getRobloxGroup,
+  getRobloxGroupRole,
+  getRobloxUsersByIds,
+  listRobloxUserGroups,
+  listRobloxGroupJoinRequests,
+  listRobloxGroupMemberships,
+  listRobloxGroupRoles,
+  membershipRolePaths,
+  membershipUserId,
+  resourceId as getRobloxResourceId,
+  roleDisplayName as getRobloxRoleDisplayName,
+  rolePath as getRobloxRolePath,
+  roleRank as getRobloxRoleRank,
+  unassignRobloxGroupRole,
+} from "./lib/roblox-groups.mjs";
+import {
   generateProjectSecret,
   hashProjectSecret,
   normalizeProjectSecret,
@@ -62,6 +81,7 @@ const robloxLiveIntegrationStorePath = path.join(__dirname, "data", "roblox-live
 const playerModerationStorePath = path.join(__dirname, "data", "player-moderation.json");
 const assetLibraryStorePath = path.join(__dirname, "data", "asset-library.json");
 const assetDraftDirectory = path.join(__dirname, "data", "asset-drafts");
+const groupManagementStorePath = path.join(__dirname, "data", "group-management.json");
 
 loadLocalEnv();
 
@@ -82,6 +102,14 @@ const ROBLOX_OAUTH_ASSET_SCOPES = withRequiredOAuthScopes(
   process.env.ROBLOX_OAUTH_ASSET_SCOPES || ROBLOX_OAUTH_SCOPES,
   ["openid", "profile", "asset:read", "asset:write"],
 );
+const ROBLOX_OAUTH_GROUP_SCOPES = withRequiredOAuthScopes(
+  process.env.ROBLOX_OAUTH_GROUP_SCOPES || ROBLOX_OAUTH_SCOPES,
+  ["openid", "profile", "group:read", "group:write"],
+);
+const GROUP_AUTOMATION_INTERVAL_MS = 60 * 1000;
+const MAX_GROUP_AUTOMATION_PRESETS_PER_RUN = 10;
+const MAX_GROUP_AUTOMATION_ACCEPTS_PER_RUN = 10;
+const MAX_GROUP_AUTOMATION_ALLOWED_USERS = 100;
 const MAX_ASSET_FILE_BYTES = Math.min(20 * 1024 * 1024, Math.max(1024, cleanEnvInteger("MAX_ASSET_FILE_BYTES", 20 * 1024 * 1024)));
 const MAX_ASSET_BATCH_BYTES = Math.max(MAX_ASSET_FILE_BYTES, cleanEnvInteger("MAX_ASSET_BATCH_BYTES", 250 * 1024 * 1024));
 const MAX_ASSETS_PER_BATCH = Math.min(100, Math.max(1, cleanEnvInteger("MAX_ASSETS_PER_BATCH", 100)));
@@ -463,6 +491,7 @@ let localDiscordIntegrationStoreLock = Promise.resolve();
 let localRobloxLiveIntegrationStoreLock = Promise.resolve();
 let localPlayerModerationStoreLock = Promise.resolve();
 let localAssetLibraryStoreLock = Promise.resolve();
+let localGroupManagementStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
 const discordIntegrationCache = new Map();
 const discordAlertEvaluationLocks = new Map();
@@ -471,6 +500,7 @@ const robloxLiveIntegrationCache = new Map();
 const robloxLiveEvaluationLocks = new Map();
 const robloxLiveTokenRefreshLocks = new Map();
 const assetOAuthTokenRefreshLocks = new Map();
+const groupOAuthTokenRefreshLocks = new Map();
 const assetPackMutationLocks = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
@@ -649,6 +679,52 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/assets/oauth" && req.method === "DELETE") {
       return handleAssetOAuthDisconnect(req, res, auth);
+    }
+
+    if (url.pathname === "/api/groups" && req.method === "GET") {
+      return handleGroupManagementGet(req, res, auth);
+    }
+
+    if (url.pathname === "/api/groups/oauth/start" && req.method === "GET") {
+      return handleGroupOAuthStart(req, res, auth);
+    }
+
+    if (url.pathname === "/api/groups/oauth" && req.method === "DELETE") {
+      return handleGroupOAuthDisconnect(req, res, auth);
+    }
+
+    const groupDetailMatch = url.pathname.match(/^\/api\/groups\/(\d+)$/);
+    if (groupDetailMatch && req.method === "GET") {
+      return handleGroupDetailGet(req, res, auth, groupDetailMatch[1]);
+    }
+
+    const groupJoinRequestMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/join-requests\/([^/]+)\/(accept|decline)$/);
+    if (groupJoinRequestMatch && req.method === "POST") {
+      return handleGroupJoinRequestAction(
+        req,
+        res,
+        auth,
+        groupJoinRequestMatch[1],
+        decodeURIComponent(groupJoinRequestMatch[2]),
+        groupJoinRequestMatch[3],
+      );
+    }
+
+    const groupRoleMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/members\/([^/]+)\/roles\/(assign|unassign)$/);
+    if (groupRoleMatch && req.method === "POST") {
+      return handleGroupMemberRoleAction(
+        req,
+        res,
+        auth,
+        groupRoleMatch[1],
+        decodeURIComponent(groupRoleMatch[2]),
+        groupRoleMatch[3],
+      );
+    }
+
+    const groupAutomationMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/automation$/);
+    if (groupAutomationMatch && req.method === "PUT") {
+      return handleGroupAutomationSave(req, res, auth, groupAutomationMatch[1]);
     }
 
     if (url.pathname === "/api/assets/packs" && req.method === "POST") {
@@ -1127,6 +1203,13 @@ const robloxLiveScheduler = setInterval(() => {
 }, ROBLOX_LIVE_SCHEDULER_INTERVAL_MS);
 robloxLiveScheduler.unref();
 
+const groupAutomationScheduler = setInterval(() => {
+  evaluateGroupAutomationPresets().catch((error) => {
+    console.warn("Could not evaluate Roblox group automation:", error.message || error);
+  });
+}, GROUP_AUTOMATION_INTERVAL_MS);
+groupAutomationScheduler.unref();
+
 if (MONGODB_URI) {
   void initializeMongoStorage();
 }
@@ -1447,6 +1530,9 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("discord_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
     db.collection("roblox_live_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
     db.collection("asset_oauth_integrations").createIndex({ ownerUserId: 1 }, { unique: true }),
+    db.collection("group_oauth_integrations").createIndex({ ownerUserId: 1 }, { unique: true }),
+    db.collection("group_automation_presets").createIndex({ ownerUserId: 1, groupId: 1 }, { unique: true }),
+    db.collection("group_automation_presets").createIndex({ enabled: 1, nextRunAt: 1 }),
     db.collection("asset_packs").createIndex({ id: 1 }, { unique: true }),
     db.collection("asset_packs").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
     db.collection("player_moderation_actions").createIndex({ id: 1 }, { unique: true }),
@@ -2262,6 +2348,221 @@ async function handleAssetOAuthDisconnect(req, res, auth) {
   return sendJson(res, 200, { ok: true });
 }
 
+async function handleGroupManagementGet(req, res, auth) {
+  const integration = await readGroupOAuthIntegration(auth.userId);
+  const authorization = serializeGroupAuthorization(integration);
+  if (!authorization.connected) {
+    return sendJson(res, 200, {
+      authorization,
+      requiredScopes: ["group:read", "group:write"],
+      groups: [],
+    });
+  }
+
+  try {
+    const accessToken = await getGroupOAuthAccessToken(auth.userId);
+    const [groups, presets] = await Promise.all([
+      listRobloxUserGroups(accessToken, authorization.robloxUserId),
+      readGroupAutomationPresets(auth.userId),
+    ]);
+    const presetsByGroup = new Map(presets.map((preset) => [preset.groupId, serializeGroupAutomationPreset(preset)]));
+    return sendJson(res, 200, {
+      authorization: serializeGroupAuthorization(await readGroupOAuthIntegration(auth.userId)),
+      requiredScopes: ["group:read", "group:write"],
+      groups: groups.map((group) => ({ ...group, automation: presetsByGroup.get(group.id) || null })),
+    });
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
+async function handleGroupOAuthStart(req, res, auth) {
+  if (!isRobloxOAuthConfigured()) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox OAuth is not configured",
+      message: "Configure the Roblox OAuth client before authorizing group management.",
+      backHref: "/#groups",
+    });
+  }
+  const state = crypto.randomBytes(24).toString("base64url");
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  const codeVerifier = crypto.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+  setRobloxOAuthStateCookie(res, {
+    purpose: "groups",
+    state,
+    nonce,
+    codeVerifier,
+    userId: auth.userId,
+    createdAt: Date.now(),
+  });
+  return redirect(res, getRobloxAuthorizeUrl({
+    state,
+    nonce,
+    codeChallenge,
+    scopes: ROBLOX_OAUTH_GROUP_SCOPES,
+  }));
+}
+
+async function handleGroupOAuthDisconnect(req, res, auth) {
+  const integration = await readGroupOAuthIntegration(auth.userId);
+  const refreshToken = decryptRobloxLiveOAuthToken(integration?.oauth?.refreshToken);
+  if (refreshToken) {
+    try {
+      await revokeRobloxOAuthToken({
+        token: refreshToken,
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+    } catch (error) {
+      console.warn("Could not revoke Roblox group authorization:", error.message || error);
+    }
+  }
+  await Promise.all([
+    deleteGroupOAuthIntegration(auth.userId),
+    disableGroupAutomationPresets(auth.userId),
+  ]);
+  return sendJson(res, 200, { ok: true });
+}
+
+async function handleGroupDetailGet(req, res, auth, rawGroupId) {
+  try {
+    const groupId = cleanInteger(rawGroupId);
+    const context = await getGroupManagementContext(auth.userId, groupId, {
+      includeMembers: true,
+      includeRequests: true,
+    });
+    return sendJson(res, 200, await serializeGroupManagementContext(context));
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
+async function handleGroupJoinRequestAction(req, res, auth, rawGroupId, rawRequestId, action) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+    const groupId = cleanInteger(rawGroupId);
+    const joinRequestId = getRobloxResourceId(rawRequestId);
+    if (!joinRequestId) return sendJson(res, 400, { error: "Pick a valid join request." });
+    const context = await getGroupManagementContext(auth.userId, groupId, { includeRequests: true });
+    if (!context.canAcceptRequests) return sendJson(res, 403, { error: "Your Roblox role cannot accept or decline group requests." });
+    const request = context.requests.find((entry) => (
+      getRobloxResourceId(entry?.path || entry?.id) === joinRequestId
+        || membershipUserId(entry) === joinRequestId
+    ));
+    if (!request) return sendJson(res, 404, { error: "That join request is no longer pending." });
+
+    if (action === "decline") {
+      await declineRobloxGroupJoinRequest(context.accessToken, groupId, joinRequestId);
+      return sendJson(res, 200, { ok: true, action: "declined" });
+    }
+
+    await acceptRobloxGroupJoinRequest(context.accessToken, groupId, joinRequestId);
+    const targetUserId = membershipUserId(request) || joinRequestId;
+    const role = findAssignableGroupRole(context, body?.roleId || body?.role);
+    let roleAssigned = false;
+    let warning = "";
+    if (body?.roleId || body?.role) {
+      if (!context.canManageMembers) {
+        warning = "The request was accepted, but your Roblox role cannot assign member roles.";
+      } else if (!role) {
+        warning = "The request was accepted, but the selected preset role is not below your role.";
+      } else {
+        try {
+          await assignRobloxGroupRole(context.accessToken, groupId, targetUserId, role.path);
+          roleAssigned = true;
+        } catch (error) {
+          warning = `The request was accepted, but Roblox could not assign the role: ${cleanString(error.message, 180)}`;
+        }
+      }
+    }
+    return sendJson(res, 200, { ok: true, action: "accepted", roleAssigned, warning });
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
+async function handleGroupMemberRoleAction(req, res, auth, rawGroupId, rawMembershipId, action) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+    const groupId = cleanInteger(rawGroupId);
+    const membershipId = getRobloxResourceId(rawMembershipId);
+    if (!membershipId) return sendJson(res, 400, { error: "Pick a valid group member." });
+    const context = await getGroupManagementContext(auth.userId, groupId, { includeMembers: true });
+    if (!context.canManageMembers) return sendJson(res, 403, { error: "Your Roblox role cannot manage member roles." });
+    const member = context.members.find((entry) => (
+      getRobloxResourceId(entry?.path || entry?.id) === membershipId
+        || membershipUserId(entry) === membershipId
+    ));
+    if (!member || membershipUserId(member) === context.robloxUserId) {
+      return sendJson(res, 404, { error: "That lower-ranked member is unavailable." });
+    }
+    const role = findAssignableGroupRole(context, body?.roleId || body?.role);
+    if (!role) return sendJson(res, 400, { error: "Pick a role below your own Roblox role." });
+    if (action === "unassign") {
+      await unassignRobloxGroupRole(context.accessToken, groupId, membershipId, role.path);
+    } else {
+      await assignRobloxGroupRole(context.accessToken, groupId, membershipId, role.path);
+    }
+    return sendJson(res, 200, { ok: true, action, role: serializeGroupRole(role) });
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
+async function handleGroupAutomationSave(req, res, auth, rawGroupId) {
+  let body;
+  try {
+    body = await readJsonBody(req, 24 * 1024);
+    const groupId = cleanInteger(rawGroupId);
+    const enabled = body?.enabled === true;
+    const resolvedTargets = await resolveUserTargets(body?.allowedUsers || body?.allowedUserIds || []);
+    if (resolvedTargets.unresolved.length) {
+      return sendJson(res, 400, { error: `Roblox could not find: ${resolvedTargets.unresolved.slice(0, 5).join(", ")}` });
+    }
+    if (resolvedTargets.userIds.length > MAX_GROUP_AUTOMATION_ALLOWED_USERS) {
+      return sendJson(res, 400, { error: `A preset can contain up to ${MAX_GROUP_AUTOMATION_ALLOWED_USERS} allowed users.` });
+    }
+    const context = await getGroupManagementContext(auth.userId, groupId);
+    const role = findAssignableGroupRole(context, body?.roleId || body?.role);
+    if (enabled && !context.canAcceptRequests) {
+      return sendJson(res, 403, { error: "Your Roblox role cannot accept group requests." });
+    }
+    if (enabled && !context.canManageMembers) {
+      return sendJson(res, 403, { error: "Your Roblox role cannot assign group roles." });
+    }
+    if (enabled && !role) return sendJson(res, 400, { error: "Pick a preset role below your own Roblox role." });
+    if (enabled && !resolvedTargets.userIds.length) {
+      return sendJson(res, 400, { error: "Add at least one username or user ID before enabling auto-accept." });
+    }
+
+    const existing = await readGroupAutomationPreset(auth.userId, groupId);
+    const now = Date.now();
+    const preset = await saveGroupAutomationPreset({
+      ownerUserId: auth.userId,
+      groupId,
+      enabled,
+      rolePath: role?.path || cleanString(existing?.rolePath, 500),
+      roleName: role?.name || cleanString(existing?.roleName, 120),
+      allowedUserIds: resolvedTargets.userIds,
+      allowedUsers: resolvedTargets.resolved,
+      lastRunAt: cleanInteger(existing?.lastRunAt) || null,
+      nextRunAt: enabled ? now : 0,
+      lastAcceptedCount: cleanInteger(existing?.lastAcceptedCount),
+      lastError: "",
+      recentActivity: Array.isArray(existing?.recentActivity) ? existing.recentActivity : [],
+      createdAt: cleanInteger(existing?.createdAt) || now,
+      updatedAt: now,
+    });
+    return sendJson(res, 200, { ok: true, automation: serializeGroupAutomationPreset(preset) });
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
 async function handleAssetPackCreate(req, res, auth) {
   let body;
   try {
@@ -2690,6 +2991,548 @@ async function getAssetOAuthAccessToken(ownerUserId) {
   })().finally(() => assetOAuthTokenRefreshLocks.delete(ownerUserId));
   assetOAuthTokenRefreshLocks.set(ownerUserId, refresh);
   return refresh;
+}
+
+function normalizeStoredGroupOAuthIntegration(integration) {
+  if (!integration || typeof integration !== "object") return null;
+  const now = Date.now();
+  return {
+    ownerUserId: cleanString(integration.ownerUserId, 120),
+    oauth: integration.oauth && typeof integration.oauth === "object" ? {
+      accessToken: cleanString(integration.oauth.accessToken, 8192),
+      refreshToken: cleanString(integration.oauth.refreshToken, 8192),
+      expiresAt: cleanInteger(integration.oauth.expiresAt),
+      scope: cleanString(integration.oauth.scope, 500),
+      robloxUserId: cleanInteger(integration.oauth.robloxUserId),
+      robloxUsername: cleanString(integration.oauth.robloxUsername, 80),
+      authorizationValid: integration.oauth.authorizationValid !== false,
+      connectedAt: cleanInteger(integration.oauth.connectedAt) || now,
+      lastRefreshedAt: cleanInteger(integration.oauth.lastRefreshedAt) || null,
+      lastError: cleanString(integration.oauth.lastError, 240),
+    } : null,
+    createdAt: cleanInteger(integration.createdAt) || now,
+    updatedAt: cleanInteger(integration.updatedAt) || now,
+  };
+}
+
+function serializeGroupAuthorization(integration) {
+  const oauth = normalizeStoredGroupOAuthIntegration(integration)?.oauth;
+  return {
+    configured: isRobloxOAuthConfigured(),
+    connected: Boolean(oauth && oauth.authorizationValid !== false && oauth.accessToken && oauth.refreshToken),
+    authorizationValid: oauth?.authorizationValid !== false,
+    robloxUserId: cleanInteger(oauth?.robloxUserId) || null,
+    robloxUsername: cleanString(oauth?.robloxUsername, 80),
+    scope: cleanString(oauth?.scope, 500),
+    connectedAt: cleanInteger(oauth?.connectedAt) || null,
+    lastError: cleanString(oauth?.lastError, 240),
+  };
+}
+
+async function readGroupOAuthIntegration(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeStoredGroupOAuthIntegration(await db.collection("group_oauth_integrations").findOne(
+      { ownerUserId },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalGroupManagementStore();
+  return normalizeStoredGroupOAuthIntegration(store.integrations.find((entry) => entry.ownerUserId === ownerUserId));
+}
+
+async function saveGroupOAuthIntegration(integration) {
+  const normalized = normalizeStoredGroupOAuthIntegration(integration);
+  if (!normalized?.ownerUserId) throw new Error("Cannot save an invalid group authorization.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_oauth_integrations").replaceOne(
+      { ownerUserId: normalized.ownerUserId },
+      normalized,
+      { upsert: true },
+    );
+    return normalized;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    const index = store.integrations.findIndex((entry) => entry.ownerUserId === normalized.ownerUserId);
+    if (index >= 0) store.integrations[index] = normalized;
+    else store.integrations.push(normalized);
+    await writeLocalGroupManagementStore(store);
+  });
+  return normalized;
+}
+
+async function deleteGroupOAuthIntegration(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_oauth_integrations").deleteOne({ ownerUserId });
+    return;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    store.integrations = store.integrations.filter((entry) => entry.ownerUserId !== ownerUserId);
+    await writeLocalGroupManagementStore(store);
+  });
+}
+
+async function getGroupOAuthAccessToken(ownerUserId) {
+  const integration = await readGroupOAuthIntegration(ownerUserId);
+  if (!serializeGroupAuthorization(integration).connected) throw new Error("Authorize Roblox group management first.");
+  if (cleanInteger(integration.oauth.expiresAt) > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS) {
+    return decryptRobloxLiveOAuthToken(integration.oauth.accessToken);
+  }
+  if (groupOAuthTokenRefreshLocks.has(ownerUserId)) return groupOAuthTokenRefreshLocks.get(ownerUserId);
+  const refresh = (async () => {
+    try {
+      const tokens = await refreshRobloxOAuthTokens({
+        refreshToken: decryptRobloxLiveOAuthToken(integration.oauth.refreshToken),
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+      const now = Date.now();
+      integration.oauth.accessToken = encryptRobloxLiveOAuthToken(tokens.access_token);
+      if (tokens.refresh_token) integration.oauth.refreshToken = encryptRobloxLiveOAuthToken(tokens.refresh_token);
+      integration.oauth.expiresAt = now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000;
+      integration.oauth.scope = cleanString(tokens.scope || integration.oauth.scope, 500);
+      integration.oauth.authorizationValid = true;
+      integration.oauth.lastRefreshedAt = now;
+      integration.oauth.lastError = "";
+      integration.updatedAt = now;
+      await saveGroupOAuthIntegration(integration);
+      return tokens.access_token;
+    } catch (error) {
+      integration.oauth.authorizationValid = false;
+      integration.oauth.lastError = cleanString(error.message, 240) || "Roblox group authorization expired.";
+      integration.updatedAt = Date.now();
+      await saveGroupOAuthIntegration(integration);
+      throw error;
+    }
+  })().finally(() => groupOAuthTokenRefreshLocks.delete(ownerUserId));
+  groupOAuthTokenRefreshLocks.set(ownerUserId, refresh);
+  return refresh;
+}
+
+async function getGroupManagementContext(ownerUserId, groupId, options = {}) {
+  const cleanGroupId = cleanInteger(groupId);
+  if (!cleanGroupId) throw createGroupManagementError(400, "Pick a valid Roblox group.");
+  const integration = await readGroupOAuthIntegration(ownerUserId);
+  const authorization = serializeGroupAuthorization(integration);
+  if (!authorization.connected) throw createGroupManagementError(400, "Authorize Roblox group management first.");
+  const accessToken = await getGroupOAuthAccessToken(ownerUserId);
+  const managedGroups = await listRobloxUserGroups(accessToken, authorization.robloxUserId);
+  const managedGroup = managedGroups.find((group) => group.id === cleanGroupId);
+  if (!managedGroup) throw createGroupManagementError(403, "This Roblox account is not a member of that group.");
+
+  const selfFilter = `user == 'users/${authorization.robloxUserId}'`;
+  const [group, roleResult, selfMembershipResult, automation] = await Promise.all([
+    getRobloxGroup(accessToken, cleanGroupId),
+    listRobloxGroupRoles(accessToken, cleanGroupId),
+    listRobloxGroupMemberships(accessToken, cleanGroupId, { filter: selfFilter, maxPageSize: 10 }),
+    readGroupAutomationPreset(ownerUserId, cleanGroupId),
+  ]);
+  const roles = roleResult.entries.map((role) => normalizeGroupRole(cleanGroupId, role)).filter(Boolean);
+  const roleByPath = new Map(roles.map((role) => [role.path, role]));
+  const selfMembership = selfMembershipResult.entries.find((entry) => membershipUserId(entry) === authorization.robloxUserId)
+    || selfMembershipResult.entries[0];
+  const selfRolePaths = membershipRolePaths(selfMembership);
+  const selfRoles = selfRolePaths.map((path) => roleByPath.get(path)).filter(Boolean);
+  const missingPermissionRoles = selfRoles.filter((role) => !role.permissions || !Object.keys(role.permissions).length);
+  if (missingPermissionRoles.length) {
+    const detailedRoles = await Promise.all(missingPermissionRoles.map(async (role) => {
+      try {
+        return normalizeGroupRole(cleanGroupId, await getRobloxGroupRole(accessToken, cleanGroupId, role.id));
+      } catch {
+        return null;
+      }
+    }));
+    for (const detailedRole of detailedRoles.filter(Boolean)) {
+      const index = roles.findIndex((role) => role.id === detailedRole.id);
+      if (index >= 0) roles[index] = detailedRole;
+      roleByPath.set(detailedRole.path, detailedRole);
+    }
+  }
+  const effectiveSelfRoles = selfRolePaths.map((path) => roleByPath.get(path)).filter(Boolean);
+  const selfRank = effectiveSelfRoles.reduce((highest, role) => Math.max(highest, role.rank), 0);
+  const isOwner = selfRank >= 255;
+  const canAcceptRequests = isOwner || effectiveSelfRoles.some((role) => hasGroupPermission(role.permissions, "acceptRequests"));
+  const canManageMembers = isOwner || effectiveSelfRoles.some((role) => hasGroupPermission(role.permissions, "changeRank"));
+  const assignableRoles = roles.filter((role) => role.rank > 0 && role.rank < selfRank).sort((a, b) => b.rank - a.rank);
+  const context = {
+    ownerUserId,
+    accessToken,
+    robloxUserId: authorization.robloxUserId,
+    authorization,
+    groupId: cleanGroupId,
+    group,
+    managedGroup,
+    roles,
+    roleByPath,
+    selfMembership,
+    selfRoles: effectiveSelfRoles,
+    selfRank,
+    canAcceptRequests,
+    canManageMembers,
+    assignableRoles,
+    members: [],
+    requests: [],
+    memberNextPageToken: "",
+    requestNextPageToken: "",
+    automation,
+  };
+  if (options.includeMembers && canManageMembers) {
+    const result = await listRobloxGroupMemberships(accessToken, cleanGroupId, { maxPageSize: 100 });
+    context.members = result.entries.filter((member) => {
+      const userId = membershipUserId(member);
+      return userId > 0 && userId !== authorization.robloxUserId && getGroupMemberRank(member, roleByPath) < selfRank;
+    });
+    context.memberNextPageToken = result.nextPageToken;
+  }
+  if (options.includeRequests && canAcceptRequests) {
+    const result = await listRobloxGroupJoinRequests(accessToken, cleanGroupId, { maxPageSize: 50 });
+    context.requests = result.entries;
+    context.requestNextPageToken = result.nextPageToken;
+  }
+  return context;
+}
+
+async function serializeGroupManagementContext(context) {
+  const userIds = [
+    ...context.members.map(membershipUserId),
+    ...context.requests.map(membershipUserId),
+  ].filter(Boolean);
+  let usersById = new Map();
+  try {
+    usersById = await getRobloxUsersByIds(userIds);
+  } catch (error) {
+    console.warn("Could not enrich Roblox group users:", error.message || error);
+  }
+  return {
+    authorization: context.authorization,
+    group: {
+      id: context.groupId,
+      name: cleanString(context.group?.displayName || context.group?.name || context.managedGroup?.name, 120) || `Group ${context.groupId}`,
+      description: cleanString(context.group?.description || context.managedGroup?.description, 500),
+      memberCount: cleanInteger(context.group?.memberCount),
+      verified: context.group?.verified === true,
+    },
+    self: {
+      userId: context.robloxUserId,
+      rank: context.selfRank,
+      roles: context.selfRoles.map(serializeGroupRole),
+    },
+    permissions: {
+      canAcceptRequests: context.canAcceptRequests,
+      canManageMembers: context.canManageMembers,
+    },
+    roles: context.roles.map(serializeGroupRole),
+    assignableRoles: context.assignableRoles.map(serializeGroupRole),
+    joinRequests: context.requests.map((request) => {
+      const userId = membershipUserId(request);
+      const user = usersById.get(userId);
+      return {
+        id: getRobloxResourceId(request?.path || request?.id) || userId,
+        userId,
+        username: user?.username || `User ${userId}`,
+        displayName: user?.displayName || "",
+        createdAt: Date.parse(request?.createTime || request?.createdAt || "") || null,
+      };
+    }).filter((request) => request.id && request.userId),
+    members: context.members.map((member) => {
+      const userId = membershipUserId(member);
+      const user = usersById.get(userId);
+      const memberRoles = membershipRolePaths(member).map((path) => context.roleByPath.get(path)).filter(Boolean);
+      return {
+        membershipId: getRobloxResourceId(member?.path || member?.id) || userId,
+        userId,
+        username: user?.username || `User ${userId}`,
+        displayName: user?.displayName || "",
+        rank: getGroupMemberRank(member, context.roleByPath),
+        roles: memberRoles.map(serializeGroupRole),
+      };
+    }).filter((member) => member.membershipId && member.userId),
+    pagination: {
+      memberNextPageToken: context.memberNextPageToken,
+      requestNextPageToken: context.requestNextPageToken,
+    },
+    automation: serializeGroupAutomationPreset(context.automation),
+  };
+}
+
+function normalizeGroupRole(groupId, role) {
+  const id = getRobloxResourceId(role?.path || role?.id);
+  if (!id) return null;
+  return {
+    id,
+    path: getRobloxRolePath(groupId, role),
+    name: getRobloxRoleDisplayName(role),
+    rank: getRobloxRoleRank(role),
+    permissions: role?.permissions && typeof role.permissions === "object" ? role.permissions : {},
+  };
+}
+
+function serializeGroupRole(role) {
+  if (!role) return null;
+  return { id: role.id, path: role.path, name: role.name, rank: role.rank };
+}
+
+function findAssignableGroupRole(context, value) {
+  const roleId = getRobloxResourceId(value);
+  return roleId ? context.assignableRoles.find((role) => role.id === roleId) || null : null;
+}
+
+function getGroupMemberRank(member, roleByPath) {
+  return membershipRolePaths(member).reduce((highest, path) => Math.max(highest, roleByPath.get(path)?.rank || 0), 0);
+}
+
+function hasGroupPermission(value, permissionName) {
+  if (!value || typeof value !== "object") return false;
+  const target = permissionName.toLowerCase().replace(/[^a-z]/g, "");
+  for (const [key, nested] of Object.entries(value)) {
+    if (key.toLowerCase().replace(/[^a-z]/g, "") === target && nested === true) return true;
+    if (nested && typeof nested === "object" && hasGroupPermission(nested, permissionName)) return true;
+  }
+  return false;
+}
+
+function normalizeGroupAutomationPreset(preset) {
+  if (!preset || typeof preset !== "object") return null;
+  const now = Date.now();
+  return {
+    ownerUserId: cleanString(preset.ownerUserId, 120),
+    groupId: cleanInteger(preset.groupId),
+    enabled: preset.enabled === true,
+    rolePath: cleanString(preset.rolePath, 500),
+    roleName: cleanString(preset.roleName, 120),
+    allowedUserIds: [...new Set((Array.isArray(preset.allowedUserIds) ? preset.allowedUserIds : []).map(cleanInteger).filter(Boolean))]
+      .slice(0, MAX_GROUP_AUTOMATION_ALLOWED_USERS),
+    allowedUsers: (Array.isArray(preset.allowedUsers) ? preset.allowedUsers : []).slice(0, MAX_GROUP_AUTOMATION_ALLOWED_USERS).map((user) => ({
+      input: cleanString(user?.input, 64),
+      userId: cleanInteger(user?.userId),
+      username: cleanString(user?.username, 80),
+      displayName: cleanString(user?.displayName, 80),
+    })).filter((user) => user.userId),
+    lastRunAt: cleanInteger(preset.lastRunAt) || null,
+    nextRunAt: cleanInteger(preset.nextRunAt) || 0,
+    lastAcceptedCount: cleanInteger(preset.lastAcceptedCount),
+    lastError: cleanString(preset.lastError, 240),
+    recentActivity: (Array.isArray(preset.recentActivity) ? preset.recentActivity : []).slice(0, 10).map((activity) => ({
+      userId: cleanInteger(activity?.userId),
+      action: cleanString(activity?.action, 80),
+      at: cleanInteger(activity?.at) || now,
+    })).filter((activity) => activity.userId),
+    createdAt: cleanInteger(preset.createdAt) || now,
+    updatedAt: cleanInteger(preset.updatedAt) || now,
+  };
+}
+
+function serializeGroupAutomationPreset(preset) {
+  const normalized = normalizeGroupAutomationPreset(preset);
+  if (!normalized) return null;
+  return {
+    enabled: normalized.enabled,
+    roleId: getRobloxResourceId(normalized.rolePath) || null,
+    roleName: normalized.roleName,
+    allowedUserIds: normalized.allowedUserIds,
+    allowedUsers: normalized.allowedUsers,
+    lastRunAt: normalized.lastRunAt,
+    nextRunAt: normalized.nextRunAt || null,
+    lastAcceptedCount: normalized.lastAcceptedCount,
+    lastError: normalized.lastError,
+    recentActivity: normalized.recentActivity,
+    updatedAt: normalized.updatedAt,
+  };
+}
+
+async function readGroupAutomationPresets(ownerUserId) {
+  const db = await getMongoDb();
+  const presets = db
+    ? await db.collection("group_automation_presets").find({ ownerUserId }).project({ _id: 0 }).toArray()
+    : (await readLocalGroupManagementStore()).presets.filter((preset) => preset.ownerUserId === ownerUserId);
+  return presets.map(normalizeGroupAutomationPreset).filter(Boolean);
+}
+
+async function readGroupAutomationPreset(ownerUserId, groupId) {
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeGroupAutomationPreset(await db.collection("group_automation_presets").findOne(
+      { ownerUserId, groupId: cleanInteger(groupId) },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalGroupManagementStore();
+  return normalizeGroupAutomationPreset(store.presets.find((preset) => (
+    preset.ownerUserId === ownerUserId && cleanInteger(preset.groupId) === cleanInteger(groupId)
+  )));
+}
+
+async function saveGroupAutomationPreset(preset) {
+  const normalized = normalizeGroupAutomationPreset(preset);
+  if (!normalized?.ownerUserId || !normalized.groupId) throw new Error("Cannot save an invalid group automation preset.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_automation_presets").replaceOne(
+      { ownerUserId: normalized.ownerUserId, groupId: normalized.groupId },
+      normalized,
+      { upsert: true },
+    );
+    return normalized;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    const index = store.presets.findIndex((entry) => (
+      entry.ownerUserId === normalized.ownerUserId && cleanInteger(entry.groupId) === normalized.groupId
+    ));
+    if (index >= 0) store.presets[index] = normalized;
+    else store.presets.push(normalized);
+    await writeLocalGroupManagementStore(store);
+  });
+  return normalized;
+}
+
+async function disableGroupAutomationPresets(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_automation_presets").updateMany(
+      { ownerUserId },
+      { $set: { enabled: false, nextRunAt: 0, updatedAt: Date.now() } },
+    );
+    return;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    for (const preset of store.presets) {
+      if (preset.ownerUserId !== ownerUserId) continue;
+      preset.enabled = false;
+      preset.nextRunAt = 0;
+      preset.updatedAt = Date.now();
+    }
+    await writeLocalGroupManagementStore(store);
+  });
+}
+
+async function claimDueGroupAutomationPresets() {
+  const now = Date.now();
+  const nextRunAt = now + GROUP_AUTOMATION_INTERVAL_MS;
+  const db = await getMongoDb();
+  if (db) {
+    const candidates = await db.collection("group_automation_presets").find({
+      enabled: true,
+      nextRunAt: { $lte: now },
+    }).sort({ nextRunAt: 1 }).limit(MAX_GROUP_AUTOMATION_PRESETS_PER_RUN).project({ _id: 0 }).toArray();
+    const claimed = [];
+    for (const candidate of candidates) {
+      const result = await db.collection("group_automation_presets").findOneAndUpdate(
+        {
+          ownerUserId: candidate.ownerUserId,
+          groupId: candidate.groupId,
+          enabled: true,
+          nextRunAt: candidate.nextRunAt,
+        },
+        { $set: { nextRunAt, updatedAt: now } },
+        { returnDocument: "after", projection: { _id: 0 } },
+      );
+      if (result) claimed.push(normalizeGroupAutomationPreset(result));
+    }
+    return claimed.filter(Boolean);
+  }
+  return withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    const claimed = store.presets
+      .filter((preset) => preset.enabled === true && cleanInteger(preset.nextRunAt) <= now)
+      .sort((a, b) => cleanInteger(a.nextRunAt) - cleanInteger(b.nextRunAt))
+      .slice(0, MAX_GROUP_AUTOMATION_PRESETS_PER_RUN);
+    for (const preset of claimed) {
+      preset.nextRunAt = nextRunAt;
+      preset.updatedAt = now;
+    }
+    if (claimed.length) await writeLocalGroupManagementStore(store);
+    return claimed.map(normalizeGroupAutomationPreset).filter(Boolean);
+  });
+}
+
+async function evaluateGroupAutomationPresets() {
+  const presets = await claimDueGroupAutomationPresets();
+  let remainingAccepts = MAX_GROUP_AUTOMATION_ACCEPTS_PER_RUN;
+  for (const preset of presets) {
+    const activity = [];
+    let acceptedCount = 0;
+    let lastError = "";
+    try {
+      const context = await getGroupManagementContext(preset.ownerUserId, preset.groupId);
+      if (!context.canAcceptRequests || !context.canManageMembers) {
+        throw new Error("The authorized Roblox role no longer has request and role permissions.");
+      }
+      const role = findAssignableGroupRole(context, preset.rolePath);
+      if (!role) throw new Error("The preset role no longer exists below the authorized Roblox role.");
+      const result = await listRobloxGroupJoinRequests(context.accessToken, preset.groupId, { maxPageSize: 50 });
+      const allowed = new Set(preset.allowedUserIds);
+      for (const request of result.entries) {
+        if (remainingAccepts <= 0) break;
+        const userId = membershipUserId(request);
+        const requestId = getRobloxResourceId(request?.path || request?.id) || userId;
+        if (!allowed.has(userId) || !requestId) continue;
+        await acceptRobloxGroupJoinRequest(context.accessToken, preset.groupId, requestId);
+        await assignRobloxGroupRole(context.accessToken, preset.groupId, userId, role.path);
+        acceptedCount += 1;
+        remainingAccepts -= 1;
+        activity.unshift({ userId, action: `Accepted and assigned ${role.name}`, at: Date.now() });
+      }
+    } catch (error) {
+      lastError = cleanString(error.message, 240) || "Group automation failed.";
+    }
+    preset.lastRunAt = Date.now();
+    preset.nextRunAt = preset.lastRunAt + GROUP_AUTOMATION_INTERVAL_MS;
+    preset.lastAcceptedCount = acceptedCount;
+    preset.lastError = lastError;
+    preset.recentActivity = [...activity, ...(preset.recentActivity || [])].slice(0, 10);
+    preset.updatedAt = preset.lastRunAt;
+    await saveGroupAutomationPreset(preset);
+  }
+}
+
+async function readLocalGroupManagementStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(groupManagementStorePath, "utf8"));
+    return {
+      integrations: Array.isArray(payload.integrations) ? payload.integrations : [],
+      presets: Array.isArray(payload.presets) ? payload.presets : [],
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return { integrations: [], presets: [] };
+    throw error;
+  }
+}
+
+async function writeLocalGroupManagementStore(store) {
+  await fs.mkdir(path.dirname(groupManagementStorePath), { recursive: true });
+  await fs.writeFile(groupManagementStorePath, JSON.stringify(store, null, 2));
+}
+
+async function withLocalGroupManagementStoreLock(operation) {
+  const previous = localGroupManagementStoreLock;
+  let release;
+  localGroupManagementStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+function createGroupManagementError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function sendGroupManagementError(res, error) {
+  const providerStatus = Number(error?.status);
+  const status = providerStatus >= 400 && providerStatus < 500 ? providerStatus : 502;
+  return sendJson(res, status, {
+    error: cleanString(error?.message, 300) || "Roblox group management is temporarily unavailable.",
+  });
 }
 
 function normalizeStoredAssetPack(pack) {
@@ -5422,7 +6265,9 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
     ? "/#roblox-live"
     : oauthState.purpose === "assets"
       ? "/#assets"
-      : "/";
+      : oauthState.purpose === "groups"
+        ? "/#groups"
+        : "/";
 
   if (Date.now() - cleanInteger(oauthState.createdAt) > ROBLOX_OAUTH_STATE_MAX_AGE_MS) {
     return sendRobloxOAuthResult(res, {
@@ -5606,6 +6451,49 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         message: "Your saved batches are ready to publish to Roblox.",
         universeId,
         backHref: "/#assets",
+      });
+    }
+
+    if (oauthState.purpose === "groups") {
+      if (!auth || oauthState.userId !== auth.userId) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Group authorization expired",
+          message: "Start group authorization again from the dashboard.",
+          backHref: "/#groups",
+        });
+      }
+      if (!tokens.refresh_token) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Renewable authorization missing",
+          message: "Roblox did not return a refresh token. Start authorization again.",
+          backHref: "/#groups",
+        });
+      }
+      const now = Date.now();
+      await saveGroupOAuthIntegration({
+        ownerUserId: auth.userId,
+        oauth: {
+          accessToken: encryptRobloxLiveOAuthToken(tokens.access_token),
+          refreshToken: encryptRobloxLiveOAuthToken(tokens.refresh_token),
+          expiresAt: now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000,
+          scope: cleanString(tokens.scope, 500),
+          robloxUserId: cleanInteger(robloxUser.sub),
+          robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
+          authorizationValid: true,
+          connectedAt: now,
+          lastRefreshedAt: now,
+          lastError: "",
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+      return sendRobloxOAuthResult(res, {
+        ok: true,
+        title: "Group management authorized",
+        message: "Your managed Roblox groups are ready.",
+        backHref: "/#groups",
       });
     }
 

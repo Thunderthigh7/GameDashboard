@@ -5495,6 +5495,318 @@ body[data-active-view="moderation"] .topbarActions {
   }
 }
 
+/* Roblox group management */
+.groupsPage {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.groupAuthorization {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 22px;
+  border-color: rgba(139, 92, 246, 0.28);
+  background:
+    radial-gradient(circle at 90% 20%, rgba(139, 92, 246, 0.12), transparent 34%),
+    var(--surface);
+}
+
+.groupAuthorization h2,
+.groupSectionHeader h2 {
+  margin: 3px 0 5px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.groupAuthorization p,
+.groupSectionHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.groupAuthorizationActions,
+.groupAutomationFooter,
+.groupPersonActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.groupEyebrow {
+  color: #a78bfa;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.groupControlPanel,
+.groupListPanel,
+.groupAutomationPanel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.groupControlHeader,
+.groupSectionHeader,
+.groupAutomationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.groupSelectField {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 360px);
+  align-items: center;
+  gap: 12px;
+}
+
+.groupSelectField > span,
+.groupAutomationFields label > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.groupSelectField select,
+.groupPersonRow select,
+.groupAutomationFields select,
+.groupAutomationFields textarea {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(5, 11, 24, 0.78);
+  color: var(--text);
+  font: inherit;
+}
+
+.groupSelectField select,
+.groupPersonRow select,
+.groupAutomationFields select {
+  height: 38px;
+  padding: 0 10px;
+}
+
+.groupSelectField select:focus,
+.groupPersonRow select:focus,
+.groupAutomationFields select:focus,
+.groupAutomationFields textarea:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.12);
+}
+
+.groupPermissionSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.groupPermissionSummary > span,
+.groupPermissionBadge,
+.groupCountBadge,
+.groupRolePill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.06);
+  color: var(--muted);
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.groupPermissionBadge[data-state="allowed"] {
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.08);
+  color: #86efac;
+}
+
+.groupPermissionBadge[data-state="blocked"] {
+  border-color: rgba(248, 113, 113, 0.25);
+  color: #fca5a5;
+}
+
+.groupStatus {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.groupStatus[data-state="error"] {
+  color: #fca5a5;
+}
+
+.groupStatus[data-state="success"] {
+  color: #86efac;
+}
+
+.groupManagementGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.groupPeopleList {
+  display: grid;
+  gap: 8px;
+  max-height: 560px;
+  margin-top: 16px;
+  overflow: auto;
+}
+
+.groupPersonRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(135px, 0.7fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 15, 30, 0.54);
+  padding: 11px;
+}
+
+.groupPersonIdentity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.groupPersonIdentity strong,
+.groupPersonIdentity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupPersonIdentity strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.groupPersonIdentity span,
+.groupPersonRoles {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.groupPersonActions .button {
+  min-width: 0;
+  padding-inline: 10px;
+}
+
+.groupPersonActions .groupDeclineButton,
+.groupPersonActions .groupUnassignButton {
+  color: #fca5a5;
+}
+
+.groupEmptyState {
+  display: grid;
+  place-items: center;
+  min-height: 130px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  padding: 22px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.groupAutomationFields {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.45fr) minmax(320px, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.groupAutomationFields label {
+  display: grid;
+  gap: 7px;
+}
+
+.groupAutomationFields textarea {
+  min-height: 88px;
+  padding: 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.groupAutomationFields small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.groupAutomationToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.groupAutomationToggle input {
+  accent-color: #8b5cf6;
+}
+
+.groupAutomationFooter {
+  margin-top: 14px;
+}
+
+.groupAutomationFooter .groupStatus {
+  margin: 0;
+}
+
+.groupAutomationActivity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.groupAutomationActivity span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 1080px) {
+  .groupManagementGrid,
+  .groupAutomationFields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .groupAuthorization,
+  .groupControlHeader,
+  .groupSectionHeader,
+  .groupAutomationFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .groupSelectField,
+  .groupPersonRow {
+    grid-template-columns: 1fr;
+  }
+
+  .groupPersonActions {
+    justify-content: flex-start;
+  }
+}
+
 .playerModerationLookupControls {
   display: grid;
   grid-template-columns: minmax(220px, 300px) auto auto;

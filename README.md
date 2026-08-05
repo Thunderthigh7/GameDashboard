@@ -35,11 +35,14 @@ ROBLOX_OAUTH_REDIRECT_URI=https://game-dashboard-zaya.onrender.com/api/roblox/oa
 ROBLOX_OAUTH_SCOPES=openid profile
 ROBLOX_OAUTH_LIVE_ACTION_SCOPES=openid profile universe-messaging-service:publish
 ROBLOX_OAUTH_ASSET_SCOPES=openid profile asset:read asset:write
+ROBLOX_OAUTH_GROUP_SCOPES=openid profile group:read group:write
 ```
 
 The extra live-action scope is requested only when a universe owner authorizes **Integrations → Roblox**. The resulting access and rotating refresh tokens are encrypted at rest. Disconnecting the integration revokes the Roblox authorization.
 
 The Assets page requests `asset:read` and `asset:write` only when a user authorizes asset publishing. Add both scopes to the Roblox OAuth app. The server always includes these required scopes even if Render has an older `ROBLOX_OAUTH_ASSET_SCOPES` value. Roblox decides when account selection and consent are required for the authorization request. The callback stores a completed authorization and lets the Assets API enforce its effective permissions instead of rejecting it from the token response's advisory scope text. Bulk-upload files are saved to B2 when it is configured, with a local `data/asset-drafts` fallback for development. The defaults are 20 MB per file, 250 MB and 100 files per saved batch, and 50 saved batches per experience.
+
+The Groups page uses OAuth only. Use the Roblox OAuth app's **Creation & Productivity Tools** category, add `group:read` and `group:write`, and set `ROBLOX_OAUTH_GROUP_SCOPES=openid profile group:read group:write` on Render. The server always adds both required group scopes even when the environment value is stale. Group actions are limited by the authorizing account's Roblox group permissions and rank. Auto-accept presets only act on the explicit username/user-ID allowlist saved for that group, check once per minute, and process at most 10 approvals per worker run.
 
 For local testing, use:
 

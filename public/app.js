@@ -74,6 +74,26 @@ const assetRefreshButton = document.querySelector("#assetRefreshButton");
 const assetPackList = document.querySelector("#assetPackList");
 const assetPackDetail = document.querySelector("#assetPackDetail");
 const assetLibraryStatus = document.querySelector("#assetLibraryStatus");
+const groupAuthorizationTitle = document.querySelector("#groupAuthorizationTitle");
+const groupAuthorizationCopy = document.querySelector("#groupAuthorizationCopy");
+const groupAuthorizeButton = document.querySelector("#groupAuthorizeButton");
+const groupDisconnectButton = document.querySelector("#groupDisconnectButton");
+const groupSelect = document.querySelector("#groupSelect");
+const groupRefreshButton = document.querySelector("#groupRefreshButton");
+const groupPermissionSummary = document.querySelector("#groupPermissionSummary");
+const groupPageStatus = document.querySelector("#groupPageStatus");
+const groupManagementWorkspace = document.querySelector("#groupManagementWorkspace");
+const groupRequestCount = document.querySelector("#groupRequestCount");
+const groupMemberCount = document.querySelector("#groupMemberCount");
+const groupJoinRequestList = document.querySelector("#groupJoinRequestList");
+const groupMemberList = document.querySelector("#groupMemberList");
+const groupAutomationPanel = document.querySelector("#groupAutomationPanel");
+const groupAutomationEnabled = document.querySelector("#groupAutomationEnabled");
+const groupAutomationRole = document.querySelector("#groupAutomationRole");
+const groupAutomationUsers = document.querySelector("#groupAutomationUsers");
+const groupAutomationSaveButton = document.querySelector("#groupAutomationSaveButton");
+const groupAutomationStatus = document.querySelector("#groupAutomationStatus");
+const groupAutomationActivity = document.querySelector("#groupAutomationActivity");
 const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
@@ -405,6 +425,12 @@ let assetLibrary = { authorization: {}, packs: [], limits: {} };
 let assetPendingFiles = [];
 let selectedAssetPackId = "";
 let assetOperationPollTimer;
+let groupManagementRequestSequence = 0;
+let groupManagementBusy = false;
+let groupManagement = { authorization: {}, groups: [], detail: null };
+let selectedGroupId = "";
+let groupRefreshTimer;
+let groupAutomationDirty = false;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -454,7 +480,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-3";
+const DASHBOARD_ASSET_VERSION = "20260805-4";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -867,6 +893,16 @@ function bindEvents() {
   assetRefreshButton?.addEventListener("click", () => loadAssetLibrary({ force: true }));
   assetPackList?.addEventListener("click", handleAssetPackSelection);
   assetPackDetail?.addEventListener("click", handleAssetPackAction);
+  groupAuthorizeButton?.addEventListener("click", authorizeGroupManagement);
+  groupDisconnectButton?.addEventListener("click", disconnectGroupManagement);
+  groupRefreshButton?.addEventListener("click", () => loadGroupManagement({ force: true }));
+  groupSelect?.addEventListener("change", handleGroupSelectionChange);
+  groupJoinRequestList?.addEventListener("click", handleGroupJoinRequestClick);
+  groupMemberList?.addEventListener("click", handleGroupMemberRoleClick);
+  groupAutomationSaveButton?.addEventListener("click", saveGroupAutomationPreset);
+  groupAutomationEnabled?.addEventListener("change", () => { groupAutomationDirty = true; });
+  groupAutomationRole?.addEventListener("change", () => { groupAutomationDirty = true; });
+  groupAutomationUsers?.addEventListener("input", () => { groupAutomationDirty = true; });
   refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -974,6 +1010,7 @@ function handleDashboardVisibilityChange() {
     stopEventRefresh();
     stopFunnelRefresh();
     stopAssetOperationPolling();
+    stopGroupRefresh();
   } else {
     updateViewRefreshTimers();
     if (authenticated && selectedUniverseId) {
@@ -1134,6 +1171,7 @@ function abortActiveDashboardRequests() {
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
   playerModerationRequestSequence += 1;
+  groupManagementRequestSequence += 1;
   customEventsRequestSequence += 1;
   funnelRequestSequence += 1;
   aiReportPayloadCache.clear();
@@ -1187,6 +1225,7 @@ function setAuthenticated(value, user = null) {
     stopFunnelRefresh();
     stopRobloxLiveRefresh();
     stopPlayerModerationRefresh();
+    stopGroupRefresh();
     renderChatSummary();
     setChatLiveState("waiting");
     renderRecentChatEmpty("Sign in to view recent chat.");
@@ -1268,6 +1307,11 @@ function setAuthenticated(value, user = null) {
     selectedAssetPackId = "";
     stopAssetOperationPolling();
     renderAssetLibrary();
+    groupManagementRequestSequence += 1;
+    groupManagement = { authorization: {}, groups: [], detail: null };
+    selectedGroupId = "";
+    groupAutomationDirty = false;
+    renderGroupManagement();
     return;
   }
 
@@ -1305,13 +1349,14 @@ function getViewFromHash() {
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#moderation") return "moderation";
   if (window.location.hash === "#assets") return "assets";
+  if (window.location.hash === "#groups") return "groups";
   if (window.location.hash === "#admin") return "admin";
   return "overview";
 }
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "groups" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
   if (lacksAdminAccess && ADMIN_ONLY_VIEWS.has(getViewFromHash())) {
@@ -1400,6 +1445,10 @@ function renderActiveView(options = {}) {
       title: "Assets",
       subtitle: "Save, organize, and bulk publish Roblox assets for the selected experience.",
     },
+    groups: {
+      title: "Groups",
+      subtitle: "Manage join requests, lower-ranked member roles, and safe allowlist presets with Roblox OAuth.",
+    },
     usage: {
       title: "Usage",
       subtitle: "Track monthly limits before paid plans go live.",
@@ -1444,6 +1493,7 @@ function updateViewRefreshTimers() {
     stopFunnelRefresh();
     stopRobloxLiveRefresh();
     stopPlayerModerationRefresh();
+    stopGroupRefresh();
     return;
   }
 
@@ -1461,6 +1511,9 @@ function updateViewRefreshTimers() {
 
   if (activeView === "moderation" && selectedUniverseId) startPlayerModerationRefresh();
   else stopPlayerModerationRefresh();
+
+  if (activeView === "groups") startGroupRefresh();
+  else stopGroupRefresh();
 }
 
 function loadActiveViewData(view, options = {}) {
@@ -1486,6 +1539,8 @@ function loadActiveViewData(view, options = {}) {
       loadPlayerModeration();
     } else if (view === "assets") {
       loadAssetLibrary();
+    } else if (view === "groups") {
+      loadGroupManagement({ background: true });
     }
     return;
   }
@@ -1509,6 +1564,8 @@ function loadActiveViewData(view, options = {}) {
     loadPlayerModeration();
   } else if (view === "assets") {
     loadAssetLibrary();
+  } else if (view === "groups") {
+    loadGroupManagement();
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -2341,6 +2398,360 @@ function stopAssetOperationPolling() {
   if (!assetOperationPollTimer) return;
   window.clearInterval(assetOperationPollTimer);
   assetOperationPollTimer = null;
+}
+
+async function loadGroupManagement(options = {}) {
+  if (!authenticated || !groupSelect || (groupManagementBusy && options.background)) return;
+  const requestSequence = ++groupManagementRequestSequence;
+  if (!options.background) setGroupPageStatus("Loading your Roblox groups...");
+  try {
+    const data = await request("/api/groups");
+    if (requestSequence !== groupManagementRequestSequence) return;
+    const groups = Array.isArray(data.groups) ? data.groups : [];
+    groupManagement.authorization = data.authorization || {};
+    groupManagement.groups = groups;
+    if (!groups.some((group) => String(group.id) === String(selectedGroupId))) {
+      selectedGroupId = groups[0]?.id ? String(groups[0].id) : "";
+      groupManagement.detail = null;
+      groupAutomationDirty = false;
+    }
+    renderGroupManagement();
+    if (groupManagement.authorization.connected && selectedGroupId) {
+      await loadSelectedGroupDetail({ background: options.background });
+    } else {
+      setGroupPageStatus(
+        groupManagement.authorization.connected ? "No Roblox group memberships were found." : "Authorize Roblox to load your groups.",
+      );
+    }
+  } catch (error) {
+    if (requestSequence !== groupManagementRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) setGroupPageStatus(error.message, "error");
+  }
+}
+
+async function loadSelectedGroupDetail(options = {}) {
+  if (!authenticated || !selectedGroupId) return;
+  const requestSequence = ++groupManagementRequestSequence;
+  if (!options.background) setGroupPageStatus("Loading requests and members...");
+  try {
+    const detail = await request(`/api/groups/${encodeURIComponent(selectedGroupId)}`);
+    if (requestSequence !== groupManagementRequestSequence) return;
+    groupManagement.detail = detail;
+    renderGroupManagement();
+    const requestCount = detail.joinRequests?.length || 0;
+    const memberCount = detail.members?.length || 0;
+    setGroupPageStatus(`${requestCount} pending request${requestCount === 1 ? "" : "s"} · ${memberCount} lower-ranked member${memberCount === 1 ? "" : "s"}.`);
+  } catch (error) {
+    if (requestSequence !== groupManagementRequestSequence) return;
+    handleAuthError(error);
+    if (!authenticated) return;
+    groupManagement.detail = null;
+    renderGroupManagement();
+    setGroupPageStatus(error.message, "error");
+  }
+}
+
+function renderGroupManagement() {
+  if (!groupSelect || !groupJoinRequestList || !groupMemberList) return;
+  const authorization = groupManagement.authorization || {};
+  const connected = Boolean(authorization.connected && authorization.authorizationValid !== false);
+  const groups = Array.isArray(groupManagement.groups) ? groupManagement.groups : [];
+  const detail = groupManagement.detail && String(groupManagement.detail.group?.id) === String(selectedGroupId)
+    ? groupManagement.detail
+    : null;
+
+  if (groupAuthorizationTitle) {
+    groupAuthorizationTitle.textContent = connected
+      ? `Managing as ${authorization.robloxUsername || "your Roblox account"}`
+      : "Connect Roblox groups";
+  }
+  if (groupAuthorizationCopy) {
+    groupAuthorizationCopy.textContent = connected
+      ? "Roblox still enforces your group rank and permissions on every action."
+      : "Authorize group:read and group:write to manage requests and lower-ranked members.";
+  }
+  if (groupAuthorizeButton) {
+    groupAuthorizeButton.hidden = connected;
+    groupAuthorizeButton.disabled = groupManagementBusy;
+  }
+  if (groupDisconnectButton) {
+    groupDisconnectButton.hidden = !connected;
+    groupDisconnectButton.disabled = groupManagementBusy;
+  }
+  groupSelect.disabled = groupManagementBusy || !connected || !groups.length;
+  groupRefreshButton.disabled = groupManagementBusy || !connected;
+  groupSelect.innerHTML = groups.length
+    ? groups.map((group) => `<option value="${escapeHtml(group.id)}"${String(group.id) === String(selectedGroupId) ? " selected" : ""}>${escapeHtml(group.name || `Group ${group.id}`)}</option>`).join("")
+    : `<option value="">${connected ? "No group memberships found" : "Authorize Roblox to load groups"}</option>`;
+
+  if (!detail) {
+    groupManagementWorkspace.hidden = true;
+    groupAutomationPanel.hidden = true;
+    groupPermissionSummary.innerHTML = `<span>${connected ? "Select a group to inspect your management permissions." : "Authorization requires group:read and group:write."}</span>`;
+    groupJoinRequestList.innerHTML = "";
+    groupMemberList.innerHTML = "";
+    return;
+  }
+
+  const permissions = detail.permissions || {};
+  groupPermissionSummary.innerHTML = `
+    <span class="groupPermissionBadge" data-state="${permissions.canAcceptRequests ? "allowed" : "blocked"}">${permissions.canAcceptRequests ? "Can manage requests" : "Cannot manage requests"}</span>
+    <span class="groupPermissionBadge" data-state="${permissions.canManageMembers ? "allowed" : "blocked"}">${permissions.canManageMembers ? "Can edit lower roles" : "Cannot edit roles"}</span>
+    <span>Your highest rank: ${escapeHtml(detail.self?.rank || 0)}</span>
+  `;
+  groupManagementWorkspace.hidden = false;
+  groupAutomationPanel.hidden = false;
+  renderGroupJoinRequests(detail);
+  renderGroupMembers(detail);
+  renderGroupAutomation(detail);
+}
+
+function renderGroupJoinRequests(detail) {
+  const requests = Array.isArray(detail.joinRequests) ? detail.joinRequests : [];
+  groupRequestCount.textContent = String(requests.length);
+  if (!detail.permissions?.canAcceptRequests) {
+    groupJoinRequestList.innerHTML = `<div class="groupEmptyState">Your Roblox role does not include permission to accept group requests.</div>`;
+    return;
+  }
+  if (!requests.length) {
+    groupJoinRequestList.innerHTML = `<div class="groupEmptyState">No pending join requests.</div>`;
+    return;
+  }
+  groupJoinRequestList.innerHTML = requests.map((entry) => `
+    <article class="groupPersonRow" data-group-request-id="${escapeHtml(entry.id)}">
+      <div class="groupPersonIdentity">
+        <strong>${escapeHtml(entry.displayName || entry.username || `User ${entry.userId}`)}</strong>
+        <span>@${escapeHtml(entry.username || `User ${entry.userId}`)} · ${escapeHtml(entry.userId)}</span>
+      </div>
+      <select aria-label="Role after accepting ${escapeHtml(entry.username || entry.userId)}" data-group-role-select>
+        ${renderGroupRoleOptions(detail.assignableRoles, "", "Accept without a role")}
+      </select>
+      <div class="groupPersonActions">
+        <button class="button compact" type="button" data-group-request-action="accept"${groupManagementBusy ? " disabled" : ""}>Accept</button>
+        <button class="button secondary compact groupDeclineButton" type="button" data-group-request-action="decline"${groupManagementBusy ? " disabled" : ""}>Decline</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderGroupMembers(detail) {
+  const members = Array.isArray(detail.members) ? detail.members : [];
+  groupMemberCount.textContent = String(members.length);
+  if (!detail.permissions?.canManageMembers) {
+    groupMemberList.innerHTML = `<div class="groupEmptyState">Your Roblox role does not include permission to change lower-ranked members.</div>`;
+    return;
+  }
+  if (!members.length) {
+    groupMemberList.innerHTML = `<div class="groupEmptyState">No lower-ranked members were returned.</div>`;
+    return;
+  }
+  groupMemberList.innerHTML = members.map((member) => {
+    const roles = Array.isArray(member.roles) && member.roles.length
+      ? member.roles.map((role) => role.name).join(", ")
+      : "No assigned role";
+    return `
+      <article class="groupPersonRow" data-group-membership-id="${escapeHtml(member.membershipId)}">
+        <div class="groupPersonIdentity">
+          <strong>${escapeHtml(member.displayName || member.username || `User ${member.userId}`)}</strong>
+          <span>@${escapeHtml(member.username || `User ${member.userId}`)} · ${escapeHtml(roles)}</span>
+        </div>
+        <select aria-label="Role for ${escapeHtml(member.username || member.userId)}" data-group-role-select>
+          ${renderGroupRoleOptions(detail.assignableRoles, member.roles?.[0]?.id || "", "Choose a role")}
+        </select>
+        <div class="groupPersonActions">
+          <button class="button compact" type="button" data-group-member-action="assign"${groupManagementBusy ? " disabled" : ""}>Assign</button>
+          <button class="button secondary compact groupUnassignButton" type="button" data-group-member-action="unassign"${groupManagementBusy ? " disabled" : ""}>Remove</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderGroupRoleOptions(roles, selectedRoleId, emptyLabel) {
+  const available = Array.isArray(roles) ? roles : [];
+  return [
+    `<option value="">${escapeHtml(emptyLabel)}</option>`,
+    ...available.map((role) => `<option value="${escapeHtml(role.id)}"${String(role.id) === String(selectedRoleId) ? " selected" : ""}>${escapeHtml(role.name)} · rank ${escapeHtml(role.rank)}</option>`),
+  ].join("");
+}
+
+function renderGroupAutomation(detail) {
+  const automation = detail.automation || {};
+  const canAutomate = Boolean(detail.permissions?.canAcceptRequests && detail.permissions?.canManageMembers);
+  if (!groupAutomationDirty) groupAutomationEnabled.checked = automation.enabled === true;
+  groupAutomationEnabled.disabled = groupManagementBusy || !canAutomate;
+  const pendingRoleId = groupAutomationDirty ? groupAutomationRole.value : automation.roleId || "";
+  groupAutomationRole.innerHTML = renderGroupRoleOptions(detail.assignableRoles, pendingRoleId, "Choose a preset role");
+  groupAutomationRole.disabled = groupManagementBusy || !canAutomate;
+  groupAutomationUsers.disabled = groupManagementBusy || !canAutomate;
+  if (!groupAutomationDirty) {
+    groupAutomationUsers.value = (automation.allowedUsers?.length
+      ? automation.allowedUsers.map((user) => user.username || user.input || user.userId)
+      : automation.allowedUserIds || []).join("\n");
+  }
+  groupAutomationSaveButton.disabled = groupManagementBusy || !canAutomate;
+  if (!canAutomate) {
+    setGroupAutomationStatus("Both request approval and role-management permissions are required.");
+  } else if (automation.lastError) {
+    setGroupAutomationStatus(automation.lastError, "error");
+  } else if (automation.lastRunAt) {
+    setGroupAutomationStatus(`Last checked ${formatRelativeTime(automation.lastRunAt)} · accepted ${automation.lastAcceptedCount || 0}.`, automation.enabled ? "success" : "");
+  } else {
+    setGroupAutomationStatus(automation.enabled ? "The preset will check pending requests within one minute." : "Automation is off.");
+  }
+  const activity = Array.isArray(automation.recentActivity) ? automation.recentActivity : [];
+  groupAutomationActivity.innerHTML = activity.length
+    ? activity.map((entry) => `<span>User ${escapeHtml(entry.userId)} · ${escapeHtml(entry.action)} · ${escapeHtml(formatRelativeTime(entry.at))}</span>`).join("")
+    : `<span>No automatic approvals yet.</span>`;
+}
+
+function handleGroupSelectionChange() {
+  selectedGroupId = String(groupSelect.value || "");
+  groupManagement.detail = null;
+  groupAutomationDirty = false;
+  renderGroupManagement();
+  if (selectedGroupId) loadSelectedGroupDetail();
+}
+
+function authorizeGroupManagement() {
+  window.location.href = "/api/groups/oauth/start";
+}
+
+async function disconnectGroupManagement() {
+  if (groupManagementBusy || !window.confirm("Disconnect Roblox group management and turn off every auto-accept preset?")) return;
+  groupManagementBusy = true;
+  renderGroupManagement();
+  try {
+    await request("/api/groups/oauth", { method: "DELETE" });
+    groupManagement = { authorization: {}, groups: [], detail: null };
+    selectedGroupId = "";
+    groupAutomationDirty = false;
+    renderGroupManagement();
+    setGroupPageStatus("Roblox group management disconnected.", "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setGroupPageStatus(error.message, "error");
+  } finally {
+    groupManagementBusy = false;
+    renderGroupManagement();
+  }
+}
+
+async function handleGroupJoinRequestClick(event) {
+  const button = event.target.closest("[data-group-request-action]");
+  const row = button?.closest("[data-group-request-id]");
+  if (!button || !row || groupManagementBusy || !selectedGroupId) return;
+  const action = button.dataset.groupRequestAction;
+  const requestId = row.dataset.groupRequestId;
+  if (action === "decline" && !window.confirm("Decline this Roblox group join request?")) return;
+  const roleId = row.querySelector("[data-group-role-select]")?.value || "";
+  await runGroupMutation(
+    `/api/groups/${encodeURIComponent(selectedGroupId)}/join-requests/${encodeURIComponent(requestId)}/${action}`,
+    { roleId: roleId || null },
+    action === "accept" ? "Join request accepted." : "Join request declined.",
+  );
+}
+
+async function handleGroupMemberRoleClick(event) {
+  const button = event.target.closest("[data-group-member-action]");
+  const row = button?.closest("[data-group-membership-id]");
+  if (!button || !row || groupManagementBusy || !selectedGroupId) return;
+  const action = button.dataset.groupMemberAction;
+  const roleId = row.querySelector("[data-group-role-select]")?.value || "";
+  if (!roleId) {
+    setGroupPageStatus("Choose a Roblox role first.", "error");
+    return;
+  }
+  if (action === "unassign" && !window.confirm("Remove the selected role from this member?")) return;
+  await runGroupMutation(
+    `/api/groups/${encodeURIComponent(selectedGroupId)}/members/${encodeURIComponent(row.dataset.groupMembershipId)}/roles/${action}`,
+    { roleId },
+    action === "assign" ? "Role assigned." : "Role removed.",
+  );
+}
+
+async function runGroupMutation(url, body, successMessage) {
+  groupManagementBusy = true;
+  renderGroupManagement();
+  setGroupPageStatus("Sending the change to Roblox...");
+  try {
+    const result = await request(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    await loadSelectedGroupDetail({ background: true });
+    setGroupPageStatus(result.warning || successMessage, result.warning ? "error" : "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setGroupPageStatus(error.message, "error");
+  } finally {
+    groupManagementBusy = false;
+    renderGroupManagement();
+  }
+}
+
+async function saveGroupAutomationPreset() {
+  if (groupManagementBusy || !selectedGroupId) return;
+  const allowedUsers = groupAutomationUsers.value;
+  const enabled = groupAutomationEnabled.checked;
+  const roleId = groupAutomationRole.value || null;
+  groupManagementBusy = true;
+  renderGroupManagement();
+  setGroupAutomationStatus("Saving preset...");
+  let finalMessage = "";
+  let finalState = "";
+  try {
+    const result = await request(`/api/groups/${encodeURIComponent(selectedGroupId)}/automation`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled,
+        roleId,
+        allowedUsers,
+      }),
+    });
+    if (groupManagement.detail) groupManagement.detail.automation = result.automation;
+    groupAutomationDirty = false;
+    finalMessage = result.automation?.enabled ? "Preset saved and enabled." : "Preset saved and disabled.";
+    finalState = "success";
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) {
+      finalMessage = error.message;
+      finalState = "error";
+    }
+  } finally {
+    groupManagementBusy = false;
+    renderGroupManagement();
+    if (finalMessage) setGroupAutomationStatus(finalMessage, finalState);
+  }
+}
+
+function setGroupPageStatus(message, state = "") {
+  if (!groupPageStatus) return;
+  groupPageStatus.textContent = message;
+  if (state) groupPageStatus.dataset.state = state;
+  else delete groupPageStatus.dataset.state;
+}
+
+function setGroupAutomationStatus(message, state = "") {
+  if (!groupAutomationStatus) return;
+  groupAutomationStatus.textContent = message;
+  if (state) groupAutomationStatus.dataset.state = state;
+  else delete groupAutomationStatus.dataset.state;
+}
+
+function startGroupRefresh() {
+  if (groupRefreshTimer || document.hidden) return;
+  groupRefreshTimer = window.setInterval(() => loadGroupManagement({ background: true }), 15_000);
+}
+
+function stopGroupRefresh() {
+  if (!groupRefreshTimer) return;
+  window.clearInterval(groupRefreshTimer);
+  groupRefreshTimer = null;
 }
 
 async function loadAdminUsers(options = {}) {

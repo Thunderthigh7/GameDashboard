@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260805-3/styles.css">
+    <link rel="stylesheet" href="/assets/20260805-4/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -160,6 +160,22 @@
                   </svg>
                 </span>
                 <span>Assets</span>
+              </a>
+            </div>
+          </section>
+
+          <section class="navGroup" aria-labelledby="communityNavLabel">
+            <h2 class="navGroupLabel" id="communityNavLabel">Community</h2>
+            <div class="navGroupLinks">
+              <a href="#groups" data-dashboard-view="groups">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <circle cx="9" cy="8" r="3" />
+                    <circle cx="16.5" cy="9.5" r="2.5" />
+                    <path d="M3.5 19c.5-3.4 2.4-5.2 5.5-5.2s5 1.8 5.5 5.2M14 14.2c3.5-.7 5.7.9 6.5 3.8" />
+                  </svg>
+                </span>
+                <span>Groups</span>
               </a>
             </div>
           </section>
@@ -1622,6 +1638,90 @@
           </div>
         </section>
 
+        <section class="viewPage groupsPage" data-view-panel="groups" hidden>
+          <section class="groupAuthorization panel" id="groupAuthorization">
+            <div>
+              <span class="groupEyebrow">Roblox OAuth</span>
+              <h2 id="groupAuthorizationTitle">Connect Roblox groups</h2>
+              <p id="groupAuthorizationCopy">Authorize group:read and group:write to manage requests and lower-ranked members.</p>
+            </div>
+            <div class="groupAuthorizationActions">
+              <button class="button compact" id="groupAuthorizeButton" type="button">Authorize Roblox</button>
+              <button class="button secondary compact" id="groupDisconnectButton" type="button" hidden>Disconnect</button>
+            </div>
+          </section>
+
+          <section class="panel groupControlPanel">
+            <div class="groupControlHeader">
+              <label class="groupSelectField" for="groupSelect">
+                <span>Your group</span>
+                <select id="groupSelect"><option value="">Authorize Roblox to load groups</option></select>
+              </label>
+              <button class="button secondary compact" id="groupRefreshButton" type="button">Refresh</button>
+            </div>
+            <div class="groupPermissionSummary" id="groupPermissionSummary">
+              <span>Select a managed group to see the actions your Roblox role allows.</span>
+            </div>
+            <p class="groupStatus" id="groupPageStatus" aria-live="polite"></p>
+          </section>
+
+          <div class="groupManagementGrid" id="groupManagementWorkspace" hidden>
+            <section class="panel groupListPanel">
+              <header class="groupSectionHeader">
+                <div>
+                  <span class="groupEyebrow">Pending</span>
+                  <h2>Join requests</h2>
+                  <p>Accept or decline requests, with an optional role assigned immediately.</p>
+                </div>
+                <span class="groupCountBadge" id="groupRequestCount">0</span>
+              </header>
+              <div class="groupPeopleList" id="groupJoinRequestList"></div>
+            </section>
+
+            <section class="panel groupListPanel">
+              <header class="groupSectionHeader">
+                <div>
+                  <span class="groupEyebrow">Members below you</span>
+                  <h2>Role editor</h2>
+                  <p>Assign or remove roles that rank below your own highest role.</p>
+                </div>
+                <span class="groupCountBadge" id="groupMemberCount">0</span>
+              </header>
+              <div class="groupPeopleList" id="groupMemberList"></div>
+            </section>
+          </div>
+
+          <section class="panel groupAutomationPanel" id="groupAutomationPanel" hidden>
+            <header class="groupSectionHeader">
+              <div>
+                <span class="groupEyebrow">Preset automation</span>
+                <h2>Auto-accept allowlist</h2>
+                <p>Only the exact usernames or user IDs you save here can be accepted automatically.</p>
+              </div>
+              <label class="groupAutomationToggle">
+                <input id="groupAutomationEnabled" type="checkbox">
+                <span>Enabled</span>
+              </label>
+            </header>
+            <div class="groupAutomationFields">
+              <label for="groupAutomationRole">
+                <span>Role after acceptance</span>
+                <select id="groupAutomationRole"><option value="">Choose a role</option></select>
+              </label>
+              <label for="groupAutomationUsers">
+                <span>Allowed usernames or user IDs</span>
+                <textarea id="groupAutomationUsers" rows="3" maxlength="6400" placeholder="Thunder_thigh7, 123456789"></textarea>
+                <small>Separate entries with commas, spaces, or new lines. Maximum 100 people.</small>
+              </label>
+            </div>
+            <div class="groupAutomationFooter">
+              <p class="groupStatus" id="groupAutomationStatus" aria-live="polite"></p>
+              <button class="button compact" id="groupAutomationSaveButton" type="button">Save preset</button>
+            </div>
+            <div class="groupAutomationActivity" id="groupAutomationActivity"></div>
+          </section>
+        </section>
+
         <section class="viewPage usagePage" data-view-panel="usage" hidden>
           <section class="usageGrid">
             <article class="panel usageSummaryPanel">
@@ -1970,6 +2070,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260805-3/app.js"></script>
+    <script defer src="/assets/20260805-4/app.js"></script>
   </body>
 </html>

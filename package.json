@@ -18,6 +18,7 @@
     "test:discord": "node scripts/test-discord-integration.mjs",
     "test:roblox-live": "node scripts/test-roblox-live-actions.mjs",
     "test:assets": "node scripts/test-asset-publishing.mjs",
+    "test:groups": "node scripts/test-group-management.mjs",
     "test:releases": "node scripts/test-release-comparisons.mjs"
   },
   "dependencies": {
