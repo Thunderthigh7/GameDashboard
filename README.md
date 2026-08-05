@@ -41,8 +41,6 @@ The extra live-action scope is requested only when a universe owner authorizes *
 
 The Assets page requests `asset:read` and `asset:write` only when a user authorizes asset publishing. Add both scopes to the Roblox OAuth app. The server always includes these required scopes even if Render has an older `ROBLOX_OAUTH_ASSET_SCOPES` value. Roblox decides when account selection and consent are required for the authorization request. The callback stores a completed authorization and lets the Assets API enforce its effective permissions instead of rejecting it from the token response's advisory scope text. Bulk-upload files are saved to B2 when it is configured, with a local `data/asset-drafts` fallback for development. The defaults are 20 MB per file, 250 MB and 100 files per saved batch, and 50 saved batches per experience.
 
-The Publishing page uploads `.rbxl` and `.rbxlx` place files and can publish them immediately, once at a scheduled time, or when the next matching tracked event is ingested. Roblox's Place Publishing API does not support OAuth. Create a narrowly scoped Open Cloud API key with `universe-places` **Write** access to the target experience, then save it on the Publishing page. The key is encrypted at rest and never returned to the browser. Place files use B2 when configured, with a local `data/place-publishing` fallback for development. The default limit is 100 MB per file and 50 saved publishing jobs per experience.
-
 For local testing, use:
 
 ```env

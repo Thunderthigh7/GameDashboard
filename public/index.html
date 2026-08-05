@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260805-4/styles.css">
+    <link rel="stylesheet" href="/assets/20260805-3/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -160,15 +160,6 @@
                   </svg>
                 </span>
                 <span>Assets</span>
-              </a>
-              <a href="#publishing" data-dashboard-view="publishing">
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <path d="M5 4h10l4 4v12H5Z" />
-                    <path d="M15 4v5h4M8 15h8M12 11v8" />
-                  </svg>
-                </span>
-                <span>Publishing</span>
               </a>
             </div>
           </section>
@@ -1631,94 +1622,6 @@
           </div>
         </section>
 
-        <section class="viewPage publishingPage" data-view-panel="publishing" hidden>
-          <section class="panel publishingCredentialPanel">
-            <div class="publishingCredentialCopy">
-              <span class="assetEyebrow">Place publishing key</span>
-              <h2 id="publishingConnectionTitle">Connect place publishing</h2>
-              <p id="publishingConnectionCopy">Place versions require an API key. Roblox does not support OAuth for this publishing endpoint.</p>
-              <div class="publishingPermissionNote">
-                <strong>Required API-key permission</strong>
-                <span><code>universe-places</code> with <strong>Write</strong> access to this experience.</span>
-              </div>
-            </div>
-            <form class="publishingCredentialForm" id="publishingConnectionForm">
-              <label for="publishingApiKey">
-                <span>Open Cloud API key</span>
-                <input id="publishingApiKey" type="password" maxlength="8192" autocomplete="off" placeholder="Paste the key once">
-              </label>
-              <div>
-                <button class="button secondary compact" id="publishingDisconnectButton" type="button" hidden>Remove key</button>
-                <button class="button compact" id="publishingSaveKeyButton" type="submit">Save encrypted key</button>
-              </div>
-              <p class="assetStatus" id="publishingConnectionStatus" aria-live="polite"></p>
-            </form>
-          </section>
-
-          <div class="publishingWorkspace">
-            <section class="panel publishingComposerPanel">
-              <header class="assetSectionHeader">
-                <div>
-                  <span class="assetEyebrow">New place version</span>
-                  <h2>Plan a publish</h2>
-                  <p>Upload one saved Studio place file and choose exactly when it goes live.</p>
-                </div>
-              </header>
-              <form class="publishingJobForm" id="publishingJobForm">
-                <label class="publishingField" for="publishingJobName">
-                  <span>Publish name</span>
-                  <input id="publishingJobName" type="text" maxlength="80" placeholder="Summer update">
-                </label>
-                <label class="publishingField" for="publishingPlaceId">
-                  <span>Target Place ID</span>
-                  <input id="publishingPlaceId" type="number" min="1" step="1" inputmode="numeric" placeholder="123456789">
-                </label>
-                <label class="publishingFileField" for="publishingPlaceFile">
-                  <span>Place file</span>
-                  <input id="publishingPlaceFile" type="file" accept=".rbxl,.rbxlx">
-                  <small id="publishingFileHelp">Choose a .rbxl or .rbxlx file up to 100 MB.</small>
-                </label>
-                <label class="publishingField" for="publishingTriggerType">
-                  <span>Publish when</span>
-                  <select id="publishingTriggerType">
-                    <option value="now">As soon as it is saved</option>
-                    <option value="schedule">At a scheduled time</option>
-                    <option value="event">A tracked event occurs</option>
-                  </select>
-                </label>
-                <fieldset class="publishingField publishingScheduleFields" id="publishingScheduleField" hidden>
-                  <span>Scheduled date and time</span>
-                  <div>
-                    <label for="publishingScheduleDate"><span>Date</span><input id="publishingScheduleDate" type="date"></label>
-                    <label for="publishingScheduleTime"><span>Time</span><input id="publishingScheduleTime" type="time" step="60"></label>
-                  </div>
-                  <small>Your browser's local timezone is used.</small>
-                </fieldset>
-                <label class="publishingField" id="publishingEventField" for="publishingEventName" hidden>
-                  <span>Tracked event</span>
-                  <select id="publishingEventName"><option value="">Choose an event</option></select>
-                  <small>The first new matching event publishes this file once.</small>
-                </label>
-                <button class="button" id="publishingCreateJobButton" type="submit">Save and publish</button>
-                <p class="assetStatus" id="publishingJobStatus" aria-live="polite"></p>
-              </form>
-            </section>
-
-            <section class="panel publishingQueuePanel">
-              <header class="assetSectionHeader assetLibraryHeader">
-                <div>
-                  <span class="assetEyebrow">Release queue</span>
-                  <h2>Publishing jobs</h2>
-                  <p>Scheduled, event-triggered, completed, and failed place publishes.</p>
-                </div>
-                <button class="button secondary compact" id="publishingRefreshButton" type="button">Refresh</button>
-              </header>
-              <div class="publishingJobList" id="publishingJobList"></div>
-              <p class="assetStatus" id="publishingListStatus" aria-live="polite"></p>
-            </section>
-          </div>
-        </section>
-
         <section class="viewPage usagePage" data-view-panel="usage" hidden>
           <section class="usageGrid">
             <article class="panel usageSummaryPanel">
@@ -2067,6 +1970,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260805-4/app.js"></script>
+    <script defer src="/assets/20260805-3/app.js"></script>
   </body>
 </html>
