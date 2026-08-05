@@ -5464,19 +5464,323 @@ body[data-active-view="moderation"] .topbarActions {
   color: #86efac;
 }
 
+.publishingPage {
+  display: grid;
+  gap: 18px;
+}
+
+.publishingCredentialPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 20px;
+}
+
+.publishingCredentialCopy {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.publishingCredentialCopy h2,
+.publishingComposerPanel h2,
+.publishingQueuePanel h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.publishingCredentialCopy > p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.publishingPermissionNote {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 5px;
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 9px;
+  background: rgba(34, 211, 238, 0.06);
+  padding: 9px 11px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.publishingPermissionNote strong,
+.publishingPermissionNote code {
+  color: #a5f3fc;
+}
+
+.publishingCredentialForm {
+  width: min(420px, 100%);
+  flex: 0 0 auto;
+  display: grid;
+  gap: 9px;
+}
+
+.publishingCredentialForm label,
+.publishingField,
+.publishingFileField {
+  display: grid;
+  gap: 6px;
+}
+
+.publishingCredentialForm label > span,
+.publishingField > span,
+.publishingFileField > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.publishingCredentialForm > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.publishingCredentialForm input,
+.publishingField input,
+.publishingField select,
+.publishingFileField input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 11, 24, 0.72);
+  color: var(--text);
+  font: inherit;
+}
+
+.publishingCredentialForm input,
+.publishingField input,
+.publishingField select {
+  height: 40px;
+  padding: 0 11px;
+}
+
+.publishingField input[type="date"],
+.publishingField input[type="time"] {
+  color-scheme: dark;
+}
+
+.publishingScheduleFields {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.publishingScheduleFields > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  gap: 8px;
+}
+
+.publishingScheduleFields label {
+  display: grid;
+  gap: 5px;
+}
+
+.publishingScheduleFields label > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.publishingFileField input {
+  min-height: 44px;
+  padding: 7px;
+  font-size: 12px;
+}
+
+.publishingFileField input::file-selector-button {
+  height: 28px;
+  margin-right: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.publishingCredentialForm input:focus,
+.publishingField input:focus,
+.publishingField select:focus,
+.publishingFileField input:focus {
+  border-color: var(--purple);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1);
+}
+
+.publishingField small,
+.publishingFileField small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.publishingWorkspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(480px, 1.22fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.publishingComposerPanel,
+.publishingQueuePanel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.publishingJobForm {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.publishingJobForm > .button {
+  justify-self: start;
+  margin-top: 2px;
+}
+
+.publishingJobList {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.publishingJobCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(8, 15, 30, 0.54);
+  padding: 13px;
+}
+
+.publishingJobMain,
+.publishingJobHeading > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.publishingJobHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.publishingJobHeading strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publishingJobHeading span,
+.publishingJobTime {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.publishingJobResult {
+  margin: 7px 0 2px;
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.publishingJobResult.error {
+  color: #fca5a5;
+}
+
+.publishingJobActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.publishingStateBadge {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.publishingStateBadge[data-state="published"] {
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(74, 222, 128, 0.08);
+  color: #86efac;
+}
+
+.publishingStateBadge[data-state="publishing"],
+.publishingStateBadge[data-state="queued"] {
+  border-color: rgba(34, 211, 238, 0.28);
+  background: rgba(34, 211, 238, 0.08);
+  color: #67e8f9;
+}
+
+.publishingStateBadge[data-state="scheduled"],
+.publishingStateBadge[data-state="waiting"] {
+  border-color: rgba(167, 139, 250, 0.3);
+  background: rgba(139, 92, 246, 0.1);
+  color: #c4b5fd;
+}
+
+.publishingStateBadge[data-state="failed"] {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fca5a5;
+}
+
 @media (max-width: 1050px) {
-  .assetWorkspace {
+  .assetWorkspace,
+  .publishingWorkspace {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 720px) {
   .assetAuthorization,
+  .publishingCredentialPanel,
   .assetSectionHeader,
   .assetLibraryHeader,
   .assetPackDetailHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .publishingCredentialForm {
+    width: 100%;
+  }
+
+  .publishingJobCard {
+    grid-template-columns: 1fr;
+  }
+
+  .publishingJobActions {
+    justify-content: flex-end;
   }
 
   .assetLibraryLayout {

@@ -62,6 +62,8 @@ const robloxLiveIntegrationStorePath = path.join(__dirname, "data", "roblox-live
 const playerModerationStorePath = path.join(__dirname, "data", "player-moderation.json");
 const assetLibraryStorePath = path.join(__dirname, "data", "asset-library.json");
 const assetDraftDirectory = path.join(__dirname, "data", "asset-drafts");
+const placePublishingStorePath = path.join(__dirname, "data", "place-publishing.json");
+const placePublishDirectory = path.join(__dirname, "data", "place-publishing");
 
 loadLocalEnv();
 
@@ -86,6 +88,10 @@ const MAX_ASSET_FILE_BYTES = Math.min(20 * 1024 * 1024, Math.max(1024, cleanEnvI
 const MAX_ASSET_BATCH_BYTES = Math.max(MAX_ASSET_FILE_BYTES, cleanEnvInteger("MAX_ASSET_BATCH_BYTES", 250 * 1024 * 1024));
 const MAX_ASSETS_PER_BATCH = Math.min(100, Math.max(1, cleanEnvInteger("MAX_ASSETS_PER_BATCH", 100)));
 const MAX_ASSET_BATCHES_PER_UNIVERSE = Math.min(200, Math.max(1, cleanEnvInteger("MAX_ASSET_BATCHES_PER_UNIVERSE", 50)));
+const MAX_PLACE_FILE_BYTES = Math.min(100 * 1024 * 1024, Math.max(1024, cleanEnvInteger("MAX_PLACE_FILE_BYTES", 100 * 1024 * 1024)));
+const MAX_PLACE_PUBLISH_JOBS_PER_UNIVERSE = Math.min(200, Math.max(1, cleanEnvInteger("MAX_PLACE_PUBLISH_JOBS_PER_UNIVERSE", 50)));
+const PLACE_PUBLISH_SCHEDULER_INTERVAL_MS = Math.max(5000, cleanEnvInteger("PLACE_PUBLISH_SCHEDULER_INTERVAL_MS", 15 * 1000));
+const PLACE_PUBLISH_REQUEST_TIMEOUT_MS = Math.max(30 * 1000, cleanEnvInteger("PLACE_PUBLISH_REQUEST_TIMEOUT_MS", 2 * 60 * 1000));
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -453,6 +459,8 @@ const ROBLOX_GAME_ICON_CACHE_MS = cleanEnvInteger("ROBLOX_GAME_ICON_CACHE_MS", 6
 const ROBLOX_GAME_ICON_CACHE_LIMIT = cleanEnvInteger("ROBLOX_GAME_ICON_CACHE_LIMIT", 500);
 const robloxGameIconCache = new Map();
 const robloxGameIconRequests = new Map();
+const robloxUniverseDetailsCache = new Map();
+const robloxUniverseDetailsRequests = new Map();
 let persistedMapUniverseIdsCache = { key: "", cachedAt: 0, universeIds: [] };
 let persistedMapUniverseIdsRequest = null;
 let persistedMapUniverseIdsVersion = 0;
@@ -463,6 +471,7 @@ let localDiscordIntegrationStoreLock = Promise.resolve();
 let localRobloxLiveIntegrationStoreLock = Promise.resolve();
 let localPlayerModerationStoreLock = Promise.resolve();
 let localAssetLibraryStoreLock = Promise.resolve();
+let localPlacePublishingStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
 const discordIntegrationCache = new Map();
 const discordAlertEvaluationLocks = new Map();
@@ -667,6 +676,32 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/assets/drafts" && req.method === "POST") {
       return handleAssetDraftSave(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/place-publishing" && req.method === "GET") {
+      return handlePlacePublishingGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/place-publishing/connection" && req.method === "PUT") {
+      return handlePlacePublishingConnectionSave(req, res, auth);
+    }
+
+    if (url.pathname === "/api/place-publishing/connection" && req.method === "DELETE") {
+      return handlePlacePublishingConnectionDelete(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/place-publishing/jobs" && req.method === "POST") {
+      return handlePlacePublishJobCreate(req, res, auth, url.searchParams);
+    }
+
+    const placePublishJobMatch = url.pathname.match(/^\/api\/place-publishing\/jobs\/([^/]+)$/);
+    if (placePublishJobMatch && req.method === "DELETE") {
+      return handlePlacePublishJobDelete(req, res, auth, decodeURIComponent(placePublishJobMatch[1]), url.searchParams);
+    }
+
+    const placePublishJobRunMatch = url.pathname.match(/^\/api\/place-publishing\/jobs\/([^/]+)\/run$/);
+    if (placePublishJobRunMatch && req.method === "POST") {
+      return handlePlacePublishJobRun(req, res, auth, decodeURIComponent(placePublishJobRunMatch[1]));
     }
 
     if (url.pathname === "/api/integrations/roblox-live/rules" && req.method === "POST") {
@@ -1127,6 +1162,13 @@ const robloxLiveScheduler = setInterval(() => {
 }, ROBLOX_LIVE_SCHEDULER_INTERVAL_MS);
 robloxLiveScheduler.unref();
 
+const placePublishScheduler = setInterval(() => {
+  evaluateScheduledPlacePublishJobs().catch((error) => {
+    console.warn("Could not evaluate scheduled place publishes:", error.message || error);
+  });
+}, PLACE_PUBLISH_SCHEDULER_INTERVAL_MS);
+placePublishScheduler.unref();
+
 if (MONGODB_URI) {
   void initializeMongoStorage();
 }
@@ -1449,6 +1491,11 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("asset_oauth_integrations").createIndex({ ownerUserId: 1 }, { unique: true }),
     db.collection("asset_packs").createIndex({ id: 1 }, { unique: true }),
     db.collection("asset_packs").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
+    db.collection("place_publishing_connections").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
+    db.collection("place_publish_jobs").createIndex({ id: 1 }, { unique: true }),
+    db.collection("place_publish_jobs").createIndex({ ownerUserId: 1, universeId: 1, createdAt: -1 }),
+    db.collection("place_publish_jobs").createIndex({ status: 1, scheduledFor: 1 }),
+    db.collection("place_publish_jobs").createIndex({ universeId: 1, status: 1, eventName: 1 }),
     db.collection("player_moderation_actions").createIndex({ id: 1 }, { unique: true }),
     db.collection("player_moderation_actions").createIndex({ ownerUserId: 1, universeId: 1, createdAt: -1 }),
     db.collection("player_bans").createIndex({ ownerUserId: 1, universeId: 1, userId: 1 }, { unique: true }),
@@ -3001,13 +3048,651 @@ async function readBinaryBody(req, maxBytes) {
   for await (const chunk of req) {
     byteLength += chunk.length;
     if (byteLength > maxBytes) {
-      const error = new Error(`Asset files must be ${Math.round(maxBytes / (1024 * 1024))} MB or smaller.`);
+      const error = new Error(`Files must be ${Math.round(maxBytes / (1024 * 1024))} MB or smaller.`);
       error.code = "BODY_TOO_LARGE";
       throw error;
     }
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, byteLength);
+}
+
+async function handlePlacePublishingGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) return sendJson(res, 403, { error: "Universe unavailable" });
+  const [connection, jobs, eventNames, universe] = await Promise.all([
+    readPlacePublishingConnection(auth.userId, universeId),
+    readPlacePublishJobs(auth.userId, universeId),
+    getDiscordAlertEventNames(auth.userId, universeId),
+    getCachedRobloxUniverseDetails(universeId).catch(() => null),
+  ]);
+  return sendJson(res, 200, {
+    universeId,
+    connection: serializePlacePublishingConnection(connection),
+    jobs: jobs.sort((left, right) => right.createdAt - left.createdAt).map(serializePlacePublishJob),
+    eventNames: [...new Set(eventNames.map(normalizeCustomEventName).filter(Boolean))].sort(),
+    defaultPlaceId: cleanInteger(universe?.rootPlaceId) || null,
+    limits: {
+      maxFileBytes: MAX_PLACE_FILE_BYTES,
+      maxJobsPerUniverse: MAX_PLACE_PUBLISH_JOBS_PER_UNIVERSE,
+    },
+  });
+}
+
+async function handlePlacePublishingConnectionSave(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) return sendJson(res, 403, { error: "Universe unavailable" });
+  const apiKey = cleanString(body?.apiKey, 8192);
+  if (apiKey.length < 20 || /\s/.test(apiKey)) {
+    return sendJson(res, 400, { error: "Paste a valid Roblox Open Cloud API key." });
+  }
+  const now = Date.now();
+  const connection = await savePlacePublishingConnection({
+    ownerUserId: auth.userId,
+    universeId,
+    encryptedApiKey: encryptRobloxLiveOAuthToken(apiKey),
+    keyHint: `Key ending in ${apiKey.slice(-6)}`,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return sendJson(res, 200, { ok: true, connection: serializePlacePublishingConnection(connection) });
+}
+
+async function handlePlacePublishingConnectionDelete(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  await deletePlacePublishingConnection(auth.userId, universeId);
+  return sendJson(res, 200, { ok: true });
+}
+
+async function handlePlacePublishJobCreate(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) return sendJson(res, 403, { error: "Universe unavailable" });
+  const connection = await readPlacePublishingConnection(auth.userId, universeId);
+  if (!hasPlacePublishingConnection(connection)) {
+    return sendJson(res, 400, { error: "Save a Roblox place-publishing API key first." });
+  }
+  const existingJobs = await readPlacePublishJobs(auth.userId, universeId);
+  if (existingJobs.length >= MAX_PLACE_PUBLISH_JOBS_PER_UNIVERSE) {
+    return sendJson(res, 409, { error: `Keep up to ${MAX_PLACE_PUBLISH_JOBS_PER_UNIVERSE} place publishing jobs per experience.` });
+  }
+  const name = cleanString(searchParams.get("name"), 80);
+  const placeId = cleanInteger(searchParams.get("placeId"));
+  const fileName = cleanAssetFileName(searchParams.get("fileName"));
+  const extension = path.extname(fileName).toLowerCase();
+  const triggerType = normalizePlacePublishTriggerType(searchParams.get("triggerType"));
+  const scheduledFor = cleanInteger(searchParams.get("scheduledFor"));
+  const eventName = normalizeCustomEventName(searchParams.get("eventName"));
+  if (name.length < 2) return sendJson(res, 400, { error: "Give this publish a name." });
+  if (placeId <= 0) return sendJson(res, 400, { error: "Enter a valid Roblox Place ID." });
+  if (extension !== ".rbxl" && extension !== ".rbxlx") {
+    return sendJson(res, 400, { error: "Upload a Roblox .rbxl or .rbxlx place file." });
+  }
+  if (!triggerType) return sendJson(res, 400, { error: "Choose when this place should publish." });
+  if (triggerType === "schedule" && scheduledFor <= Date.now()) {
+    return sendJson(res, 400, { error: "Choose a publishing time in the future." });
+  }
+  if (triggerType === "event" && !eventName) {
+    return sendJson(res, 400, { error: "Choose a tracked event that will trigger publishing." });
+  }
+  let fileBody;
+  try {
+    fileBody = await readBinaryBody(req, MAX_PLACE_FILE_BYTES);
+  } catch (error) {
+    return sendJson(res, error.code === "BODY_TOO_LARGE" ? 413 : 400, { error: error.message });
+  }
+  if (!fileBody.length) return sendJson(res, 400, { error: "The place file is empty." });
+  const now = Date.now();
+  const id = crypto.randomUUID();
+  const contentType = extension === ".rbxlx" ? "application/xml" : "application/octet-stream";
+  let storage;
+  try {
+    storage = await savePlacePublishBlob({
+      ownerUserId: auth.userId,
+      universeId,
+      jobId: id,
+      fileName,
+      contentType,
+      body: fileBody,
+    });
+    const job = await savePlacePublishJob({
+      id,
+      ownerUserId: auth.userId,
+      universeId,
+      placeId,
+      name,
+      fileName,
+      contentType,
+      byteLength: fileBody.length,
+      storage,
+      triggerType,
+      scheduledFor: triggerType === "schedule" ? scheduledFor : null,
+      eventName: triggerType === "event" ? eventName : "",
+      status: triggerType === "now" ? "queued" : triggerType === "schedule" ? "scheduled" : "waiting",
+      versionNumber: null,
+      error: "",
+      createdAt: now,
+      updatedAt: now,
+      startedAt: null,
+      publishedAt: null,
+    });
+    if (triggerType === "now") {
+      setImmediate(() => executePlacePublishJob(job.id, ["queued"]).catch((error) => {
+        console.warn("Could not publish queued Roblox place:", error.message || error);
+      }));
+    }
+    return sendJson(res, 201, { ok: true, job: serializePlacePublishJob(job) });
+  } catch (error) {
+    if (storage) await deletePlacePublishBlob(storage).catch(() => {});
+    return sendJson(res, 400, { error: error.message || "Could not save the place publish." });
+  }
+}
+
+async function handlePlacePublishJobRun(req, res, auth, jobId) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const job = await getPlacePublishJobById(auth.userId, universeId, jobId);
+  if (!job) return sendJson(res, 404, { error: "Place publishing job not found." });
+  if (job.status === "publishing" || job.status === "published") {
+    return sendJson(res, 409, { error: job.status === "published" ? "This place file was already published." : "This place file is already publishing." });
+  }
+  const queued = await queuePlacePublishJobNow(job.id, auth.userId, universeId);
+  if (!queued) return sendJson(res, 409, { error: "This publishing job could not be queued." });
+  setImmediate(() => executePlacePublishJob(job.id, ["queued"]).catch((error) => {
+    console.warn("Could not manually publish Roblox place:", error.message || error);
+  }));
+  return sendJson(res, 202, { ok: true, job: serializePlacePublishJob(queued) });
+}
+
+async function handlePlacePublishJobDelete(req, res, auth, jobId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const job = await getPlacePublishJobById(auth.userId, universeId, jobId);
+  if (!job) return sendJson(res, 404, { error: "Place publishing job not found." });
+  if (job.status === "publishing") return sendJson(res, 409, { error: "Wait for publishing to finish before deleting this job." });
+  await deletePlacePublishJobRecord(job);
+  await deletePlacePublishBlob(job.storage).catch((error) => {
+    console.warn("Could not delete saved place file:", error.message || error);
+  });
+  return sendJson(res, 200, { ok: true });
+}
+
+function normalizePlacePublishingConnection(connection) {
+  if (!connection || typeof connection !== "object") return null;
+  return {
+    ownerUserId: cleanString(connection.ownerUserId, 120),
+    universeId: cleanInteger(connection.universeId),
+    encryptedApiKey: cleanString(connection.encryptedApiKey, 8192),
+    keyHint: cleanString(connection.keyHint, 80),
+    createdAt: cleanInteger(connection.createdAt) || Date.now(),
+    updatedAt: cleanInteger(connection.updatedAt) || Date.now(),
+  };
+}
+
+function hasPlacePublishingConnection(connection) {
+  try {
+    return Boolean(normalizePlacePublishingConnection(connection)?.encryptedApiKey
+      && decryptRobloxLiveOAuthToken(connection.encryptedApiKey));
+  } catch {
+    return false;
+  }
+}
+
+function serializePlacePublishingConnection(connection) {
+  const normalized = normalizePlacePublishingConnection(connection);
+  return {
+    connected: hasPlacePublishingConnection(normalized),
+    keyHint: cleanString(normalized?.keyHint, 80),
+    updatedAt: cleanInteger(normalized?.updatedAt) || null,
+    requiredPermission: "universe-places:write",
+    authType: "api-key",
+  };
+}
+
+function normalizeStoredPlacePublishJob(job) {
+  if (!job || typeof job !== "object") return null;
+  const triggerType = normalizePlacePublishTriggerType(job.triggerType) || "now";
+  return {
+    id: cleanString(job.id, 120),
+    ownerUserId: cleanString(job.ownerUserId, 120),
+    universeId: cleanInteger(job.universeId),
+    placeId: cleanInteger(job.placeId),
+    name: cleanString(job.name, 80),
+    fileName: cleanAssetFileName(job.fileName),
+    contentType: path.extname(String(job.fileName || "")).toLowerCase() === ".rbxlx" ? "application/xml" : "application/octet-stream",
+    byteLength: cleanInteger(job.byteLength),
+    storage: normalizeAssetStorageReference(job.storage),
+    triggerType,
+    scheduledFor: triggerType === "schedule" ? cleanInteger(job.scheduledFor) || null : null,
+    eventName: triggerType === "event" ? normalizeCustomEventName(job.eventName) : "",
+    status: normalizePlacePublishStatus(job.status),
+    versionNumber: cleanInteger(job.versionNumber) || null,
+    error: cleanString(job.error, 400),
+    createdAt: cleanInteger(job.createdAt) || Date.now(),
+    updatedAt: cleanInteger(job.updatedAt) || Date.now(),
+    startedAt: cleanInteger(job.startedAt) || null,
+    publishedAt: cleanInteger(job.publishedAt) || null,
+  };
+}
+
+function serializePlacePublishJob(job) {
+  const normalized = normalizeStoredPlacePublishJob(job);
+  if (!normalized) return null;
+  const { ownerUserId, storage, ...safeJob } = normalized;
+  return safeJob;
+}
+
+function normalizePlacePublishTriggerType(value) {
+  const type = cleanString(value, 24).toLowerCase();
+  return new Set(["now", "schedule", "event"]).has(type) ? type : "";
+}
+
+function normalizePlacePublishStatus(value) {
+  const status = cleanString(value, 24).toLowerCase();
+  return new Set(["queued", "scheduled", "waiting", "publishing", "published", "failed"]).has(status) ? status : "queued";
+}
+
+async function readPlacePublishingConnection(ownerUserId, universeId) {
+  const db = await getMongoDb();
+  if (db) {
+    return normalizePlacePublishingConnection(await db.collection("place_publishing_connections").findOne(
+      { ownerUserId, universeId: cleanInteger(universeId) },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalPlacePublishingStore();
+  return normalizePlacePublishingConnection(store.connections.find((entry) => (
+    entry.ownerUserId === ownerUserId && cleanInteger(entry.universeId) === cleanInteger(universeId)
+  )));
+}
+
+async function savePlacePublishingConnection(connection) {
+  const normalized = normalizePlacePublishingConnection(connection);
+  if (!normalized?.ownerUserId || normalized.universeId <= 0 || !normalized.encryptedApiKey) {
+    throw new Error("Cannot save an invalid place publishing connection.");
+  }
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("place_publishing_connections").replaceOne(
+      { ownerUserId: normalized.ownerUserId, universeId: normalized.universeId },
+      normalized,
+      { upsert: true },
+    );
+    return normalized;
+  }
+  await withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    const index = store.connections.findIndex((entry) => (
+      entry.ownerUserId === normalized.ownerUserId && cleanInteger(entry.universeId) === normalized.universeId
+    ));
+    if (index >= 0) store.connections[index] = normalized;
+    else store.connections.push(normalized);
+    await writeLocalPlacePublishingStore(store);
+  });
+  return normalized;
+}
+
+async function deletePlacePublishingConnection(ownerUserId, universeId) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("place_publishing_connections").deleteOne({ ownerUserId, universeId: cleanInteger(universeId) });
+    return;
+  }
+  await withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    store.connections = store.connections.filter((entry) => !(
+      entry.ownerUserId === ownerUserId && cleanInteger(entry.universeId) === cleanInteger(universeId)
+    ));
+    await writeLocalPlacePublishingStore(store);
+  });
+}
+
+async function readPlacePublishJobs(ownerUserId, universeId) {
+  const db = await getMongoDb();
+  if (db) {
+    return (await db.collection("place_publish_jobs")
+      .find({ ownerUserId, universeId: cleanInteger(universeId) }, { projection: { _id: 0 } })
+      .sort({ createdAt: -1 })
+      .limit(MAX_PLACE_PUBLISH_JOBS_PER_UNIVERSE)
+      .toArray()).map(normalizeStoredPlacePublishJob).filter(Boolean);
+  }
+  const store = await readLocalPlacePublishingStore();
+  return store.jobs.map(normalizeStoredPlacePublishJob).filter((job) => (
+    job?.ownerUserId === ownerUserId && job.universeId === cleanInteger(universeId)
+  ));
+}
+
+async function getPlacePublishJobById(ownerUserId, universeId, jobId) {
+  const id = cleanString(jobId, 120);
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeStoredPlacePublishJob(await db.collection("place_publish_jobs").findOne(
+      { id, ownerUserId, universeId: cleanInteger(universeId) },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalPlacePublishingStore();
+  return normalizeStoredPlacePublishJob(store.jobs.find((job) => (
+    job.id === id && job.ownerUserId === ownerUserId && cleanInteger(job.universeId) === cleanInteger(universeId)
+  )));
+}
+
+async function savePlacePublishJob(job) {
+  const normalized = normalizeStoredPlacePublishJob(job);
+  if (!normalized?.id || !normalized.ownerUserId || normalized.universeId <= 0 || normalized.placeId <= 0 || !normalized.storage) {
+    throw new Error("Cannot save an invalid place publishing job.");
+  }
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("place_publish_jobs").replaceOne({ id: normalized.id }, normalized, { upsert: true });
+    return normalized;
+  }
+  await withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    const index = store.jobs.findIndex((entry) => entry.id === normalized.id);
+    if (index >= 0) store.jobs[index] = normalized;
+    else store.jobs.push(normalized);
+    await writeLocalPlacePublishingStore(store);
+  });
+  return normalized;
+}
+
+async function deletePlacePublishJobRecord(job) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("place_publish_jobs").deleteOne({ id: job.id, ownerUserId: job.ownerUserId });
+    return;
+  }
+  await withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    store.jobs = store.jobs.filter((entry) => !(entry.id === job.id && entry.ownerUserId === job.ownerUserId));
+    await writeLocalPlacePublishingStore(store);
+  });
+}
+
+async function queuePlacePublishJobNow(jobId, ownerUserId, universeId) {
+  const id = cleanString(jobId, 120);
+  const eligible = ["failed", "scheduled", "waiting", "queued"];
+  const now = Date.now();
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("place_publish_jobs").updateOne(
+      { id, ownerUserId, universeId: cleanInteger(universeId), status: { $in: eligible } },
+      { $set: { status: "queued", error: "", updatedAt: now, startedAt: null } },
+    );
+    if (!result.matchedCount) return null;
+    return getPlacePublishJobById(ownerUserId, universeId, id);
+  }
+  return withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    const job = store.jobs.find((entry) => (
+      entry.id === id && entry.ownerUserId === ownerUserId && cleanInteger(entry.universeId) === cleanInteger(universeId)
+    ));
+    if (!job || !eligible.includes(normalizePlacePublishStatus(job.status))) return null;
+    job.status = "queued";
+    job.error = "";
+    job.updatedAt = now;
+    job.startedAt = null;
+    await writeLocalPlacePublishingStore(store);
+    return normalizeStoredPlacePublishJob(job);
+  });
+}
+
+async function claimPlacePublishJob(jobId, eligibleStatuses) {
+  const id = cleanString(jobId, 120);
+  const eligible = [...new Set((eligibleStatuses || []).map(normalizePlacePublishStatus))];
+  const now = Date.now();
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("place_publish_jobs").updateOne(
+      { id, status: { $in: eligible } },
+      { $set: { status: "publishing", error: "", startedAt: now, updatedAt: now } },
+    );
+    if (!result.modifiedCount) return null;
+    return normalizeStoredPlacePublishJob(await db.collection("place_publish_jobs").findOne(
+      { id },
+      { projection: { _id: 0 } },
+    ));
+  }
+  return withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    const job = store.jobs.find((entry) => entry.id === id);
+    if (!job || !eligible.includes(normalizePlacePublishStatus(job.status))) return null;
+    job.status = "publishing";
+    job.error = "";
+    job.startedAt = now;
+    job.updatedAt = now;
+    await writeLocalPlacePublishingStore(store);
+    return normalizeStoredPlacePublishJob(job);
+  });
+}
+
+async function completePlacePublishJob(jobId, values) {
+  const id = cleanString(jobId, 120);
+  const safeValues = {
+    status: normalizePlacePublishStatus(values?.status),
+    versionNumber: cleanInteger(values?.versionNumber) || null,
+    error: cleanString(values?.error, 400),
+    publishedAt: cleanInteger(values?.publishedAt) || null,
+    updatedAt: Date.now(),
+  };
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("place_publish_jobs").updateOne({ id, status: "publishing" }, { $set: safeValues });
+    return;
+  }
+  await withLocalPlacePublishingStoreLock(async () => {
+    const store = await readLocalPlacePublishingStore();
+    const job = store.jobs.find((entry) => entry.id === id && entry.status === "publishing");
+    if (!job) return;
+    Object.assign(job, safeValues);
+    await writeLocalPlacePublishingStore(store);
+  });
+}
+
+async function executePlacePublishJob(jobId, eligibleStatuses) {
+  const job = await claimPlacePublishJob(jobId, eligibleStatuses);
+  if (!job) return null;
+  try {
+    const connection = await readPlacePublishingConnection(job.ownerUserId, job.universeId);
+    const apiKey = decryptRobloxLiveOAuthToken(connection?.encryptedApiKey);
+    if (!apiKey) throw new Error("The Roblox place-publishing API key is missing. Save it again and retry.");
+    const fileBody = await readPlacePublishBlob(job.storage);
+    const url = `https://apis.roblox.com/universes/v1/${encodeURIComponent(String(job.universeId))}/places/${encodeURIComponent(String(job.placeId))}/versions?versionType=Published`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": job.contentType,
+      },
+      body: fileBody,
+      signal: AbortSignal.timeout(PLACE_PUBLISH_REQUEST_TIMEOUT_MS),
+    });
+    const payload = await readJsonResponse(response);
+    if (!response.ok) {
+      throw createProviderError(response.status, getRobloxAssetError(payload, `Roblox rejected the place publish (${response.status}).`));
+    }
+    const versionNumber = cleanInteger(payload?.versionNumber);
+    if (versionNumber <= 0) throw new Error("Roblox published the place but did not return a version number.");
+    await completePlacePublishJob(job.id, {
+      status: "published",
+      versionNumber,
+      error: "",
+      publishedAt: Date.now(),
+    });
+    return { ok: true, versionNumber };
+  } catch (error) {
+    await completePlacePublishJob(job.id, {
+      status: "failed",
+      error: error.message || String(error),
+      publishedAt: null,
+    });
+    throw error;
+  }
+}
+
+async function evaluateScheduledPlacePublishJobs() {
+  const now = Date.now();
+  const db = await getMongoDb();
+  let jobs;
+  if (db) {
+    jobs = (await db.collection("place_publish_jobs")
+      .find({ status: "scheduled", scheduledFor: { $lte: now } }, { projection: { _id: 0 } })
+      .sort({ scheduledFor: 1 })
+      .limit(10)
+      .toArray()).map(normalizeStoredPlacePublishJob).filter(Boolean);
+  } else {
+    const store = await readLocalPlacePublishingStore();
+    jobs = store.jobs.map(normalizeStoredPlacePublishJob).filter((job) => job?.status === "scheduled" && job.scheduledFor <= now).slice(0, 10);
+  }
+  for (const job of jobs) {
+    await executePlacePublishJob(job.id, ["scheduled"]).catch((error) => {
+      console.warn(`Scheduled place publish ${job.id} failed:`, error.message || error);
+    });
+  }
+}
+
+async function evaluatePlacePublishEventTriggersForPresence(presence, project) {
+  const eventTimes = new Map();
+  const rememberEvent = (eventName, occurredAt) => {
+    const name = normalizeCustomEventName(eventName);
+    const timestamp = cleanInteger(occurredAt);
+    if (!name || timestamp <= 0) return;
+    eventTimes.set(name, Math.max(eventTimes.get(name) || 0, timestamp));
+  };
+  for (const event of Array.isArray(presence?.customEvents) ? presence.customEvents : []) {
+    rememberEvent(event?.eventName, event?.occurredAt || event?.receivedAt);
+  }
+  for (const sample of Array.isArray(presence?.deathSamples) ? presence.deathSamples : []) {
+    rememberEvent("player_died", sample?.sampledAt || sample?.diedAt || sample?.receivedAt);
+  }
+  for (const sample of Array.isArray(presence?.leaveSamples) ? presence.leaveSamples : []) {
+    rememberEvent("player_left", sample?.sampledAt || sample?.leftAt || sample?.receivedAt);
+  }
+  for (const message of Array.isArray(presence?.chatLogs) ? presence.chatLogs : []) {
+    rememberEvent("chat_message", message?.sentAt || message?.receivedAt);
+  }
+  const eventNames = new Set(eventTimes.keys());
+  if (!eventNames.size || !project?.ownerUserId) return;
+  const universeId = cleanInteger(presence.universeId);
+  const db = await getMongoDb();
+  let jobs;
+  if (db) {
+    jobs = (await db.collection("place_publish_jobs").find({
+      ownerUserId: project.ownerUserId,
+      universeId,
+      status: "waiting",
+      eventName: { $in: [...eventNames] },
+    }, { projection: { _id: 0 } }).limit(10).toArray()).map(normalizeStoredPlacePublishJob).filter(Boolean);
+  } else {
+    const store = await readLocalPlacePublishingStore();
+    jobs = store.jobs.map(normalizeStoredPlacePublishJob).filter((job) => (
+      job?.ownerUserId === project.ownerUserId
+      && job.universeId === universeId
+      && job.status === "waiting"
+      && eventNames.has(job.eventName)
+    )).slice(0, 10);
+  }
+  for (const job of jobs.filter((entry) => (eventTimes.get(entry.eventName) || 0) >= entry.createdAt)) {
+    await executePlacePublishJob(job.id, ["waiting"]).catch((error) => {
+      console.warn(`Event-triggered place publish ${job.id} failed:`, error.message || error);
+    });
+  }
+}
+
+async function readLocalPlacePublishingStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(placePublishingStorePath, "utf8"));
+    return {
+      connections: Array.isArray(payload.connections) ? payload.connections : [],
+      jobs: Array.isArray(payload.jobs) ? payload.jobs : [],
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return { connections: [], jobs: [] };
+    throw error;
+  }
+}
+
+async function writeLocalPlacePublishingStore(store) {
+  await fs.mkdir(path.dirname(placePublishingStorePath), { recursive: true });
+  await fs.writeFile(placePublishingStorePath, JSON.stringify(store, null, 2));
+}
+
+async function withLocalPlacePublishingStoreLock(operation) {
+  const previous = localPlacePublishingStoreLock;
+  let release;
+  localPlacePublishingStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+async function savePlacePublishBlob({ ownerUserId, universeId, jobId, fileName, contentType, body }) {
+  const extension = path.extname(String(fileName || "")).toLowerCase() === ".rbxlx" ? ".rbxlx" : ".rbxl";
+  const key = `place-publishing/${cleanString(ownerUserId, 120)}/${cleanInteger(universeId)}/${cleanString(jobId, 120)}/place${extension}`;
+  if (OBJECT_STORAGE_CONFIGURED) {
+    const client = await getB2S3Client();
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    await sendAssetStorageCommand(client, new PutObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }), `B2 PUT ${key}`);
+    return { provider: "b2", key };
+  }
+  const localKey = `${cleanString(jobId, 120)}${extension}`;
+  await fs.mkdir(placePublishDirectory, { recursive: true });
+  await fs.writeFile(path.join(placePublishDirectory, localKey), body);
+  return { provider: "local", key: localKey };
+}
+
+async function readPlacePublishBlob(storage) {
+  const normalized = normalizeAssetStorageReference(storage);
+  if (!normalized) throw new Error("The saved place file is unavailable.");
+  if (normalized.provider === "b2") {
+    const client = await getB2S3Client();
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const response = await sendAssetStorageCommand(client, new GetObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: normalized.key,
+    }), `B2 GET ${normalized.key}`);
+    return streamToBuffer(response.Body);
+  }
+  return fs.readFile(path.join(placePublishDirectory, path.basename(normalized.key)));
+}
+
+async function deletePlacePublishBlob(storage) {
+  const normalized = normalizeAssetStorageReference(storage);
+  if (!normalized) return;
+  if (normalized.provider === "b2") {
+    const client = await getB2S3Client();
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    await sendAssetStorageCommand(client, new DeleteObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: normalized.key,
+    }), `B2 DELETE ${normalized.key}`);
+    return;
+  }
+  await fs.rm(path.join(placePublishDirectory, path.basename(normalized.key)), { force: true });
 }
 
 async function handleRobloxLiveRuleSave(req, res, auth, requestedRuleId = "") {
@@ -5777,6 +6462,12 @@ async function handlePresenceHeartbeat(req, res) {
       evaluateRobloxLiveEventRulesForPresence(presence.value, project).catch((error) => {
         console.warn(
           `Could not evaluate Roblox live actions for universe ${presence.value.universeId}:`,
+          error.message || error,
+        );
+      });
+      evaluatePlacePublishEventTriggersForPresence(presence.value, project).catch((error) => {
+        console.warn(
+          `Could not evaluate place publishing triggers for universe ${presence.value.universeId}:`,
           error.message || error,
         );
       });
@@ -16037,6 +16728,22 @@ async function getRobloxUniverseDetails(universeId) {
   }
 
   return (payload.data || []).find((entry) => cleanInteger(entry.id) === universeId) || null;
+}
+
+async function getCachedRobloxUniverseDetails(universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  if (cleanUniverseId <= 0) return null;
+  const cached = robloxUniverseDetailsCache.get(cleanUniverseId);
+  if (cached && Date.now() - cached.cachedAt < ROBLOX_GAME_ICON_CACHE_MS) return cached.value;
+  if (robloxUniverseDetailsRequests.has(cleanUniverseId)) return robloxUniverseDetailsRequests.get(cleanUniverseId);
+  const request = getRobloxUniverseDetails(cleanUniverseId)
+    .then((value) => {
+      robloxUniverseDetailsCache.set(cleanUniverseId, { cachedAt: Date.now(), value });
+      return value;
+    })
+    .finally(() => robloxUniverseDetailsRequests.delete(cleanUniverseId));
+  robloxUniverseDetailsRequests.set(cleanUniverseId, request);
+  return request;
 }
 
 async function getRobloxGroupDetails(groupId) {

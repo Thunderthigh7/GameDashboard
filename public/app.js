@@ -74,6 +74,29 @@ const assetRefreshButton = document.querySelector("#assetRefreshButton");
 const assetPackList = document.querySelector("#assetPackList");
 const assetPackDetail = document.querySelector("#assetPackDetail");
 const assetLibraryStatus = document.querySelector("#assetLibraryStatus");
+const publishingConnectionTitle = document.querySelector("#publishingConnectionTitle");
+const publishingConnectionCopy = document.querySelector("#publishingConnectionCopy");
+const publishingConnectionForm = document.querySelector("#publishingConnectionForm");
+const publishingApiKey = document.querySelector("#publishingApiKey");
+const publishingSaveKeyButton = document.querySelector("#publishingSaveKeyButton");
+const publishingDisconnectButton = document.querySelector("#publishingDisconnectButton");
+const publishingConnectionStatus = document.querySelector("#publishingConnectionStatus");
+const publishingJobForm = document.querySelector("#publishingJobForm");
+const publishingJobName = document.querySelector("#publishingJobName");
+const publishingPlaceId = document.querySelector("#publishingPlaceId");
+const publishingPlaceFile = document.querySelector("#publishingPlaceFile");
+const publishingFileHelp = document.querySelector("#publishingFileHelp");
+const publishingTriggerType = document.querySelector("#publishingTriggerType");
+const publishingScheduleField = document.querySelector("#publishingScheduleField");
+const publishingScheduleDate = document.querySelector("#publishingScheduleDate");
+const publishingScheduleTime = document.querySelector("#publishingScheduleTime");
+const publishingEventField = document.querySelector("#publishingEventField");
+const publishingEventName = document.querySelector("#publishingEventName");
+const publishingCreateJobButton = document.querySelector("#publishingCreateJobButton");
+const publishingJobStatus = document.querySelector("#publishingJobStatus");
+const publishingRefreshButton = document.querySelector("#publishingRefreshButton");
+const publishingJobList = document.querySelector("#publishingJobList");
+const publishingListStatus = document.querySelector("#publishingListStatus");
 const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
@@ -405,6 +428,10 @@ let assetLibrary = { authorization: {}, packs: [], limits: {} };
 let assetPendingFiles = [];
 let selectedAssetPackId = "";
 let assetOperationPollTimer;
+let placePublishingRequestSequence = 0;
+let placePublishingBusy = false;
+let placePublishing = { connection: {}, jobs: [], eventNames: [], limits: {} };
+let placePublishingRefreshTimer;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -454,7 +481,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-3";
+const DASHBOARD_ASSET_VERSION = "20260805-4";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -521,7 +548,8 @@ const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const ROBLOX_LIVE_REFRESH_MS = 5000;
 const PLAYER_MODERATION_REFRESH_MS = 5000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation", "assets"]);
+const PLACE_PUBLISHING_REFRESH_MS = 5000;
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation", "assets", "publishing"]);
 const ADMIN_ONLY_VIEWS = new Set([
   "ai-runs",
   ...Array.from(
@@ -867,6 +895,19 @@ function bindEvents() {
   assetRefreshButton?.addEventListener("click", () => loadAssetLibrary({ force: true }));
   assetPackList?.addEventListener("click", handleAssetPackSelection);
   assetPackDetail?.addEventListener("click", handleAssetPackAction);
+  publishingConnectionForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    savePlacePublishingConnection();
+  });
+  publishingDisconnectButton?.addEventListener("click", disconnectPlacePublishing);
+  publishingJobForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    createPlacePublishJob();
+  });
+  publishingTriggerType?.addEventListener("change", syncPlacePublishingTriggerFields);
+  publishingPlaceFile?.addEventListener("change", syncPlacePublishingFileHelp);
+  publishingRefreshButton?.addEventListener("click", () => loadPlacePublishing({ force: true }));
+  publishingJobList?.addEventListener("click", handlePlacePublishingJobAction);
   refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -974,6 +1015,7 @@ function handleDashboardVisibilityChange() {
     stopEventRefresh();
     stopFunnelRefresh();
     stopAssetOperationPolling();
+    stopPlacePublishingRefresh();
   } else {
     updateViewRefreshTimers();
     if (authenticated && selectedUniverseId) {
@@ -981,6 +1023,7 @@ function handleDashboardVisibilityChange() {
       if (activeView === "events") loadCustomEvents();
       if (activeView === "funnels") loadFunnels();
       if (activeView === "assets") loadAssetLibrary({ force: true, background: true });
+      if (activeView === "publishing") loadPlacePublishing({ force: true, background: true });
     }
   }
 
@@ -1268,6 +1311,10 @@ function setAuthenticated(value, user = null) {
     selectedAssetPackId = "";
     stopAssetOperationPolling();
     renderAssetLibrary();
+    placePublishingRequestSequence += 1;
+    placePublishing = { connection: {}, jobs: [], eventNames: [], limits: {} };
+    stopPlacePublishingRefresh();
+    renderPlacePublishing();
     return;
   }
 
@@ -1305,13 +1352,14 @@ function getViewFromHash() {
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#moderation") return "moderation";
   if (window.location.hash === "#assets") return "assets";
+  if (window.location.hash === "#publishing") return "publishing";
   if (window.location.hash === "#admin") return "admin";
   return "overview";
 }
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "publishing" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
   if (lacksAdminAccess && ADMIN_ONLY_VIEWS.has(getViewFromHash())) {
@@ -1336,6 +1384,7 @@ function setActiveView(view, options = {}) {
   if (activeView !== "roblox-live") closeRobloxLiveRuleEditor();
   if (activeView !== "moderation") closePlayerModerationDialog({ force: true });
   if (activeView !== "assets") stopAssetOperationPolling();
+  if (activeView !== "publishing") stopPlacePublishingRefresh();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "overview" ? "#overview" : `#${activeView}`;
@@ -1400,6 +1449,10 @@ function renderActiveView(options = {}) {
       title: "Assets",
       subtitle: "Save, organize, and bulk publish Roblox assets for the selected experience.",
     },
+    publishing: {
+      title: "Publishing",
+      subtitle: "Publish a saved Roblox place now, at a scheduled time, or when a tracked event occurs.",
+    },
     usage: {
       title: "Usage",
       subtitle: "Track monthly limits before paid plans go live.",
@@ -1444,6 +1497,7 @@ function updateViewRefreshTimers() {
     stopFunnelRefresh();
     stopRobloxLiveRefresh();
     stopPlayerModerationRefresh();
+    stopPlacePublishingRefresh();
     return;
   }
 
@@ -1461,6 +1515,9 @@ function updateViewRefreshTimers() {
 
   if (activeView === "moderation" && selectedUniverseId) startPlayerModerationRefresh();
   else stopPlayerModerationRefresh();
+
+  if (activeView === "publishing" && selectedUniverseId) startPlacePublishingRefresh();
+  else stopPlacePublishingRefresh();
 }
 
 function loadActiveViewData(view, options = {}) {
@@ -1486,6 +1543,8 @@ function loadActiveViewData(view, options = {}) {
       loadPlayerModeration();
     } else if (view === "assets") {
       loadAssetLibrary();
+    } else if (view === "publishing") {
+      loadPlacePublishing();
     }
     return;
   }
@@ -1509,6 +1568,8 @@ function loadActiveViewData(view, options = {}) {
     loadPlayerModeration();
   } else if (view === "assets") {
     loadAssetLibrary();
+  } else if (view === "publishing") {
+    loadPlacePublishing();
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -2341,6 +2402,331 @@ function stopAssetOperationPolling() {
   if (!assetOperationPollTimer) return;
   window.clearInterval(assetOperationPollTimer);
   assetOperationPollTimer = null;
+}
+
+async function loadPlacePublishing(options = {}) {
+  if (!authenticated || !selectedUniverseId || !publishingJobList) return;
+  const requestSequence = ++placePublishingRequestSequence;
+  if (!options.background) setPlacePublishingListStatus("Loading publishing jobs...");
+  try {
+    const data = await request(`/api/place-publishing?universeId=${encodeURIComponent(selectedUniverseId)}${options.force ? "&fresh=1" : ""}`, {
+      dedupe: !options.force,
+    });
+    if (requestSequence !== placePublishingRequestSequence || activeView !== "publishing") return;
+    placePublishing = data;
+    renderPlacePublishing();
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    setPlacePublishingListStatus(jobs.length ? `${jobs.length} publishing job${jobs.length === 1 ? "" : "s"}.` : "No publishing jobs yet.");
+  } catch (error) {
+    if (requestSequence !== placePublishingRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) setPlacePublishingListStatus(error.message, "error");
+  }
+}
+
+function renderPlacePublishing() {
+  if (!publishingJobList) return;
+  const connection = placePublishing.connection || {};
+  const connected = Boolean(connection.connected);
+  const jobs = Array.isArray(placePublishing.jobs) ? placePublishing.jobs : [];
+  if (publishingConnectionTitle) {
+    publishingConnectionTitle.textContent = connected ? "Place publishing connected" : "Connect place publishing";
+  }
+  if (publishingConnectionCopy) {
+    publishingConnectionCopy.textContent = connected
+      ? `${connection.keyHint || "Your encrypted API key"} is ready for this experience.`
+      : "Place versions require an API key. Roblox does not support OAuth for this publishing endpoint.";
+  }
+  if (publishingSaveKeyButton) publishingSaveKeyButton.textContent = connected ? "Replace key" : "Save encrypted key";
+  if (publishingDisconnectButton) publishingDisconnectButton.hidden = !connected;
+  if (publishingPlaceId && !publishingPlaceId.value && Number(placePublishing.defaultPlaceId) > 0) {
+    publishingPlaceId.value = String(placePublishing.defaultPlaceId);
+  }
+  const currentEventName = String(publishingEventName?.value || "");
+  if (publishingEventName) {
+    const eventNames = Array.isArray(placePublishing.eventNames) ? placePublishing.eventNames : [];
+    publishingEventName.innerHTML = `<option value="">Choose an event</option>${eventNames.map((eventName) => (
+      `<option value="${escapeHtml(eventName)}"${eventName === currentEventName ? " selected" : ""}>${escapeHtml(formatPublishingEventName(eventName))}</option>`
+    )).join("")}`;
+  }
+  if (publishingFileHelp && !publishingPlaceFile?.files?.length) {
+    publishingFileHelp.textContent = `Choose a .rbxl or .rbxlx file up to ${formatBytes(placePublishing.limits?.maxFileBytes || 100 * 1024 * 1024)}.`;
+  }
+  publishingJobList.innerHTML = jobs.length
+    ? jobs.map(renderPlacePublishingJob).join("")
+    : `<div class="assetEmptyState"><strong>No publishing jobs</strong><span>Upload a place file and choose when it should publish.</span></div>`;
+  setPlacePublishingControlsDisabled(placePublishingBusy);
+  syncPlacePublishingTriggerFields();
+}
+
+function renderPlacePublishingJob(job) {
+  const status = String(job.status || "queued").toLowerCase();
+  const trigger = getPlacePublishingTriggerLabel(job);
+  const result = status === "published" && job.versionNumber
+    ? `Published as version ${job.versionNumber}`
+    : job.error || trigger;
+  const canRun = status === "failed" || status === "scheduled" || status === "waiting" || status === "queued";
+  const runLabel = status === "failed" ? "Retry now" : "Publish now";
+  return `
+    <article class="publishingJobCard">
+      <div class="publishingJobMain">
+        <div class="publishingJobHeading">
+          <div>
+            <strong>${escapeHtml(job.name || "Untitled publish")}</strong>
+            <span>Place ${escapeHtml(job.placeId)} · ${escapeHtml(job.fileName || "place file")} · ${escapeHtml(formatBytes(job.byteLength || 0))}</span>
+          </div>
+          <span class="publishingStateBadge" data-state="${escapeHtml(status)}">${escapeHtml(formatPlacePublishingStatus(status))}</span>
+        </div>
+        <p class="publishingJobResult${job.error ? " error" : ""}">${escapeHtml(result)}</p>
+        <span class="publishingJobTime">Created ${escapeHtml(formatRelativeTime(job.createdAt))}${job.publishedAt ? ` · published ${escapeHtml(formatRelativeTime(job.publishedAt))}` : ""}</span>
+      </div>
+      <div class="publishingJobActions">
+        ${canRun ? `<button class="button secondary compact" type="button" data-publishing-run="${escapeHtml(job.id)}">${runLabel}</button>` : ""}
+        <button class="button secondary compact" type="button" data-publishing-delete="${escapeHtml(job.id)}"${status === "publishing" ? " disabled" : ""}>Remove</button>
+      </div>
+    </article>
+  `;
+}
+
+function getPlacePublishingTriggerLabel(job) {
+  if (job.triggerType === "schedule" && job.scheduledFor) return `Scheduled for ${new Date(job.scheduledFor).toLocaleString()}`;
+  if (job.triggerType === "event") return `Waiting for ${formatPublishingEventName(job.eventName)}`;
+  return job.status === "queued" ? "Queued to publish now" : "Publish immediately";
+}
+
+function formatPlacePublishingStatus(status) {
+  if (status === "scheduled") return "Scheduled";
+  if (status === "waiting") return "Waiting for event";
+  if (status === "publishing") return "Publishing";
+  if (status === "published") return "Published";
+  if (status === "failed") return "Failed";
+  return "Queued";
+}
+
+function formatPublishingEventName(eventName) {
+  return String(eventName || "")
+    .split(/[_:.-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ") || "Tracked event";
+}
+
+async function savePlacePublishingConnection() {
+  if (placePublishingBusy || !selectedUniverseId) return;
+  const apiKey = String(publishingApiKey?.value || "").trim();
+  if (apiKey.length < 20 || /\s/.test(apiKey)) {
+    setPlacePublishingConnectionStatus("Paste a valid Roblox Open Cloud API key.", "error");
+    publishingApiKey?.focus();
+    return;
+  }
+  placePublishingBusy = true;
+  setPlacePublishingControlsDisabled(true);
+  setPlacePublishingConnectionStatus("Saving the encrypted key...");
+  try {
+    await request("/api/place-publishing/connection", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: Number(selectedUniverseId), apiKey }),
+    });
+    if (publishingApiKey) publishingApiKey.value = "";
+    await loadPlacePublishing({ force: true, background: true });
+    setPlacePublishingConnectionStatus("API key saved. Place publishing is ready.", "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setPlacePublishingConnectionStatus(error.message, "error");
+  } finally {
+    placePublishingBusy = false;
+    renderPlacePublishing();
+  }
+}
+
+async function disconnectPlacePublishing() {
+  if (placePublishingBusy || !selectedUniverseId) return;
+  if (!window.confirm("Remove the saved place-publishing API key? Scheduled and event jobs will remain saved but cannot publish until a key is added again.")) return;
+  placePublishingBusy = true;
+  renderPlacePublishing();
+  try {
+    await request(`/api/place-publishing/connection?universeId=${encodeURIComponent(selectedUniverseId)}`, { method: "DELETE" });
+    await loadPlacePublishing({ force: true, background: true });
+    setPlacePublishingConnectionStatus("API key removed.", "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setPlacePublishingConnectionStatus(error.message, "error");
+  } finally {
+    placePublishingBusy = false;
+    renderPlacePublishing();
+  }
+}
+
+async function createPlacePublishJob() {
+  if (placePublishingBusy || !selectedUniverseId) return;
+  const name = String(publishingJobName?.value || "").trim();
+  const placeId = Number(publishingPlaceId?.value || 0);
+  const file = publishingPlaceFile?.files?.[0];
+  const triggerType = String(publishingTriggerType?.value || "now");
+  const eventName = String(publishingEventName?.value || "");
+  const scheduleDate = String(publishingScheduleDate?.value || "");
+  const scheduleTime = String(publishingScheduleTime?.value || "");
+  const scheduledFor = scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`).getTime() : 0;
+  const maxFileBytes = Number(placePublishing.limits?.maxFileBytes || 100 * 1024 * 1024);
+  if (name.length < 2) return setPlacePublishingJobStatus("Give this publish a name.", "error");
+  if (!Number.isSafeInteger(placeId) || placeId <= 0) return setPlacePublishingJobStatus("Enter a valid Roblox Place ID.", "error");
+  if (!file || !/\.rbxlx?$/i.test(file.name)) return setPlacePublishingJobStatus("Choose a .rbxl or .rbxlx place file.", "error");
+  if (file.size > maxFileBytes) return setPlacePublishingJobStatus(`Place files must be ${formatBytes(maxFileBytes)} or smaller.`, "error");
+  if (triggerType === "schedule" && (!Number.isFinite(scheduledFor) || scheduledFor <= Date.now())) {
+    return setPlacePublishingJobStatus("Choose a publishing time in the future.", "error");
+  }
+  if (triggerType === "event" && !eventName) return setPlacePublishingJobStatus("Choose the tracked event that should publish this file.", "error");
+  const query = new URLSearchParams({
+    universeId: selectedUniverseId,
+    placeId: String(placeId),
+    name,
+    fileName: file.name,
+    triggerType,
+  });
+  if (triggerType === "schedule") query.set("scheduledFor", String(scheduledFor));
+  if (triggerType === "event") query.set("eventName", eventName);
+  placePublishingBusy = true;
+  setPlacePublishingControlsDisabled(true);
+  setPlacePublishingJobStatus(`Saving ${file.name}...`);
+  try {
+    await request(`/api/place-publishing/jobs?${query}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    publishingJobForm?.reset();
+    if (publishingPlaceId) publishingPlaceId.value = String(placePublishing.defaultPlaceId || placeId);
+    syncPlacePublishingTriggerFields();
+    syncPlacePublishingFileHelp();
+    await loadPlacePublishing({ force: true, background: true });
+    setPlacePublishingJobStatus(
+      triggerType === "now" ? "Place file saved and queued for publishing." : triggerType === "schedule" ? "Place publish scheduled." : "Place publish is waiting for the tracked event.",
+      "success",
+    );
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setPlacePublishingJobStatus(error.message, "error");
+  } finally {
+    placePublishingBusy = false;
+    renderPlacePublishing();
+  }
+}
+
+function syncPlacePublishingTriggerFields() {
+  const triggerType = String(publishingTriggerType?.value || "now");
+  if (publishingScheduleField) publishingScheduleField.hidden = triggerType !== "schedule";
+  if (publishingEventField) publishingEventField.hidden = triggerType !== "event";
+  if (publishingCreateJobButton) {
+    publishingCreateJobButton.textContent = triggerType === "schedule" ? "Schedule publish" : triggerType === "event" ? "Arm event publish" : "Save and publish";
+  }
+  if (publishingScheduleDate && triggerType === "schedule") {
+    const minimum = new Date(Date.now() + 60 * 1000);
+    const local = new Date(minimum.getTime() - minimum.getTimezoneOffset() * 60 * 1000).toISOString();
+    publishingScheduleDate.min = local.slice(0, 10);
+    if (!publishingScheduleDate.value) publishingScheduleDate.value = local.slice(0, 10);
+    if (publishingScheduleTime && !publishingScheduleTime.value) publishingScheduleTime.value = local.slice(11, 16);
+  }
+}
+
+function syncPlacePublishingFileHelp() {
+  if (!publishingFileHelp) return;
+  const file = publishingPlaceFile?.files?.[0];
+  publishingFileHelp.textContent = file
+    ? `${file.name} · ${formatBytes(file.size)}`
+    : `Choose a .rbxl or .rbxlx file up to ${formatBytes(placePublishing.limits?.maxFileBytes || 100 * 1024 * 1024)}.`;
+}
+
+function handlePlacePublishingJobAction(event) {
+  const runButton = event.target.closest("[data-publishing-run]");
+  if (runButton) {
+    runPlacePublishJob(runButton.dataset.publishingRun);
+    return;
+  }
+  const deleteButton = event.target.closest("[data-publishing-delete]");
+  if (deleteButton) deletePlacePublishJob(deleteButton.dataset.publishingDelete);
+}
+
+async function runPlacePublishJob(jobId) {
+  if (placePublishingBusy || !jobId) return;
+  placePublishingBusy = true;
+  renderPlacePublishing();
+  try {
+    await request(`/api/place-publishing/jobs/${encodeURIComponent(jobId)}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: Number(selectedUniverseId) }),
+    });
+    await loadPlacePublishing({ force: true, background: true });
+    setPlacePublishingListStatus("Place publish queued.", "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setPlacePublishingListStatus(error.message, "error");
+  } finally {
+    placePublishingBusy = false;
+    renderPlacePublishing();
+  }
+}
+
+async function deletePlacePublishJob(jobId) {
+  const job = placePublishing.jobs?.find((entry) => entry.id === jobId);
+  if (!job || !window.confirm(`Remove “${job.name || "Untitled publish"}” and its saved place file?`)) return;
+  placePublishingBusy = true;
+  renderPlacePublishing();
+  try {
+    await request(`/api/place-publishing/jobs/${encodeURIComponent(jobId)}?universeId=${encodeURIComponent(selectedUniverseId)}`, { method: "DELETE" });
+    await loadPlacePublishing({ force: true, background: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setPlacePublishingListStatus(error.message, "error");
+  } finally {
+    placePublishingBusy = false;
+    renderPlacePublishing();
+  }
+}
+
+function setPlacePublishingControlsDisabled(disabled) {
+  const connected = Boolean(placePublishing.connection?.connected);
+  if (publishingApiKey) publishingApiKey.disabled = disabled;
+  if (publishingSaveKeyButton) publishingSaveKeyButton.disabled = disabled;
+  if (publishingDisconnectButton) publishingDisconnectButton.disabled = disabled;
+  for (const control of publishingJobForm?.querySelectorAll("input, select, button") || []) {
+    control.disabled = disabled || !connected;
+  }
+  if (publishingRefreshButton) publishingRefreshButton.disabled = disabled;
+  for (const button of publishingJobList?.querySelectorAll("button") || []) button.disabled = disabled || button.disabled;
+}
+
+function setPlacePublishingConnectionStatus(message, state = "") {
+  setPublishingStatusElement(publishingConnectionStatus, message, state);
+}
+
+function setPlacePublishingJobStatus(message, state = "") {
+  setPublishingStatusElement(publishingJobStatus, message, state);
+}
+
+function setPlacePublishingListStatus(message, state = "") {
+  setPublishingStatusElement(publishingListStatus, message, state);
+}
+
+function setPublishingStatusElement(element, message, state) {
+  if (!element) return;
+  element.textContent = message || "";
+  if (state) element.dataset.state = state;
+  else delete element.dataset.state;
+}
+
+function startPlacePublishingRefresh() {
+  if (placePublishingRefreshTimer || document.hidden) return;
+  placePublishingRefreshTimer = window.setInterval(() => {
+    if (!placePublishingBusy) loadPlacePublishing({ force: true, background: true });
+  }, PLACE_PUBLISHING_REFRESH_MS);
+}
+
+function stopPlacePublishingRefresh() {
+  if (!placePublishingRefreshTimer) return;
+  window.clearInterval(placePublishingRefreshTimer);
+  placePublishingRefreshTimer = null;
 }
 
 async function loadAdminUsers(options = {}) {
@@ -4818,6 +5204,10 @@ async function selectUniverse(value) {
   selectedAssetPackId = "";
   stopAssetOperationPolling();
   renderAssetLibrary();
+  placePublishingRequestSequence += 1;
+  placePublishing = { connection: {}, jobs: [], eventNames: [], limits: {} };
+  stopPlacePublishingRefresh();
+  renderPlacePublishing();
   renderChatSummary();
   setChatLiveState(selectedUniverseId ? "loading" : "waiting");
   renderRecentChatEmpty(selectedUniverseId ? "Loading recent chat..." : "Select a universe to view recent chat.");
