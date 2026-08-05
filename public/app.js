@@ -94,6 +94,16 @@ const groupAutomationUsers = document.querySelector("#groupAutomationUsers");
 const groupAutomationSaveButton = document.querySelector("#groupAutomationSaveButton");
 const groupAutomationStatus = document.querySelector("#groupAutomationStatus");
 const groupAutomationActivity = document.querySelector("#groupAutomationActivity");
+const groupRankRulesPanel = document.querySelector("#groupRankRulesPanel");
+const groupRankUniverse = document.querySelector("#groupRankUniverse");
+const groupRankEventKey = document.querySelector("#groupRankEventKey");
+const groupRankRole = document.querySelector("#groupRankRole");
+const groupRankEnabled = document.querySelector("#groupRankEnabled");
+const groupRankCode = document.querySelector("#groupRankCode");
+const groupRankCopyButton = document.querySelector("#groupRankCopyButton");
+const groupRankSaveButton = document.querySelector("#groupRankSaveButton");
+const groupRankStatus = document.querySelector("#groupRankStatus");
+const groupRankRuleList = document.querySelector("#groupRankRuleList");
 const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
@@ -431,6 +441,8 @@ let groupManagement = { authorization: {}, groups: [], detail: null };
 let selectedGroupId = "";
 let groupRefreshTimer;
 let groupAutomationDirty = false;
+let groupRankRuleDirty = false;
+let editingGroupRankRuleId = "";
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -480,7 +492,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-5";
+const DASHBOARD_ASSET_VERSION = "20260805-6";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -902,6 +914,12 @@ function bindEvents() {
   groupAutomationEnabled?.addEventListener("change", () => { groupAutomationDirty = true; });
   groupAutomationRole?.addEventListener("change", () => { groupAutomationDirty = true; });
   groupAutomationUsers?.addEventListener("input", () => { groupAutomationDirty = true; });
+  groupRankEventKey?.addEventListener("input", handleGroupRankRuleInput);
+  groupRankRole?.addEventListener("change", handleGroupRankRuleInput);
+  groupRankEnabled?.addEventListener("change", handleGroupRankRuleInput);
+  groupRankSaveButton?.addEventListener("click", saveGroupRankRule);
+  groupRankCopyButton?.addEventListener("click", copyGroupRankCode);
+  groupRankRuleList?.addEventListener("click", handleGroupRankRuleListClick);
   refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1310,6 +1328,7 @@ function setAuthenticated(value, user = null) {
     groupManagement = { authorization: {}, groups: [], detail: null };
     selectedGroupId = "";
     groupAutomationDirty = false;
+    resetGroupRankRuleEditor();
     renderGroupManagement();
     return;
   }
@@ -2407,6 +2426,7 @@ async function loadGroupManagement(options = {}) {
       selectedGroupId = groups[0]?.id ? String(groups[0].id) : "";
       groupManagement.detail = null;
       groupAutomationDirty = false;
+      resetGroupRankRuleEditor();
     }
     renderGroupManagement();
     if (groupManagement.authorization.connected && selectedGroupId) {
@@ -2481,6 +2501,7 @@ function renderGroupManagement() {
   if (!detail) {
     groupManagementWorkspace.hidden = true;
     groupAutomationPanel.hidden = true;
+    groupRankRulesPanel.hidden = true;
     groupPermissionSummary.innerHTML = `<span>${connected ? "Select a group to inspect your management permissions." : "Authorization requires group:read and group:write."}</span>`;
     groupJoinRequestList.innerHTML = "";
     groupMemberList.innerHTML = "";
@@ -2495,9 +2516,11 @@ function renderGroupManagement() {
   `;
   groupManagementWorkspace.hidden = false;
   groupAutomationPanel.hidden = false;
+  groupRankRulesPanel.hidden = false;
   renderGroupJoinRequests(detail);
   renderGroupMembers(detail);
   renderGroupAutomation(detail);
+  renderGroupRankRules(detail);
 }
 
 function renderGroupJoinRequests(detail) {
@@ -2599,10 +2622,209 @@ function renderGroupAutomation(detail) {
     : `<span>No automatic approvals yet.</span>`;
 }
 
+function resetGroupRankRuleEditor() {
+  groupRankRuleDirty = false;
+  editingGroupRankRuleId = "";
+  if (groupRankEventKey) groupRankEventKey.value = "";
+  if (groupRankRole) groupRankRole.value = "";
+  if (groupRankEnabled) groupRankEnabled.checked = true;
+  renderGroupRankCode();
+}
+
+function renderGroupRankRules(detail) {
+  if (!groupRankRulesPanel || !groupRankEventKey || !groupRankRole || !groupRankRuleList) return;
+  const permissions = detail.permissions || {};
+  const canManage = Boolean(permissions.canManageMembers);
+  const selectedUniverse = knownUniverses.find((universe) => String(universe.id) === String(selectedUniverseId));
+  const canSave = canManage && Boolean(selectedUniverseId);
+  const rules = (Array.isArray(detail.rankRules) ? detail.rankRules : [])
+    .filter((rule) => String(rule.universeId) === String(selectedUniverseId));
+
+  groupRankUniverse.textContent = selectedUniverse
+    ? selectedUniverse.name || `Universe ${selectedUniverseId}`
+    : "Select a connected game";
+  const selectedRoleId = groupRankRuleDirty ? groupRankRole.value : "";
+  groupRankRole.innerHTML = renderGroupRoleOptions(detail.assignableRoles, selectedRoleId, "Choose a role");
+  groupRankEventKey.disabled = groupManagementBusy || !canSave;
+  groupRankRole.disabled = groupManagementBusy || !canSave;
+  groupRankEnabled.disabled = groupManagementBusy || !canSave;
+  groupRankSaveButton.disabled = groupManagementBusy || !canSave;
+  groupRankCopyButton.disabled = !/^[a-z][a-z0-9_.:-]{0,63}$/.test(groupRankEventKey.value.trim().toLowerCase());
+  groupRankSaveButton.textContent = editingGroupRankRuleId ? "Update rule" : "Save rule";
+
+  if (!selectedUniverseId) {
+    setGroupRankStatus("Select a connected game from the sidebar before creating a rank event rule.");
+  } else if (!canManage) {
+    setGroupRankStatus("Your Roblox role must be able to assign lower group roles.");
+  } else if (!groupRankRuleDirty) {
+    setGroupRankStatus("Save an event key and role, then call RequestGroupRank from trusted server code.");
+  }
+
+  groupRankRuleList.innerHTML = rules.length
+    ? rules.map((rule) => {
+      const status = formatGroupRankRuleStatus(rule);
+      const statusState = rule.lastStatus === "error"
+        ? "error"
+        : rule.lastStatus === "assigned" || rule.lastStatus === "already_assigned"
+          ? "success"
+          : "";
+      return `
+        <article class="groupRankRuleRow" data-group-rank-rule-id="${escapeHtml(rule.id)}">
+          <div class="groupRankRuleIdentity">
+            <strong>${escapeHtml(rule.eventKey)} &rarr; ${escapeHtml(rule.roleName || `Role ${rule.roleId}`)}</strong>
+            <span>${rule.enabled ? "Enabled" : "Disabled"} &middot; ${escapeHtml(rule.triggerCount || 0)} request${Number(rule.triggerCount) === 1 ? "" : "s"}</span>
+          </div>
+          <div class="groupRankRuleResult"${statusState ? ` data-state="${statusState}"` : ""}>
+            <strong>${escapeHtml(status.title)}</strong>
+            <span>${escapeHtml(status.detail)}</span>
+          </div>
+          <div class="groupRankRuleActions">
+            <button class="button secondary compact" type="button" data-group-rank-rule-action="edit">Edit</button>
+            <button class="button secondary compact groupRankDeleteButton" type="button" data-group-rank-rule-action="delete">Delete</button>
+          </div>
+        </article>
+      `;
+    }).join("")
+    : `<div class="groupEmptyState">No rank event rules are saved for this game and group.</div>`;
+  renderGroupRankCode();
+}
+
+function formatGroupRankRuleStatus(rule) {
+  if (!rule.lastTriggeredAt) return { title: "Waiting for first request", detail: "No production server has sent this event yet." };
+  const titles = {
+    assigned: "Role assigned",
+    already_assigned: "Role already assigned",
+    not_member: "Player is not a member",
+    protected_member: "Player is not below you",
+    error: "Request failed",
+  };
+  return {
+    title: titles[rule.lastStatus] || "Request received",
+    detail: rule.lastError || `User ${rule.lastUserId || "unknown"} · ${formatRelativeTime(rule.lastTriggeredAt)}`,
+  };
+}
+
+function handleGroupRankRuleInput() {
+  groupRankRuleDirty = true;
+  renderGroupRankCode();
+  if (groupRankCopyButton) {
+    groupRankCopyButton.disabled = !/^[a-z][a-z0-9_.:-]{0,63}$/.test(groupRankEventKey.value.trim().toLowerCase());
+  }
+}
+
+function renderGroupRankCode() {
+  if (!groupRankCode) return;
+  const candidate = String(groupRankEventKey?.value || "").trim().toLowerCase();
+  const eventKey = /^[a-z][a-z0-9_.:-]{0,63}$/.test(candidate) ? candidate : "vip_purchase";
+  groupRankCode.textContent = `local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)\n\nRoAnalytics.RequestGroupRank(player, "${eventKey}")`;
+}
+
+async function copyGroupRankCode() {
+  const code = groupRankCode?.textContent || "";
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+    setGroupRankStatus("Server-only Luau copied.", "success");
+  } catch {
+    setGroupRankStatus("Copy failed. Select the code and copy it manually.", "error");
+  }
+}
+
+async function handleGroupRankRuleListClick(event) {
+  const button = event.target.closest("[data-group-rank-rule-action]");
+  const row = button?.closest("[data-group-rank-rule-id]");
+  if (!button || !row || groupManagementBusy || !groupManagement.detail) return;
+  const rule = groupManagement.detail.rankRules?.find((entry) => entry.id === row.dataset.groupRankRuleId);
+  if (!rule) return;
+  if (button.dataset.groupRankRuleAction === "edit") {
+    editingGroupRankRuleId = rule.id;
+    groupRankRuleDirty = true;
+    groupRankEventKey.value = rule.eventKey || "";
+    groupRankRole.value = String(rule.roleId || "");
+    groupRankEnabled.checked = rule.enabled !== false;
+    renderGroupRankRules(groupManagement.detail);
+    groupRankEventKey.focus();
+    return;
+  }
+  if (!window.confirm(`Delete the ${rule.eventKey} rank event rule?`)) return;
+  groupManagementBusy = true;
+  renderGroupManagement();
+  setGroupRankStatus("Deleting rank event rule...");
+  let finalMessage = "";
+  let finalState = "";
+  try {
+    const result = await request(`/api/groups/${encodeURIComponent(selectedGroupId)}/rank-rules/${encodeURIComponent(rule.id)}`, {
+      method: "DELETE",
+    });
+    groupManagement.detail.rankRules = result.rankRules || [];
+    if (editingGroupRankRuleId === rule.id) resetGroupRankRuleEditor();
+    finalMessage = "Rank event rule deleted.";
+    finalState = "success";
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) {
+      finalMessage = error.message;
+      finalState = "error";
+    }
+  } finally {
+    groupManagementBusy = false;
+    renderGroupManagement();
+    if (finalMessage) setGroupRankStatus(finalMessage, finalState);
+  }
+}
+
+async function saveGroupRankRule() {
+  if (groupManagementBusy || !selectedGroupId || !selectedUniverseId) return;
+  const eventKey = String(groupRankEventKey.value || "").trim().toLowerCase();
+  const roleId = groupRankRole.value || "";
+  if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(eventKey)) {
+    setGroupRankStatus("Use an event key that starts with a letter and contains only letters, numbers, _, ., :, or -.", "error");
+    return;
+  }
+  if (!roleId) {
+    setGroupRankStatus("Choose the Roblox role this event should assign.", "error");
+    return;
+  }
+
+  groupManagementBusy = true;
+  renderGroupManagement();
+  setGroupRankStatus("Saving rank event rule...");
+  let finalMessage = "";
+  let finalState = "";
+  try {
+    const result = await request(`/api/groups/${encodeURIComponent(selectedGroupId)}/rank-rules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editingGroupRankRuleId || null,
+        universeId: selectedUniverseId,
+        eventKey,
+        roleId,
+        enabled: groupRankEnabled.checked,
+      }),
+    });
+    groupManagement.detail.rankRules = result.rankRules || [];
+    resetGroupRankRuleEditor();
+    finalMessage = result.rule?.enabled ? "Rank event rule saved and enabled." : "Rank event rule saved and disabled.";
+    finalState = "success";
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) {
+      finalMessage = error.message;
+      finalState = "error";
+    }
+  } finally {
+    groupManagementBusy = false;
+    renderGroupManagement();
+    if (finalMessage) setGroupRankStatus(finalMessage, finalState);
+  }
+}
+
 function handleGroupSelectionChange() {
   selectedGroupId = String(groupSelect.value || "");
   groupManagement.detail = null;
   groupAutomationDirty = false;
+  resetGroupRankRuleEditor();
   renderGroupManagement();
   if (selectedGroupId) loadSelectedGroupDetail();
 }
@@ -2612,7 +2834,7 @@ function authorizeGroupManagement() {
 }
 
 async function disconnectGroupManagement() {
-  if (groupManagementBusy || !window.confirm("Disconnect Roblox group management and turn off every auto-accept preset?")) return;
+  if (groupManagementBusy || !window.confirm("Disconnect Roblox group management and turn off every auto-accept and rank event rule?")) return;
   groupManagementBusy = true;
   renderGroupManagement();
   try {
@@ -2620,6 +2842,7 @@ async function disconnectGroupManagement() {
     groupManagement = { authorization: {}, groups: [], detail: null };
     selectedGroupId = "";
     groupAutomationDirty = false;
+    resetGroupRankRuleEditor();
     renderGroupManagement();
     setGroupPageStatus("Roblox group management disconnected.", "success");
   } catch (error) {
@@ -2734,6 +2957,13 @@ function setGroupAutomationStatus(message, state = "") {
   groupAutomationStatus.textContent = message;
   if (state) groupAutomationStatus.dataset.state = state;
   else delete groupAutomationStatus.dataset.state;
+}
+
+function setGroupRankStatus(message, state = "") {
+  if (!groupRankStatus) return;
+  groupRankStatus.textContent = message;
+  if (state) groupRankStatus.dataset.state = state;
+  else delete groupRankStatus.dataset.state;
 }
 
 function startGroupRefresh() {
@@ -4564,6 +4794,7 @@ function applyUniverseCollection(universes, options = {}) {
 
   const didChangeUniverse = previousUniverseId !== selectedUniverseId;
   if (didChangeUniverse) {
+    resetGroupRankRuleEditor();
     selectedChatLogId = "";
     currentChatLogs = [];
     loadedViews.clear();
@@ -5172,6 +5403,7 @@ async function selectUniverse(value) {
   }
   eventDefinitionIsDirty = false;
   selectedUniverseId = nextUniverseId;
+  resetGroupRankRuleEditor();
 
   selectedChatLogId = "";
   currentChatLogs = [];

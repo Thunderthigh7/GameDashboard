@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260805-5/styles.css">
+    <link rel="stylesheet" href="/assets/20260805-6/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1716,6 +1716,46 @@
             </div>
             <div class="groupAutomationActivity" id="groupAutomationActivity"></div>
           </section>
+
+          <section class="panel groupRankRulesPanel" id="groupRankRulesPanel" hidden>
+            <header class="groupSectionHeader">
+              <div>
+                <span class="groupEyebrow">In-game automation</span>
+                <h2>Rank event requests</h2>
+                <p>Map a trusted server event from the selected game to one lower group role.</p>
+              </div>
+              <strong class="groupRankUniverse" id="groupRankUniverse">Select a connected game</strong>
+            </header>
+            <div class="groupRankRuleFields">
+              <label for="groupRankEventKey">
+                <span>Event key</span>
+                <input id="groupRankEventKey" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="vip_purchase">
+              </label>
+              <label for="groupRankRole">
+                <span>Role to assign</span>
+                <select id="groupRankRole"><option value="">Choose a role</option></select>
+              </label>
+              <label class="groupAutomationToggle groupRankEnabled" for="groupRankEnabled">
+                <input id="groupRankEnabled" type="checkbox" checked>
+                <span>Enabled</span>
+              </label>
+            </div>
+            <div class="groupRankCodeCard">
+              <div>
+                <span>Server-only Luau</span>
+                <button class="button secondary compact" id="groupRankCopyButton" type="button">Copy</button>
+              </div>
+              <pre><code id="groupRankCode">local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
+
+RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
+              <small>The player must already belong to the group. Studio requests are ignored.</small>
+            </div>
+            <div class="groupAutomationFooter">
+              <p class="groupStatus" id="groupRankStatus" aria-live="polite"></p>
+              <button class="button compact" id="groupRankSaveButton" type="button">Save rule</button>
+            </div>
+            <div class="groupRankRuleList" id="groupRankRuleList"></div>
+          </section>
         </section>
 
         <section class="viewPage usagePage" data-view-panel="usage" hidden>
@@ -2066,6 +2106,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260805-5/app.js"></script>
+    <script defer src="/assets/20260805-6/app.js"></script>
   </body>
 </html>

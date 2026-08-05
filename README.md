@@ -133,6 +133,8 @@ RoAnalytics.Log("weapon_equipped", {
 
 The event is included in the existing batched heartbeat and appears automatically under **Events** in the dashboard. The property explorer discovers flat and nested values such as `weapon.name` and `weapon.stats.damage`. RoAnalytics adds player session, server time, universe, place, `game.PlaceVersion`, production/studio environment, and character position. See `RoAnalytics/README.md` for naming, property limits, and server-only requirements.
 
+The **Groups** page can also save a server event key to a lower group role. After saving a rule, trusted server code can call `RoAnalytics.RequestGroupRank(player, "vip_purchase")`. The request is sent immediately with the connected universe's project secret; the website owns the group and role mapping, ignores Studio requests, verifies the authorized Roblox account can manage the target role, and only assigns it to an existing lower-ranked member.
+
 The **Events** page also includes an event builder. Select **New event** to name an event and define up to 20 properties before writing the Roblox code. New property paths are added automatically when Roblox sends them. Unwanted properties can be hidden from breakdowns without deleting their raw values, then restored later. The builder generates a copyable Roblox Luau `RoAnalytics.Log(...)` example; saved definitions are immediately available to Funnels even before their first record arrives.
 
 Custom events can be reopened to edit their visible or hidden properties and generated Luau. Deleting an event removes its definition and stored dashboard history. A later Roblox log with the same name is treated as new activity and can create the event again.

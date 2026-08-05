@@ -5508,7 +5508,8 @@ body[data-active-view="groups"] .topbarActions {
 
 .groupControlPanel,
 .groupListPanel,
-.groupAutomationPanel {
+.groupAutomationPanel,
+.groupRankRulesPanel {
   min-width: 0;
   padding: 20px;
 }
@@ -5530,7 +5531,9 @@ body[data-active-view="groups"] .topbarActions {
 }
 
 .groupSelectField > span,
-.groupAutomationFields label > span {
+.groupAutomationFields label > span,
+.groupRankRuleFields label > span,
+.groupRankCodeCard > div > span {
   color: var(--muted);
   font-size: 10px;
   font-weight: 850;
@@ -5541,7 +5544,9 @@ body[data-active-view="groups"] .topbarActions {
 .groupSelectField select,
 .groupPersonRow select,
 .groupAutomationFields select,
-.groupAutomationFields textarea {
+.groupAutomationFields textarea,
+.groupRankRuleFields input,
+.groupRankRuleFields select {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -5553,7 +5558,9 @@ body[data-active-view="groups"] .topbarActions {
 
 .groupSelectField select,
 .groupPersonRow select,
-.groupAutomationFields select {
+.groupAutomationFields select,
+.groupRankRuleFields input,
+.groupRankRuleFields select {
   height: 38px;
   padding: 0 10px;
 }
@@ -5561,7 +5568,9 @@ body[data-active-view="groups"] .topbarActions {
 .groupSelectField select:focus,
 .groupPersonRow select:focus,
 .groupAutomationFields select:focus,
-.groupAutomationFields textarea:focus {
+.groupAutomationFields textarea:focus,
+.groupRankRuleFields input:focus,
+.groupRankRuleFields select:focus {
   border-color: #8b5cf6;
   box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.12);
 }
@@ -5741,9 +5750,134 @@ body[data-active-view="groups"] .topbarActions {
   font-size: 10px;
 }
 
+.groupRankUniverse {
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.08);
+  color: #c4b5fd;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.groupRankRuleFields {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.groupRankRuleFields > label:not(.groupAutomationToggle) {
+  display: grid;
+  gap: 7px;
+}
+
+.groupRankEnabled {
+  min-height: 38px;
+  padding: 0 4px 0 2px;
+}
+
+.groupRankCodeCard {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(5, 10, 22, 0.68);
+  padding: 12px;
+}
+
+.groupRankCodeCard > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.groupRankCodeCard pre {
+  margin: 0;
+  overflow: auto;
+  border-radius: 7px;
+  background: rgba(2, 6, 15, 0.82);
+  color: #ddd6fe;
+  padding: 11px 12px;
+  font: 600 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.groupRankCodeCard small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.groupRankRuleList {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.groupRankRuleRow {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(150px, 0.8fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 15, 30, 0.54);
+  padding: 11px 12px;
+}
+
+.groupRankRuleIdentity,
+.groupRankRuleResult {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.groupRankRuleIdentity strong,
+.groupRankRuleResult strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupRankRuleIdentity span,
+.groupRankRuleResult span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupRankRuleResult[data-state="error"] strong {
+  color: #fca5a5;
+}
+
+.groupRankRuleResult[data-state="success"] strong {
+  color: #86efac;
+}
+
+.groupRankRuleActions {
+  display: flex;
+  gap: 7px;
+}
+
+.groupRankRuleActions .button {
+  min-width: 0;
+  padding-inline: 10px;
+}
+
+.groupRankDeleteButton {
+  color: #fca5a5;
+}
+
 @media (max-width: 1080px) {
   .groupManagementGrid,
-  .groupAutomationFields {
+  .groupAutomationFields,
+  .groupRankRuleFields {
     grid-template-columns: 1fr;
   }
 }
@@ -5758,11 +5892,16 @@ body[data-active-view="groups"] .topbarActions {
   }
 
   .groupSelectField,
-  .groupPersonRow {
+  .groupPersonRow,
+  .groupRankRuleRow {
     grid-template-columns: 1fr;
   }
 
   .groupPersonActions {
+    justify-content: flex-start;
+  }
+
+  .groupRankRuleActions {
     justify-content: flex-start;
   }
 }

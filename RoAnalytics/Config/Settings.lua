@@ -1,6 +1,7 @@
 local Settings = {}
 
 Settings.Endpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/presence"
+Settings.GroupRankEndpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/group-rank"
 Settings.Secret = "paste-project-roblox-secret-here"
 
 Settings.HeartbeatInterval = 20

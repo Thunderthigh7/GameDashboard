@@ -1000,6 +1000,92 @@ local function getHeartbeatResponseError(response)
 	return fallback
 end
 
+local function getGroupRankResponseError(response)
+	local fallback = "Group rank request failed."
+	if typeof(response) ~= "table" then
+		return fallback
+	end
+
+	local body = tostring(response.Body or "")
+	if body ~= "" then
+		local decodedOk, decoded = pcall(function()
+			return HttpService:JSONDecode(body)
+		end)
+		if decodedOk and typeof(decoded) == "table" and tostring(decoded.error or "") ~= "" then
+			return tostring(decoded.error)
+		end
+	end
+
+	local statusCode = tonumber(response.StatusCode)
+	local statusMessage = tostring(response.StatusMessage or "")
+	if statusCode then
+		return "Group rank request failed with HTTP " .. tostring(statusCode)
+			.. (statusMessage ~= "" and (" " .. statusMessage) or "")
+			.. "."
+	end
+	return fallback
+end
+
+function Methods.RequestGroupRank(player, eventKey)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.UserId <= 0 then
+		return false, "RequestGroupRank expected a valid Player.", nil, nil
+	end
+	local normalizedEventKey = normalizeEventName(eventKey)
+	if not normalizedEventKey then
+		return false, "RequestGroupRank expected a valid event key.", nil, nil
+	end
+	local dashboardSecret = getDashboardSecret()
+	if dashboardSecret == "" or dashboardSecret == "paste-project-roblox-secret-here" then
+		return false, "Set Settings.Secret to this universe's generated RoAnalytics secret.", nil, nil
+	end
+	local endpoint = string.match(tostring(Settings.GroupRankEndpoint or ""), "^%s*(.-)%s*$") or ""
+	if endpoint == "" then
+		endpoint = string.gsub(tostring(Settings.Endpoint or ""), "/api/roblox/presence/*$", "/api/roblox/group-rank")
+	end
+	if endpoint == "" then
+		return false, "Set Settings.GroupRankEndpoint to the dashboard rank request endpoint.", nil, nil
+	end
+
+	local requestId = game.JobId .. ":rank:" .. HttpService:GenerateGUID(false)
+	local body = HttpService:JSONEncode({
+		universeId = game.GameId,
+		placeId = game.PlaceId,
+		environment = runtimeEnvironment,
+		requestId = requestId,
+		eventKey = normalizedEventKey,
+		userId = player.UserId,
+		occurredAt = os.time(),
+	})
+	local success, response = pcall(function()
+		return HttpService:RequestAsync({
+			Url = endpoint,
+			Method = "POST",
+			Headers = {
+				["Content-Type"] = "application/json",
+				["X-Dashboard-Secret"] = dashboardSecret,
+			},
+			Body = body,
+		})
+	end)
+	if not success then
+		return false, tostring(response), nil, nil
+	end
+
+	local decoded = nil
+	if tostring(response.Body or "") ~= "" then
+		local decodedOk, value = pcall(function()
+			return HttpService:JSONDecode(response.Body)
+		end)
+		if decodedOk and typeof(value) == "table" then
+			decoded = value
+		end
+	end
+	if not response.Success or (decoded and decoded.ok == false) then
+		return false, getGroupRankResponseError(response), tonumber(response.StatusCode), decoded
+	end
+	return true, nil, tonumber(response.StatusCode), decoded
+end
+
 local function applyHeartbeatModeration(response)
 	if typeof(response) ~= "table" or tostring(response.Body or "") == "" then
 		return

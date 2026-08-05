@@ -14,6 +14,10 @@ function RoAnalytics.SetPlayerContext(player, context)
 	return Methods.SetPlayerContext(player, context)
 end
 
+function RoAnalytics.RequestGroupRank(player, eventKey)
+	return Methods.RequestGroupRank(player, eventKey)
+end
+
 function RoAnalytics.RegisterLiveAction(actionKey, handler)
 	return Methods.RegisterLiveAction(actionKey, handler)
 end

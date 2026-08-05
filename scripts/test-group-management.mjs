@@ -15,6 +15,10 @@ const appSource = fs.readFileSync(new URL("../public/app.js", import.meta.url), 
 const htmlSource = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const stylesSource = fs.readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 const envSource = fs.readFileSync(new URL("../.env.example", import.meta.url), "utf8");
+const robloxApiSource = fs.readFileSync(new URL("../RoAnalytics/API.lua", import.meta.url), "utf8");
+const robloxMethodsSource = fs.readFileSync(new URL("../RoAnalytics/Core/Methods.lua", import.meta.url), "utf8");
+const robloxSettingsSource = fs.readFileSync(new URL("../RoAnalytics/Config/Settings.lua", import.meta.url), "utf8");
+const robloxReadmeSource = fs.readFileSync(new URL("../RoAnalytics/README.md", import.meta.url), "utf8");
 
 assert.match(serverSource, /ROBLOX_OAUTH_GROUP_SCOPES[\s\S]*?\["openid", "profile", "group:read", "group:write"\]/);
 assert.match(envSource, /ROBLOX_OAUTH_GROUP_SCOPES=openid profile group:read group:write/);
@@ -28,6 +32,13 @@ assert.match(serverSource, /accept\|decline/);
 assert.match(serverSource, /const groupRoleMatch = url\.pathname\.match/);
 assert.match(serverSource, /assign\|unassign/);
 assert.match(serverSource, /groupAutomationMatch/);
+assert.match(serverSource, /groupRankRuleMatch/);
+assert.match(serverSource, /url\.pathname === "\/api\/roblox\/group-rank"/);
+assert.ok(
+  serverSource.indexOf('url.pathname === "/api/roblox/group-rank"')
+    < serverSource.indexOf('url.pathname.startsWith("/api/") && !isDashboardAuthenticated(req)'),
+  "Roblox rank requests should authenticate with the project secret before dashboard-session enforcement",
+);
 
 assert.match(groupClientSource, /\/cloud\/v2\/groups\/\$\{encodeResourceId\(groupId\)\}\/join-requests/);
 assert.match(groupClientSource, /\/cloud\/v2\/groups\/-\/memberships/);
@@ -42,6 +53,16 @@ assert.match(groupClientSource, /body: \{ role: normalizeRolePath/);
 assert.match(serverSource, /Add at least one username or user ID before enabling auto-accept/);
 assert.match(serverSource, /MAX_GROUP_AUTOMATION_ACCEPTS_PER_RUN = 10/);
 assert.match(serverSource, /allowed\.has\(userId\)/);
+assert.match(serverSource, /MAX_GROUP_RANK_RULES_PER_GROUP = 25/);
+assert.match(serverSource, /db\.collection\("group_rank_rules"\)\.createIndex/);
+assert.match(serverSource, /handleRobloxGroupRankRequest[\s\S]*?getProjectFromRequestSecret\(req, universeId\)/);
+assert.match(serverSource, /environment !== "production"/);
+assert.match(serverSource, /processGroupRankEventRule[\s\S]*?filter: `user == 'users\/\$\{request\.userId\}'`/);
+assert.match(serverSource, /const member = memberResult\.entries\.find\(\(entry\) => membershipUserId\(entry\) === request\.userId\);/);
+assert.doesNotMatch(serverSource, /processGroupRankEventRule[\s\S]*?memberResult\.entries\[0\]/);
+assert.match(serverSource, /processGroupRankEventRule[\s\S]*?membershipRolePaths\(member\)\.includes\(role\.path\)/);
+assert.match(serverSource, /processGroupRankEventRule[\s\S]*?assignRobloxGroupRole/);
+assert.match(serverSource, /disableGroupRankRules\(auth\.userId\)/);
 assert.doesNotMatch(serverSource, /ROBLOX_GROUP_API_KEY/);
 assert.doesNotMatch(htmlSource, /group.*api key/i);
 
@@ -50,12 +71,24 @@ assert.match(htmlSource, /data-view-panel="groups"/);
 assert.match(htmlSource, /id="groupJoinRequestList"/);
 assert.match(htmlSource, /id="groupMemberList"/);
 assert.match(htmlSource, /id="groupAutomationUsers"/);
+assert.match(htmlSource, /id="groupRankRulesPanel"[\s\S]*?id="groupRankEventKey"[\s\S]*?id="groupRankRole"/);
+assert.match(htmlSource, /id="groupRankCode"[\s\S]*?RoAnalytics\.RequestGroupRank/);
 assert.match(appSource, /window\.location\.hash === "#groups"/);
 assert.match(appSource, /loadGroupManagement/);
+assert.match(appSource, /saveGroupRankRule/);
+assert.match(appSource, /\/rank-rules/);
+assert.match(stylesSource, /\.groupRankRuleFields/);
 assert.doesNotMatch(appSource, /UNIVERSE_SCOPED_VIEWS[^\n]*"groups"/);
 assert.match(stylesSource, /body\[data-active-view="assets"\] \.topbarActions/);
 assert.match(stylesSource, /body\[data-active-view="groups"\] \.topbarActions/);
 assert.match(stylesSource, /body\[data-active-view="overview"\] \.topbarActions[\s\S]*?grid-column: 2/);
+assert.match(robloxApiSource, /function RoAnalytics\.RequestGroupRank\(player, eventKey\)/);
+assert.match(robloxMethodsSource, /function Methods\.RequestGroupRank\(player, eventKey\)/);
+assert.match(robloxMethodsSource, /\["X-Dashboard-Secret"\] = dashboardSecret/);
+assert.match(robloxMethodsSource, /environment = runtimeEnvironment/);
+assert.match(robloxMethodsSource, /HttpService:GenerateGUID\(false\)/);
+assert.match(robloxSettingsSource, /Settings\.GroupRankEndpoint = "https:\/\/game-dashboard-zaya\.onrender\.com\/api\/roblox\/group-rank"/);
+assert.match(robloxReadmeSource, /RoAnalytics\.RequestGroupRank\(player, "vip_purchase"\)/);
 
 const originalFetch = globalThis.fetch;
 const calls = [];

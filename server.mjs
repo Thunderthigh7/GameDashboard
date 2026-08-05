@@ -111,6 +111,11 @@ const GROUP_AUTOMATION_INTERVAL_MS = 60 * 1000;
 const MAX_GROUP_AUTOMATION_PRESETS_PER_RUN = 10;
 const MAX_GROUP_AUTOMATION_ACCEPTS_PER_RUN = 10;
 const MAX_GROUP_AUTOMATION_ALLOWED_USERS = 100;
+const MAX_GROUP_RANK_RULES_PER_GROUP = 25;
+const MAX_GROUP_RANK_RULES_PER_EVENT = 5;
+const MAX_GROUP_RANK_EVENT_KEY_LENGTH = 64;
+const MAX_GROUP_RANK_EVENT_ACTIVITY = 20;
+const MAX_GROUP_RANK_REQUEST_BODY_BYTES = 8 * 1024;
 const MAX_ASSET_FILE_BYTES = Math.min(20 * 1024 * 1024, Math.max(1024, cleanEnvInteger("MAX_ASSET_FILE_BYTES", 20 * 1024 * 1024)));
 const MAX_ASSET_BATCH_BYTES = Math.max(MAX_ASSET_FILE_BYTES, cleanEnvInteger("MAX_ASSET_BATCH_BYTES", 250 * 1024 * 1024));
 const MAX_ASSETS_PER_BATCH = Math.min(100, Math.max(1, cleanEnvInteger("MAX_ASSETS_PER_BATCH", 100)));
@@ -502,6 +507,7 @@ const robloxLiveEvaluationLocks = new Map();
 const robloxLiveTokenRefreshLocks = new Map();
 const assetOAuthTokenRefreshLocks = new Map();
 const groupOAuthTokenRefreshLocks = new Map();
+const groupRankRuleMutationLocks = new Map();
 const assetPackMutationLocks = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
@@ -575,6 +581,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/roblox/presence" && req.method === "POST") {
       return handlePresenceHeartbeat(req, res);
+    }
+
+    if (url.pathname === "/api/roblox/group-rank" && req.method === "POST") {
+      return handleRobloxGroupRankRequest(req, res);
     }
 
     if (url.pathname === "/api/roblox/map-snapshot" && req.method === "POST") {
@@ -726,6 +736,20 @@ const server = http.createServer(async (req, res) => {
     const groupAutomationMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/automation$/);
     if (groupAutomationMatch && req.method === "PUT") {
       return handleGroupAutomationSave(req, res, auth, groupAutomationMatch[1]);
+    }
+
+    const groupRankRuleMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/rank-rules(?:\/([^/]+))?$/);
+    if (groupRankRuleMatch && !groupRankRuleMatch[2] && req.method === "POST") {
+      return handleGroupRankRuleSave(req, res, auth, groupRankRuleMatch[1]);
+    }
+    if (groupRankRuleMatch && groupRankRuleMatch[2] && req.method === "DELETE") {
+      return handleGroupRankRuleDelete(
+        req,
+        res,
+        auth,
+        groupRankRuleMatch[1],
+        decodeURIComponent(groupRankRuleMatch[2]),
+      );
     }
 
     if (url.pathname === "/api/assets/packs" && req.method === "POST") {
@@ -1534,6 +1558,12 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("group_oauth_integrations").createIndex({ ownerUserId: 1 }, { unique: true }),
     db.collection("group_automation_presets").createIndex({ ownerUserId: 1, groupId: 1 }, { unique: true }),
     db.collection("group_automation_presets").createIndex({ enabled: 1, nextRunAt: 1 }),
+    db.collection("group_rank_rules").createIndex({ id: 1 }, { unique: true }),
+    db.collection("group_rank_rules").createIndex(
+      { ownerUserId: 1, groupId: 1, universeId: 1, eventKey: 1 },
+      { unique: true },
+    ),
+    db.collection("group_rank_rules").createIndex({ ownerUserId: 1, universeId: 1, eventKey: 1, enabled: 1 }),
     db.collection("asset_packs").createIndex({ id: 1 }, { unique: true }),
     db.collection("asset_packs").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
     db.collection("player_moderation_actions").createIndex({ id: 1 }, { unique: true }),
@@ -2423,6 +2453,7 @@ async function handleGroupOAuthDisconnect(req, res, auth) {
   await Promise.all([
     deleteGroupOAuthIntegration(auth.userId),
     disableGroupAutomationPresets(auth.userId),
+    disableGroupRankRules(auth.userId),
   ]);
   return sendJson(res, 200, { ok: true });
 }
@@ -2562,6 +2593,147 @@ async function handleGroupAutomationSave(req, res, auth, rawGroupId) {
   } catch (error) {
     return sendGroupManagementError(res, error);
   }
+}
+
+async function handleGroupRankRuleSave(req, res, auth, rawGroupId) {
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_GROUP_RANK_REQUEST_BODY_BYTES);
+    const groupId = cleanInteger(rawGroupId);
+    const universeId = cleanInteger(body?.universeId);
+    const eventKey = normalizeGroupRankEventKey(body?.eventKey);
+    if (!universeId || !await userOwnsUniverse(auth.userId, universeId)) {
+      return sendJson(res, 403, { error: "Select a connected Roblox game you own." });
+    }
+    if (!eventKey) {
+      return sendJson(res, 400, {
+        error: "Use an event key that starts with a letter and contains only letters, numbers, _, ., :, or -.",
+      });
+    }
+
+    const context = await getGroupManagementContext(auth.userId, groupId);
+    if (!context.canManageMembers) {
+      return sendJson(res, 403, { error: "Your Roblox role cannot assign group roles." });
+    }
+    const role = findAssignableGroupRole(context, body?.roleId || body?.role);
+    if (!role) return sendJson(res, 400, { error: "Pick a role below your own Roblox role." });
+
+    const rules = await readGroupRankRules(auth.userId, { groupId });
+    const requestedRuleId = cleanString(body?.id, 120);
+    const requestedRule = requestedRuleId
+      ? rules.find((rule) => rule.id === requestedRuleId)
+      : null;
+    if (requestedRuleId && !requestedRule) {
+      return sendJson(res, 404, { error: "That rank event rule no longer exists." });
+    }
+    const matchingRule = rules.find((rule) => (
+      rule.id !== requestedRuleId
+      && rule.universeId === universeId
+      && rule.eventKey === eventKey
+    ));
+    if (matchingRule) {
+      return sendJson(res, 409, { error: "That game already has a rule with this event key for the selected group." });
+    }
+    if (!requestedRule && rules.length >= MAX_GROUP_RANK_RULES_PER_GROUP) {
+      return sendJson(res, 400, { error: `A group can contain up to ${MAX_GROUP_RANK_RULES_PER_GROUP} rank event rules.` });
+    }
+
+    const now = Date.now();
+    const rule = await saveGroupRankRule({
+      id: requestedRule?.id || crypto.randomUUID(),
+      ownerUserId: auth.userId,
+      universeId,
+      groupId,
+      eventKey,
+      enabled: body?.enabled !== false,
+      rolePath: role.path,
+      roleName: role.name,
+      lastTriggeredAt: requestedRule?.lastTriggeredAt || null,
+      lastUserId: requestedRule?.lastUserId || null,
+      lastStatus: requestedRule?.lastStatus || "",
+      lastError: requestedRule?.lastError || "",
+      triggerCount: requestedRule?.triggerCount || 0,
+      recentActivity: requestedRule?.recentActivity || [],
+      createdAt: requestedRule?.createdAt || now,
+      updatedAt: now,
+    });
+    const updatedRules = await readGroupRankRules(auth.userId, { groupId });
+    return sendJson(res, 200, {
+      ok: true,
+      rule: serializeGroupRankRule(rule),
+      rankRules: updatedRules.map(serializeGroupRankRule),
+    });
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
+async function handleGroupRankRuleDelete(req, res, auth, rawGroupId, rawRuleId) {
+  try {
+    const groupId = cleanInteger(rawGroupId);
+    const ruleId = cleanString(rawRuleId, 120);
+    const rule = await readGroupRankRuleById(auth.userId, ruleId);
+    if (!rule || rule.groupId !== groupId) {
+      return sendJson(res, 404, { error: "That rank event rule no longer exists." });
+    }
+    await deleteGroupRankRule(rule);
+    const rankRules = await readGroupRankRules(auth.userId, { groupId });
+    return sendJson(res, 200, { ok: true, rankRules: rankRules.map(serializeGroupRankRule) });
+  } catch (error) {
+    return sendGroupManagementError(res, error);
+  }
+}
+
+async function handleRobloxGroupRankRequest(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_GROUP_RANK_REQUEST_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  const userId = cleanInteger(body?.userId);
+  const eventKey = normalizeGroupRankEventKey(body?.eventKey);
+  const requestId = cleanString(body?.requestId, 160);
+  if (!universeId || !userId || !eventKey || !requestId || !/^[A-Za-z0-9:._-]+$/.test(requestId)) {
+    return sendJson(res, 400, { error: "A valid universe, player, event key, and request ID are required." });
+  }
+
+  const project = await getProjectFromRequestSecret(req, universeId);
+  if (!project) return sendJson(res, 401, { error: "Invalid dashboard secret" });
+
+  const environment = cleanString(body?.environment, 24).toLowerCase();
+  if (environment !== "production") {
+    return sendJson(res, 200, {
+      ok: true,
+      ignored: true,
+      reason: "Rank event requests only run in published production servers.",
+      requestId,
+      matchedRuleCount: 0,
+      results: [],
+    });
+  }
+
+  const rules = (await readGroupRankRules(project.ownerUserId, {
+    universeId,
+    eventKey,
+    enabledOnly: true,
+  })).slice(0, MAX_GROUP_RANK_RULES_PER_EVENT);
+  const results = [];
+  for (const rule of rules) {
+    results.push(await processGroupRankEventRule(rule, { requestId, userId }));
+  }
+  const failed = results.some((result) => result.status === "error");
+  const firstError = results.find((result) => result.status === "error")?.error || "";
+  return sendJson(res, failed ? 502 : 200, {
+    ok: !failed,
+    error: firstError || undefined,
+    requestId,
+    matchedRuleCount: rules.length,
+    assignedCount: results.filter((result) => result.status === "assigned").length,
+    results,
+  });
 }
 
 async function handleAssetPackCreate(req, res, auth) {
@@ -3125,11 +3297,12 @@ async function getGroupManagementContext(ownerUserId, groupId, options = {}) {
   if (!groupIds.includes(cleanGroupId)) throw createGroupManagementError(403, "This Roblox account is not a member of that group.");
 
   const selfFilter = `user == 'users/${authorization.robloxUserId}'`;
-  const [group, roleResult, selfMembershipResult, automation] = await Promise.all([
+  const [group, roleResult, selfMembershipResult, automation, rankRules] = await Promise.all([
     getRobloxGroup(accessToken, cleanGroupId),
     listRobloxGroupRoles(accessToken, cleanGroupId),
     listRobloxGroupMemberships(accessToken, cleanGroupId, { filter: selfFilter, maxPageSize: 10 }),
     readGroupAutomationPreset(ownerUserId, cleanGroupId),
+    readGroupRankRules(ownerUserId, { groupId: cleanGroupId }),
   ]);
   const roles = roleResult.entries.map((role) => normalizeGroupRole(cleanGroupId, role)).filter(Boolean);
   const roleByPath = new Map(roles.map((role) => [role.path, role]));
@@ -3179,6 +3352,7 @@ async function getGroupManagementContext(ownerUserId, groupId, options = {}) {
     memberNextPageToken: "",
     requestNextPageToken: "",
     automation,
+    rankRules,
   };
   if (options.includeMembers && canManageMembers) {
     const result = await listRobloxGroupMemberships(accessToken, cleanGroupId, { maxPageSize: 100 });
@@ -3256,6 +3430,7 @@ async function serializeGroupManagementContext(context) {
       requestNextPageToken: context.requestNextPageToken,
     },
     automation: serializeGroupAutomationPreset(context.automation),
+    rankRules: context.rankRules.map(serializeGroupRankRule),
   };
 }
 
@@ -3491,15 +3666,275 @@ async function evaluateGroupAutomationPresets() {
   }
 }
 
+function normalizeGroupRankEventKey(value) {
+  const eventKey = cleanString(value, MAX_GROUP_RANK_EVENT_KEY_LENGTH).toLowerCase();
+  return /^[a-z][a-z0-9_.:-]{0,63}$/.test(eventKey) ? eventKey : "";
+}
+
+function normalizeStoredGroupRankRule(rule) {
+  if (!rule || typeof rule !== "object") return null;
+  const now = Date.now();
+  const id = cleanString(rule.id, 120);
+  const ownerUserId = cleanString(rule.ownerUserId, 120);
+  const universeId = cleanInteger(rule.universeId);
+  const groupId = cleanInteger(rule.groupId);
+  const eventKey = normalizeGroupRankEventKey(rule.eventKey);
+  const rolePath = cleanString(rule.rolePath, 500);
+  if (!id || !ownerUserId || !universeId || !groupId || !eventKey || !getRobloxResourceId(rolePath)) return null;
+  return {
+    id,
+    ownerUserId,
+    universeId,
+    groupId,
+    eventKey,
+    enabled: rule.enabled !== false,
+    rolePath,
+    roleName: cleanString(rule.roleName, 120) || `Role ${getRobloxResourceId(rolePath)}`,
+    lastTriggeredAt: cleanInteger(rule.lastTriggeredAt) || null,
+    lastUserId: cleanInteger(rule.lastUserId) || null,
+    lastStatus: cleanString(rule.lastStatus, 40),
+    lastError: cleanString(rule.lastError, 240),
+    triggerCount: cleanInteger(rule.triggerCount),
+    recentActivity: (Array.isArray(rule.recentActivity) ? rule.recentActivity : [])
+      .slice(0, MAX_GROUP_RANK_EVENT_ACTIVITY)
+      .map((activity) => ({
+        requestId: cleanString(activity?.requestId, 160),
+        userId: cleanInteger(activity?.userId),
+        status: cleanString(activity?.status, 40),
+        error: cleanString(activity?.error, 240),
+        at: cleanInteger(activity?.at) || now,
+      }))
+      .filter((activity) => activity.requestId && activity.userId && activity.status),
+    createdAt: cleanInteger(rule.createdAt) || now,
+    updatedAt: cleanInteger(rule.updatedAt) || now,
+  };
+}
+
+function serializeGroupRankRule(rule) {
+  const normalized = normalizeStoredGroupRankRule(rule);
+  if (!normalized) return null;
+  return {
+    id: normalized.id,
+    universeId: normalized.universeId,
+    groupId: normalized.groupId,
+    eventKey: normalized.eventKey,
+    enabled: normalized.enabled,
+    roleId: getRobloxResourceId(normalized.rolePath),
+    roleName: normalized.roleName,
+    lastTriggeredAt: normalized.lastTriggeredAt,
+    lastUserId: normalized.lastUserId,
+    lastStatus: normalized.lastStatus,
+    lastError: normalized.lastError,
+    triggerCount: normalized.triggerCount,
+    recentActivity: normalized.recentActivity.map((activity) => ({
+      userId: activity.userId,
+      status: activity.status,
+      error: activity.error,
+      at: activity.at,
+    })),
+    updatedAt: normalized.updatedAt,
+  };
+}
+
+async function readGroupRankRules(ownerUserId, options = {}) {
+  const query = { ownerUserId };
+  if (cleanInteger(options.groupId)) query.groupId = cleanInteger(options.groupId);
+  if (cleanInteger(options.universeId)) query.universeId = cleanInteger(options.universeId);
+  if (normalizeGroupRankEventKey(options.eventKey)) query.eventKey = normalizeGroupRankEventKey(options.eventKey);
+  if (options.enabledOnly) query.enabled = true;
+
+  const db = await getMongoDb();
+  const rules = db
+    ? await db.collection("group_rank_rules").find(query).project({ _id: 0 }).toArray()
+    : (await readLocalGroupManagementStore()).rankRules.filter((rule) => (
+      rule.ownerUserId === ownerUserId
+      && (!query.groupId || cleanInteger(rule.groupId) === query.groupId)
+      && (!query.universeId || cleanInteger(rule.universeId) === query.universeId)
+      && (!query.eventKey || normalizeGroupRankEventKey(rule.eventKey) === query.eventKey)
+      && (!options.enabledOnly || rule.enabled !== false)
+    ));
+  return rules.map(normalizeStoredGroupRankRule).filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+async function readGroupRankRuleById(ownerUserId, ruleId) {
+  const cleanRuleId = cleanString(ruleId, 120);
+  if (!ownerUserId || !cleanRuleId) return null;
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeStoredGroupRankRule(await db.collection("group_rank_rules").findOne(
+      { id: cleanRuleId, ownerUserId },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalGroupManagementStore();
+  return normalizeStoredGroupRankRule(store.rankRules.find((rule) => (
+    rule.id === cleanRuleId && rule.ownerUserId === ownerUserId
+  )));
+}
+
+async function saveGroupRankRule(rule) {
+  const normalized = normalizeStoredGroupRankRule(rule);
+  if (!normalized) throw new Error("Cannot save an invalid rank event rule.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_rank_rules").replaceOne(
+      { id: normalized.id, ownerUserId: normalized.ownerUserId },
+      normalized,
+      { upsert: true },
+    );
+    return normalized;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    const index = store.rankRules.findIndex((entry) => (
+      entry.id === normalized.id && entry.ownerUserId === normalized.ownerUserId
+    ));
+    if (index >= 0) store.rankRules[index] = normalized;
+    else store.rankRules.push(normalized);
+    await writeLocalGroupManagementStore(store);
+  });
+  return normalized;
+}
+
+async function deleteGroupRankRule(rule) {
+  const normalized = normalizeStoredGroupRankRule(rule);
+  if (!normalized) return;
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_rank_rules").deleteOne({ id: normalized.id, ownerUserId: normalized.ownerUserId });
+    return;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    store.rankRules = store.rankRules.filter((entry) => !(
+      entry.id === normalized.id && entry.ownerUserId === normalized.ownerUserId
+    ));
+    await writeLocalGroupManagementStore(store);
+  });
+}
+
+async function disableGroupRankRules(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("group_rank_rules").updateMany(
+      { ownerUserId },
+      { $set: { enabled: false, updatedAt: Date.now() } },
+    );
+    return;
+  }
+  await withLocalGroupManagementStoreLock(async () => {
+    const store = await readLocalGroupManagementStore();
+    for (const rule of store.rankRules) {
+      if (rule.ownerUserId !== ownerUserId) continue;
+      rule.enabled = false;
+      rule.updatedAt = Date.now();
+    }
+    await writeLocalGroupManagementStore(store);
+  });
+}
+
+async function processGroupRankEventRule(rule, request) {
+  return withGroupRankRuleMutationLock(rule.id, async () => {
+    const current = await readGroupRankRuleById(rule.ownerUserId, rule.id);
+    if (!current?.enabled) {
+      return { ruleId: rule.id, groupId: rule.groupId, status: "disabled" };
+    }
+    const duplicate = current.recentActivity.find((activity) => (
+      activity.requestId === request.requestId
+      && activity.userId === request.userId
+      && activity.status !== "error"
+    ));
+    if (duplicate) {
+      return {
+        ruleId: current.id,
+        groupId: current.groupId,
+        roleName: current.roleName,
+        status: duplicate.status,
+        duplicate: true,
+      };
+    }
+
+    let status = "error";
+    let errorMessage = "";
+    try {
+      const context = await getGroupManagementContext(current.ownerUserId, current.groupId);
+      if (!context.canManageMembers) throw new Error("The authorized Roblox role can no longer assign group roles.");
+      const role = findAssignableGroupRole(context, current.rolePath);
+      if (!role) throw new Error("The configured role no longer exists below the authorized Roblox role.");
+      const memberResult = await listRobloxGroupMemberships(context.accessToken, current.groupId, {
+        filter: `user == 'users/${request.userId}'`,
+        maxPageSize: 10,
+      });
+      const member = memberResult.entries.find((entry) => membershipUserId(entry) === request.userId);
+      if (!member) {
+        status = "not_member";
+      } else if (request.userId === context.robloxUserId || getGroupMemberRank(member, context.roleByPath) >= context.selfRank) {
+        status = "protected_member";
+      } else if (membershipRolePaths(member).includes(role.path)) {
+        status = "already_assigned";
+      } else {
+        const membershipId = getRobloxResourceId(member?.path || member?.id) || request.userId;
+        await assignRobloxGroupRole(context.accessToken, current.groupId, membershipId, role.path);
+        status = "assigned";
+      }
+      current.roleName = role.name;
+      current.rolePath = role.path;
+    } catch (error) {
+      status = "error";
+      errorMessage = cleanString(error?.message, 240) || "Roblox could not process the rank request.";
+    }
+
+    const now = Date.now();
+    current.lastTriggeredAt = now;
+    current.lastUserId = request.userId;
+    current.lastStatus = status;
+    current.lastError = errorMessage;
+    current.triggerCount += 1;
+    current.recentActivity = [{
+      requestId: request.requestId,
+      userId: request.userId,
+      status,
+      error: errorMessage,
+      at: now,
+    }, ...current.recentActivity].slice(0, MAX_GROUP_RANK_EVENT_ACTIVITY);
+    current.updatedAt = now;
+    await saveGroupRankRule(current);
+    return {
+      ruleId: current.id,
+      groupId: current.groupId,
+      roleName: current.roleName,
+      status,
+      error: errorMessage || undefined,
+    };
+  });
+}
+
+async function withGroupRankRuleMutationLock(ruleId, operation) {
+  const key = cleanString(ruleId, 120);
+  const previous = groupRankRuleMutationLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  groupRankRuleMutationLocks.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (groupRankRuleMutationLocks.get(key) === queued) groupRankRuleMutationLocks.delete(key);
+  }
+}
+
 async function readLocalGroupManagementStore() {
   try {
     const payload = JSON.parse(await fs.readFile(groupManagementStorePath, "utf8"));
     return {
       integrations: Array.isArray(payload.integrations) ? payload.integrations : [],
       presets: Array.isArray(payload.presets) ? payload.presets : [],
+      rankRules: Array.isArray(payload.rankRules) ? payload.rankRules : [],
     };
   } catch (error) {
-    if (error.code === "ENOENT") return { integrations: [], presets: [] };
+    if (error.code === "ENOENT") return { integrations: [], presets: [], rankRules: [] };
     throw error;
   }
 }

@@ -78,6 +78,24 @@ RoAnalytics.Log("round_started", {
 
 Do not require RoAnalytics or expose its project secret from a `LocalScript`. Validate client actions through the game's normal server-authoritative networking before logging them.
 
+## Group rank event requests
+
+Create an event-to-role rule on the dashboard's **Groups** page, then request it from trusted server code:
+
+```lua
+local ServerScriptService = game:GetService("ServerScriptService")
+local RoAnalytics = require(ServerScriptService.RoAnalytics.API)
+
+local success, errorMessage, statusCode, result = RoAnalytics.RequestGroupRank(player, "vip_purchase")
+if not success then
+	warn(errorMessage, statusCode)
+end
+```
+
+The event key only selects a dashboard preset. Roblox code never supplies a group ID or role ID. The website authenticates the request with the universe's existing project secret, checks the saved OAuth group permissions, confirms the player is a lower-ranked member, and assigns the preset role. Duplicate request IDs are ignored, and Studio requests never change live group membership.
+
+`RequestGroupRank` sends immediately instead of waiting for the analytics heartbeat. It returns `success, errorMessage, statusCode, result`; `result.results` reports `assigned`, `already_assigned`, `not_member`, or `protected_member` for each matching rule. Keep the call in server-authoritative purchase, reward, or progression handling. The group OAuth connection must remain authorized with `group:read group:write`.
+
 ## Player context
 
 RoAnalytics calls `AnalyticsService:GetPlayerSegmentsAsync()` and attaches Roblox's `WhenUserFirstPlayed` bucket when available. If trusted server handling already receives a validated device category, it can supply that context:
