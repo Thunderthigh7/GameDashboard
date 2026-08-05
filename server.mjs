@@ -2241,7 +2241,6 @@ async function handleAssetOAuthStart(req, res, auth, searchParams) {
     nonce,
     codeChallenge,
     scopes: ROBLOX_OAUTH_ASSET_SCOPES,
-    prompt: "consent",
   }));
 }
 
@@ -5938,7 +5937,7 @@ function isRobloxOAuthConfigured() {
   return Boolean(ROBLOX_OAUTH_CLIENT_ID && ROBLOX_OAUTH_CLIENT_SECRET && ROBLOX_OAUTH_REDIRECT_URI);
 }
 
-function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OAUTH_SCOPES, prompt = "" }) {
+function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OAUTH_SCOPES }) {
   const authorizeUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
   authorizeUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
   authorizeUrl.searchParams.set("redirect_uri", ROBLOX_OAUTH_REDIRECT_URI);
@@ -5948,7 +5947,6 @@ function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OA
   authorizeUrl.searchParams.set("nonce", nonce);
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
-  if (prompt) authorizeUrl.searchParams.set("prompt", prompt);
   return authorizeUrl.toString();
 }
 

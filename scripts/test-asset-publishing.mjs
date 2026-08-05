@@ -22,7 +22,8 @@ assert.match(appSource, /async function publishAssetPack/);
 assert.match(appSource, /function syncAssetOperationPolling/);
 
 assert.match(serverSource, /withRequiredOAuthScopes\([\s\S]*?\["openid", "profile", "asset:read", "asset:write"\]/);
-assert.match(serverSource, /scopes: ROBLOX_OAUTH_ASSET_SCOPES,[\s\S]*?prompt: "consent"/);
+assert.match(serverSource, /scopes: ROBLOX_OAUTH_ASSET_SCOPES/);
+assert.doesNotMatch(serverSource, /prompt: "consent"/);
 assert.match(serverSource, /function parseOAuthScopes\(value\)/);
 assert.match(serverSource, /url\.pathname === "\/api\/assets\/drafts"/);
 assert.match(serverSource, /assetPackPublishMatch/);

@@ -39,7 +39,7 @@ ROBLOX_OAUTH_ASSET_SCOPES=openid profile asset:read asset:write
 
 The extra live-action scope is requested only when a universe owner authorizes **Integrations → Roblox**. The resulting access and rotating refresh tokens are encrypted at rest. Disconnecting the integration revokes the Roblox authorization.
 
-The Assets page requests `asset:read` and `asset:write` only when a user authorizes asset publishing. Add both scopes to the Roblox OAuth app. The server always includes these required scopes even if Render has an older `ROBLOX_OAUTH_ASSET_SCOPES` value, and asset authorization forces a fresh consent screen after OAuth app permission changes. Bulk-upload files are saved to B2 when it is configured, with a local `data/asset-drafts` fallback for development. The defaults are 20 MB per file, 250 MB and 100 files per saved batch, and 50 saved batches per experience.
+The Assets page requests `asset:read` and `asset:write` only when a user authorizes asset publishing. Add both scopes to the Roblox OAuth app. The server always includes these required scopes even if Render has an older `ROBLOX_OAUTH_ASSET_SCOPES` value. Roblox decides when account selection and consent are required for the authorization request. Bulk-upload files are saved to B2 when it is configured, with a local `data/asset-drafts` fallback for development. The defaults are 20 MB per file, 250 MB and 100 files per saved batch, and 50 saved batches per experience.
 
 For local testing, use:
 
