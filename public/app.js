@@ -32,7 +32,6 @@ const reconciliationStats = document.querySelector("#reconciliationStats");
 const reconciliationList = document.querySelector("#reconciliationList");
 const reconciliationStatus = document.querySelector("#reconciliationStatus");
 const refreshModerationButton = document.querySelector("#refreshModerationButton");
-const moderationOnlineCount = document.querySelector("#moderationOnlineCount");
 const moderationActiveBanCount = document.querySelector("#moderationActiveBanCount");
 const moderationActionCount = document.querySelector("#moderationActionCount");
 const playerModerationStatus = document.querySelector("#playerModerationStatus");
@@ -58,6 +57,23 @@ const playerModerationReasonCount = document.querySelector("#playerModerationRea
 const playerModerationFormStatus = document.querySelector("#playerModerationFormStatus");
 const playerModerationCancelButton = document.querySelector("#playerModerationCancelButton");
 const playerModerationSubmitButton = document.querySelector("#playerModerationSubmitButton");
+const assetAuthorizationTitle = document.querySelector("#assetAuthorizationTitle");
+const assetAuthorizationCopy = document.querySelector("#assetAuthorizationCopy");
+const assetAuthorizeButton = document.querySelector("#assetAuthorizeButton");
+const assetDisconnectButton = document.querySelector("#assetDisconnectButton");
+const assetFileInput = document.querySelector("#assetFileInput");
+const assetDropZone = document.querySelector("#assetDropZone");
+const assetBatchEditor = document.querySelector("#assetBatchEditor");
+const assetBatchName = document.querySelector("#assetBatchName");
+const assetBatchSummary = document.querySelector("#assetBatchSummary");
+const assetStagingList = document.querySelector("#assetStagingList");
+const assetClearBatchButton = document.querySelector("#assetClearBatchButton");
+const assetSaveBatchButton = document.querySelector("#assetSaveBatchButton");
+const assetUploadStatus = document.querySelector("#assetUploadStatus");
+const assetRefreshButton = document.querySelector("#assetRefreshButton");
+const assetPackList = document.querySelector("#assetPackList");
+const assetPackDetail = document.querySelector("#assetPackDetail");
+const assetLibraryStatus = document.querySelector("#assetLibraryStatus");
 const refreshUsageButton = document.querySelector("#refreshUsageButton");
 const usagePlanName = document.querySelector("#usagePlanName");
 const usageConnectedGames = document.querySelector("#usageConnectedGames");
@@ -383,6 +399,12 @@ let reconciliationRequestSequence = 0;
 let playerModerationRequestSequence = 0;
 let playerModerationRefreshTimer;
 let playerModerationBusy = false;
+let assetLibraryRequestSequence = 0;
+let assetLibraryBusy = false;
+let assetLibrary = { authorization: {}, packs: [], limits: {} };
+let assetPendingFiles = [];
+let selectedAssetPackId = "";
+let assetOperationPollTimer;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -432,7 +454,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-2";
+const DASHBOARD_ASSET_VERSION = "20260805-3";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -499,7 +521,7 @@ const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const ROBLOX_LIVE_REFRESH_MS = 5000;
 const PLAYER_MODERATION_REFRESH_MS = 5000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation"]);
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation", "assets"]);
 const ADMIN_ONLY_VIEWS = new Set([
   "ai-runs",
   ...Array.from(
@@ -830,6 +852,21 @@ function bindEvents() {
   playerModerationCancelButton?.addEventListener("click", closePlayerModerationDialog);
   playerModerationDialogBackdrop?.addEventListener("click", closePlayerModerationDialog);
   document.addEventListener("keydown", handlePlayerModerationDialogKeydown);
+  assetAuthorizeButton?.addEventListener("click", authorizeAssetPublishing);
+  assetDisconnectButton?.addEventListener("click", disconnectAssetPublishing);
+  assetDropZone?.addEventListener("click", () => assetFileInput?.click());
+  assetDropZone?.addEventListener("dragover", handleAssetDragOver);
+  assetDropZone?.addEventListener("dragleave", handleAssetDragLeave);
+  assetDropZone?.addEventListener("drop", handleAssetDrop);
+  assetFileInput?.addEventListener("change", () => addAssetFiles(assetFileInput.files));
+  assetStagingList?.addEventListener("input", handleAssetStagingInput);
+  assetStagingList?.addEventListener("change", handleAssetStagingInput);
+  assetStagingList?.addEventListener("click", handleAssetStagingAction);
+  assetClearBatchButton?.addEventListener("click", clearPendingAssetBatch);
+  assetSaveBatchButton?.addEventListener("click", saveAssetBatch);
+  assetRefreshButton?.addEventListener("click", () => loadAssetLibrary({ force: true }));
+  assetPackList?.addEventListener("click", handleAssetPackSelection);
+  assetPackDetail?.addEventListener("click", handleAssetPackAction);
   refreshReconciliationButton?.addEventListener("click", () => loadReconciliations({ force: true }));
   reconciliationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -936,12 +973,14 @@ function handleDashboardVisibilityChange() {
     stopChatRefresh();
     stopEventRefresh();
     stopFunnelRefresh();
+    stopAssetOperationPolling();
   } else {
     updateViewRefreshTimers();
     if (authenticated && selectedUniverseId) {
       if (activeView === "chat") loadChatLogs({ includeInsights: false });
       if (activeView === "events") loadCustomEvents();
       if (activeView === "funnels") loadFunnels();
+      if (activeView === "assets") loadAssetLibrary({ force: true, background: true });
     }
   }
 
@@ -1224,6 +1263,11 @@ function setAuthenticated(value, user = null) {
       history: [],
       stats: {},
     });
+    assetLibraryRequestSequence += 1;
+    assetLibrary = { authorization: {}, packs: [], limits: {} };
+    selectedAssetPackId = "";
+    stopAssetOperationPolling();
+    renderAssetLibrary();
     return;
   }
 
@@ -1260,13 +1304,14 @@ function getViewFromHash() {
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#moderation") return "moderation";
+  if (window.location.hash === "#assets") return "assets";
   if (window.location.hash === "#admin") return "admin";
   return "overview";
 }
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
   if (lacksAdminAccess && ADMIN_ONLY_VIEWS.has(getViewFromHash())) {
@@ -1290,6 +1335,7 @@ function setActiveView(view, options = {}) {
   }
   if (activeView !== "roblox-live") closeRobloxLiveRuleEditor();
   if (activeView !== "moderation") closePlayerModerationDialog({ force: true });
+  if (activeView !== "assets") stopAssetOperationPolling();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
     const nextHash = activeView === "overview" ? "#overview" : `#${activeView}`;
@@ -1349,6 +1395,10 @@ function renderActiveView(options = {}) {
     "roblox-live": {
       title: "Roblox Live Actions",
       subtitle: "Trigger pre-coded server actions from live analytics or a fixed schedule.",
+    },
+    assets: {
+      title: "Assets",
+      subtitle: "Save, organize, and bulk publish Roblox assets for the selected experience.",
     },
     usage: {
       title: "Usage",
@@ -1434,6 +1484,8 @@ function loadActiveViewData(view, options = {}) {
       loadRobloxLiveIntegration();
     } else if (view === "moderation") {
       loadPlayerModeration();
+    } else if (view === "assets") {
+      loadAssetLibrary();
     }
     return;
   }
@@ -1455,6 +1507,8 @@ function loadActiveViewData(view, options = {}) {
     loadRobloxLiveIntegration();
   } else if (view === "moderation") {
     loadPlayerModeration();
+  } else if (view === "assets") {
+    loadAssetLibrary();
   } else if (view === "usage") {
     loadAccountUsage();
   } else if (view === "connect") {
@@ -1613,7 +1667,6 @@ function renderPlayerModeration(data) {
   const livePlayers = Array.isArray(data?.livePlayers) ? data.livePlayers : [];
   const activeBans = Array.isArray(data?.activeBans) ? data.activeBans : [];
   const history = Array.isArray(data?.history) ? data.history : [];
-  if (moderationOnlineCount) moderationOnlineCount.textContent = formatCompactNumber(data?.stats?.online || 0);
   if (moderationActiveBanCount) moderationActiveBanCount.textContent = formatCompactNumber(data?.stats?.activeBans || 0);
   if (moderationActionCount) moderationActionCount.textContent = formatCompactNumber(data?.stats?.actions24h || 0);
 
@@ -1833,6 +1886,461 @@ function setPlayerModerationFormStatus(message, state = "") {
   playerModerationFormStatus.textContent = message;
   if (state) playerModerationFormStatus.dataset.state = state;
   else delete playerModerationFormStatus.dataset.state;
+}
+
+async function loadAssetLibrary(options = {}) {
+  if (!authenticated || !selectedUniverseId || !assetPackList) return;
+  const requestSequence = ++assetLibraryRequestSequence;
+  if (!options.background) setAssetLibraryStatus("Loading saved batches...");
+  try {
+    const data = await request(`/api/assets?universeId=${encodeURIComponent(selectedUniverseId)}${options.force ? "&fresh=1" : ""}`, {
+      dedupe: !options.force,
+    });
+    if (requestSequence !== assetLibraryRequestSequence || activeView !== "assets") return;
+    assetLibrary = data;
+    const packs = Array.isArray(data.packs) ? data.packs : [];
+    if (!packs.some((pack) => pack.id === selectedAssetPackId)) {
+      selectedAssetPackId = packs[0]?.id || "";
+    }
+    renderAssetLibrary();
+    setAssetLibraryStatus(packs.length ? `${packs.length} saved batch${packs.length === 1 ? "" : "es"}.` : "No saved batches yet.");
+    syncAssetOperationPolling();
+  } catch (error) {
+    if (requestSequence !== assetLibraryRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) setAssetLibraryStatus(error.message, "error");
+  }
+}
+
+function renderAssetLibrary() {
+  if (!assetPackList || !assetPackDetail) return;
+  const authorization = assetLibrary.authorization || {};
+  const packs = Array.isArray(assetLibrary.packs) ? assetLibrary.packs : [];
+  const authorized = Boolean(authorization.connected && authorization.authorizationValid !== false);
+  if (assetAuthorizationTitle) {
+    assetAuthorizationTitle.textContent = authorized
+      ? `Publishing as ${authorization.robloxUsername || "your Roblox account"}`
+      : "Connect Roblox to publish assets";
+  }
+  if (assetAuthorizationCopy) {
+    assetAuthorizationCopy.textContent = authorized
+      ? "Your saved batches can now be published to the selected experience owner."
+      : "Saved batches work immediately. Authorize Roblox when you are ready to publish them.";
+  }
+  if (assetAuthorizeButton) {
+    assetAuthorizeButton.hidden = authorized;
+    assetAuthorizeButton.disabled = assetLibraryBusy;
+  }
+  if (assetDisconnectButton) {
+    assetDisconnectButton.hidden = !authorized;
+    assetDisconnectButton.disabled = assetLibraryBusy;
+  }
+
+  assetPackList.innerHTML = packs.length
+    ? packs.map((pack) => `
+      <button class="assetPackButton${pack.id === selectedAssetPackId ? " active" : ""}" type="button" data-asset-pack-id="${escapeHtml(pack.id)}">
+        <strong>${escapeHtml(pack.name || "Untitled batch")}</strong>
+        <span>${escapeHtml(String(pack.assetCount || pack.assets?.length || 0))} files · ${escapeHtml(formatRelativeTime(pack.updatedAt || pack.createdAt))}</span>
+      </button>
+    `).join("")
+    : `<div class="assetEmptyState"><strong>No saved batches</strong><span>Files you save from the bulk uploader will appear here.</span></div>`;
+
+  const selectedPack = packs.find((pack) => pack.id === selectedAssetPackId);
+  if (!selectedPack) {
+    assetPackDetail.innerHTML = `<div class="assetEmptyState"><strong>No saved batch selected</strong><span>Create a bulk upload batch to keep its files and publishing history together.</span></div>`;
+    return;
+  }
+
+  const assets = Array.isArray(selectedPack.assets) ? selectedPack.assets : [];
+  const publishableCount = assets.filter((asset) => asset.status === "draft" || asset.status === "failed").length;
+  const publishedAssets = assets.filter((asset) => asset.assetId);
+  assetPackDetail.innerHTML = `
+    <header class="assetPackDetailHeader">
+      <div>
+        <h3>${escapeHtml(selectedPack.name || "Untitled batch")}</h3>
+        <p>${escapeHtml(String(assets.length))} files · saved ${escapeHtml(formatRelativeTime(selectedPack.updatedAt || selectedPack.createdAt))}</p>
+      </div>
+      <div class="assetPackActions">
+        ${publishedAssets.length ? `<button class="button secondary compact" type="button" data-asset-copy-ids="${escapeHtml(selectedPack.id)}">Copy IDs</button>` : ""}
+        <button class="button compact" type="button" data-asset-publish-pack="${escapeHtml(selectedPack.id)}"${!authorized || !publishableCount || assetLibraryBusy ? " disabled" : ""}>Publish ${publishableCount || "all"}</button>
+        <button class="assetPackDeleteButton" type="button" data-asset-delete-pack="${escapeHtml(selectedPack.id)}" aria-label="Delete saved batch">×</button>
+      </div>
+    </header>
+    <div class="assetPackAssetList">
+      ${assets.length ? assets.map(renderSavedAssetRow).join("") : `<div class="assetEmptyState"><strong>This batch is empty</strong><span>Add files by creating another bulk upload batch.</span></div>`}
+    </div>
+  `;
+}
+
+function renderSavedAssetRow(asset) {
+  const status = String(asset.status || "draft").toLowerCase();
+  const detail = asset.assetId
+    ? `Roblox ID ${asset.assetId}`
+    : asset.error || `${asset.assetType || "Asset"} · ${formatBytes(asset.byteLength || 0)}`;
+  return `
+    <article class="assetPackAssetRow">
+      ${renderAssetFileIcon()}
+      <div class="assetPackAssetIdentity">
+        <strong>${escapeHtml(asset.displayName || asset.fileName || "Untitled asset")}</strong>
+        <span title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>
+      </div>
+      <span class="assetStateBadge" data-state="${escapeHtml(status)}">${escapeHtml(formatAssetStatus(status))}</span>
+    </article>
+  `;
+}
+
+function formatAssetStatus(status) {
+  if (status === "moderating") return "Reviewing";
+  if (status === "uploading") return "Uploading";
+  if (status === "approved") return "Approved";
+  if (status === "failed") return "Failed";
+  return "Saved";
+}
+
+function authorizeAssetPublishing() {
+  if (!selectedUniverseId) return;
+  window.location.href = `/api/assets/oauth/start?universeId=${encodeURIComponent(selectedUniverseId)}`;
+}
+
+async function disconnectAssetPublishing() {
+  if (assetLibraryBusy) return;
+  assetLibraryBusy = true;
+  renderAssetLibrary();
+  try {
+    await request("/api/assets/oauth", { method: "DELETE" });
+    await loadAssetLibrary({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setAssetLibraryStatus(error.message, "error");
+  } finally {
+    assetLibraryBusy = false;
+    renderAssetLibrary();
+  }
+}
+
+function handleAssetDragOver(event) {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  assetDropZone?.classList.add("isDragging");
+}
+
+function handleAssetDragLeave(event) {
+  if (event.currentTarget?.contains(event.relatedTarget)) return;
+  assetDropZone?.classList.remove("isDragging");
+}
+
+async function handleAssetDrop(event) {
+  event.preventDefault();
+  assetDropZone?.classList.remove("isDragging");
+  const files = await getDroppedAssetFiles(event.dataTransfer);
+  addAssetFiles(files);
+}
+
+async function getDroppedAssetFiles(dataTransfer) {
+  const items = Array.from(dataTransfer?.items || []);
+  const entries = items.map((item) => item.webkitGetAsEntry?.()).filter(Boolean);
+  if (!entries.length) return Array.from(dataTransfer?.files || []);
+  const files = [];
+  for (const entry of entries) await collectDroppedEntryFiles(entry, files);
+  return files;
+}
+
+async function collectDroppedEntryFiles(entry, files) {
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+    files.push(file);
+    return;
+  }
+  if (!entry.isDirectory) return;
+  const reader = entry.createReader();
+  while (true) {
+    const entries = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    if (!entries.length) break;
+    for (const child of entries) await collectDroppedEntryFiles(child, files);
+  }
+}
+
+function addAssetFiles(fileList) {
+  const incoming = Array.from(fileList || []);
+  const maximumFiles = Number(assetLibrary.limits?.maxFilesPerBatch || 100);
+  const maximumBytes = Number(assetLibrary.limits?.maxFileBytes || 20 * 1024 * 1024);
+  const maximumBatchBytes = Number(assetLibrary.limits?.maxBatchBytes || 250 * 1024 * 1024);
+  let pendingBytes = assetPendingFiles.reduce((total, item) => total + item.file.size, 0);
+  const supported = [];
+  const rejected = [];
+  for (const file of incoming) {
+    const assetType = inferAssetType(file.name);
+    if (!assetType) rejected.push(`${file.name}: unsupported file type`);
+    else if (file.size > maximumBytes) rejected.push(`${file.name}: larger than ${formatBytes(maximumBytes)}`);
+    else if (assetPendingFiles.length + supported.length >= maximumFiles) rejected.push(`${file.name}: batch limit reached`);
+    else if (pendingBytes + file.size > maximumBatchBytes) rejected.push(`${file.name}: batch storage limit reached`);
+    else {
+      supported.push({
+        id: crypto.randomUUID(),
+        file,
+        displayName: stripAssetExtension(file.name).slice(0, 80),
+        assetType,
+      });
+      pendingBytes += file.size;
+    }
+  }
+  assetPendingFiles.push(...supported);
+  if (assetFileInput) assetFileInput.value = "";
+  if (assetBatchName && !assetBatchName.value && supported.length) {
+    assetBatchName.value = `${stripAssetExtension(supported[0].file.name)} batch`;
+  }
+  renderAssetStaging();
+  setAssetUploadStatus(
+    rejected.length ? `${supported.length} files added. ${rejected[0]}${rejected.length > 1 ? ` and ${rejected.length - 1} more skipped.` : ""}` : `${supported.length} files ready to save.`,
+    rejected.length ? "error" : "",
+  );
+}
+
+function inferAssetType(fileName) {
+  const extension = String(fileName || "").toLowerCase().split(".").pop();
+  if (["png", "jpg", "jpeg", "bmp", "tga"].includes(extension)) return "Decal";
+  if (["mp3", "ogg", "wav", "flac"].includes(extension)) return "Audio";
+  if (["fbx", "gltf", "glb", "rbxm", "rbxmx"].includes(extension)) return "Model";
+  if (["mp4", "mov"].includes(extension)) return "Video";
+  return "";
+}
+
+function getAssetTypeOptions(fileName, selectedType) {
+  const extension = String(fileName || "").toLowerCase().split(".").pop();
+  const types = ["png", "jpg", "jpeg", "bmp", "tga"].includes(extension)
+    ? ["Decal", "Image"]
+    : ["rbxm", "rbxmx"].includes(extension)
+      ? ["Model", "Animation"]
+      : [selectedType];
+  return types.map((type) => `<option value="${escapeHtml(type)}"${type === selectedType ? " selected" : ""}>${escapeHtml(type)}</option>`).join("");
+}
+
+function stripAssetExtension(fileName) {
+  return String(fileName || "").replace(/\.[^.]+$/, "").trim() || "Untitled asset";
+}
+
+function renderAssetStaging() {
+  if (!assetBatchEditor || !assetStagingList || !assetBatchSummary) return;
+  assetBatchEditor.hidden = assetPendingFiles.length === 0;
+  assetBatchSummary.textContent = `${assetPendingFiles.length} file${assetPendingFiles.length === 1 ? "" : "s"} · ${formatBytes(assetPendingFiles.reduce((total, item) => total + item.file.size, 0))}`;
+  assetStagingList.innerHTML = assetPendingFiles.map((item) => `
+    <article class="assetStagingRow" data-asset-pending-id="${escapeHtml(item.id)}">
+      ${renderAssetFileIcon()}
+      <div>
+        <div class="assetFileFields">
+          <input type="text" maxlength="80" value="${escapeHtml(item.displayName)}" aria-label="Asset display name" data-asset-field="displayName">
+          <select aria-label="Asset type" data-asset-field="assetType">${getAssetTypeOptions(item.file.name, item.assetType)}</select>
+        </div>
+        <div class="assetFileMeta"><span>${escapeHtml(item.file.name)} · ${escapeHtml(formatBytes(item.file.size))}</span></div>
+      </div>
+      <button class="assetRemoveFileButton" type="button" data-remove-pending-asset="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(item.file.name)}">×</button>
+    </article>
+  `).join("");
+}
+
+function renderAssetFileIcon() {
+  return `<span class="assetFileIcon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20H7Z"/><path d="M14 3.5V8h4"/></svg></span>`;
+}
+
+function handleAssetStagingInput(event) {
+  const row = event.target.closest("[data-asset-pending-id]");
+  const item = assetPendingFiles.find((entry) => entry.id === row?.dataset.assetPendingId);
+  const field = event.target.dataset.assetField;
+  if (!item || !field) return;
+  item[field] = String(event.target.value || "");
+}
+
+function handleAssetStagingAction(event) {
+  const button = event.target.closest("[data-remove-pending-asset]");
+  if (!button) return;
+  assetPendingFiles = assetPendingFiles.filter((item) => item.id !== button.dataset.removePendingAsset);
+  renderAssetStaging();
+}
+
+function clearPendingAssetBatch() {
+  assetPendingFiles = [];
+  if (assetBatchName) assetBatchName.value = "";
+  renderAssetStaging();
+  setAssetUploadStatus("");
+}
+
+async function saveAssetBatch() {
+  if (assetLibraryBusy || !selectedUniverseId || !assetPendingFiles.length) return;
+  const name = String(assetBatchName?.value || "").trim();
+  if (name.length < 2) {
+    setAssetUploadStatus("Give this saved batch a name.", "error");
+    assetBatchName?.focus();
+    return;
+  }
+  if (assetPendingFiles.some((item) => !String(item.displayName || "").trim())) {
+    setAssetUploadStatus("Every asset needs a display name.", "error");
+    return;
+  }
+
+  assetLibraryBusy = true;
+  setAssetControlsDisabled(true);
+  try {
+    const created = await request("/api/assets/packs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: Number(selectedUniverseId), name }),
+    });
+    const packId = created.pack.id;
+    let nextIndex = 0;
+    let savedCount = 0;
+    const failures = [];
+    const workers = Array.from({ length: Math.min(3, assetPendingFiles.length) }, async () => {
+      while (nextIndex < assetPendingFiles.length) {
+        const item = assetPendingFiles[nextIndex++];
+        setAssetUploadStatus(`Saving ${savedCount + 1} of ${assetPendingFiles.length} files...`);
+        const query = new URLSearchParams({
+          universeId: selectedUniverseId,
+          packId,
+          fileName: item.file.name,
+          displayName: String(item.displayName || "").trim(),
+          assetType: item.assetType,
+        });
+        try {
+          await request(`/api/assets/drafts?${query}`, {
+            method: "POST",
+            headers: { "Content-Type": item.file.type || "application/octet-stream" },
+            body: item.file,
+          });
+          savedCount += 1;
+        } catch (error) {
+          failures.push(`${item.file.name}: ${error.message}`);
+        }
+      }
+    });
+    await Promise.all(workers);
+    selectedAssetPackId = packId;
+    clearPendingAssetBatch();
+    await loadAssetLibrary({ force: true });
+    setAssetUploadStatus(
+      failures.length ? `${savedCount} files saved. ${failures.length} failed: ${failures[0]}` : `${savedCount} files saved as “${name}”.`,
+      failures.length ? "error" : "success",
+    );
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setAssetUploadStatus(error.message, "error");
+  } finally {
+    assetLibraryBusy = false;
+    setAssetControlsDisabled(false);
+    renderAssetLibrary();
+  }
+}
+
+function handleAssetPackSelection(event) {
+  const button = event.target.closest("[data-asset-pack-id]");
+  if (!button) return;
+  selectedAssetPackId = button.dataset.assetPackId || "";
+  renderAssetLibrary();
+}
+
+function handleAssetPackAction(event) {
+  const publishButton = event.target.closest("[data-asset-publish-pack]");
+  if (publishButton) {
+    publishAssetPack(publishButton.dataset.assetPublishPack);
+    return;
+  }
+  const copyButton = event.target.closest("[data-asset-copy-ids]");
+  if (copyButton) {
+    copyAssetPackIds(copyButton.dataset.assetCopyIds);
+    return;
+  }
+  const deleteButton = event.target.closest("[data-asset-delete-pack]");
+  if (deleteButton) deleteAssetPack(deleteButton.dataset.assetDeletePack);
+}
+
+async function publishAssetPack(packId) {
+  if (assetLibraryBusy || !packId) return;
+  assetLibraryBusy = true;
+  renderAssetLibrary();
+  setAssetLibraryStatus("Starting the bulk publish...");
+  try {
+    await request(`/api/assets/packs/${encodeURIComponent(packId)}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: Number(selectedUniverseId) }),
+    });
+    await loadAssetLibrary({ force: true });
+    setAssetLibraryStatus("Bulk publish started. Roblox moderation statuses will update here.", "success");
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setAssetLibraryStatus(error.message, "error");
+  } finally {
+    assetLibraryBusy = false;
+    renderAssetLibrary();
+  }
+}
+
+async function deleteAssetPack(packId) {
+  const pack = assetLibrary.packs?.find((entry) => entry.id === packId);
+  if (!packId || !window.confirm(`Delete the saved batch “${pack?.name || "Untitled batch"}”? Published Roblox assets will not be deleted.`)) return;
+  assetLibraryBusy = true;
+  try {
+    await request(`/api/assets/packs/${encodeURIComponent(packId)}?universeId=${encodeURIComponent(selectedUniverseId)}`, { method: "DELETE" });
+    if (selectedAssetPackId === packId) selectedAssetPackId = "";
+    await loadAssetLibrary({ force: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setAssetLibraryStatus(error.message, "error");
+  } finally {
+    assetLibraryBusy = false;
+    renderAssetLibrary();
+  }
+}
+
+async function copyAssetPackIds(packId) {
+  const pack = assetLibrary.packs?.find((entry) => entry.id === packId);
+  const lines = (pack?.assets || []).filter((asset) => asset.assetId).map((asset) => `${asset.displayName}=${asset.assetId}`);
+  if (!lines.length) return;
+  try {
+    await navigator.clipboard.writeText(lines.join("\n"));
+    setAssetLibraryStatus(`${lines.length} Roblox asset ID${lines.length === 1 ? "" : "s"} copied.`, "success");
+  } catch {
+    setAssetLibraryStatus("Could not copy the asset IDs.", "error");
+  }
+}
+
+function setAssetControlsDisabled(disabled) {
+  if (assetFileInput) assetFileInput.disabled = disabled;
+  if (assetDropZone) assetDropZone.disabled = disabled;
+  if (assetBatchName) assetBatchName.disabled = disabled;
+  if (assetClearBatchButton) assetClearBatchButton.disabled = disabled;
+  if (assetSaveBatchButton) assetSaveBatchButton.disabled = disabled;
+  if (assetRefreshButton) assetRefreshButton.disabled = disabled;
+  for (const control of assetStagingList?.querySelectorAll("input, select, button") || []) control.disabled = disabled;
+}
+
+function setAssetUploadStatus(message, state = "") {
+  if (!assetUploadStatus) return;
+  assetUploadStatus.textContent = message;
+  if (state) assetUploadStatus.dataset.state = state;
+  else delete assetUploadStatus.dataset.state;
+}
+
+function setAssetLibraryStatus(message, state = "") {
+  if (!assetLibraryStatus) return;
+  assetLibraryStatus.textContent = message;
+  if (state) assetLibraryStatus.dataset.state = state;
+  else delete assetLibraryStatus.dataset.state;
+}
+
+function syncAssetOperationPolling() {
+  const hasPendingOperations = assetLibrary.packs?.some((pack) => pack.assets?.some((asset) => asset.status === "uploading" || asset.status === "moderating"));
+  if (!hasPendingOperations || activeView !== "assets" || document.hidden) {
+    stopAssetOperationPolling();
+    return;
+  }
+  if (assetOperationPollTimer) return;
+  assetOperationPollTimer = window.setInterval(() => loadAssetLibrary({ force: true, background: true }), 8000);
+}
+
+function stopAssetOperationPolling() {
+  if (!assetOperationPollTimer) return;
+  window.clearInterval(assetOperationPollTimer);
+  assetOperationPollTimer = null;
 }
 
 async function loadAdminUsers(options = {}) {
@@ -4305,6 +4813,11 @@ async function selectUniverse(value) {
     history: [],
     stats: {},
   });
+  assetLibraryRequestSequence += 1;
+  assetLibrary = { authorization: {}, packs: [], limits: {} };
+  selectedAssetPackId = "";
+  stopAssetOperationPolling();
+  renderAssetLibrary();
   renderChatSummary();
   setChatLiveState(selectedUniverseId ? "loading" : "waiting");
   renderRecentChatEmpty(selectedUniverseId ? "Loading recent chat..." : "Select a universe to view recent chat.");

@@ -34,9 +34,12 @@ ROBLOX_OAUTH_CLIENT_SECRET=your-roblox-oauth-client-secret
 ROBLOX_OAUTH_REDIRECT_URI=https://game-dashboard-zaya.onrender.com/api/roblox/oauth/callback
 ROBLOX_OAUTH_SCOPES=openid profile
 ROBLOX_OAUTH_LIVE_ACTION_SCOPES=openid profile universe-messaging-service:publish
+ROBLOX_OAUTH_ASSET_SCOPES=openid profile asset:read asset:write
 ```
 
 The extra live-action scope is requested only when a universe owner authorizes **Integrations → Roblox**. The resulting access and rotating refresh tokens are encrypted at rest. Disconnecting the integration revokes the Roblox authorization.
+
+The Assets page requests `asset:read` and `asset:write` only when a user authorizes asset publishing. Add both scopes to the Roblox OAuth app. Bulk-upload files are saved to B2 when it is configured, with a local `data/asset-drafts` fallback for development. The defaults are 20 MB per file, 250 MB and 100 files per saved batch, and 50 saved batches per experience.
 
 For local testing, use:
 

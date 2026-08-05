@@ -60,6 +60,8 @@ const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-
 const discordIntegrationStorePath = path.join(__dirname, "data", "discord-integrations.json");
 const robloxLiveIntegrationStorePath = path.join(__dirname, "data", "roblox-live-integrations.json");
 const playerModerationStorePath = path.join(__dirname, "data", "player-moderation.json");
+const assetLibraryStorePath = path.join(__dirname, "data", "asset-library.json");
+const assetDraftDirectory = path.join(__dirname, "data", "asset-drafts");
 
 loadLocalEnv();
 
@@ -76,6 +78,12 @@ const ROBLOX_OAUTH_REDIRECT_URI = process.env.ROBLOX_OAUTH_REDIRECT_URI || `${ap
 const ROBLOX_OAUTH_SCOPES = process.env.ROBLOX_OAUTH_SCOPES || "openid profile";
 const ROBLOX_OAUTH_LIVE_ACTION_SCOPES = process.env.ROBLOX_OAUTH_LIVE_ACTION_SCOPES
   || `${ROBLOX_OAUTH_SCOPES} universe-messaging-service:publish`;
+const ROBLOX_OAUTH_ASSET_SCOPES = process.env.ROBLOX_OAUTH_ASSET_SCOPES
+  || `${ROBLOX_OAUTH_SCOPES} asset:read asset:write`;
+const MAX_ASSET_FILE_BYTES = Math.min(20 * 1024 * 1024, Math.max(1024, cleanEnvInteger("MAX_ASSET_FILE_BYTES", 20 * 1024 * 1024)));
+const MAX_ASSET_BATCH_BYTES = Math.max(MAX_ASSET_FILE_BYTES, cleanEnvInteger("MAX_ASSET_BATCH_BYTES", 250 * 1024 * 1024));
+const MAX_ASSETS_PER_BATCH = Math.min(100, Math.max(1, cleanEnvInteger("MAX_ASSETS_PER_BATCH", 100)));
+const MAX_ASSET_BATCHES_PER_UNIVERSE = Math.min(200, Math.max(1, cleanEnvInteger("MAX_ASSET_BATCHES_PER_UNIVERSE", 50)));
 const MAX_PRESENCE_BODY_BYTES = 256 * 1024;
 const MAX_MAP_SNAPSHOT_BODY_BYTES = 192 * 1024;
 const MAX_PLAYERS_PER_SERVER = 100;
@@ -193,6 +201,7 @@ const OBJECT_STORAGE_REQUEST_TIMEOUT_MS = cleanEnvInteger(
   "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
   cleanEnvInteger("B2_REQUEST_TIMEOUT_MS", 5000),
 );
+const ASSET_STORAGE_REQUEST_TIMEOUT_MS = Math.max(OBJECT_STORAGE_REQUEST_TIMEOUT_MS, cleanEnvInteger("ASSET_STORAGE_REQUEST_TIMEOUT_MS", 60 * 1000));
 const OBJECT_STORAGE_DISCOVERY_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_DISCOVERY_CACHE_MS", 5 * 60 * 1000);
 const OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_ERROR_RETRY_MS", 10 * 1000);
 const ANALYTICS_RESPONSE_CACHE_MS = cleanEnvInteger("ANALYTICS_RESPONSE_CACHE_MS", 25 * 1000);
@@ -451,6 +460,7 @@ let localCustomEventDeletionStoreLock = Promise.resolve();
 let localDiscordIntegrationStoreLock = Promise.resolve();
 let localRobloxLiveIntegrationStoreLock = Promise.resolve();
 let localPlayerModerationStoreLock = Promise.resolve();
+let localAssetLibraryStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
 const discordIntegrationCache = new Map();
 const discordAlertEvaluationLocks = new Map();
@@ -458,6 +468,8 @@ const robloxLiveSendHistoryByUser = new Map();
 const robloxLiveIntegrationCache = new Map();
 const robloxLiveEvaluationLocks = new Map();
 const robloxLiveTokenRefreshLocks = new Map();
+const assetOAuthTokenRefreshLocks = new Map();
+const assetPackMutationLocks = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
 const RESPONSE_STARTED_AT = Symbol("responseStartedAt");
@@ -623,6 +635,36 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/integrations/roblox-live/oauth" && req.method === "DELETE") {
       return handleRobloxLiveOAuthDisconnect(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/assets" && req.method === "GET") {
+      return handleAssetLibraryGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/assets/oauth/start" && req.method === "GET") {
+      return handleAssetOAuthStart(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/assets/oauth" && req.method === "DELETE") {
+      return handleAssetOAuthDisconnect(req, res, auth);
+    }
+
+    if (url.pathname === "/api/assets/packs" && req.method === "POST") {
+      return handleAssetPackCreate(req, res, auth);
+    }
+
+    const assetPackMatch = url.pathname.match(/^\/api\/assets\/packs\/([^/]+)$/);
+    if (assetPackMatch && req.method === "DELETE") {
+      return handleAssetPackDelete(req, res, auth, decodeURIComponent(assetPackMatch[1]), url.searchParams);
+    }
+
+    const assetPackPublishMatch = url.pathname.match(/^\/api\/assets\/packs\/([^/]+)\/publish$/);
+    if (assetPackPublishMatch && req.method === "POST") {
+      return handleAssetPackPublish(req, res, auth, decodeURIComponent(assetPackPublishMatch[1]));
+    }
+
+    if (url.pathname === "/api/assets/drafts" && req.method === "POST") {
+      return handleAssetDraftSave(req, res, auth, url.searchParams);
     }
 
     if (url.pathname === "/api/integrations/roblox-live/rules" && req.method === "POST") {
@@ -1402,6 +1444,9 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("custom_event_deletions").createIndex({ universeId: 1, eventName: 1 }, { unique: true }),
     db.collection("discord_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
     db.collection("roblox_live_integrations").createIndex({ ownerUserId: 1, universeId: 1 }, { unique: true }),
+    db.collection("asset_oauth_integrations").createIndex({ ownerUserId: 1 }, { unique: true }),
+    db.collection("asset_packs").createIndex({ id: 1 }, { unique: true }),
+    db.collection("asset_packs").createIndex({ ownerUserId: 1, universeId: 1, updatedAt: -1 }),
     db.collection("player_moderation_actions").createIndex({ id: 1 }, { unique: true }),
     db.collection("player_moderation_actions").createIndex({ ownerUserId: 1, universeId: 1, createdAt: -1 }),
     db.collection("player_bans").createIndex({ ownerUserId: 1, universeId: 1, userId: 1 }, { unique: true }),
@@ -2129,6 +2174,841 @@ async function handleRobloxLiveOAuthDisconnect(req, res, auth, searchParams) {
     universeId,
     eventNames: await getDiscordAlertEventNames(auth.userId, universeId),
   }));
+}
+
+async function handleAssetLibraryGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) return sendJson(res, 403, { error: "Universe unavailable" });
+  try {
+    await refreshPendingAssetOperations(auth.userId, universeId);
+  } catch (error) {
+    console.warn("Could not refresh Roblox asset statuses:", error.message || error);
+  }
+  const [integration, packs] = await Promise.all([
+    readAssetOAuthIntegration(auth.userId),
+    readAssetPacks(auth.userId, universeId),
+  ]);
+  return sendJson(res, 200, {
+    universeId,
+    authorization: serializeAssetAuthorization(integration),
+    packs: packs.sort((a, b) => b.updatedAt - a.updatedAt).map(serializeAssetPack),
+    limits: {
+      maxFileBytes: MAX_ASSET_FILE_BYTES,
+      maxBatchBytes: MAX_ASSET_BATCH_BYTES,
+      maxFilesPerBatch: MAX_ASSETS_PER_BATCH,
+      maxBatchesPerUniverse: MAX_ASSET_BATCHES_PER_UNIVERSE,
+    },
+  });
+}
+
+async function handleAssetOAuthStart(req, res, auth, searchParams) {
+  if (!isRobloxOAuthConfigured()) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Roblox OAuth is not configured",
+      message: "Configure the Roblox OAuth client before authorizing asset publishing.",
+      backHref: "/#assets",
+    });
+  }
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendRobloxOAuthResult(res, {
+      ok: false,
+      title: "Universe unavailable",
+      message: "Select a connected Roblox universe before authorizing asset publishing.",
+      backHref: "/#assets",
+    });
+  }
+  const state = crypto.randomBytes(24).toString("base64url");
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  const codeVerifier = crypto.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+  setRobloxOAuthStateCookie(res, {
+    purpose: "assets",
+    state,
+    nonce,
+    codeVerifier,
+    universeId,
+    userId: auth.userId,
+    createdAt: Date.now(),
+  });
+  return redirect(res, getRobloxAuthorizeUrl({
+    state,
+    nonce,
+    codeChallenge,
+    scopes: ROBLOX_OAUTH_ASSET_SCOPES,
+  }));
+}
+
+async function handleAssetOAuthDisconnect(req, res, auth) {
+  const integration = await readAssetOAuthIntegration(auth.userId);
+  const refreshToken = decryptRobloxLiveOAuthToken(integration?.oauth?.refreshToken);
+  if (refreshToken) {
+    try {
+      await revokeRobloxOAuthToken({
+        token: refreshToken,
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+    } catch (error) {
+      console.warn("Could not revoke Roblox asset authorization:", error.message || error);
+    }
+  }
+  await deleteAssetOAuthIntegration(auth.userId);
+  return sendJson(res, 200, { ok: true });
+}
+
+async function handleAssetPackCreate(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const name = cleanString(body?.name, 80);
+  if (name.length < 2) return sendJson(res, 400, { error: "Give this saved batch a name." });
+  const packs = await readAssetPacks(auth.userId, universeId);
+  if (packs.length >= MAX_ASSET_BATCHES_PER_UNIVERSE) {
+    return sendJson(res, 400, { error: `This experience already has ${MAX_ASSET_BATCHES_PER_UNIVERSE} saved batches.` });
+  }
+  const now = Date.now();
+  const pack = normalizeStoredAssetPack({
+    id: crypto.randomUUID(),
+    ownerUserId: auth.userId,
+    universeId,
+    name,
+    assets: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+  await saveAssetPack(pack);
+  return sendJson(res, 201, { ok: true, pack: serializeAssetPack(pack) });
+}
+
+async function handleAssetDraftSave(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const packId = cleanString(searchParams.get("packId"), 120);
+  if (!await userOwnsUniverse(auth.userId, universeId)) {
+    return sendJson(res, 403, { error: "You do not have access to this universe" });
+  }
+  const fileName = cleanAssetFileName(searchParams.get("fileName"));
+  const displayName = cleanString(searchParams.get("displayName"), 80);
+  const assetType = normalizeRobloxAssetType(searchParams.get("assetType"));
+  const contentType = getRobloxAssetContentType(fileName);
+  if (!fileName || !displayName || !assetType || !contentType || !isAssetTypeCompatible(fileName, assetType)) {
+    return sendJson(res, 400, { error: "The asset file, name, or type is not supported." });
+  }
+  let body;
+  try {
+    body = await readBinaryBody(req, MAX_ASSET_FILE_BYTES);
+  } catch (error) {
+    return sendJson(res, error.code === "BODY_TOO_LARGE" ? 413 : 400, { error: error.message });
+  }
+  if (!body.length) return sendJson(res, 400, { error: "The asset file is empty." });
+
+  try {
+    const asset = await withAssetPackMutationLock(packId, async () => {
+      const pack = await getAssetPackById(auth.userId, universeId, packId);
+      if (!pack) throw new Error("Saved batch not found.");
+      if (pack.assets.length >= MAX_ASSETS_PER_BATCH) throw new Error(`A saved batch can contain up to ${MAX_ASSETS_PER_BATCH} files.`);
+      const storedBytes = pack.assets.reduce((total, asset) => total + cleanInteger(asset.byteLength), 0);
+      if (storedBytes + body.length > MAX_ASSET_BATCH_BYTES) {
+        throw new Error(`A saved batch can contain up to ${formatBytesForDisplay(MAX_ASSET_BATCH_BYTES)} of files.`);
+      }
+      const now = Date.now();
+      const id = crypto.randomUUID();
+      const storage = await saveAssetDraftBlob({
+        ownerUserId: auth.userId,
+        universeId,
+        packId,
+        assetId: id,
+        contentType,
+        body,
+      });
+      const nextAsset = {
+        id,
+        fileName,
+        displayName,
+        description: "",
+        assetType,
+        contentType,
+        byteLength: body.length,
+        storage,
+        status: "draft",
+        operationPath: "",
+        assetId: null,
+        moderationState: "",
+        error: "",
+        createdAt: now,
+        updatedAt: now,
+      };
+      pack.assets.push(nextAsset);
+      pack.updatedAt = now;
+      await saveAssetPack(pack);
+      return nextAsset;
+    });
+    return sendJson(res, 201, { ok: true, asset: serializeSavedAsset(asset) });
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message || "Could not save the asset file." });
+  }
+}
+
+async function handleAssetPackDelete(req, res, auth, packId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const pack = await getAssetPackById(auth.userId, universeId, packId);
+  if (!pack) return sendJson(res, 404, { error: "Saved batch not found." });
+  await deleteAssetPackRecord(pack);
+  await Promise.allSettled(pack.assets.map((asset) => deleteAssetDraftBlob(asset.storage)));
+  return sendJson(res, 200, { ok: true });
+}
+
+async function handleAssetPackPublish(req, res, auth, packId) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) return sendJson(res, 403, { error: "Universe unavailable" });
+  const integration = await readAssetOAuthIntegration(auth.userId);
+  if (!serializeAssetAuthorization(integration).connected) {
+    return sendJson(res, 400, { error: "Authorize Roblox asset publishing first." });
+  }
+  const pack = await withAssetPackMutationLock(packId, async () => {
+    const current = await getAssetPackById(auth.userId, universeId, packId);
+    if (!current) throw new Error("Saved batch not found.");
+    let queued = 0;
+    for (const asset of current.assets) {
+      if (asset.status !== "draft" && asset.status !== "failed") continue;
+      asset.status = "uploading";
+      asset.error = "";
+      asset.updatedAt = Date.now();
+      queued += 1;
+    }
+    if (!queued) throw new Error("This batch has no saved files ready to publish.");
+    current.updatedAt = Date.now();
+    await saveAssetPack(current);
+    return current;
+  }).catch((error) => nullifyAssetPublishError(error));
+  if (pack?.error) return sendJson(res, 400, { error: pack.error });
+  queueMicrotask(() => {
+    publishQueuedAssetPack(auth.userId, universeId, packId, project).catch((error) => {
+      console.warn("Bulk asset publish failed:", error.message || error);
+    });
+  });
+  return sendJson(res, 202, { ok: true, pack: serializeAssetPack(pack) });
+}
+
+function nullifyAssetPublishError(error) {
+  return { error: error.message || "Could not start the bulk publish." };
+}
+
+async function publishQueuedAssetPack(ownerUserId, universeId, packId, project) {
+  const initial = await getAssetPackById(ownerUserId, universeId, packId);
+  const queuedIds = (initial?.assets || []).filter((asset) => asset.status === "uploading" && !asset.operationPath).map((asset) => asset.id);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(3, queuedIds.length) }, async () => {
+    while (nextIndex < queuedIds.length) {
+      const assetId = queuedIds[nextIndex++];
+      try {
+        const pack = await getAssetPackById(ownerUserId, universeId, packId);
+        const asset = pack?.assets.find((entry) => entry.id === assetId);
+        if (!asset) continue;
+        const [accessToken, fileBody] = await Promise.all([
+          getAssetOAuthAccessToken(ownerUserId),
+          readAssetDraftBlob(asset.storage),
+        ]);
+        const operation = await createRobloxAsset({ accessToken, project, asset, fileBody });
+        await updateSavedAsset(ownerUserId, universeId, packId, assetId, (entry) => {
+          entry.operationPath = cleanString(operation.path, 500);
+          entry.status = entry.operationPath ? "uploading" : "failed";
+          entry.error = entry.operationPath ? "" : "Roblox did not return an upload operation.";
+        });
+      } catch (error) {
+        await updateSavedAsset(ownerUserId, universeId, packId, assetId, (entry) => {
+          entry.status = "failed";
+          entry.error = cleanString(error.message, 240) || "Roblox rejected the asset upload.";
+        });
+      }
+    }
+  });
+  await Promise.all(workers);
+}
+
+async function createRobloxAsset({ accessToken, project, asset, fileBody }) {
+  let creatorType = normalizeRobloxCreatorType(project.creatorType);
+  let creatorId = cleanInteger(project.creatorId);
+  if (!creatorType || creatorId <= 0) {
+    const universe = await getRobloxUniverseDetails(cleanInteger(project.universeId));
+    creatorType = normalizeRobloxCreatorType(universe?.creator?.type);
+    creatorId = cleanInteger(universe?.creator?.id);
+  }
+  if (!creatorType || creatorId <= 0) throw new Error("Roblox could not determine the asset owner for this experience.");
+  const creator = creatorType === "Group"
+    ? { groupId: String(creatorId) }
+    : { userId: String(creatorId) };
+  const form = new FormData();
+  form.append("request", JSON.stringify({
+    assetType: asset.assetType,
+    displayName: asset.displayName,
+    description: asset.description || "",
+    creationContext: { creator },
+  }));
+  form.append("fileContent", new Blob([fileBody], { type: asset.contentType }), asset.fileName);
+  const response = await fetch("https://apis.roblox.com/assets/v1/assets", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+    signal: AbortSignal.timeout(60 * 1000),
+  });
+  const payload = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(getRobloxAssetError(payload, "Roblox rejected the asset upload."));
+  }
+  return payload;
+}
+
+async function refreshPendingAssetOperations(ownerUserId, universeId) {
+  const packs = await readAssetPacks(ownerUserId, universeId);
+  const pending = [];
+  const stale = [];
+  for (const pack of packs) {
+    for (const asset of pack.assets) {
+      if ((asset.status === "uploading" && asset.operationPath) || (asset.status === "moderating" && asset.assetId)) {
+        pending.push({ packId: pack.id, asset });
+      } else if (asset.status === "uploading" && !asset.operationPath && Date.now() - asset.updatedAt > 2 * 60 * 1000) {
+        stale.push({ packId: pack.id, asset });
+      }
+    }
+  }
+  await Promise.all(stale.map(({ packId, asset }) => updateSavedAsset(ownerUserId, universeId, packId, asset.id, (entry) => {
+    entry.status = "failed";
+    entry.error = "Publishing was interrupted. Retry this saved batch.";
+  })));
+  if (!pending.length) return;
+  const accessToken = await getAssetOAuthAccessToken(ownerUserId);
+  await Promise.all(pending.slice(0, 30).map(async ({ packId, asset }) => {
+    try {
+      const payload = asset.assetId
+        ? await getRobloxAssetMetadata(accessToken, asset.assetId)
+        : await getRobloxAssetOperation(accessToken, asset.operationPath);
+      await updateSavedAsset(ownerUserId, universeId, packId, asset.id, (entry) => applyRobloxAssetStatus(entry, payload));
+    } catch (error) {
+      if (normalizeProviderStatusCode(error) === 401) throw error;
+    }
+  }));
+}
+
+async function getRobloxAssetOperation(accessToken, operationPath) {
+  const operationId = cleanString(operationPath, 500).replace(/^operations\//, "");
+  const response = await fetch(`https://apis.roblox.com/assets/v1/operations/${encodeURIComponent(operationId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15 * 1000),
+  });
+  const payload = await readJsonResponse(response);
+  if (!response.ok) throw createProviderError(response.status, getRobloxAssetError(payload, "Could not read the Roblox upload status."));
+  return payload;
+}
+
+async function getRobloxAssetMetadata(accessToken, assetId) {
+  const response = await fetch(`https://apis.roblox.com/assets/v1/assets/${encodeURIComponent(String(assetId))}?readMask=moderationResult`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15 * 1000),
+  });
+  const payload = await readJsonResponse(response);
+  if (!response.ok) throw createProviderError(response.status, getRobloxAssetError(payload, "Could not read the Roblox asset status."));
+  return payload;
+}
+
+function applyRobloxAssetStatus(asset, payload) {
+  if (payload?.error) {
+    asset.status = "failed";
+    asset.error = getRobloxAssetError(payload, "Roblox rejected the asset upload.");
+    return;
+  }
+  const response = payload?.response || payload;
+  if (payload?.done === false) {
+    asset.status = "uploading";
+    return;
+  }
+  const robloxAssetId = cleanInteger(response?.assetId || String(response?.path || "").split("/").pop());
+  if (robloxAssetId > 0) asset.assetId = robloxAssetId;
+  const moderationState = cleanString(response?.moderationResult?.moderationState || response?.moderationState, 80);
+  asset.moderationState = moderationState;
+  asset.status = /approved/i.test(moderationState) ? "approved" : asset.assetId ? "moderating" : "uploading";
+  asset.error = "";
+}
+
+function getRobloxAssetError(payload, fallback) {
+  return cleanString(
+    payload?.error?.message
+      || payload?.error_description
+      || payload?.message
+      || payload?.errors?.[0]?.message
+      || fallback,
+    240,
+  );
+}
+
+function createProviderError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function normalizeStoredAssetOAuthIntegration(integration) {
+  if (!integration || typeof integration !== "object") return null;
+  const now = Date.now();
+  return {
+    ownerUserId: cleanString(integration.ownerUserId, 120),
+    oauth: integration.oauth && typeof integration.oauth === "object" ? {
+      accessToken: cleanString(integration.oauth.accessToken, 8192),
+      refreshToken: cleanString(integration.oauth.refreshToken, 8192),
+      expiresAt: cleanInteger(integration.oauth.expiresAt),
+      scope: cleanString(integration.oauth.scope, 500),
+      robloxUserId: cleanInteger(integration.oauth.robloxUserId),
+      robloxUsername: cleanString(integration.oauth.robloxUsername, 80),
+      authorizationValid: integration.oauth.authorizationValid !== false,
+      connectedAt: cleanInteger(integration.oauth.connectedAt) || now,
+      lastRefreshedAt: cleanInteger(integration.oauth.lastRefreshedAt) || null,
+      lastError: cleanString(integration.oauth.lastError, 240),
+    } : null,
+    createdAt: cleanInteger(integration.createdAt) || now,
+    updatedAt: cleanInteger(integration.updatedAt) || now,
+  };
+}
+
+function serializeAssetAuthorization(integration) {
+  const oauth = normalizeStoredAssetOAuthIntegration(integration)?.oauth;
+  const scopes = new Set(cleanString(oauth?.scope, 500).split(/\s+/).filter(Boolean));
+  const connected = Boolean(
+    oauth
+      && oauth.authorizationValid !== false
+      && oauth.accessToken
+      && oauth.refreshToken
+      && scopes.has("asset:read")
+      && scopes.has("asset:write"),
+  );
+  return {
+    configured: isRobloxOAuthConfigured(),
+    connected,
+    authorizationValid: oauth?.authorizationValid !== false,
+    robloxUserId: cleanInteger(oauth?.robloxUserId) || null,
+    robloxUsername: cleanString(oauth?.robloxUsername, 80),
+    scope: cleanString(oauth?.scope, 500),
+    connectedAt: cleanInteger(oauth?.connectedAt) || null,
+    lastError: cleanString(oauth?.lastError, 240),
+  };
+}
+
+async function readAssetOAuthIntegration(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeStoredAssetOAuthIntegration(await db.collection("asset_oauth_integrations").findOne(
+      { ownerUserId },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalAssetLibraryStore();
+  return normalizeStoredAssetOAuthIntegration(store.integrations.find((entry) => entry.ownerUserId === ownerUserId));
+}
+
+async function saveAssetOAuthIntegration(integration) {
+  const normalized = normalizeStoredAssetOAuthIntegration(integration);
+  if (!normalized?.ownerUserId) throw new Error("Cannot save an invalid asset authorization.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("asset_oauth_integrations").replaceOne(
+      { ownerUserId: normalized.ownerUserId },
+      normalized,
+      { upsert: true },
+    );
+    return normalized;
+  }
+  await withLocalAssetLibraryStoreLock(async () => {
+    const store = await readLocalAssetLibraryStore();
+    const index = store.integrations.findIndex((entry) => entry.ownerUserId === normalized.ownerUserId);
+    if (index >= 0) store.integrations[index] = normalized;
+    else store.integrations.push(normalized);
+    await writeLocalAssetLibraryStore(store);
+  });
+  return normalized;
+}
+
+async function deleteAssetOAuthIntegration(ownerUserId) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("asset_oauth_integrations").deleteOne({ ownerUserId });
+    return;
+  }
+  await withLocalAssetLibraryStoreLock(async () => {
+    const store = await readLocalAssetLibraryStore();
+    store.integrations = store.integrations.filter((entry) => entry.ownerUserId !== ownerUserId);
+    await writeLocalAssetLibraryStore(store);
+  });
+}
+
+async function getAssetOAuthAccessToken(ownerUserId) {
+  const integration = await readAssetOAuthIntegration(ownerUserId);
+  if (!serializeAssetAuthorization(integration).connected) throw new Error("Authorize Roblox asset publishing first.");
+  if (cleanInteger(integration.oauth.expiresAt) > Date.now() + ROBLOX_OAUTH_REFRESH_EARLY_MS) {
+    return decryptRobloxLiveOAuthToken(integration.oauth.accessToken);
+  }
+  if (assetOAuthTokenRefreshLocks.has(ownerUserId)) return assetOAuthTokenRefreshLocks.get(ownerUserId);
+  const refresh = (async () => {
+    try {
+      const tokens = await refreshRobloxOAuthTokens({
+        refreshToken: decryptRobloxLiveOAuthToken(integration.oauth.refreshToken),
+        clientId: ROBLOX_OAUTH_CLIENT_ID,
+        clientSecret: ROBLOX_OAUTH_CLIENT_SECRET,
+      });
+      const now = Date.now();
+      integration.oauth.accessToken = encryptRobloxLiveOAuthToken(tokens.access_token);
+      if (tokens.refresh_token) integration.oauth.refreshToken = encryptRobloxLiveOAuthToken(tokens.refresh_token);
+      integration.oauth.expiresAt = now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000;
+      integration.oauth.scope = cleanString(tokens.scope || integration.oauth.scope, 500);
+      integration.oauth.authorizationValid = true;
+      integration.oauth.lastRefreshedAt = now;
+      integration.oauth.lastError = "";
+      integration.updatedAt = now;
+      await saveAssetOAuthIntegration(integration);
+      return tokens.access_token;
+    } catch (error) {
+      integration.oauth.authorizationValid = false;
+      integration.oauth.lastError = cleanString(error.message, 240) || "Roblox authorization expired.";
+      integration.updatedAt = Date.now();
+      await saveAssetOAuthIntegration(integration);
+      throw error;
+    }
+  })().finally(() => assetOAuthTokenRefreshLocks.delete(ownerUserId));
+  assetOAuthTokenRefreshLocks.set(ownerUserId, refresh);
+  return refresh;
+}
+
+function normalizeStoredAssetPack(pack) {
+  if (!pack || typeof pack !== "object") return null;
+  const now = Date.now();
+  return {
+    id: cleanString(pack.id, 120),
+    ownerUserId: cleanString(pack.ownerUserId, 120),
+    universeId: cleanInteger(pack.universeId),
+    name: cleanString(pack.name, 80) || "Untitled batch",
+    assets: (Array.isArray(pack.assets) ? pack.assets : []).slice(0, MAX_ASSETS_PER_BATCH).map((asset) => ({
+      id: cleanString(asset?.id, 120),
+      fileName: cleanAssetFileName(asset?.fileName),
+      displayName: cleanString(asset?.displayName, 80),
+      description: cleanString(asset?.description, 1000),
+      assetType: normalizeRobloxAssetType(asset?.assetType),
+      contentType: cleanString(asset?.contentType, 120),
+      byteLength: cleanInteger(asset?.byteLength),
+      storage: normalizeAssetStorageReference(asset?.storage),
+      status: normalizeSavedAssetStatus(asset?.status),
+      operationPath: cleanString(asset?.operationPath, 500),
+      assetId: cleanInteger(asset?.assetId) || null,
+      moderationState: cleanString(asset?.moderationState, 80),
+      error: cleanString(asset?.error, 240),
+      createdAt: cleanInteger(asset?.createdAt) || now,
+      updatedAt: cleanInteger(asset?.updatedAt) || now,
+    })).filter((asset) => asset.id && asset.fileName),
+    createdAt: cleanInteger(pack.createdAt) || now,
+    updatedAt: cleanInteger(pack.updatedAt) || now,
+  };
+}
+
+function serializeAssetPack(pack) {
+  const normalized = normalizeStoredAssetPack(pack);
+  return {
+    id: normalized.id,
+    universeId: normalized.universeId,
+    name: normalized.name,
+    assetCount: normalized.assets.length,
+    assets: normalized.assets.map(serializeSavedAsset),
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+  };
+}
+
+function serializeSavedAsset(asset) {
+  return {
+    id: asset.id,
+    fileName: asset.fileName,
+    displayName: asset.displayName,
+    description: asset.description,
+    assetType: asset.assetType,
+    contentType: asset.contentType,
+    byteLength: asset.byteLength,
+    status: asset.status,
+    assetId: asset.assetId,
+    moderationState: asset.moderationState,
+    error: asset.error,
+    createdAt: asset.createdAt,
+    updatedAt: asset.updatedAt,
+  };
+}
+
+async function readAssetPacks(ownerUserId, universeId) {
+  const db = await getMongoDb();
+  let packs;
+  if (db) {
+    packs = await db.collection("asset_packs").find({ ownerUserId, universeId: cleanInteger(universeId) }).project({ _id: 0 }).toArray();
+  } else {
+    const store = await readLocalAssetLibraryStore();
+    packs = store.packs.filter((pack) => pack.ownerUserId === ownerUserId && cleanInteger(pack.universeId) === cleanInteger(universeId));
+  }
+  return packs.map(normalizeStoredAssetPack).filter(Boolean);
+}
+
+async function getAssetPackById(ownerUserId, universeId, packId) {
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeStoredAssetPack(await db.collection("asset_packs").findOne(
+      { id: packId, ownerUserId, universeId: cleanInteger(universeId) },
+      { projection: { _id: 0 } },
+    ));
+  }
+  const store = await readLocalAssetLibraryStore();
+  return normalizeStoredAssetPack(store.packs.find((pack) => (
+    pack.id === packId
+      && pack.ownerUserId === ownerUserId
+      && cleanInteger(pack.universeId) === cleanInteger(universeId)
+  )));
+}
+
+async function saveAssetPack(pack) {
+  const normalized = normalizeStoredAssetPack(pack);
+  if (!normalized?.id || !normalized.ownerUserId || normalized.universeId <= 0) throw new Error("Cannot save an invalid asset batch.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("asset_packs").replaceOne(
+      { id: normalized.id, ownerUserId: normalized.ownerUserId },
+      normalized,
+      { upsert: true },
+    );
+    return normalized;
+  }
+  await withLocalAssetLibraryStoreLock(async () => {
+    const store = await readLocalAssetLibraryStore();
+    const index = store.packs.findIndex((entry) => entry.id === normalized.id && entry.ownerUserId === normalized.ownerUserId);
+    if (index >= 0) store.packs[index] = normalized;
+    else store.packs.push(normalized);
+    await writeLocalAssetLibraryStore(store);
+  });
+  return normalized;
+}
+
+async function deleteAssetPackRecord(pack) {
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("asset_packs").deleteOne({ id: pack.id, ownerUserId: pack.ownerUserId });
+    return;
+  }
+  await withLocalAssetLibraryStoreLock(async () => {
+    const store = await readLocalAssetLibraryStore();
+    store.packs = store.packs.filter((entry) => !(entry.id === pack.id && entry.ownerUserId === pack.ownerUserId));
+    await writeLocalAssetLibraryStore(store);
+  });
+}
+
+async function updateSavedAsset(ownerUserId, universeId, packId, assetId, update) {
+  return withAssetPackMutationLock(packId, async () => {
+    const pack = await getAssetPackById(ownerUserId, universeId, packId);
+    const asset = pack?.assets.find((entry) => entry.id === assetId);
+    if (!asset) return null;
+    update(asset);
+    asset.updatedAt = Date.now();
+    pack.updatedAt = asset.updatedAt;
+    await saveAssetPack(pack);
+    return asset;
+  });
+}
+
+async function withAssetPackMutationLock(packId, operation) {
+  const key = cleanString(packId, 120);
+  const previous = assetPackMutationLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  assetPackMutationLocks.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (assetPackMutationLocks.get(key) === queued) assetPackMutationLocks.delete(key);
+  }
+}
+
+async function readLocalAssetLibraryStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(assetLibraryStorePath, "utf8"));
+    return {
+      integrations: Array.isArray(payload.integrations) ? payload.integrations : [],
+      packs: Array.isArray(payload.packs) ? payload.packs : [],
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return { integrations: [], packs: [] };
+    throw error;
+  }
+}
+
+async function writeLocalAssetLibraryStore(store) {
+  await fs.mkdir(path.dirname(assetLibraryStorePath), { recursive: true });
+  await fs.writeFile(assetLibraryStorePath, JSON.stringify(store, null, 2));
+}
+
+async function withLocalAssetLibraryStoreLock(operation) {
+  const previous = localAssetLibraryStoreLock;
+  let release;
+  localAssetLibraryStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+function normalizeAssetStorageReference(storage) {
+  if (!storage || typeof storage !== "object") return null;
+  const provider = storage.provider === "b2" ? "b2" : storage.provider === "local" ? "local" : "";
+  const key = cleanString(storage.key, 500);
+  return provider && key ? { provider, key } : null;
+}
+
+async function saveAssetDraftBlob({ ownerUserId, universeId, packId, assetId, contentType, body }) {
+  const key = `asset-drafts/${cleanString(ownerUserId, 120)}/${cleanInteger(universeId)}/${cleanString(packId, 120)}/${cleanString(assetId, 120)}`;
+  if (OBJECT_STORAGE_CONFIGURED) {
+    const client = await getB2S3Client();
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    await sendAssetStorageCommand(client, new PutObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }), `B2 PUT ${key}`);
+    return { provider: "b2", key };
+  }
+  const localKey = `${cleanString(assetId, 120)}.bin`;
+  await fs.mkdir(assetDraftDirectory, { recursive: true });
+  await fs.writeFile(path.join(assetDraftDirectory, localKey), body);
+  return { provider: "local", key: localKey };
+}
+
+async function readAssetDraftBlob(storage) {
+  const normalized = normalizeAssetStorageReference(storage);
+  if (!normalized) throw new Error("The saved asset file is unavailable.");
+  if (normalized.provider === "b2") {
+    const client = await getB2S3Client();
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const response = await sendAssetStorageCommand(client, new GetObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: normalized.key,
+    }), `B2 GET ${normalized.key}`);
+    return streamToBuffer(response.Body);
+  }
+  return fs.readFile(path.join(assetDraftDirectory, path.basename(normalized.key)));
+}
+
+async function deleteAssetDraftBlob(storage) {
+  const normalized = normalizeAssetStorageReference(storage);
+  if (!normalized) return;
+  if (normalized.provider === "b2") {
+    const client = await getB2S3Client();
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    await sendAssetStorageCommand(client, new DeleteObjectCommand({
+      Bucket: B2_BUCKET_NAME,
+      Key: normalized.key,
+    }), `B2 DELETE ${normalized.key}`);
+    return;
+  }
+  await fs.rm(path.join(assetDraftDirectory, path.basename(normalized.key)), { force: true });
+}
+
+async function sendAssetStorageCommand(client, command, operation) {
+  const options = ASSET_STORAGE_REQUEST_TIMEOUT_MS > 0
+    ? { abortSignal: AbortSignal.timeout(ASSET_STORAGE_REQUEST_TIMEOUT_MS) }
+    : undefined;
+  return runTimedOperation(operation, () => client.send(command, options));
+}
+
+function cleanAssetFileName(value) {
+  return cleanString(path.basename(String(value || "")).replace(/[\x00-\x1f]/g, ""), 180);
+}
+
+function normalizeRobloxAssetType(value) {
+  const normalized = cleanString(value, 32).toLowerCase();
+  const types = {
+    animation: "Animation",
+    audio: "Audio",
+    decal: "Decal",
+    image: "Image",
+    model: "Model",
+    video: "Video",
+  };
+  return types[normalized] || "";
+}
+
+function getRobloxAssetContentType(fileName) {
+  const extension = path.extname(String(fileName || "")).toLowerCase();
+  return ({
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".bmp": "image/bmp",
+    ".tga": "image/tga",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".fbx": "model/fbx",
+    ".gltf": "model/gltf+json",
+    ".glb": "model/gltf-binary",
+    ".rbxm": "model/x-rbxm",
+    ".rbxmx": "model/x-rbxm",
+    ".mp4": "video/mp4",
+    ".mov": "video/mov",
+  })[extension] || "";
+}
+
+function isAssetTypeCompatible(fileName, assetType) {
+  const extension = path.extname(String(fileName || "")).toLowerCase();
+  const compatible = {
+    Animation: new Set([".rbxm", ".rbxmx"]),
+    Audio: new Set([".mp3", ".ogg", ".wav", ".flac"]),
+    Decal: new Set([".png", ".jpg", ".jpeg", ".bmp", ".tga"]),
+    Image: new Set([".png", ".jpg", ".jpeg", ".bmp", ".tga"]),
+    Model: new Set([".fbx", ".gltf", ".glb", ".rbxm", ".rbxmx"]),
+    Video: new Set([".mp4", ".mov"]),
+  };
+  return Boolean(compatible[assetType]?.has(extension));
+}
+
+function normalizeSavedAssetStatus(value) {
+  const status = cleanString(value, 32).toLowerCase();
+  return new Set(["draft", "uploading", "moderating", "approved", "failed"]).has(status) ? status : "draft";
+}
+
+async function readBinaryBody(req, maxBytes) {
+  const chunks = [];
+  let byteLength = 0;
+  for await (const chunk of req) {
+    byteLength += chunk.length;
+    if (byteLength > maxBytes) {
+      const error = new Error(`Asset files must be ${Math.round(maxBytes / (1024 * 1024))} MB or smaller.`);
+      error.code = "BODY_TOO_LARGE";
+      throw error;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, byteLength);
 }
 
 async function handleRobloxLiveRuleSave(req, res, auth, requestedRuleId = "") {
@@ -4539,7 +5419,11 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
       message: "Start the universe connection again from the dashboard.",
     });
   }
-  const oauthBackHref = oauthState.purpose === "roblox-live" ? "/#roblox-live" : "/";
+  const oauthBackHref = oauthState.purpose === "roblox-live"
+    ? "/#roblox-live"
+    : oauthState.purpose === "assets"
+      ? "/#assets"
+      : "/";
 
   if (Date.now() - cleanInteger(oauthState.createdAt) > ROBLOX_OAUTH_STATE_MAX_AGE_MS) {
     return sendRobloxOAuthResult(res, {
@@ -4661,6 +5545,77 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
         universeId,
         universeName: project.name || `Universe ${universeId}`,
         backHref: "/#roblox-live",
+      });
+    }
+
+    if (oauthState.purpose === "assets") {
+      if (!auth || oauthState.userId !== auth.userId) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Asset authorization expired",
+          message: "Start asset publishing authorization again from the dashboard.",
+          backHref: "/#assets",
+        });
+      }
+      const universeId = cleanInteger(oauthState.universeId);
+      const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+      if (!project || isDemoProject(project)) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Universe unavailable",
+          message: "Select a connected Roblox universe before authorizing asset publishing.",
+          backHref: "/#assets",
+        });
+      }
+      if (cleanInteger(project.robloxUserId) > 0 && cleanInteger(project.robloxUserId) !== cleanInteger(robloxUser.sub)) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Wrong Roblox account",
+          message: "Authorize with the same Roblox account that connected this experience.",
+          backHref: "/#assets",
+        });
+      }
+      const grantedScopes = new Set(cleanString(tokens.scope, 500).split(/\s+/).filter(Boolean));
+      if (!grantedScopes.has("asset:read") || !grantedScopes.has("asset:write")) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Asset permission missing",
+          message: "Authorize the asset:read and asset:write permissions to publish Roblox assets.",
+          backHref: "/#assets",
+        });
+      }
+      if (!tokens.refresh_token) {
+        return sendRobloxOAuthResult(res, {
+          ok: false,
+          title: "Renewable authorization missing",
+          message: "Roblox did not return a refresh token. Start authorization again.",
+          backHref: "/#assets",
+        });
+      }
+      const now = Date.now();
+      await saveAssetOAuthIntegration({
+        ownerUserId: auth.userId,
+        oauth: {
+          accessToken: encryptRobloxLiveOAuthToken(tokens.access_token),
+          refreshToken: encryptRobloxLiveOAuthToken(tokens.refresh_token),
+          expiresAt: now + Math.max(cleanInteger(tokens.expires_in), 1) * 1000,
+          scope: cleanString(tokens.scope, 500),
+          robloxUserId: cleanInteger(robloxUser.sub),
+          robloxUsername: cleanString(robloxUser.preferred_username || robloxUser.name || robloxUser.nickname, 80),
+          authorizationValid: true,
+          connectedAt: now,
+          lastRefreshedAt: now,
+          lastError: "",
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+      return sendRobloxOAuthResult(res, {
+        ok: true,
+        title: "Asset publishing authorized",
+        message: "Your saved batches are ready to publish to Roblox.",
+        universeId,
+        backHref: "/#assets",
       });
     }
 

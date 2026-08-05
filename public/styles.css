@@ -5041,6 +5041,460 @@ body[data-active-view="moderation"] .topbarActions {
   overflow: hidden;
 }
 
+/* Experience asset publishing */
+.assetsPage {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.assetAuthorization {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 22px;
+  border-color: rgba(34, 211, 238, 0.25);
+  background:
+    radial-gradient(circle at 90% 20%, rgba(34, 211, 238, 0.1), transparent 34%),
+    var(--surface);
+}
+
+.assetAuthorization h2,
+.assetSectionHeader h2 {
+  margin: 3px 0 5px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.assetAuthorization p,
+.assetSectionHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.assetAuthorizationActions,
+.assetBatchActions,
+.assetPackActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.assetEyebrow {
+  color: var(--purple);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.assetWorkspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(480px, 1.45fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.assetUploadPanel,
+.assetLibraryPanel {
+  padding: 20px;
+  min-width: 0;
+}
+
+.assetSectionHeader,
+.assetLibraryHeader,
+.assetBatchToolbar,
+.assetPackDetailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.assetDropZone {
+  width: 100%;
+  min-height: 190px;
+  margin-top: 18px;
+  border: 1px dashed rgba(148, 163, 184, 0.38);
+  border-radius: 12px;
+  background: rgba(8, 15, 30, 0.5);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 24px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.assetDropZone:hover,
+.assetDropZone:focus-visible,
+.assetDropZone.isDragging {
+  border-color: var(--purple);
+  background: rgba(34, 211, 238, 0.07);
+  outline: none;
+}
+
+.assetDropZone.isDragging {
+  transform: scale(1.005);
+}
+
+.assetDropZone strong {
+  font-size: 14px;
+}
+
+.assetDropZone > span:last-child {
+  max-width: 360px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.assetDropIcon {
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--purple);
+}
+
+.assetDropIcon svg,
+.assetFileIcon svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.assetBatchEditor {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.assetBatchNameField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.assetBatchNameField > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assetBatchNameField input,
+.assetFileFields input,
+.assetFileFields select {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 11, 24, 0.72);
+  color: var(--text);
+  font: inherit;
+}
+
+.assetBatchNameField input {
+  height: 38px;
+  padding: 0 11px;
+}
+
+.assetBatchNameField input:focus,
+.assetFileFields input:focus,
+.assetFileFields select:focus {
+  border-color: var(--purple);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1);
+}
+
+.assetBatchSummary {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.assetStagingList,
+.assetPackAssetList {
+  display: grid;
+  gap: 8px;
+  max-height: 410px;
+  overflow: auto;
+}
+
+.assetStagingRow,
+.assetPackAssetRow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 15, 30, 0.54);
+  padding: 10px;
+}
+
+.assetFileIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--muted);
+}
+
+.assetFileFields {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 108px;
+  gap: 7px;
+  min-width: 0;
+}
+
+.assetFileFields input,
+.assetFileFields select {
+  height: 34px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.assetFileMeta,
+.assetPackAssetIdentity {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.assetFileMeta strong,
+.assetPackAssetIdentity strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetFileMeta span,
+.assetPackAssetIdentity span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.assetRemoveFileButton,
+.assetPackDeleteButton {
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.assetRemoveFileButton:hover,
+.assetPackDeleteButton:hover {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fca5a5;
+}
+
+.assetBatchActions {
+  justify-content: flex-end;
+}
+
+.assetLibraryLayout {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.34fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+  min-height: 330px;
+}
+
+.assetPackList {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  padding-right: 12px;
+  border-right: 1px solid var(--line);
+}
+
+.assetPackButton {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assetPackButton:hover,
+.assetPackButton.active {
+  border-color: rgba(34, 211, 238, 0.22);
+  background: rgba(34, 211, 238, 0.07);
+}
+
+.assetPackButton strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetPackButton span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.assetPackDetail {
+  min-width: 0;
+}
+
+.assetPackDetailHeader {
+  margin-bottom: 12px;
+}
+
+.assetPackDetailHeader h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.assetPackDetailHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.assetPackAssetRow {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+
+.assetStateBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.assetStateBadge[data-state="approved"] {
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(74, 222, 128, 0.08);
+  color: #86efac;
+}
+
+.assetStateBadge[data-state="uploading"],
+.assetStateBadge[data-state="moderating"] {
+  border-color: rgba(34, 211, 238, 0.28);
+  background: rgba(34, 211, 238, 0.08);
+  color: #67e8f9;
+}
+
+.assetStateBadge[data-state="failed"] {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fca5a5;
+}
+
+.assetEmptyState {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.assetEmptyState strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.assetEmptyState span {
+  max-width: 340px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.assetStatus {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.assetStatus[data-state="error"] {
+  color: #fca5a5;
+}
+
+.assetStatus[data-state="success"] {
+  color: #86efac;
+}
+
+@media (max-width: 1050px) {
+  .assetWorkspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .assetAuthorization,
+  .assetSectionHeader,
+  .assetLibraryHeader,
+  .assetPackDetailHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .assetLibraryLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .assetPackList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .assetFileFields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .playerModerationLookupControls {
   display: grid;
   grid-template-columns: minmax(220px, 300px) auto auto;
