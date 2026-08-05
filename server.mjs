@@ -42,6 +42,7 @@ import {
   normalizeProjectSecret,
   verifyProjectSecret,
 } from "./lib/project-secrets.mjs";
+import { matchesPlayerKickSession } from "./lib/player-moderation.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -3972,9 +3973,25 @@ async function handlePlayerModerationAction(req, res, auth, dashboardUser) {
     return sendJson(res, 400, { error: "Choose Kick, Ban, or Unban." });
   }
 
-  const userId = cleanInteger(body?.userId);
-  if (!Number.isSafeInteger(userId) || userId <= 0) {
-    return sendJson(res, 400, { error: "Choose a valid Roblox player." });
+  let userId = cleanInteger(body?.userId);
+  let resolvedTarget = null;
+  if (userId <= 0) {
+    const targetQuery = cleanString(body?.target, 64);
+    if (!targetQuery) {
+      return sendJson(res, 400, { error: "Enter one Roblox username or user ID." });
+    }
+
+    let targets;
+    try {
+      targets = await resolveUserTargets(targetQuery);
+    } catch (error) {
+      return sendJson(res, 502, { error: error.message || "Could not resolve that Roblox username." });
+    }
+    if (targets.userIds.length !== 1) {
+      return sendJson(res, 404, { error: "That Roblox username or user ID was not found." });
+    }
+    userId = targets.userIds[0];
+    resolvedTarget = targets.resolved.find((target) => target.userId === userId) || null;
   }
 
   const reason = cleanString(body?.reason, 240);
@@ -3985,18 +4002,15 @@ async function handlePlayerModerationAction(req, res, auth, dashboardUser) {
   const now = Date.now();
   const player = findLiveModerationPlayer(auth.userId, universeId, userId);
   const existingBan = await getActivePlayerBan(auth.userId, universeId, userId);
-  if (actionType === "kick" && !player) {
-    return sendJson(res, 409, { error: "That player is no longer online." });
-  }
   if (actionType === "unban" && !existingBan) {
     return sendJson(res, 409, { error: "That player is not currently banned." });
   }
   const username = cleanString(
-    player?.username || existingBan?.username || body?.username,
+    player?.username || existingBan?.username || resolvedTarget?.username || body?.username,
     64,
   ) || `User ${userId}`;
   const displayName = cleanString(
-    player?.displayName || existingBan?.displayName || body?.displayName,
+    player?.displayName || existingBan?.displayName || resolvedTarget?.displayName || body?.displayName,
     64,
   );
   const action = {
@@ -4013,17 +4027,22 @@ async function handlePlayerModerationAction(req, res, auth, dashboardUser) {
     createdByUsername: getDashboardUserLabel(dashboardUser),
     deliveryStatus: actionType === "unban" ? "saved" : "heartbeat",
     deliveryError: "",
+    targetJobId: actionType === "kick" ? cleanString(player?.jobId, 128) : "",
+    targetJoinedAt: actionType === "kick" ? cleanTimestampMs(player?.joinedAt) : 0,
+    targetSessionId: actionType === "kick" ? cleanString(player?.sessionId, 120) : "",
   };
 
+  const publishPromise = actionType === "unban"
+    ? null
+    : publishPlayerModerationAction(project, action)
+      .then((published) => ({ published, error: "" }))
+      .catch((error) => ({ published: false, error: cleanString(error?.message, 240) }));
   await savePlayerModerationAction(action);
 
-  if (actionType !== "unban") {
-    try {
-      const published = await publishPlayerModerationAction(project, action);
-      if (published) action.deliveryStatus = "published";
-    } catch (error) {
-      action.deliveryError = cleanString(error?.message, 240);
-    }
+  if (publishPromise) {
+    const delivery = await publishPromise;
+    if (delivery.published) action.deliveryStatus = "published";
+    action.deliveryError = delivery.error;
     await updatePlayerModerationActionDelivery(action);
   }
 
@@ -5027,6 +5046,7 @@ function normalizePresence(body) {
     username: cleanString(player?.username || player?.name, 64),
     displayName: cleanString(player?.displayName, 64),
     joinedAt: cleanTimestampMs(player?.joinedAt),
+    sessionId: cleanString(player?.sessionId, 120),
     platform: normalizeAnalyticsPlatform(player?.platform || player?.device),
     whenUserFirstPlayed: normalizeWhenUserFirstPlayed(player?.whenUserFirstPlayed),
   })).filter((player) => player.userId > 0 && player.username);
@@ -14230,6 +14250,7 @@ function rememberLivePresence(presence) {
       username: cleanString(player.username, 64),
       displayName: cleanString(player.displayName, 64),
       joinedAt: cleanInteger(player.joinedAt),
+      sessionId: cleanString(player.sessionId, 120),
     })).filter((player) => player.userId > 0),
   });
   livePresenceByUniverseId.set(universeId, servers);
@@ -14337,6 +14358,9 @@ function normalizeStoredPlayerModerationAction(action) {
     ...serialized,
     ownerUserId: cleanString(action?.ownerUserId, 120),
     createdByUserId: cleanString(action?.createdByUserId, 120),
+    targetJobId: cleanString(action?.targetJobId, 128),
+    targetJoinedAt: cleanTimestampMs(action?.targetJoinedAt),
+    targetSessionId: cleanString(action?.targetSessionId, 120),
   };
 }
 
@@ -14544,7 +14568,10 @@ async function getActivePlayerBan(ownerUserId, universeId, userId) {
 }
 
 async function getHeartbeatModerationCommands(presence, project) {
-  const userIds = (presence.players || []).map((player) => cleanInteger(player.userId)).filter((id) => id > 0);
+  const playersByUserId = new Map((presence.players || [])
+    .map((player) => [cleanInteger(player.userId), player])
+    .filter(([userId]) => userId > 0));
+  const userIds = [...playersByUserId.keys()];
   if (!userIds.length || !project) return [];
 
   const [bans, kicks] = await Promise.all([
@@ -14558,6 +14585,8 @@ async function getHeartbeatModerationCommands(presence, project) {
   ]);
   const commandsByUserId = new Map();
   for (const kick of kicks) {
+    const player = playersByUserId.get(cleanInteger(kick.userId));
+    if (!matchesPlayerKickSession(kick, player, presence.jobId)) continue;
     commandsByUserId.set(cleanInteger(kick.userId), {
       id: cleanString(kick.id, 120),
       action: "kick",

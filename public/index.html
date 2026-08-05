@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260727-17/styles.css">
+    <link rel="stylesheet" href="/assets/20260805-2/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1702,6 +1702,21 @@
 
           <p class="playerModerationStatus" id="playerModerationStatus" aria-live="polite"></p>
 
+          <section class="panel playerModerationPanel playerModerationLookupPanel">
+            <header class="playerModerationSectionHeader">
+              <div>
+                <h2>Moderate any player</h2>
+                <p>Enter one Roblox username or user ID. The action is only sent after you confirm it in the next window.</p>
+              </div>
+            </header>
+            <div class="playerModerationLookupControls">
+              <label class="srOnly" for="playerModerationLookupInput">Roblox username or user ID</label>
+              <input id="playerModerationLookupInput" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Username or user ID">
+              <button class="playerModerationActionButton" type="button" data-player-moderation-manual-action="kick">Kick</button>
+              <button class="playerModerationActionButton danger" type="button" data-player-moderation-manual-action="ban">Ban</button>
+            </div>
+          </section>
+
           <section class="panel playerModerationPanel">
             <header class="playerModerationSectionHeader">
               <div>
@@ -1768,6 +1783,7 @@
                 <input id="playerModerationUserId" type="hidden">
                 <input id="playerModerationUsername" type="hidden">
                 <input id="playerModerationDisplayName" type="hidden">
+                <input id="playerModerationTargetQuery" type="hidden">
                 <div class="playerModerationTarget" id="playerModerationTarget"></div>
                 <label class="discordFormField" for="playerModerationReason">
                   <span id="playerModerationReasonLabel">Reason</span>
@@ -1777,7 +1793,7 @@
                 <p class="playerModerationFormStatus" id="playerModerationFormStatus" aria-live="polite"></p>
                 <footer>
                   <button class="button secondary" id="playerModerationCancelButton" type="button">Cancel</button>
-                  <button class="button danger" id="playerModerationSubmitButton" type="submit">Kick player</button>
+                  <button class="button danger" id="playerModerationSubmitButton" type="button">Kick player</button>
                 </footer>
               </form>
             </section>
@@ -1870,6 +1886,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260805-1/app.js"></script>
+    <script defer src="/assets/20260805-2/app.js"></script>
   </body>
 </html>

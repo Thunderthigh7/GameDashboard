@@ -15,6 +15,7 @@ import {
   normalizeProjectSecret,
   verifyProjectSecret,
 } from "../lib/project-secrets.mjs";
+import { matchesPlayerKickSession } from "../lib/player-moderation.mjs";
 
 const firstProjectSecret = generateProjectSecret();
 const rotatedProjectSecret = generateProjectSecret();
@@ -27,6 +28,38 @@ assert.equal(verifyProjectSecret(firstProjectSecret, firstProjectSecretHash), tr
 assert.equal(verifyProjectSecret(` ${firstProjectSecret}\n`, firstProjectSecretHash), true);
 assert.equal(verifyProjectSecret(firstProjectSecret, rotatedProjectSecretHash), false);
 assert.equal(verifyProjectSecret(rotatedProjectSecret, rotatedProjectSecretHash), true);
+
+const targetedKick = {
+  userId: 123456,
+  targetJobId: "job-1",
+  targetJoinedAt: 1_722_000_000_000,
+  targetSessionId: "session-1",
+};
+assert.equal(matchesPlayerKickSession(targetedKick, {
+  userId: 123456,
+  joinedAt: 1_722_000_000,
+  sessionId: "session-1",
+}, "job-1"), true);
+assert.equal(matchesPlayerKickSession(targetedKick, {
+  userId: 123456,
+  joinedAt: 1_722_000_030,
+  sessionId: "session-2",
+}, "job-1"), false, "a kick must not follow the player into a new join session");
+assert.equal(matchesPlayerKickSession(targetedKick, {
+  userId: 123456,
+  joinedAt: 1_722_000_000,
+  sessionId: "session-2",
+}, "job-1"), false, "a same-second rejoin must still count as a new session");
+assert.equal(matchesPlayerKickSession(targetedKick, {
+  userId: 123456,
+  joinedAt: 1_722_000_000,
+  sessionId: "session-1",
+}, "job-2"), false, "a kick must not follow the player into another server");
+assert.equal(matchesPlayerKickSession({ userId: 123456 }, {
+  userId: 123456,
+  joinedAt: 1_722_000_000,
+  sessionId: "session-1",
+}, "job-1"), false, "legacy kicks without a captured session must not replay");
 
 assert.equal(normalizeRobloxActionKey(" Hourly_Event.Start "), "hourly_event.start");
 assert.throws(() => normalizeRobloxActionKey("1bad"), /start with a letter/);
@@ -316,8 +349,28 @@ assert.match(serverSource, /db\.collection\("player_bans"\)/);
 assert.match(serverSource, /getHeartbeatModerationCommands\(presence\.value, project\)/);
 assert.match(indexSource, /data-dashboard-view="moderation"/);
 assert.match(indexSource, /data-view-panel="moderation"[\s\S]*?id="moderationLivePlayerList"[\s\S]*?id="moderationActiveBanList"[\s\S]*?id="moderationHistoryList"/);
+assert.match(indexSource, /id="playerModerationLookupInput"[\s\S]*?data-player-moderation-manual-action="kick"[\s\S]*?data-player-moderation-manual-action="ban"/);
+assert.match(indexSource, /id="playerModerationSubmitButton" type="button"/);
 assert.match(appSource, /function loadPlayerModeration\(options = \{\}\)/);
 assert.match(appSource, /function savePlayerModerationAction\(\)/);
+assert.match(appSource, /playerModerationSubmitButton\?\.addEventListener\("click", savePlayerModerationAction\)/);
+assert.match(appSource, /target:\s*playerModerationTargetQuery\.value/);
+assert.match(serverSource, /resolveUserTargets\(targetQuery\)/);
+assert.doesNotMatch(serverSource, /actionType === "kick" && !player/);
+assert.match(serverSource, /targetJobId:\s*actionType === "kick"/);
+assert.match(serverSource, /targetJoinedAt:\s*actionType === "kick"/);
+assert.match(serverSource, /targetSessionId:\s*actionType === "kick"/);
+assert.match(serverSource, /matchesPlayerKickSession\(kick, player, presence\.jobId\)/);
+assert.match(methodsSource, /sessionId = playerSessionIds\[player\.UserId\]/);
+const manualActionOpenerSource = appSource.match(
+  /function handlePlayerModerationManualAction\(event\)([\s\S]*?)function openPlayerModerationDialog/,
+)?.[1] || "";
+assert.ok(manualActionOpenerSource);
+assert.doesNotMatch(manualActionOpenerSource, /request\(|savePlayerModerationAction\(/);
+assert.ok(
+  serverSource.indexOf("const publishPromise = actionType") < serverSource.indexOf("await savePlayerModerationAction(action)"),
+  "moderation messaging should start before waiting for durable history storage",
+);
 assert.doesNotMatch(methodsSource, /pendingLiveActionAcks|liveActionAcks|getLiveActionAcksPayload|liveActionKeys|getRegisteredLiveActionKeys|queueLiveActionAck/);
 assert.doesNotMatch(methodsSource, /roanalytics_test/);
 const liveActionHandlerSource = methodsSource.match(

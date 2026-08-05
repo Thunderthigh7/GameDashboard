@@ -13,6 +13,7 @@ local SYSTEM_EVENT_NAMES = {
 	chat_message = true,
 }
 local playerJoinTimes = {}
+local playerSessionIds = {}
 local playerAnalyticsContexts = {}
 local playerSegmentRequests = {}
 local playerConnections = {}
@@ -638,6 +639,7 @@ end
 
 local function trackPlayer(player)
 	playerJoinTimes[player.UserId] = playerJoinTimes[player.UserId] or os.time()
+	playerSessionIds[player.UserId] = playerSessionIds[player.UserId] or HttpService:GenerateGUID(false)
 	playerAnalyticsContexts[player.UserId] = playerAnalyticsContexts[player.UserId] or {}
 	leaveSampledUserIds[player.UserId] = nil
 	requestPlayerSegments(player)
@@ -679,6 +681,7 @@ local function untrackPlayer(player)
 	end)
 
 	playerJoinTimes[player.UserId] = nil
+	playerSessionIds[player.UserId] = nil
 
 	local connection = playerConnections[player]
 	if connection then
@@ -825,6 +828,7 @@ local function getPlayersPayload()
 			username = player.Name,
 			displayName = player.DisplayName,
 			joinedAt = playerJoinTimes[player.UserId],
+			sessionId = playerSessionIds[player.UserId],
 		}
 		applyPlayerAnalyticsContext(playerPayload, player)
 		table.insert(players, playerPayload)

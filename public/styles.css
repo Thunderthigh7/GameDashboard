@@ -5041,6 +5041,19 @@ body[data-active-view="moderation"] .topbarActions {
   overflow: hidden;
 }
 
+.playerModerationLookupControls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 16px 20px 20px;
+}
+
+.playerModerationLookupControls input {
+  width: 100%;
+  min-height: 40px;
+}
+
 .playerModerationSectionHeader {
   padding: 18px 20px;
   border-bottom: 1px solid var(--line);
@@ -5258,6 +5271,16 @@ body[data-active-view="moderation"] .topbarActions {
 
   .playerModerationActions {
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .playerModerationLookupControls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .playerModerationLookupControls input {
+    grid-column: 1 / -1;
   }
 }
 

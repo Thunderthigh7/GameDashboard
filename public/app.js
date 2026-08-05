@@ -39,6 +39,8 @@ const playerModerationStatus = document.querySelector("#playerModerationStatus")
 const moderationLivePlayerList = document.querySelector("#moderationLivePlayerList");
 const moderationActiveBanList = document.querySelector("#moderationActiveBanList");
 const moderationHistoryList = document.querySelector("#moderationHistoryList");
+const playerModerationLookupInput = document.querySelector("#playerModerationLookupInput");
+const playerModerationManualActionButtons = document.querySelectorAll("[data-player-moderation-manual-action]");
 const playerModerationDialog = document.querySelector("#playerModerationDialog");
 const playerModerationDialogBackdrop = document.querySelector("#playerModerationDialogBackdrop");
 const playerModerationDialogCloseButton = document.querySelector("#playerModerationDialogCloseButton");
@@ -48,6 +50,7 @@ const playerModerationAction = document.querySelector("#playerModerationAction")
 const playerModerationUserId = document.querySelector("#playerModerationUserId");
 const playerModerationUsername = document.querySelector("#playerModerationUsername");
 const playerModerationDisplayName = document.querySelector("#playerModerationDisplayName");
+const playerModerationTargetQuery = document.querySelector("#playerModerationTargetQuery");
 const playerModerationTarget = document.querySelector("#playerModerationTarget");
 const playerModerationReasonLabel = document.querySelector("#playerModerationReasonLabel");
 const playerModerationReason = document.querySelector("#playerModerationReason");
@@ -429,7 +432,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260727-17";
+const DASHBOARD_ASSET_VERSION = "20260805-2";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -815,10 +818,13 @@ function bindEvents() {
   refreshModerationButton?.addEventListener("click", () => loadPlayerModeration({ force: true }));
   moderationLivePlayerList?.addEventListener("click", handlePlayerModerationTableAction);
   moderationActiveBanList?.addEventListener("click", handlePlayerModerationTableAction);
+  for (const button of playerModerationManualActionButtons) {
+    button.addEventListener("click", handlePlayerModerationManualAction);
+  }
   playerModerationForm?.addEventListener("submit", (event) => {
     event.preventDefault();
-    savePlayerModerationAction();
   });
+  playerModerationSubmitButton?.addEventListener("click", savePlayerModerationAction);
   playerModerationReason?.addEventListener("input", updatePlayerModerationReasonCount);
   playerModerationDialogCloseButton?.addEventListener("click", closePlayerModerationDialog);
   playerModerationCancelButton?.addEventListener("click", closePlayerModerationDialog);
@@ -1684,6 +1690,8 @@ function renderModerationIdentity(username, displayName, userId) {
 }
 
 function handlePlayerModerationTableAction(event) {
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.target.closest("[data-player-moderation-action]");
   if (!button || button.disabled) return;
   openPlayerModerationDialog({
@@ -1691,6 +1699,24 @@ function handlePlayerModerationTableAction(event) {
     userId: button.dataset.playerId,
     username: button.dataset.playerUsername,
     displayName: button.dataset.playerDisplayName,
+  });
+}
+
+function handlePlayerModerationManualAction(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const targetQuery = String(playerModerationLookupInput?.value || "").trim();
+  if (!targetQuery) {
+    setPlayerModerationStatus("Enter one Roblox username or user ID.", "error");
+    playerModerationLookupInput?.focus();
+    return;
+  }
+
+  setPlayerModerationStatus("");
+  openPlayerModerationDialog({
+    action: button.dataset.playerModerationManualAction,
+    targetQuery,
   });
 }
 
@@ -1702,16 +1728,19 @@ function openPlayerModerationDialog(target) {
   playerModerationUserId.value = String(target.userId || "");
   playerModerationUsername.value = String(target.username || "");
   playerModerationDisplayName.value = String(target.displayName || "");
+  playerModerationTargetQuery.value = String(target.targetQuery || "");
   playerModerationDialogTitle.textContent = `${actionLabel} player`;
   playerModerationReasonLabel.textContent = action === "unban" ? "Reason for unbanning" : "Reason";
   playerModerationSubmitButton.textContent = `${actionLabel} player`;
   playerModerationSubmitButton.classList.toggle("danger", action !== "unban");
   playerModerationReason.value = "";
-  playerModerationTarget.innerHTML = renderModerationIdentity(
-    target.username || `User ${target.userId}`,
-    target.displayName || "",
-    target.userId,
-  );
+  playerModerationTarget.innerHTML = target.targetQuery
+    ? `<strong>${escapeHtml(target.targetQuery)}</strong><span>Roblox username or user ID</span>`
+    : renderModerationIdentity(
+      target.username || `User ${target.userId}`,
+      target.displayName || "",
+      target.userId,
+    );
   setPlayerModerationFormStatus("");
   updatePlayerModerationReasonCount();
   playerModerationDialog.hidden = false;
@@ -1760,6 +1789,7 @@ async function savePlayerModerationAction() {
         userId: Number(playerModerationUserId.value),
         username: playerModerationUsername.value,
         displayName: playerModerationDisplayName.value,
+        target: playerModerationTargetQuery.value,
         reason,
       }),
     });
@@ -1767,6 +1797,7 @@ async function savePlayerModerationAction() {
     playerModerationBusy = false;
     playerModerationDialog.hidden = true;
     playerModerationForm.reset();
+    if (playerModerationLookupInput) playerModerationLookupInput.value = "";
     setPlayerModerationStatus("");
   } catch (error) {
     handleAuthError(error);
@@ -1780,6 +1811,8 @@ async function savePlayerModerationAction() {
 
 function setPlayerModerationControlsDisabled(disabled) {
   if (refreshModerationButton) refreshModerationButton.disabled = disabled;
+  if (playerModerationLookupInput) playerModerationLookupInput.disabled = disabled;
+  for (const button of playerModerationManualActionButtons) button.disabled = disabled;
   if (playerModerationReason) playerModerationReason.disabled = disabled;
   if (playerModerationCancelButton) playerModerationCancelButton.disabled = disabled;
   if (playerModerationSubmitButton) playerModerationSubmitButton.disabled = disabled;
