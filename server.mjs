@@ -78,8 +78,10 @@ const ROBLOX_OAUTH_REDIRECT_URI = process.env.ROBLOX_OAUTH_REDIRECT_URI || `${ap
 const ROBLOX_OAUTH_SCOPES = process.env.ROBLOX_OAUTH_SCOPES || "openid profile";
 const ROBLOX_OAUTH_LIVE_ACTION_SCOPES = process.env.ROBLOX_OAUTH_LIVE_ACTION_SCOPES
   || `${ROBLOX_OAUTH_SCOPES} universe-messaging-service:publish`;
-const ROBLOX_OAUTH_ASSET_SCOPES = process.env.ROBLOX_OAUTH_ASSET_SCOPES
-  || `${ROBLOX_OAUTH_SCOPES} asset:read asset:write`;
+const ROBLOX_OAUTH_ASSET_SCOPES = withRequiredOAuthScopes(
+  process.env.ROBLOX_OAUTH_ASSET_SCOPES || ROBLOX_OAUTH_SCOPES,
+  ["openid", "profile", "asset:read", "asset:write"],
+);
 const MAX_ASSET_FILE_BYTES = Math.min(20 * 1024 * 1024, Math.max(1024, cleanEnvInteger("MAX_ASSET_FILE_BYTES", 20 * 1024 * 1024)));
 const MAX_ASSET_BATCH_BYTES = Math.max(MAX_ASSET_FILE_BYTES, cleanEnvInteger("MAX_ASSET_BATCH_BYTES", 250 * 1024 * 1024));
 const MAX_ASSETS_PER_BATCH = Math.min(100, Math.max(1, cleanEnvInteger("MAX_ASSETS_PER_BATCH", 100)));
@@ -2239,6 +2241,7 @@ async function handleAssetOAuthStart(req, res, auth, searchParams) {
     nonce,
     codeChallenge,
     scopes: ROBLOX_OAUTH_ASSET_SCOPES,
+    prompt: "consent",
   }));
 }
 
@@ -2588,7 +2591,7 @@ function normalizeStoredAssetOAuthIntegration(integration) {
 
 function serializeAssetAuthorization(integration) {
   const oauth = normalizeStoredAssetOAuthIntegration(integration)?.oauth;
-  const scopes = new Set(cleanString(oauth?.scope, 500).split(/\s+/).filter(Boolean));
+  const scopes = new Set(parseOAuthScopes(oauth?.scope));
   const connected = Boolean(
     oauth
       && oauth.authorizationValid !== false
@@ -5575,12 +5578,13 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
           backHref: "/#assets",
         });
       }
-      const grantedScopes = new Set(cleanString(tokens.scope, 500).split(/\s+/).filter(Boolean));
-      if (!grantedScopes.has("asset:read") || !grantedScopes.has("asset:write")) {
+      const grantedScopes = new Set(parseOAuthScopes(tokens.scope));
+      const missingAssetScopes = ["asset:read", "asset:write"].filter((scope) => !grantedScopes.has(scope));
+      if (missingAssetScopes.length > 0) {
         return sendRobloxOAuthResult(res, {
           ok: false,
           title: "Asset permission missing",
-          message: "Authorize the asset:read and asset:write permissions to publish Roblox assets.",
+          message: `Roblox did not grant ${missingAssetScopes.join(" and ")}. Add both asset permissions to the OAuth app in Creator Hub, save the app change, then authorize again.`,
           backHref: "/#assets",
         });
       }
@@ -5934,7 +5938,7 @@ function isRobloxOAuthConfigured() {
   return Boolean(ROBLOX_OAUTH_CLIENT_ID && ROBLOX_OAUTH_CLIENT_SECRET && ROBLOX_OAUTH_REDIRECT_URI);
 }
 
-function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OAUTH_SCOPES }) {
+function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OAUTH_SCOPES, prompt = "" }) {
   const authorizeUrl = new URL("https://apis.roblox.com/oauth/v1/authorize");
   authorizeUrl.searchParams.set("client_id", ROBLOX_OAUTH_CLIENT_ID);
   authorizeUrl.searchParams.set("redirect_uri", ROBLOX_OAUTH_REDIRECT_URI);
@@ -5944,7 +5948,20 @@ function getRobloxAuthorizeUrl({ state, nonce, codeChallenge, scopes = ROBLOX_OA
   authorizeUrl.searchParams.set("nonce", nonce);
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
+  if (prompt) authorizeUrl.searchParams.set("prompt", prompt);
   return authorizeUrl.toString();
+}
+
+function parseOAuthScopes(value) {
+  const scopes = Array.isArray(value) ? value : String(value || "").split(/[\s,]+/);
+  return scopes.map((scope) => String(scope || "").trim()).filter(Boolean);
+}
+
+function withRequiredOAuthScopes(configuredScopes, requiredScopes) {
+  return [...new Set([
+    ...parseOAuthScopes(configuredScopes),
+    ...parseOAuthScopes(requiredScopes),
+  ])].join(" ");
 }
 
 function getAuthorizedRobloxUniverseIds(payload) {
