@@ -43,6 +43,7 @@ import {
   getRobloxGroup,
   getRobloxGroupRole,
   getRobloxUsersByIds,
+  listRobloxUserGroupIds,
   listRobloxUserGroups,
   listRobloxGroupJoinRequests,
   listRobloxGroupMemberships,
@@ -3120,9 +3121,8 @@ async function getGroupManagementContext(ownerUserId, groupId, options = {}) {
   const authorization = serializeGroupAuthorization(integration);
   if (!authorization.connected) throw createGroupManagementError(400, "Authorize Roblox group management first.");
   const accessToken = await getGroupOAuthAccessToken(ownerUserId);
-  const managedGroups = await listRobloxUserGroups(accessToken, authorization.robloxUserId);
-  const managedGroup = managedGroups.find((group) => group.id === cleanGroupId);
-  if (!managedGroup) throw createGroupManagementError(403, "This Roblox account is not a member of that group.");
+  const groupIds = await listRobloxUserGroupIds(accessToken, authorization.robloxUserId);
+  if (!groupIds.includes(cleanGroupId)) throw createGroupManagementError(403, "This Roblox account is not a member of that group.");
 
   const selfFilter = `user == 'users/${authorization.robloxUserId}'`;
   const [group, roleResult, selfMembershipResult, automation] = await Promise.all([
@@ -3165,7 +3165,7 @@ async function getGroupManagementContext(ownerUserId, groupId, options = {}) {
     authorization,
     groupId: cleanGroupId,
     group,
-    managedGroup,
+    managedGroup: { id: cleanGroupId, name: `Group ${cleanGroupId}` },
     roles,
     roleByPath,
     selfMembership,

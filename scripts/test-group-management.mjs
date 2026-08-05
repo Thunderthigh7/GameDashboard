@@ -3,6 +3,7 @@ import fs from "node:fs";
 import {
   acceptRobloxGroupJoinRequest,
   assignRobloxGroupRole,
+  listRobloxUserGroupIds,
   listRobloxUserGroups,
   membershipGroupId,
   membershipUserId,
@@ -77,6 +78,7 @@ globalThis.fetch = async (url, options = {}) => {
 try {
   const groups = await listRobloxUserGroups("oauth-token", 77);
   assert.deepEqual(groups.map((group) => ({ id: group.id, name: group.name })), [{ id: 42, name: "Builders" }]);
+  assert.deepEqual(await listRobloxUserGroupIds("oauth-token", 77), [42]);
   assert.equal(membershipGroupId({ path: "groups/42/memberships/77" }), 42);
   assert.equal(membershipUserId({ user: "users/77" }), 77);
   const membershipCall = calls.find((call) => call.url.includes("groups/-/memberships"));
@@ -90,6 +92,20 @@ try {
   assert.equal(acceptCall.options.method, "POST");
   assert.deepEqual(JSON.parse(acceptCall.options.body), {});
   assert.deepEqual(JSON.parse(assignCall.options.body), { role: "groups/42/roles/9" });
+
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes("/cloud/v2/groups/-/memberships")) {
+      return new Response(JSON.stringify({
+        groupMemberships: [{ path: "groups/42/memberships/77", user: "users/77" }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ message: "Temporarily unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const fallbackGroups = await listRobloxUserGroups("oauth-token", 77);
+  assert.deepEqual(fallbackGroups.map((group) => ({ id: group.id, name: group.name })), [{ id: 42, name: "Group 42" }]);
 } finally {
   globalThis.fetch = originalFetch;
 }
