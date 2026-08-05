@@ -5044,6 +5044,8 @@ body[data-active-view="moderation"] .topbarActions {
 .playerModerationLookupControls {
   display: grid;
   grid-template-columns: minmax(220px, 300px) auto auto;
+  width: fit-content;
+  max-width: 100%;
   gap: 10px;
   align-items: center;
   padding: 16px 20px 20px;
@@ -5174,6 +5176,7 @@ body[data-active-view="moderation"] .topbarActions {
 
 .playerModerationActionButton {
   min-height: 36px;
+  width: fit-content;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--control-bg);
@@ -5304,7 +5307,7 @@ body[data-active-view="moderation"] .topbarActions {
 
 @media (max-width: 620px) {
   .playerModerationLookupControls {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(220px, 300px) auto auto;
   }
 }
 
