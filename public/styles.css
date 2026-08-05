@@ -5043,7 +5043,7 @@ body[data-active-view="moderation"] .topbarActions {
 
 .playerModerationLookupControls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
+  grid-template-columns: minmax(220px, 300px) auto auto;
   gap: 10px;
   align-items: center;
   padding: 16px 20px 20px;
@@ -5052,6 +5052,25 @@ body[data-active-view="moderation"] .topbarActions {
 .playerModerationLookupControls input {
   width: 100%;
   min-height: 40px;
+  min-width: 0;
+  border: 1px solid rgba(82, 100, 150, 0.52);
+  border-radius: 9px;
+  outline: none;
+  background: rgba(5, 12, 29, 0.78);
+  color: var(--text);
+  font: inherit;
+  padding: 0 13px;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.playerModerationLookupControls input:hover {
+  border-color: rgba(113, 128, 184, 0.68);
+}
+
+.playerModerationLookupControls input:focus-visible {
+  border-color: rgba(139, 111, 255, 0.92);
+  background: rgba(7, 14, 33, 0.92);
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.14);
 }
 
 .playerModerationSectionHeader {
@@ -5127,8 +5146,16 @@ body[data-active-view="moderation"] .topbarActions {
   font-size: 0.77rem;
 }
 
+.playerModerationMeta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
 .playerModerationIdentity strong,
 .playerModerationIdentity span,
+.playerModerationMeta strong,
+.playerModerationMeta span,
 .playerModerationReason {
   min-width: 0;
   overflow: hidden;
@@ -5156,6 +5183,7 @@ body[data-active-view="moderation"] .topbarActions {
   font-size: 0.82rem;
   font-weight: 800;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .playerModerationActionButton:hover {
@@ -5276,11 +5304,7 @@ body[data-active-view="moderation"] .topbarActions {
 
 @media (max-width: 620px) {
   .playerModerationLookupControls {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .playerModerationLookupControls input {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 }
 
