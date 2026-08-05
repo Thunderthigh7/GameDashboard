@@ -2590,14 +2590,11 @@ function normalizeStoredAssetOAuthIntegration(integration) {
 
 function serializeAssetAuthorization(integration) {
   const oauth = normalizeStoredAssetOAuthIntegration(integration)?.oauth;
-  const scopes = new Set(parseOAuthScopes(oauth?.scope));
   const connected = Boolean(
     oauth
       && oauth.authorizationValid !== false
       && oauth.accessToken
-      && oauth.refreshToken
-      && scopes.has("asset:read")
-      && scopes.has("asset:write"),
+      && oauth.refreshToken,
   );
   return {
     configured: isRobloxOAuthConfigured(),
@@ -5574,16 +5571,6 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
           ok: false,
           title: "Wrong Roblox account",
           message: "Authorize with the same Roblox account that connected this experience.",
-          backHref: "/#assets",
-        });
-      }
-      const grantedScopes = new Set(parseOAuthScopes(tokens.scope));
-      const missingAssetScopes = ["asset:read", "asset:write"].filter((scope) => !grantedScopes.has(scope));
-      if (missingAssetScopes.length > 0) {
-        return sendRobloxOAuthResult(res, {
-          ok: false,
-          title: "Asset permission missing",
-          message: `Roblox did not grant ${missingAssetScopes.join(" and ")}. Add both asset permissions to the OAuth app in Creator Hub, save the app change, then authorize again.`,
           backHref: "/#assets",
         });
       }
