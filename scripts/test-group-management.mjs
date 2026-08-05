@@ -13,6 +13,7 @@ const serverSource = fs.readFileSync(new URL("../server.mjs", import.meta.url), 
 const groupClientSource = fs.readFileSync(new URL("../lib/roblox-groups.mjs", import.meta.url), "utf8");
 const appSource = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const htmlSource = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const stylesSource = fs.readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 const envSource = fs.readFileSync(new URL("../.env.example", import.meta.url), "utf8");
 
 assert.match(serverSource, /ROBLOX_OAUTH_GROUP_SCOPES[\s\S]*?\["openid", "profile", "group:read", "group:write"\]/);
@@ -52,6 +53,9 @@ assert.match(htmlSource, /id="groupAutomationUsers"/);
 assert.match(appSource, /window\.location\.hash === "#groups"/);
 assert.match(appSource, /loadGroupManagement/);
 assert.doesNotMatch(appSource, /UNIVERSE_SCOPED_VIEWS[^\n]*"groups"/);
+assert.match(stylesSource, /body\[data-active-view="assets"\] \.topbarActions/);
+assert.match(stylesSource, /body\[data-active-view="groups"\] \.topbarActions/);
+assert.match(stylesSource, /body\[data-active-view="overview"\] \.topbarActions[\s\S]*?grid-column: 2/);
 
 const originalFetch = globalThis.fetch;
 const calls = [];

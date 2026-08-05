@@ -306,61 +306,6 @@ body.isResizingLayout {
   flex: 1;
 }
 
-.sideNav a.aiFeaturesNavLink > .aiFeaturesNavLabel {
-  flex: 1;
-}
-
-.sideNav a.aiFeaturesNavLink > .aiFeaturesAdminBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  border: 1px solid rgba(169, 137, 255, 0.54);
-  border-radius: 999px;
-  background: rgba(124, 60, 255, 0.2);
-  color: #e2d6ff;
-  padding: 6px 9px;
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.aiFeaturesAdminBadge svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.aiFeaturesAdminBadge b {
-  font: inherit;
-}
-
-.sideNav a.aiFeaturesNavLink.isAdminLocked {
-  border-color: rgba(102, 113, 151, 0.18);
-  background: rgba(8, 14, 30, 0.42);
-  color: #7f8aa8;
-  cursor: not-allowed;
-}
-
-.sideNav a.aiFeaturesNavLink.isAdminLocked .navIconTile {
-  border-color: rgba(102, 113, 151, 0.14);
-  background: rgba(13, 20, 43, 0.58);
-  color: #707b99;
-  box-shadow: none;
-}
-
-.sideNav a.aiFeaturesNavLink.isAdminLocked .aiFeaturesAdminBadge {
-  border-color: rgba(159, 170, 207, 0.42);
-  background: rgba(105, 117, 155, 0.18);
-  color: #c4cce2;
-}
-
 .navIconTile {
   display: grid;
   place-items: center;
@@ -771,6 +716,19 @@ body.isResizingLayout {
 
 .topbarButtonGroup {
   margin-left: 8px;
+}
+
+@media (min-width: 1101px) {
+  body[data-active-view="overview"] .topbar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 1120px) minmax(220px, 1fr);
+  }
+
+  body[data-active-view="overview"] .topbarActions {
+    grid-column: 2;
+    justify-self: center;
+    width: 100%;
+  }
 }
 
 .dateButton,
@@ -4973,7 +4931,9 @@ body[data-active-view="discord"] .discordTopbarActions:not([hidden]) {
   justify-self: start;
 }
 
-body[data-active-view="moderation"] .topbarActions {
+body[data-active-view="moderation"] .topbarActions,
+body[data-active-view="assets"] .topbarActions,
+body[data-active-view="groups"] .topbarActions {
   display: none;
 }
 

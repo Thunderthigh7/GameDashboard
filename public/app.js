@@ -480,7 +480,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-4";
+const DASHBOARD_ASSET_VERSION = "20260805-5";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -548,13 +548,12 @@ const FUNNEL_REFRESH_MS = 15000;
 const ROBLOX_LIVE_REFRESH_MS = 5000;
 const PLAYER_MODERATION_REFRESH_MS = 5000;
 const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation", "assets"]);
-const ADMIN_ONLY_VIEWS = new Set([
-  "ai-runs",
-  ...Array.from(
+const ADMIN_ONLY_VIEWS = new Set(
+  Array.from(
     adminNavGroup?.querySelectorAll("[data-dashboard-view]") || [],
     (link) => link.dataset.dashboardView,
   ).filter(Boolean),
-]);
+);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
@@ -1401,12 +1400,6 @@ function renderActiveView(options = {}) {
   }
 
   for (const link of viewNavLinks) {
-    if (link.dataset.dashboardView === "ai-runs") {
-      const isAdminLocked = !authenticatedUser?.isAdmin;
-      link.classList.toggle("isAdminLocked", isAdminLocked);
-      link.setAttribute("aria-disabled", String(isAdminLocked));
-      link.title = isAdminLocked ? "Admin access required" : "Admin-only AI features";
-    }
     const isActive = link.dataset.dashboardView === activeView;
     link.classList.toggle("active", isActive);
     link.setAttribute("aria-current", isActive ? "page" : "false");

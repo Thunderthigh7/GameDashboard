@@ -187,16 +187,24 @@ assert.match(
 const adminNavStart = indexSource.indexOf('id="adminNavGroup"');
 const adminNavEnd = indexSource.indexOf("</section>", adminNavStart);
 assert.ok(adminNavStart >= 0 && adminNavEnd > adminNavStart);
+const adminNavSource = indexSource.slice(adminNavStart, adminNavEnd);
 assert.doesNotMatch(
-  indexSource.slice(adminNavStart, adminNavEnd),
+  adminNavSource,
   /data-dashboard-view="moderation"/,
   "Player moderation should not remain inside Admin",
 );
-assert.doesNotMatch(indexSource, /id="setupNavLabel"|class="navGroup overviewNavGroup"/);
 assert.match(
-  indexSource,
-  /id="aiFeaturesNavLink"[\s\S]*?<span class="aiFeaturesNavLabel">AI Features<\/span>[\s\S]*?class="aiFeaturesAdminBadge"/,
+  adminNavSource,
+  /data-dashboard-view="admin"[\s\S]*?<span>Dashboard users<\/span>[\s\S]*?data-dashboard-view="ai-runs"[\s\S]*?<span>AI Features<\/span>/,
+  "AI Features should live in the Admin category after Dashboard users",
 );
+assert.doesNotMatch(
+  indexSource.slice(indexSource.indexOf('id="analyticsNavLabel"'), indexSource.indexOf('id="integrationsNavLabel"')),
+  /data-dashboard-view="ai-runs"/,
+  "AI Features should no longer remain in Analytics",
+);
+assert.doesNotMatch(indexSource, /id="setupNavLabel"|class="navGroup overviewNavGroup"/);
+assert.doesNotMatch(adminNavSource, /aiFeaturesAdminBadge|AI Features, admin only/);
 assert.equal((indexSource.match(/id="commonQuestionList"/g) || []).length, 1);
 assert.equal((indexSource.match(/id="aiChatMessages"/g) || []).length, 1);
 assert.match(indexSource, /id="chatPagination"[\s\S]*?id="chatPreviousPageButton"[\s\S]*?id="chatNextPageButton"/);
@@ -228,7 +236,7 @@ assert.match(appSource, /view === "discord"/);
 assert.match(appSource, /"ai-runs":\s*\{\s*title:\s*"AI Features",/);
 assert.match(
   appSource,
-  /const ADMIN_ONLY_VIEWS = new Set\(\[[\s\S]*?"ai-runs"[\s\S]*?adminNavGroup\?\.querySelectorAll\("\[data-dashboard-view\]"\)/,
+  /const ADMIN_ONLY_VIEWS = new Set\(\s*Array\.from\(\s*adminNavGroup\?\.querySelectorAll\("\[data-dashboard-view\]"\)/,
   "all views placed inside the Admin category should inherit admin-only navigation guards",
 );
 assert.match(appSource, /const adminNavGroup = document\.querySelector\("#adminNavGroup"\);/);
@@ -237,10 +245,7 @@ assert.match(
   appSource,
   /const lacksAdminAccess = ADMIN_ONLY_VIEWS\.has\(requestedView\) && !authenticatedUser\?\.isAdmin;[\s\S]*activeView = lacksAdminAccess \? "overview" : requestedView;/,
 );
-assert.match(
-  appSource,
-  /link\.dataset\.dashboardView === "ai-runs"[\s\S]*classList\.toggle\("isAdminLocked", isAdminLocked\)[\s\S]*setAttribute\("aria-disabled", String\(isAdminLocked\)\)/,
-);
+assert.doesNotMatch(appSource, /link\.dataset\.dashboardView === "ai-runs"[\s\S]*?isAdminLocked/);
 assert.match(appSource, /view === "ai-runs"[\s\S]*?loadSelectedAiReport\(\)/);
 assert.match(appSource, /view === "chat"[\s\S]*?loadChatLogs\(\{ includeInsights: false \}\)/);
 assert.match(
@@ -265,8 +270,7 @@ assert.match(
   styleSource,
   /\.aiFeaturesTopGrid\s*\{[^}]*grid-template-columns:\s*minmax\(280px, 380px\)\s+minmax\(420px, 1fr\);/,
 );
-assert.match(styleSource, /\.sideNav a\.aiFeaturesNavLink\.isAdminLocked\s*\{/);
-assert.match(styleSource, /\.aiFeaturesAdminBadge svg\s*\{[\s\S]*?width:\s*15px;[\s\S]*?height:\s*15px;/);
+assert.doesNotMatch(styleSource, /\.sideNav a\.aiFeaturesNavLink\.isAdminLocked|\.aiFeaturesAdminBadge/);
 assert.match(styleSource, /\.chatLogItem time\s*\{[\s\S]*?font-size:\s*16px;[\s\S]*?font-weight:\s*850;/);
 assert.match(styleSource, /\.chatPagination\s*\{/);
 assert.match(appSource, /const CHAT_LOG_PAGE_SIZE = 25;/);
