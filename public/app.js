@@ -9,8 +9,6 @@ const loginStatus = document.querySelector("#loginStatus");
 const authControls = document.querySelector("#authControls");
 const logoutButton = document.querySelector("#logoutButton");
 const adminNavGroup = document.querySelector("#adminNavGroup");
-const adminNavLink = document.querySelector("#adminNavLink");
-const moderationNavLink = document.querySelector("#moderationNavLink");
 const refreshAdminUsersButton = document.querySelector("#refreshAdminUsersButton");
 const adminUserList = document.querySelector("#adminUserList");
 const adminUsersStatus = document.querySelector("#adminUsersStatus");
@@ -499,7 +497,13 @@ const FUNNEL_REFRESH_MS = 15000;
 const ROBLOX_LIVE_REFRESH_MS = 5000;
 const PLAYER_MODERATION_REFRESH_MS = 5000;
 const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation"]);
-const ADMIN_ONLY_VIEWS = new Set(["ai-runs", "admin", "moderation"]);
+const ADMIN_ONLY_VIEWS = new Set([
+  "ai-runs",
+  ...Array.from(
+    adminNavGroup?.querySelectorAll("[data-dashboard-view]") || [],
+    (link) => link.dataset.dashboardView,
+  ).filter(Boolean),
+]);
 const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
@@ -1106,7 +1110,7 @@ function setAuthenticated(value, user = null) {
   authenticatedUser = authenticated ? user : null;
   if (ADMIN_ONLY_VIEWS.has(activeView) && !authenticatedUser?.isAdmin) {
     activeView = "overview";
-    if (window.location.hash === "#admin" || window.location.hash === "#ai-runs" || window.location.hash === "#moderation") {
+    if (ADMIN_ONLY_VIEWS.has(getViewFromHash())) {
       window.history.replaceState(null, "", "#overview");
     }
   }
@@ -1114,8 +1118,6 @@ function setAuthenticated(value, user = null) {
   document.body.classList.toggle("isLocked", !authenticated);
   renderSidebarAccount();
   if (adminNavGroup) adminNavGroup.hidden = !authenticatedUser?.isAdmin;
-  if (adminNavLink) adminNavLink.hidden = !authenticatedUser?.isAdmin;
-  if (moderationNavLink) moderationNavLink.hidden = !authenticatedUser?.isAdmin;
   updateDemoUniverseControl();
   loginPanel.hidden = authenticated;
   if (accountBox) accountBox.disabled = !authenticated;
@@ -1184,8 +1186,6 @@ function setAuthenticated(value, user = null) {
     renderAiChatWelcome();
     if (aiAutomationStatus) aiAutomationStatus.textContent = "";
     if (adminNavGroup) adminNavGroup.hidden = true;
-    if (adminNavLink) adminNavLink.hidden = true;
-    if (moderationNavLink) moderationNavLink.hidden = true;
     if (adminUserList) adminUserList.innerHTML = "";
     if (adminUsersStatus) adminUsersStatus.textContent = "Admin access required.";
     if (adminTotalUsers) adminTotalUsers.textContent = "0";
@@ -1263,7 +1263,7 @@ function setActiveView(view, options = {}) {
   const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
-  if (lacksAdminAccess && (window.location.hash === "#admin" || window.location.hash === "#ai-runs" || window.location.hash === "#moderation")) {
+  if (lacksAdminAccess && ADMIN_ONLY_VIEWS.has(getViewFromHash())) {
     window.history.replaceState(null, "", "#overview");
   }
   if (previousView !== activeView) closeDateRangePicker();
@@ -1304,12 +1304,6 @@ function renderActiveView(options = {}) {
   }
 
   for (const link of viewNavLinks) {
-    if (link.dataset.dashboardView === "admin") {
-      link.hidden = !authenticatedUser?.isAdmin;
-    }
-    if (link.dataset.dashboardView === "moderation") {
-      link.hidden = !authenticatedUser?.isAdmin;
-    }
     if (link.dataset.dashboardView === "ai-runs") {
       const isAdminLocked = !authenticatedUser?.isAdmin;
       link.classList.toggle("isAdminLocked", isAdminLocked);
@@ -1581,14 +1575,14 @@ function stopPlayerModerationRefresh() {
 }
 
 async function loadPlayerModeration(options = {}) {
-  if (!authenticatedUser?.isAdmin || !selectedUniverseId || !moderationLivePlayerList) return;
+  if (!authenticated || !selectedUniverseId || !moderationLivePlayerList) return;
   const requestSequence = ++playerModerationRequestSequence;
   playerModerationBusy = true;
   if (!options.background) setPlayerModerationStatus("Loading...");
   setPlayerModerationControlsDisabled(true);
 
   try {
-    const data = await request(`/api/admin/player-moderation?universeId=${encodeURIComponent(selectedUniverseId)}`);
+    const data = await request(`/api/player-moderation?universeId=${encodeURIComponent(selectedUniverseId)}`);
     if (
       requestSequence !== playerModerationRequestSequence
       || activeView !== "moderation"
@@ -1659,7 +1653,7 @@ function renderModerationActiveBan(ban) {
     <article class="playerModerationRow playerModerationBanGrid">
       ${renderModerationIdentity(username, displayName, ban.userId)}
       <div class="playerModerationReason">${escapeHtml(ban.reason || "No reason recorded.")}</div>
-      <div class="playerModerationMeta"><strong>${escapeHtml(formatRelativeTime(ban.bannedAt))}</strong><span>${escapeHtml(ban.bannedByUsername || "Admin")}</span></div>
+      <div class="playerModerationMeta"><strong>${escapeHtml(formatRelativeTime(ban.bannedAt))}</strong><span>${escapeHtml(ban.bannedByUsername || "Dashboard user")}</span></div>
       <div class="playerModerationActions">
         <button class="playerModerationActionButton" type="button" data-player-moderation-action="unban" data-player-id="${escapeHtml(ban.userId)}" data-player-username="${escapeHtml(username)}" data-player-display-name="${escapeHtml(displayName)}">Unban</button>
       </div>
@@ -1675,7 +1669,7 @@ function renderModerationHistoryRecord(record) {
       ${renderModerationIdentity(username, displayName, record.userId)}
       <span class="playerModerationActionBadge" data-action="${escapeHtml(record.action)}">${escapeHtml(record.action)}</span>
       <div class="playerModerationReason">${escapeHtml(record.reason || "No reason recorded.")}</div>
-      <div class="playerModerationMeta"><strong>${escapeHtml(record.createdByUsername || "Admin")}</strong></div>
+      <div class="playerModerationMeta"><strong>${escapeHtml(record.createdByUsername || "Dashboard user")}</strong></div>
       <div class="playerModerationMeta"><strong>${escapeHtml(formatRelativeTime(record.createdAt))}</strong><span>${escapeHtml(formatFullDate(record.createdAt))}</span></div>
     </article>
   `;
@@ -1745,7 +1739,7 @@ function updatePlayerModerationReasonCount() {
 }
 
 async function savePlayerModerationAction() {
-  if (!authenticatedUser?.isAdmin || playerModerationBusy || !selectedUniverseId) return;
+  if (!authenticated || playerModerationBusy || !selectedUniverseId) return;
   const reason = String(playerModerationReason?.value || "").trim();
   if (reason.length < 3) {
     setPlayerModerationFormStatus("Enter a clear reason with at least 3 characters.", "error");
@@ -1757,7 +1751,7 @@ async function savePlayerModerationAction() {
   setPlayerModerationControlsDisabled(true);
   setPlayerModerationFormStatus("");
   try {
-    const data = await request("/api/admin/player-moderation/actions", {
+    const data = await request("/api/player-moderation/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

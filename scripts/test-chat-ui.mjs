@@ -179,6 +179,19 @@ assert.match(
   /id="adminNavGroup"[^>]*hidden[\s\S]*?id="adminNavLabel"[\s\S]*?>Admin<[\s\S]*?class="adminOnlySectionIcon"[\s\S]*?aria-label="Admin only"[\s\S]*?id="adminNavLink"/,
   "the complete Admin category should be hidden by default",
 );
+assert.match(
+  indexSource,
+  /id="moderationNavLabel">Moderation<\/h2>[\s\S]*?data-dashboard-view="moderation"[\s\S]*?<span>Player moderation<\/span>[\s\S]*?id="adminNavGroup"/,
+  "Player moderation should live in its own unlocked category before Admin",
+);
+const adminNavStart = indexSource.indexOf('id="adminNavGroup"');
+const adminNavEnd = indexSource.indexOf("</section>", adminNavStart);
+assert.ok(adminNavStart >= 0 && adminNavEnd > adminNavStart);
+assert.doesNotMatch(
+  indexSource.slice(adminNavStart, adminNavEnd),
+  /data-dashboard-view="moderation"/,
+  "Player moderation should not remain inside Admin",
+);
 assert.doesNotMatch(indexSource, /id="setupNavLabel"|class="navGroup overviewNavGroup"/);
 assert.match(
   indexSource,
@@ -213,7 +226,11 @@ assert.match(appSource, /discord:\s*\{\s*title:\s*"Discord Alerts",\s*subtitle:\
 assert.match(appSource, /window\.location\.hash === "#discord"\) return "discord";/);
 assert.match(appSource, /view === "discord"/);
 assert.match(appSource, /"ai-runs":\s*\{\s*title:\s*"AI Features",/);
-assert.match(appSource, /const ADMIN_ONLY_VIEWS = new Set\(\["ai-runs", "admin"\]\);/);
+assert.match(
+  appSource,
+  /const ADMIN_ONLY_VIEWS = new Set\(\[[\s\S]*?"ai-runs"[\s\S]*?adminNavGroup\?\.querySelectorAll\("\[data-dashboard-view\]"\)/,
+  "all views placed inside the Admin category should inherit admin-only navigation guards",
+);
 assert.match(appSource, /const adminNavGroup = document\.querySelector\("#adminNavGroup"\);/);
 assert.match(appSource, /adminNavGroup\.hidden = !authenticatedUser\?\.isAdmin/);
 assert.match(

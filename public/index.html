@@ -149,6 +149,21 @@
             </div>
           </section>
 
+          <section class="navGroup" aria-labelledby="moderationNavLabel">
+            <h2 class="navGroupLabel" id="moderationNavLabel">Moderation</h2>
+            <div class="navGroupLinks">
+              <a href="#moderation" data-dashboard-view="moderation" id="moderationNavLink">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 3 20 6.5v5.8c0 4.2-3.1 7.2-8 8.7-4.9-1.5-8-4.5-8-8.7V6.5L12 3Z" />
+                    <path d="M9 12h6M12 9v6" />
+                  </svg>
+                </span>
+                <span>Player moderation</span>
+              </a>
+            </div>
+          </section>
+
           <section class="navGroup adminNavGroup" id="adminNavGroup" aria-labelledby="adminNavLabel" hidden>
             <h2 class="navGroupLabel adminNavGroupLabel" id="adminNavLabel">
               <span>Admin</span>
@@ -168,15 +183,6 @@
                   </svg>
                 </span>
                 <span>Dashboard users</span>
-              </a>
-              <a href="#moderation" data-dashboard-view="moderation" id="moderationNavLink" hidden>
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <path d="M12 3 20 6.5v5.8c0 4.2-3.1 7.2-8 8.7-4.9-1.5-8-4.5-8-8.7V6.5L12 3Z" />
-                    <path d="M9 12h6M12 9v6" />
-                  </svg>
-                </span>
-                <span>Player moderation</span>
               </a>
             </div>
           </section>
@@ -1739,7 +1745,7 @@
               <span>Player</span>
               <span>Action</span>
               <span>Reason</span>
-              <span>Admin</span>
+              <span>Moderator</span>
               <span>Time</span>
             </div>
             <div class="playerModerationTable" id="moderationHistoryList"></div>
@@ -1864,6 +1870,6 @@
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260727-17/app.js"></script>
+    <script defer src="/assets/20260805-1/app.js"></script>
   </body>
 </html>

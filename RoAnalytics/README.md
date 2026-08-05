@@ -110,6 +110,6 @@ Keep handlers idempotent when practical because MessagingService delivery is bes
 
 ## Player moderation
 
-Kick and ban commands from the admin-only **Player Moderation** page are built in. Do not register a handler for `roanalytics.moderation`.
+Kick and ban commands from the **Player Moderation** page are built in for the dashboard user who owns the connected universe. Do not register a handler for `roanalytics.moderation`.
 
 An authorized Roblox Open Cloud connection delivers the action immediately through the existing MessagingService subscription. The normal heartbeat response also contains moderation commands, so permanent bans are enforced on future joins and Kick/Ban still have a fallback if an immediate publish is missed. Every action requires a reason and is stored in the dashboard's moderation history.

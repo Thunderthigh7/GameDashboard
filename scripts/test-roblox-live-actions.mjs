@@ -303,7 +303,14 @@ assert.match(methodsSource, /payload\.type ~= "roanalytics\.live_action"/);
 assert.match(methodsSource, /actionKey == "roanalytics\.moderation"/);
 assert.match(methodsSource, /applyHeartbeatModeration\(response\)/);
 assert.match(methodsSource, /player:Kick\(heading \.\. "\\nReason: " \.\. reason\)/);
-assert.match(serverSource, /url\.pathname === "\/api\/admin\/player-moderation"/);
+assert.match(serverSource, /url\.pathname\.startsWith\("\/api\/admin\/"\)[\s\S]*?Admin access required/);
+assert.match(serverSource, /url\.pathname === "\/api\/player-moderation"/);
+assert.doesNotMatch(serverSource, /\/api\/admin\/player-moderation/);
+assert.match(
+  serverSource,
+  /handlePlayerModerationGet[\s\S]*?getProjectByUniverseIdForOwner\(auth\.userId, universeId\)/,
+  "moderation access should remain scoped to a universe owned by the signed-in dashboard user",
+);
 assert.match(serverSource, /db\.collection\("player_moderation_actions"\)/);
 assert.match(serverSource, /db\.collection\("player_bans"\)/);
 assert.match(serverSource, /getHeartbeatModerationCommands\(presence\.value, project\)/);

@@ -554,6 +554,11 @@ const server = http.createServer(async (req, res) => {
 
     const auth = getDashboardAuth(req);
 
+    if (url.pathname.startsWith("/api/admin/")) {
+      const user = await findUserById(auth.userId);
+      if (!isAdminUser(user)) return sendJson(res, 403, { error: "Admin access required" });
+    }
+
     if (ADMIN_ONLY_AI_DASHBOARD_PATHS.has(url.pathname)) {
       const user = await findUserById(auth.userId);
       if (!isAdminUser(user)) return sendJson(res, 403, { error: "Admin access required" });
@@ -690,21 +695,12 @@ const server = http.createServer(async (req, res) => {
       return handleAdminUserPlanUpdate(req, res, user);
     }
 
-    if (url.pathname === "/api/admin/player-moderation" && req.method === "GET") {
-      const user = await findUserById(auth.userId);
-      if (!isAdminUser(user)) {
-        return sendJson(res, 403, { error: "Admin access required" });
-      }
-
+    if (url.pathname === "/api/player-moderation" && req.method === "GET") {
       return handlePlayerModerationGet(req, res, auth, url.searchParams);
     }
 
-    if (url.pathname === "/api/admin/player-moderation/actions" && req.method === "POST") {
+    if (url.pathname === "/api/player-moderation/actions" && req.method === "POST") {
       const user = await findUserById(auth.userId);
-      if (!isAdminUser(user)) {
-        return sendJson(res, 403, { error: "Admin access required" });
-      }
-
       return handlePlayerModerationAction(req, res, auth, user);
     }
 
@@ -3957,7 +3953,7 @@ async function handlePlayerModerationGet(req, res, auth, searchParams) {
   return sendJson(res, 200, await getPlayerModerationSnapshot(auth.userId, universeId));
 }
 
-async function handlePlayerModerationAction(req, res, auth, adminUser) {
+async function handlePlayerModerationAction(req, res, auth, dashboardUser) {
   let body;
   try {
     body = await readJsonBody(req, 16 * 1024);
@@ -4013,8 +4009,8 @@ async function handlePlayerModerationAction(req, res, auth, adminUser) {
     action: actionType,
     reason,
     createdAt: now,
-    createdByUserId: cleanString(adminUser?.id, 120),
-    createdByUsername: getAdminResetLabel(adminUser),
+    createdByUserId: cleanString(dashboardUser?.id, 120),
+    createdByUsername: getDashboardUserLabel(dashboardUser),
     deliveryStatus: actionType === "unban" ? "saved" : "heartbeat",
     deliveryError: "",
   };
@@ -12682,7 +12678,11 @@ async function resetStoredUsageEventsForUser(targetUser, adminUser) {
 }
 
 function getAdminResetLabel(user) {
-  return cleanString(user?.robloxUsername || user?.username || user?.robloxDisplayName || user?.id || "admin", 120);
+  return getDashboardUserLabel(user, "admin");
+}
+
+function getDashboardUserLabel(user, fallback = "dashboard user") {
+  return cleanString(user?.robloxUsername || user?.username || user?.robloxDisplayName || user?.id || fallback, 120);
 }
 
 async function recordObjectStorageWrite({ usageContext = {}, objectKey, byteLength, feature, contentType }) {
