@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260806-3/styles.css">
+    <link rel="stylesheet" href="/assets/20260806-4/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -2046,7 +2046,7 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
             <div>
               <span class="groupEyebrow">Automatic DataStore access</span>
               <h2>Player data</h2>
-              <p>The connected Studio plugin loads and saves your configured DataStore key directly. Keep the experience open in Studio; no live game server is required.</p>
+              <p>The connected Studio plugin loads and saves your configured DataStore key directly, whether it contains a number, string, boolean, array, or object. No live server is required.</p>
             </div>
             <div class="playerDataBridgeBadge" id="playerDataBridgeBadge" data-state="waiting">
               <span></span>
@@ -2101,7 +2101,7 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
             <header>
               <span class="groupEyebrow">Advanced profile systems</span>
               <h2>Optional custom adapter</h2>
-              <p>The plugin's automatic mode works when one standard DataStore key contains the complete player table. Games using ProfileStore, session locks, multiple keys, or transformed data should override it with their trusted server API.</p>
+              <p>The plugin's automatic mode supports standard keys containing numbers, strings, booleans, arrays, or objects. Games using session locks, multiple keys, or transformed data should override it with their trusted server API.</p>
             </header>
             <pre><code>local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
 
@@ -2203,6 +2203,6 @@ RoAnalytics.RegisterPlayerDataAdapter({
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260806-3/app.js"></script>
+    <script defer src="/assets/20260806-4/app.js"></script>
   </body>
 </html>

@@ -162,7 +162,7 @@ The **Player Data** page can read and update one player's JSON without another R
 
 During Studio pairing, enter the DataStore name and the exact string your key places before the user ID. For example, `PlayerData` plus `Player_` makes user `123` resolve to the `Player_123` key. The plugin writes those settings into the installed package and uses them for its Studio relay. Enable **Studio Access to API Services** under Experience Settings -> Security, then keep the experience open in Studio; publishing or joining a server is not required for Player Data.
 
-Studio uses the same DataStore backend as production, so automatic access is deliberately limited to offline players and version-checked saves. It also requires the complete player table to live under one standard DataStore key. Games using custom session locks, multiple keys, or transformed data can use the published-server path by registering the game-specific server adapter that already owns those rules:
+Studio uses the same DataStore backend as production, so automatic access is deliberately limited to offline players and version-checked saves. A key can contain any JSON-compatible Roblox DataStore value, including a number such as `cash.Value`, a string, a boolean, an array, or an object. Games using custom session locks, multiple keys, or transformed data can use the published-server path by registering the game-specific server adapter that already owns those rules:
 
 ```lua
 local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)

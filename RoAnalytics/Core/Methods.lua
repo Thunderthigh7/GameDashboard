@@ -846,6 +846,11 @@ function Methods.RegisterPlayerDataAdapter(adapter)
 	return true
 end
 
+local function isJsonPlayerDataValue(value)
+	local valueType = typeof(value)
+	return valueType == "table" or valueType == "string" or valueType == "number" or valueType == "boolean"
+end
+
 local function ensureConfiguredPlayerDataAdapter()
 	if registeredPlayerDataAdapter then
 		return true
@@ -880,8 +885,8 @@ local function ensureConfiguredPlayerDataAdapter()
 			if data == nil then
 				error("No player data exists at key " .. key .. ". Check the DataStore name and key prefix in the plugin.")
 			end
-			if typeof(data) ~= "table" then
-				error("Automatic player-data editing requires the DataStore key to contain one JSON-compatible table.")
+			if not isJsonPlayerDataValue(data) then
+				error("Automatic player-data editing requires a JSON-compatible DataStore value.")
 			end
 			return data, if keyInfo then keyInfo.Version else ""
 		end,
@@ -1190,8 +1195,8 @@ processPlayerDataCommand = function(parameters)
 			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, tostring(data))
 			return
 		end
-		if typeof(data) ~= "table" then
-			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The player data adapter must return a table.")
+		if not isJsonPlayerDataValue(data) then
+			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The player data adapter must return a JSON-compatible value.")
 			return
 		end
 		local encodedOk, encoded = pcall(function()
@@ -1205,8 +1210,8 @@ processPlayerDataCommand = function(parameters)
 		return
 	end
 
-	if typeof(request.data) ~= "table" then
-		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The dashboard update did not contain a JSON table.")
+	if not isJsonPlayerDataValue(request.data) then
+		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The dashboard update did not contain a JSON-compatible value.")
 		return
 	end
 	local writeOk, newVersion, adapterError = pcall(

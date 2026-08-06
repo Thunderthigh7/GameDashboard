@@ -31,6 +31,8 @@ assert.match(pluginSource, /RoAnalyticsRelayCredential_/);
 assert.match(pluginSource, /DataStoreService:GetDataStore\(relayDataStoreName\)/);
 assert.match(pluginSource, /dataStore:GetAsync\(key, options\)/);
 assert.match(pluginSource, /dataStore:UpdateAsync\(key/);
+assert.match(pluginSource, /valueType == "number"/);
+assert.doesNotMatch(pluginSource, /must contain one JSON-compatible table/);
 assert.match(pluginSource, /Studio Access to API Services/);
 
 const secret = `roa_${"a".repeat(48)}`;
@@ -86,6 +88,8 @@ assert.match(appSource, /async function requestPlayerDataWrite/);
 assert.match(appSource, /function pollPlayerDataRequest/);
 assert.match(appSource, /Studio plugin ready/);
 assert.match(appSource, /No live server is required/);
+assert.match(appSource, /"object", "string", "number", "boolean"/);
+assert.match(serverSource, /"object", "string", "number", "boolean"/);
 assert.match(stylesSource, /\.playerDataBridgeBadge/);
 
 assert.match(serverSource, /PLAYER_DATA_REQUEST_TTL_MS = 15 \* 60 \* 1000/);
@@ -113,6 +117,7 @@ assert.match(methodsSource, /dataStore:UpdateAsync/);
 assert.match(methodsSource, /currentKeyInfo:GetUserIds\(\)/);
 assert.match(methodsSource, /currentKeyInfo:GetMetadata\(\)/);
 assert.match(methodsSource, /This player is online/);
+assert.match(methodsSource, /valueType == "number"/);
 assert.match(settingsSource, /Settings\.PlayerDataBridgeEnabled = true/);
 assert.match(settingsSource, /Settings\.PlayerDataStoreName = ""/);
 assert.match(settingsSource, /Settings\.PlayerDataKeyPrefix = ""/);

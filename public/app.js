@@ -515,7 +515,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260806-3";
+const DASHBOARD_ASSET_VERSION = "20260806-4";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2183,7 +2183,9 @@ async function requestPlayerDataWrite() {
   let parsedData;
   try {
     parsedData = JSON.parse(String(playerDataJsonEditor?.value || ""));
-    if (!parsedData || typeof parsedData !== "object") throw new Error("Player data must be a JSON object or array.");
+    if (parsedData === null || !["object", "string", "number", "boolean"].includes(typeof parsedData)) {
+      throw new Error("Player data must be a JSON object, array, string, number, or boolean.");
+    }
   } catch (error) {
     setPlayerDataStatus(error.message || "Enter valid JSON before saving.", "error");
     playerDataJsonEditor?.focus();
@@ -2250,8 +2252,10 @@ async function pollPlayerDataRequest(requestId, operation) {
 
       if (requestRecord.status === "queued" || requestRecord.status === "processing") {
         setPlayerDataStatus(requestRecord.status === "processing"
-          ? "Your Roblox server is processing the request..."
-          : "Waiting for a published server with the data adapter...");
+          ? requestRecord.processor === "studio_plugin"
+            ? "The connected Studio plugin is processing the request..."
+            : "Your Roblox server is processing the request..."
+          : "Waiting for the connected Studio plugin or a published server...");
         playerDataPollTimer = window.setTimeout(poll, PLAYER_DATA_POLL_MS);
         return;
       }
@@ -2282,7 +2286,7 @@ async function pollPlayerDataRequest(requestId, operation) {
       } else {
         activePlayerDataRead = null;
         if (playerDataEditorMeta) playerDataEditorMeta.textContent = "Saved. Reload this player before making another update.";
-        setPlayerDataStatus("Player data saved through your game adapter. Reload before editing again.", "success");
+        setPlayerDataStatus("Player data saved. Reload before editing again.", "success");
       }
       setPlayerDataControlsDisabled(false);
       loadPlayerData({ background: true });

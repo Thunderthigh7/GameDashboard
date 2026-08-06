@@ -345,6 +345,11 @@ local function getPlayerDataKey(userId)
 	return key
 end
 
+local function isJsonDataStoreValue(value)
+	local valueType = typeof(value)
+	return valueType == "table" or valueType == "string" or valueType == "number" or valueType == "boolean"
+end
+
 local function sendStudioPlayerDataResult(pollResult, request, status, data, version, errorMessage)
 	return postJson(DASHBOARD_BASE_URL .. "/api/roblox/player-data/results", {
 		universeId = getUniverseId(),
@@ -381,8 +386,8 @@ local function processStudioPlayerDataRequest(pollResult)
 			if data == nil then
 				error("No player data exists at key " .. key .. ".")
 			end
-			if typeof(data) ~= "table" then
-				error("The player key must contain one JSON-compatible table.")
+			if not isJsonDataStoreValue(data) then
+				error("The player key must contain a JSON-compatible value.")
 			end
 			local encoded = HttpService:JSONEncode(data)
 			if #encoded > MAX_PLAYER_DATA_JSON_BYTES then
@@ -394,8 +399,8 @@ local function processStudioPlayerDataRequest(pollResult)
 			}
 		end
 
-		if typeof(request.data) ~= "table" then
-			error("The website update did not contain a JSON table.")
+		if not isJsonDataStoreValue(request.data) then
+			error("The website update did not contain a JSON-compatible value.")
 		end
 		local expectedVersion = tostring(request.expectedVersion or "")
 		local rejection = nil
@@ -571,7 +576,7 @@ local function startPairing()
 	local playerDataStoreName = trim(dataStoreNameInput.Text)
 	local playerDataKeyPrefix = trim(dataKeyPrefixInput.Text)
 	if playerDataStoreName == "" then
-		setStatus("Enter the DataStore name that holds the complete player table.", "error")
+		setStatus("Enter the DataStore name that holds the player value.", "error")
 		dataStoreNameInput:CaptureFocus()
 		return
 	end

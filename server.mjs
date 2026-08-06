@@ -171,7 +171,7 @@ const MAX_PLAYER_DATA_RECENT_REQUESTS = 25;
 const MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT = 2;
 const STUDIO_PLAYER_DATA_RELAY_TTL_MS = 15 * 1000;
 const STUDIO_PLAYER_DATA_RELAY_POLL_SECONDS = 2;
-const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.2";
+const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.3";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -6800,10 +6800,11 @@ function getActiveStudioPlayerDataRelays(ownerUserId, universeId) {
 }
 
 function normalizePlayerDataJson(value) {
-  if (!value || typeof value !== "object") {
-    throw new Error("Player data must be a JSON object or array.");
+  if (value === null || !["object", "string", "number", "boolean"].includes(typeof value)) {
+    throw new Error("Player data must be a JSON object, array, string, number, or boolean.");
   }
   const json = JSON.stringify(value);
+  if (typeof json !== "string") throw new Error("Player data must be a valid JSON value.");
   const bytes = Buffer.byteLength(json, "utf8");
   if (bytes > MAX_PLAYER_DATA_JSON_BYTES) {
     throw new Error(`Player data can contain up to ${MAX_PLAYER_DATA_JSON_BYTES.toLocaleString("en-US")} JSON bytes.`);
