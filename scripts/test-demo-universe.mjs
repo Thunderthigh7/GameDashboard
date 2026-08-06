@@ -28,27 +28,18 @@ function assertShareBetween(actual, minimum, maximum, label) {
 }
 
 const requiredEvents = [
-  "obby_run_started",
-  "obby_failed",
+  "session_started",
+  "obby_checkpoint_reached",
   "obby_completed",
   "weapon_selected",
   "combat_death",
-  "sword_selected",
-  "sword_duel_defeat",
-  "egg_hatched",
-  "simulator_session_ended",
-  "purchase_prompt_closed",
 ];
 for (const eventName of requiredEvents) assert.ok(eventsByName.has(eventName), `${eventName} should be included in the demo`);
 
 const primaryProperties = new Map([
-  ["obby_failed", "obstacle"],
+  ["obby_checkpoint_reached", "checkpoint"],
   ["weapon_selected", "weapon"],
   ["combat_death", "killedByWeapon"],
-  ["sword_selected", "sword"],
-  ["sword_duel_defeat", "defeatedBySword"],
-  ["simulator_session_ended", "reason"],
-  ["purchase_prompt_closed", "reason"],
 ]);
 for (const [eventName, propertyName] of primaryProperties) {
   assert.equal(
@@ -82,26 +73,21 @@ for (const eventName of requiredEvents) {
   }
 }
 
-const laserFailureShare = propertyShare("obby_failed", "obstacle", "Laser Ladder");
+const checkpointDropShare = propertyShare("obby_checkpoint_reached", "failureReason", "Clean");
 const shotgunUsageShare = propertyShare("weapon_selected", "weapon", "Shotgun");
 const shotgunDeathShare = propertyShare("combat_death", "killedByWeapon", "Shotgun");
-const voidEdgeUsageShare = propertyShare("sword_selected", "sword", "Void Edge");
-const voidEdgeDefeatShare = propertyShare("sword_duel_defeat", "defeatedBySword", "Void Edge");
-const inventoryExitShare = propertyShare("simulator_session_ended", "reason", "Pet inventory full");
-const priceObjectionShare = propertyShare("purchase_prompt_closed", "reason", "Too expensive");
+const obbyStep1Share = propertyShare("obby_checkpoint_reached", "checkpointIndex", 1);
+const obbyStep6Share = propertyShare("obby_checkpoint_reached", "checkpointIndex", 6);
 
-assert.equal(DEMO_SEED_VERSION, 9);
+assert.equal(DEMO_SEED_VERSION, 11);
 assert.equal(eventsByName.get("session_started")?.length, fixture.counts.sessions);
 assert.ok(fixture.customEvents.length >= 4_000, "the demo should contain enough event history for useful charts");
-assertShareBetween(laserFailureShare, 0.55, 0.61, "Laser Ladder failure share");
 assertShareBetween(shotgunUsageShare, 0.15, 0.21, "shotgun loadout share");
-assertShareBetween(shotgunDeathShare, 0.53, 0.59, "shotgun combat death share");
+assertShareBetween(shotgunDeathShare, 0.35, 0.70, "shotgun combat death share");
 assert.ok(shotgunDeathShare > shotgunUsageShare * 2.5, "shotgun deaths should clearly over-index versus selection");
-assertShareBetween(voidEdgeUsageShare, 0.03, 0.07, "Void Edge selection share");
-assertShareBetween(voidEdgeDefeatShare, 0.49, 0.55, "Void Edge defeat share");
-assert.ok(voidEdgeDefeatShare > voidEdgeUsageShare * 8, "Void Edge defeats should clearly over-index versus selection");
-assertShareBetween(inventoryExitShare, 0.58, 0.64, "inventory-full exit share");
-assertShareBetween(priceObjectionShare, 0.51, 0.57, "too-expensive close share");
+assertShareBetween(obbyStep1Share, 0.95, 1.0, "first checkpoint share");
+assert.ok(checkpointDropShare < 1, "some obby runs should drop before the end");
+assert.ok(obbyStep6Share > 0.15, "some runs should reach the final checkpoint");
 
 const laserHotspotDeaths = fixture.deathSamples.filter((sample) => (
   Math.hypot(Number(sample.x) + 32, Number(sample.z) - 52) <= 8
@@ -109,28 +95,32 @@ const laserHotspotDeaths = fixture.deathSamples.filter((sample) => (
 assert.ok(laserHotspotDeaths.length / fixture.deathSamples.length >= 0.45, "system deaths should form a visible Laser Ladder hotspot");
 
 const mapPartNames = new Set(fixture.map.parts.map((part) => part.name));
-for (const partName of ["LaserLadderLanding", "LaserHazard", "FpsCover", "SwordPedestal_VoidEdge", "StarterEggMachine"]) {
+for (const partName of ["LaserLadderLanding", "LaserHazard", "FpsCover", "ShotgunHotspot"]) {
   assert.ok(mapPartNames.has(partName), `${partName} should be visible in the demo map`);
 }
 
 assert.deepEqual(fixture.funnels.map((funnel) => funnel.name), [
-  "Obby completion",
+  "Obby checkpoint journey",
   "FPS lethal loadout",
-  "Sword duel outcomes",
-  "Shop conversion",
 ]);
 
 const demoSessions = groupCustomEventsBySession(fixture.customEvents);
-const obbyFunnel = fixture.funnels.find((funnel) => funnel.name === "Obby completion");
+const obbyFunnel = fixture.funnels.find((funnel) => funnel.name === "Obby checkpoint journey");
 const obbyAnalytics = calculateFunnelAnalytics(obbyFunnel, demoSessions);
-const obbyStarts = eventsByName.get("obby_run_started")?.length || 0;
+const allCheckpointEvents = eventsByName.get("obby_checkpoint_reached") || [];
+const obbyStarts = allCheckpointEvents.filter((event) => event.properties?.checkpointIndex === 1).length;
+const obbyCheckpoint2 = allCheckpointEvents.filter((event) => (event.properties?.checkpointIndex || 0) >= 2).length;
+const obbyCheckpoint3 = allCheckpointEvents.filter((event) => (event.properties?.checkpointIndex || 0) >= 3).length;
+const obbyCheckpoint4 = allCheckpointEvents.filter((event) => (event.properties?.checkpointIndex || 0) >= 4).length;
+const obbyCheckpoint5 = allCheckpointEvents.filter((event) => (event.properties?.checkpointIndex || 0) >= 5).length;
+const obbyCheckpoint6 = allCheckpointEvents.filter((event) => event.properties?.checkpointIndex === 6).length;
 const obbyCompletions = eventsByName.get("obby_completed")?.length || 0;
 assert.equal(obbyAnalytics.entrySessions, obbyStarts, "Obby funnel entries should reconcile with raw start events");
 assert.equal(obbyAnalytics.completedSessions, obbyCompletions, "Obby funnel completions should reconcile with raw completion events");
 assert.deepEqual(
   obbyAnalytics.steps.map((step) => step.sessions),
-  [obbyStarts, obbyStarts, obbyCompletions],
-  "every demo Obby run should reach the first checkpoint and only completed runs should reach the final step",
+  [obbyStarts, obbyCheckpoint2, obbyCheckpoint3, obbyCheckpoint4, obbyCheckpoint5, obbyCheckpoint6, obbyCompletions],
+  "obby funnel should preserve step order through six checkpoints and final completion",
 );
 assert.equal(
   obbyAnalytics.overallConversion,
@@ -142,12 +132,10 @@ console.log("Demo universe analytics stories passed.", {
   seedVersion: DEMO_SEED_VERSION,
   customEvents: fixture.customEvents.length,
   mapParts: fixture.map.parts.length,
-  laserFailurePercent: Math.round(laserFailureShare * 1_000) / 10,
+  checkpointDropPercent: Math.round(checkpointDropShare * 1_000) / 10,
   shotgunUsagePercent: Math.round(shotgunUsageShare * 1_000) / 10,
   shotgunDeathPercent: Math.round(shotgunDeathShare * 1_000) / 10,
-  voidEdgeUsagePercent: Math.round(voidEdgeUsageShare * 1_000) / 10,
-  voidEdgeDefeatPercent: Math.round(voidEdgeDefeatShare * 1_000) / 10,
-  inventoryExitPercent: Math.round(inventoryExitShare * 1_000) / 10,
-  priceObjectionPercent: Math.round(priceObjectionShare * 1_000) / 10,
+  obbyStep1Percent: Math.round(obbyStep1Share * 1_000) / 10,
+  obbyStep6Percent: Math.round(obbyStep6Share * 1_000) / 10,
   obbyCompletionPercent: obbyAnalytics.overallConversion,
 });
