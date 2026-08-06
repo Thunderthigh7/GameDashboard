@@ -1,15 +1,19 @@
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local ScriptEditorService = game:GetService("ScriptEditorService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local DASHBOARD_BASE_URL = "https://game-dashboard-zaya.onrender.com"
 local PAIRING_POLL_SECONDS = 2
+local PLAYER_DATA_RELAY_POLL_SECONDS = 2
+local PLAYER_DATA_RELAY_RETRY_SECONDS = 5
+local MAX_PLAYER_DATA_JSON_BYTES = 256 * 1024
 
 local toolbar = plugin:CreateToolbar("RoAnalytics")
 local toggleButton = toolbar:CreateButton(
 	"RoAnalytics Installer",
-	"Pair this experience and install or update the RoAnalytics server package.",
+	"Pair this experience, install RoAnalytics, and connect Studio Player Data.",
 	""
 )
 
@@ -69,7 +73,7 @@ create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 2,
 	Size = UDim2.new(1, 0, 0, 54),
-	Text = "Connect this game on the website, then approve the matching code. The complete server package and secret are installed automatically.",
+	Text = "Pair once to install RoAnalytics and connect Player Data. Keep Studio open to load and save without a live server.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 13,
 	TextWrapped = true,
@@ -173,6 +177,9 @@ local statusLabel = create("TextLabel", {
 }, root)
 
 local pairingGeneration = 0
+local pairingActive = false
+local relayGeneration = 0
+local relayConnected = false
 
 local function trim(value)
 	return string.match(tostring(value or ""), "^%s*(.-)%s*$") or ""
@@ -181,6 +188,14 @@ end
 local settingsSuffix = tostring(game.GameId)
 dataStoreNameInput.Text = tostring(plugin:GetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix) or "")
 dataKeyPrefixInput.Text = tostring(plugin:GetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix) or "")
+local relayCredential = tostring(plugin:GetSetting("RoAnalyticsRelayCredential_" .. settingsSuffix) or "")
+local relayId = tostring(plugin:GetSetting("RoAnalyticsRelayId_" .. settingsSuffix) or "")
+local relayDataStoreName = dataStoreNameInput.Text
+local relayDataKeyPrefix = dataKeyPrefixInput.Text
+if relayId == "" then
+	relayId = HttpService:GenerateGUID(false)
+	plugin:SetSetting("RoAnalyticsRelayId_" .. settingsSuffix, relayId)
+end
 
 local function setStatus(text, state)
 	statusLabel.Text = text
@@ -191,11 +206,17 @@ local function setStatus(text, state)
 		else Color3.fromRGB(148, 163, 184)
 end
 
-local function postJson(url, body)
+local function postJson(url, body, extraHeaders)
+	local headers = { ["Content-Type"] = "application/json" }
+	if typeof(extraHeaders) == "table" then
+		for key, value in extraHeaders do
+			headers[tostring(key)] = tostring(value)
+		end
+	end
 	local response = HttpService:RequestAsync({
 		Url = url,
 		Method = "POST",
-		Headers = { ["Content-Type"] = "application/json" },
+		Headers = headers,
 		Body = HttpService:JSONEncode(body),
 	})
 	local decoded = {}
@@ -312,6 +333,186 @@ local function getUniverseId()
 	return game.GameId
 end
 
+local function getPlayerDataKey(userId)
+	local numericUserId = tonumber(userId)
+	if not numericUserId or numericUserId <= 0 then
+		error("The website sent an invalid Roblox user ID.")
+	end
+	local key = relayDataKeyPrefix .. tostring(math.floor(numericUserId))
+	if #key > 50 then
+		error("The configured player DataStore key exceeds Roblox's 50-byte limit.")
+	end
+	return key
+end
+
+local function sendStudioPlayerDataResult(pollResult, request, status, data, version, errorMessage)
+	return postJson(DASHBOARD_BASE_URL .. "/api/roblox/player-data/results", {
+		universeId = getUniverseId(),
+		requestId = tostring(request.id or ""),
+		jobId = tostring(pollResult.relayJobId or ""),
+		status = status,
+		data = data,
+		version = tostring(version or ""),
+		error = tostring(errorMessage or ""),
+	}, {
+		["X-Dashboard-Secret"] = relayCredential,
+	})
+end
+
+local function processStudioPlayerDataRequest(pollResult)
+	local request = pollResult.request
+	if typeof(request) ~= "table" then
+		return
+	end
+	local requestId = tostring(request.id or "")
+	local operation = tostring(request.operation or "")
+	if requestId == "" or (operation ~= "read" and operation ~= "write") then
+		return
+	end
+
+	setStatus("Player Data request received. Accessing " .. relayDataStoreName .. "...", "")
+	local operationOk, operationResult = pcall(function()
+		local dataStore = DataStoreService:GetDataStore(relayDataStoreName)
+		local key = getPlayerDataKey(request.userId)
+		if operation == "read" then
+			local options = Instance.new("DataStoreGetOptions")
+			options.UseCache = false
+			local data, keyInfo = dataStore:GetAsync(key, options)
+			if data == nil then
+				error("No player data exists at key " .. key .. ".")
+			end
+			if typeof(data) ~= "table" then
+				error("The player key must contain one JSON-compatible table.")
+			end
+			local encoded = HttpService:JSONEncode(data)
+			if #encoded > MAX_PLAYER_DATA_JSON_BYTES then
+				error("The player data is larger than the website's 256 KiB limit.")
+			end
+			return {
+				data = data,
+				version = if keyInfo then keyInfo.Version else "",
+			}
+		end
+
+		if typeof(request.data) ~= "table" then
+			error("The website update did not contain a JSON table.")
+		end
+		local expectedVersion = tostring(request.expectedVersion or "")
+		local rejection = nil
+		local updatedData, updatedKeyInfo = dataStore:UpdateAsync(key, function(currentData, currentKeyInfo)
+			if currentData == nil then
+				rejection = "That player-data key no longer exists. Reload before saving."
+				return nil
+			end
+			local currentVersion = if currentKeyInfo then tostring(currentKeyInfo.Version) else ""
+			if expectedVersion ~= "" and currentVersion ~= expectedVersion then
+				rejection = "Player data changed after it was loaded. Reload before saving."
+				return nil
+			end
+			local userIds = if currentKeyInfo then currentKeyInfo:GetUserIds() else { tonumber(request.userId) }
+			local metadata = if currentKeyInfo then currentKeyInfo:GetMetadata() else {}
+			return request.data, userIds, metadata
+		end)
+		if rejection then
+			error(rejection)
+		end
+		if updatedData == nil then
+			error("Roblox cancelled the DataStore update. Reload and try again.")
+		end
+		return {
+			version = if updatedKeyInfo then updatedKeyInfo.Version else "",
+		}
+	end)
+
+	if operationOk then
+		local sent, sendError = pcall(
+			sendStudioPlayerDataResult,
+			pollResult,
+			request,
+			"completed",
+			operationResult.data,
+			operationResult.version,
+			nil
+		)
+		if sent then
+			setStatus("Player Data " .. operation .. " completed through the Studio plugin.", "success")
+		else
+			setStatus("DataStore operation completed, but the website result failed: " .. tostring(sendError), "error")
+		end
+		return
+	end
+
+	local failureMessage = "Studio DataStore access failed: " .. tostring(operationResult)
+	local sent, sendError = pcall(
+		sendStudioPlayerDataResult,
+		pollResult,
+		request,
+		"failed",
+		nil,
+		nil,
+		failureMessage
+	)
+	if sent then
+		setStatus(failureMessage .. " Enable Studio Access to API Services under Experience Settings > Security.", "error")
+	else
+		setStatus(failureMessage .. " The error result also could not reach the website: " .. tostring(sendError), "error")
+	end
+end
+
+local function pollStudioPlayerDataRelay(generation)
+	while generation == relayGeneration do
+		local ok, result = pcall(function()
+			return postJson(DASHBOARD_BASE_URL .. "/api/roblox/studio-player-data/poll", {
+				universeId = getUniverseId(),
+				placeId = game.PlaceId,
+				relayId = relayId,
+				playerDataStoreName = relayDataStoreName,
+				playerDataKeyPrefix = relayDataKeyPrefix,
+			}, {
+				["X-Dashboard-Secret"] = relayCredential,
+			})
+		end)
+		if generation ~= relayGeneration then
+			return
+		end
+		if ok then
+			relayConnected = true
+			if not pairingActive and typeof(result.request) ~= "table" then
+				setStatus(
+					"Studio Player Data is connected. Keep this experience open to load and save offline players without a live server.",
+					"success"
+				)
+			end
+			if typeof(result.request) == "table" then
+				processStudioPlayerDataRequest(result)
+			end
+			task.wait(math.max(tonumber(result.pollAfterSeconds) or PLAYER_DATA_RELAY_POLL_SECONDS, 1))
+		else
+			relayConnected = false
+			if not pairingActive then
+				setStatus("Studio Player Data disconnected: " .. tostring(result), "error")
+			end
+			task.wait(PLAYER_DATA_RELAY_RETRY_SECONDS)
+		end
+	end
+end
+
+local function startStudioPlayerDataRelay(credential, dataStoreName, keyPrefix)
+	relayCredential = trim(credential)
+	relayDataStoreName = trim(dataStoreName)
+	relayDataKeyPrefix = trim(keyPrefix)
+	if relayCredential == "" or relayDataStoreName == "" or relayDataKeyPrefix == "" or game.GameId <= 0 then
+		return false
+	end
+	plugin:SetSetting("RoAnalyticsRelayCredential_" .. settingsSuffix, relayCredential)
+	plugin:SetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix, relayDataStoreName)
+	plugin:SetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix, relayDataKeyPrefix)
+	relayGeneration += 1
+	relayConnected = false
+	task.spawn(pollStudioPlayerDataRelay, relayGeneration)
+	return true
+end
+
 local function pollPairing(generation, pairingId, claimToken, expiresAt)
 	while generation == pairingGeneration and DateTime.now().UnixTimestampMillis < expiresAt do
 		task.wait(PAIRING_POLL_SECONDS)
@@ -330,16 +531,28 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 			installButton.Active = true
 			installButton.Text = "Update RoAnalytics"
 			if not installed then
+				pairingActive = false
 				setStatus("Install failed: " .. tostring(installError), "error")
 				return
 			end
 			codeLabel.Text = "INSTALLED"
-			local nextStep = if HttpService.HttpEnabled
-				then "Publish the game to activate it."
-				else "Enable Allow HTTP Requests under Experience Settings > Security, then publish the game."
-			setStatus("RoAnalytics is installed in ServerScriptService with the secret already configured. " .. nextStep, "success")
+			pairingActive = false
+			local studioRelay = result.studioRelay
+			if typeof(studioRelay) == "table" and startStudioPlayerDataRelay(
+				tostring(studioRelay.credential or ""),
+				tostring(studioRelay.playerDataStoreName or ""),
+				tostring(studioRelay.playerDataKeyPrefix or "")
+			) then
+				setStatus(
+					"RoAnalytics is installed. Enable Studio Access to API Services for Player Data. For live analytics, also enable Allow HTTP Requests and publish.",
+					"success"
+				)
+			else
+				setStatus("RoAnalytics installed, but the Studio Player Data credential was missing. Pair again.", "error")
+			end
 			return
 		elseif not ok then
+			pairingActive = false
 			installButton.Active = true
 			installButton.Text = "Try Again"
 			setStatus("Pairing failed: " .. tostring(result), "error")
@@ -347,6 +560,7 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 		end
 	end
 	if generation == pairingGeneration then
+		pairingActive = false
 		installButton.Active = true
 		installButton.Text = "Start New Pairing"
 		setStatus("The pairing code expired. Start a new pairing and approve it on the website.", "error")
@@ -379,6 +593,7 @@ local function startPairing()
 
 	pairingGeneration += 1
 	local generation = pairingGeneration
+	pairingActive = true
 	installButton.Active = false
 	installButton.Text = "Starting..."
 	codeLabel.Text = "---- ----"
@@ -393,6 +608,7 @@ local function startPairing()
 		})
 	end)
 	if not ok then
+		pairingActive = false
 		installButton.Active = true
 		installButton.Text = "Try Again"
 		setStatus("Could not start pairing: " .. tostring(result), "error")
@@ -413,7 +629,16 @@ local function startPairing()
 	)
 end
 
+if relayCredential ~= "" and relayDataStoreName ~= "" and relayDataKeyPrefix ~= "" and game.GameId > 0 then
+	setStatus("Reconnecting Studio Player Data...", "")
+	startStudioPlayerDataRelay(relayCredential, relayDataStoreName, relayDataKeyPrefix)
+end
+
 installButton.MouseButton1Click:Connect(startPairing)
 toggleButton.Click:Connect(function()
 	widget.Enabled = not widget.Enabled
+end)
+plugin.Unloading:Connect(function()
+	relayGeneration += 1
+	pairingGeneration += 1
 end)

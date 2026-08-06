@@ -134,11 +134,11 @@ An authorized Roblox Open Cloud connection delivers the action immediately throu
 
 ## Automatic player data
 
-The Studio installer asks for the DataStore name and exact key prefix used before each user ID. With `PlayerData` and `Player_`, for example, user `123` is loaded from `PlayerData` key `Player_123`. The installed package automatically provides the Player Data page with read and write access when a published production server is live.
+The Studio installer asks for the DataStore name and exact key prefix used before each user ID. With `PlayerData` and `Player_`, for example, user `123` is loaded from `PlayerData` key `Player_123`. While the paired experience is open, the plugin securely polls the website and performs those reads and writes directly through Studio, without a live game server. Enable **Studio Access to API Services** in the experience's Security settings.
 
-Automatic reads bypass Roblox's local read cache. Automatic writes use `UpdateAsync`, reject a stale version, and retain existing key metadata and user IDs. Direct access refuses online players so an active profile cannot overwrite the edit afterward. It expects one JSON-compatible table under a standard DataStore key.
+Automatic reads bypass Roblox's local read cache. Automatic writes use `UpdateAsync`, reject a stale version, and retain existing key metadata and user IDs. Direct access refuses known online players so an active profile cannot overwrite the edit afterward. Studio accesses the same backend as production, so only use the paired plugin with trusted experiences. It expects one JSON-compatible table under a standard DataStore key.
 
-For ProfileStore, session-locked profiles, multiple keys, or transformed data, register explicit read and write functions from trusted server code. This custom adapter replaces automatic access so your existing DataService layer keeps ownership of locks, schema validation, and saves:
+When Studio is closed, the installed server package provides the same direct DataStore fallback from a published server. For custom session-locked profiles, multiple keys, or transformed data, register explicit read and write functions from trusted server code so your existing DataService layer keeps ownership of locks, schema validation, and saves:
 
 ```lua
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -156,4 +156,4 @@ RoAnalytics.RegisterPlayerDataAdapter({
 
 Replace the example calls with your game's real server data API. `Read` must return a JSON-compatible table and may return a version as its second value. `Write` receives that value as `context.expectedVersion`; return `false, "reason"` to reject the update, or return the new version on success.
 
-Requests run only in published production servers. Offline players use a live server that registered either adapter. A custom adapter may support an online player through the server that owns that profile, but it must enforce that ownership itself. The website requires a successful read before a write, consumes each read snapshot once, encrypts temporary request data, expires it after 15 minutes, and caps JSON at 256 KiB.
+Plugin requests run while the paired experience is open in Studio; server-adapter requests run only in published production servers. A custom adapter may support an online player through the server that owns that profile, but it must enforce that ownership itself. The website requires a successful read before a write, consumes each read snapshot once, encrypts temporary request data, expires it after 15 minutes, and caps JSON at 256 KiB.

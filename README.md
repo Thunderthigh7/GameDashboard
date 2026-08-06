@@ -154,15 +154,15 @@ After events arrive, open **Funnels** and select **New**. A funnel can mix custo
 
 Conversion is session-based: a session enters when it reaches step one, and it only reaches later steps when matching events occur after the previous step and inside the selected conversion window. The dashboard shows entry sessions, completed sessions, overall conversion, step drop-off, unique players, and time between steps. Results use the dashboard's current From/To date filters and refresh every 15 seconds while the Funnels page is open.
 
-The Studio installer lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps. It only installs or updates the server package. It contains no Studio heatmap, map scan, or map upload behavior.
+The Studio installer lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps. It installs or updates the server package and acts as the authenticated Player Data relay while Studio is open. It contains no Studio heatmap, map scan, or map upload behavior.
 
 ## Player Data Bridge
 
-The **Player Data** page can read and update one player's JSON without another Roblox OAuth scope. It sends a short-lived request to the installed package in a published server. Existing `universe-messaging-service:publish` authorization is used when available for immediate delivery; otherwise the regular authenticated heartbeat carries the request.
+The **Player Data** page can read and update one player's JSON without another Roblox OAuth scope or a live game server. After an approved install, the Studio plugin stores its revocable per-install credential locally and polls for short-lived requests while that experience remains open. A published server remains a fallback when Studio is closed; existing `universe-messaging-service:publish` authorization is used when available for immediate delivery, otherwise the regular authenticated heartbeat carries the request.
 
-During Studio pairing, enter the DataStore name and the exact string your key places before the user ID. For example, `PlayerData` plus `Player_` makes user `123` resolve to the `Player_123` key. The plugin writes those settings into the installed package. Once a published server is live, the Player Data page can automatically read and update a complete JSON-compatible table stored under that key.
+During Studio pairing, enter the DataStore name and the exact string your key places before the user ID. For example, `PlayerData` plus `Player_` makes user `123` resolve to the `Player_123` key. The plugin writes those settings into the installed package and uses them for its Studio relay. Enable **Studio Access to API Services** under Experience Settings -> Security, then keep the experience open in Studio; publishing or joining a server is not required for Player Data.
 
-Automatic access deliberately rejects online players so their active game server cannot later overwrite the dashboard edit. It also requires the complete player table to live under one standard DataStore key. Games using ProfileStore, session locks, multiple keys, or transformed data can replace automatic access by registering the game-specific server adapter that already owns those rules:
+Studio uses the same DataStore backend as production, so automatic access is deliberately limited to offline players and version-checked saves. It also requires the complete player table to live under one standard DataStore key. Games using custom session locks, multiple keys, or transformed data can use the published-server path by registering the game-specific server adapter that already owns those rules:
 
 ```lua
 local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
@@ -177,7 +177,7 @@ RoAnalytics.RegisterPlayerDataAdapter({
 })
 ```
 
-Replace those example calls with the real API in your game. Reads and writes only execute in published production servers. A successful read is required before a write, each read snapshot can be used once, payloads are capped at 256 KiB, and encrypted request data expires after 15 minutes. The built-in adapter uses Roblox DataStore versions to reject stale saves; a custom adapter remains responsible for its own session ownership and version rules.
+Replace those example calls with the real API in your game. Custom adapters execute only in published production servers. A successful read is required before a write, each read snapshot can be used once, payloads are capped at 256 KiB, and encrypted request data expires after 15 minutes. Both automatic paths use Roblox DataStore versions to reject stale saves; a custom adapter remains responsible for its own session ownership and version rules.
 
 ## Backblaze B2 Analytics Storage
 

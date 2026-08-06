@@ -169,7 +169,9 @@ const MAX_PLAYER_DATA_REQUEST_BODY_BYTES = 320 * 1024;
 const MAX_PLAYER_DATA_JSON_BYTES = 256 * 1024;
 const MAX_PLAYER_DATA_RECENT_REQUESTS = 25;
 const MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT = 2;
-const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.1";
+const STUDIO_PLAYER_DATA_RELAY_TTL_MS = 15 * 1000;
+const STUDIO_PLAYER_DATA_RELAY_POLL_SECONDS = 2;
+const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.2";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -498,6 +500,7 @@ const adminResponseCache = new Map();
 const adminResponseRequests = new Map();
 const adminResponseVersions = new Map();
 const livePresenceByUniverseId = new Map();
+const studioPlayerDataRelaysByUniverseId = new Map();
 const LOCAL_USAGE_SNAPSHOT_STORE_LOCK_KEY = "__local_monthly_usage_store__";
 const OBJECT_STORAGE_ROLLUP_CACHE_MS = cleanEnvInteger("OBJECT_STORAGE_ROLLUP_CACHE_MS", 60 * 1000);
 const ROBLOX_GAME_ICON_CACHE_MS = cleanEnvInteger("ROBLOX_GAME_ICON_CACHE_MS", 6 * 60 * 60 * 1000);
@@ -614,6 +617,10 @@ const server = http.createServer(async (req, res) => {
     const studioPairingClaimMatch = url.pathname.match(/^\/api\/roblox\/studio-pairings\/([^/]+)\/claim$/);
     if (studioPairingClaimMatch && req.method === "POST") {
       return handleStudioPairingClaim(req, res, decodeURIComponent(studioPairingClaimMatch[1]));
+    }
+
+    if (url.pathname === "/api/roblox/studio-player-data/poll" && req.method === "POST") {
+      return handleStudioPlayerDataPoll(req, res);
     }
 
     const robloxPlayerDataClaimMatch = url.pathname.match(/^\/api\/roblox\/player-data\/requests\/([^/]+)\/claim$/);
@@ -6497,6 +6504,98 @@ async function handlePlayerDataRequestGet(req, res, auth, rawRequestId, searchPa
   });
 }
 
+async function handleStudioPlayerDataPoll(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectFromRequestSecret(req, universeId);
+  if (!project) return sendJson(res, 401, { error: "The Studio relay credential is invalid or was revoked." });
+
+  const relayId = cleanString(body?.relayId, 80);
+  if (!relayId) return sendJson(res, 400, { error: "The Studio relay ID is required." });
+
+  let dataStoreName;
+  let keyPrefix;
+  try {
+    dataStoreName = normalizeStudioDataStoreSetting(
+      body?.playerDataStoreName,
+      MAX_STUDIO_DATA_STORE_NAME_BYTES,
+      "DataStore name",
+    );
+    keyPrefix = normalizeStudioDataStoreSetting(
+      body?.playerDataKeyPrefix,
+      MAX_STUDIO_DATA_KEY_PREFIX_BYTES,
+      "player key prefix",
+    );
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const relayJobId = getStudioPlayerDataRelayJobId(relayId);
+  rememberStudioPlayerDataRelay({
+    relayId,
+    ownerUserId: project.ownerUserId,
+    universeId,
+    placeId: cleanInteger(body?.placeId),
+    dataStoreName,
+    keyPrefix,
+  });
+
+  const queuedRequests = await readQueuedPlayerDataRequests(
+    project.ownerUserId,
+    universeId,
+    relayJobId,
+    MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT,
+  );
+  let requestRecord = null;
+  for (const queuedRequest of queuedRequests) {
+    requestRecord = await claimPlayerDataRequest(
+      project,
+      queuedRequest.id,
+      relayJobId,
+      cleanInteger(body?.placeId),
+    );
+    if (requestRecord) break;
+  }
+
+  let request = null;
+  if (requestRecord) {
+    let data;
+    if (requestRecord.operation === "write") {
+      try {
+        data = JSON.parse(decryptPlayerDataPayload(requestRecord.payloadEncrypted));
+      } catch {
+        await completePlayerDataRequest(requestRecord, {
+          status: "failed",
+          error: "The encrypted player-data update could not be decoded.",
+        });
+        return sendJson(res, 500, { error: "The player-data update could not be decoded." });
+      }
+    }
+    request = {
+      id: requestRecord.id,
+      operation: requestRecord.operation,
+      userId: requestRecord.userId,
+      data,
+      expectedVersion: requestRecord.expectedVersion,
+      expiresAt: requestRecord.expiresAtMs,
+    };
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    connected: true,
+    relayJobId,
+    pollAfterSeconds: STUDIO_PLAYER_DATA_RELAY_POLL_SECONDS,
+    request,
+  });
+}
+
 async function handleRobloxPlayerDataRequestClaim(req, res, rawRequestId) {
   let body;
   try {
@@ -6564,7 +6663,7 @@ async function handleRobloxPlayerDataResult(req, res) {
     || requestRecord.universeId !== universeId
     || requestRecord.status !== "processing"
     || requestRecord.claimedJobId !== jobId) {
-    return sendJson(res, 409, { error: "That player-data request is not assigned to this server." });
+    return sendJson(res, 409, { error: "That player-data request is not assigned to this processor." });
   }
 
   const succeeded = body?.status === "completed" || body?.ok === true;
@@ -6629,21 +6728,75 @@ async function getHeartbeatPlayerDataCommands(presence, project) {
 
 function getPlayerDataBridgeStatus(ownerUserId, universeId) {
   pruneLivePresence(universeId);
+  pruneStudioPlayerDataRelays(universeId);
   const servers = livePresenceByUniverseId.get(cleanInteger(universeId));
   const ownedServers = servers
     ? [...servers.values()].filter((presence) => presence.ownerUserId === ownerUserId)
     : [];
   const adapterServers = ownedServers.filter((presence) => presence.playerDataBridgeRegistered);
   const directServer = adapterServers.find((presence) => presence.playerDataBridgeMode === "direct_datastore");
+  const studioRelays = getActiveStudioPlayerDataRelays(ownerUserId, universeId);
+  const studioRelay = studioRelays[0];
   return {
     liveServerCount: ownedServers.length,
     adapterServerCount: adapterServers.length,
-    connected: adapterServers.length > 0,
-    mode: directServer ? "direct_datastore" : adapterServers[0]?.playerDataBridgeMode || "",
-    dataStoreName: directServer?.playerDataStoreName || "",
-    keyPrefix: directServer?.playerDataKeyPrefix || "",
-    requireOffline: directServer ? directServer.playerDataRequireOffline !== false : null,
+    studioRelayCount: studioRelays.length,
+    connected: studioRelays.length > 0 || adapterServers.length > 0,
+    mode: studioRelay
+      ? "studio_plugin"
+      : directServer
+        ? "direct_datastore"
+        : adapterServers[0]?.playerDataBridgeMode || "",
+    dataStoreName: studioRelay?.dataStoreName || directServer?.playerDataStoreName || "",
+    keyPrefix: studioRelay?.keyPrefix || directServer?.playerDataKeyPrefix || "",
+    requireOffline: studioRelay ? true : directServer ? directServer.playerDataRequireOffline !== false : null,
   };
+}
+
+function getStudioPlayerDataRelayJobId(relayId) {
+  return `studio-plugin:${cleanString(relayId, 80)}`;
+}
+
+function isStudioPlayerDataRelayJobId(jobId) {
+  return cleanString(jobId, 128).startsWith("studio-plugin:");
+}
+
+function rememberStudioPlayerDataRelay(relay) {
+  const universeId = cleanInteger(relay?.universeId);
+  const relayId = cleanString(relay?.relayId, 80);
+  const ownerUserId = cleanString(relay?.ownerUserId, 120);
+  if (universeId <= 0 || !relayId || !ownerUserId) return;
+  const relays = studioPlayerDataRelaysByUniverseId.get(universeId) || new Map();
+  relays.set(relayId, {
+    relayId,
+    ownerUserId,
+    universeId,
+    placeId: cleanInteger(relay?.placeId),
+    dataStoreName: cleanString(relay?.dataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES * 2),
+    keyPrefix: cleanString(relay?.keyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES * 2),
+    receivedAt: Date.now(),
+  });
+  studioPlayerDataRelaysByUniverseId.set(universeId, relays);
+  pruneStudioPlayerDataRelays(universeId);
+}
+
+function pruneStudioPlayerDataRelays(universeId, now = Date.now()) {
+  const cleanUniverseId = cleanInteger(universeId);
+  const relays = studioPlayerDataRelaysByUniverseId.get(cleanUniverseId);
+  if (!relays) return;
+  const cutoff = now - STUDIO_PLAYER_DATA_RELAY_TTL_MS;
+  for (const [relayId, relay] of relays) {
+    if (cleanInteger(relay?.receivedAt) < cutoff) relays.delete(relayId);
+  }
+  if (!relays.size) studioPlayerDataRelaysByUniverseId.delete(cleanUniverseId);
+}
+
+function getActiveStudioPlayerDataRelays(ownerUserId, universeId) {
+  const cleanUniverseId = cleanInteger(universeId);
+  pruneStudioPlayerDataRelays(cleanUniverseId);
+  const relays = studioPlayerDataRelaysByUniverseId.get(cleanUniverseId);
+  if (!relays) return [];
+  return [...relays.values()].filter((relay) => relay.ownerUserId === ownerUserId);
 }
 
 function normalizePlayerDataJson(value) {
@@ -6687,7 +6840,7 @@ function normalizePlayerDataRequest(value) {
     claimedAt: cleanInteger(value.claimedAt),
     completedAt: cleanInteger(value.completedAt),
     error: cleanString(value.error, 240),
-    delivery: value.delivery === "messaging" ? "messaging" : "heartbeat",
+    delivery: ["messaging", "studio_plugin"].includes(value.delivery) ? value.delivery : "heartbeat",
     createdByUserId: cleanString(value.createdByUserId, 120),
     createdByUsername: cleanString(value.createdByUsername, 80),
     createdAt: cleanInteger(value.createdAt) || Date.now(),
@@ -6716,6 +6869,9 @@ function serializePlayerDataRequest(value, options = {}) {
     sourceRequestId: requestRecord.sourceRequestId,
     target: requestRecord.targetJobId ? "online_server" : "available_server",
     delivery: requestRecord.delivery,
+    processor: requestRecord.claimedJobId
+      ? isStudioPlayerDataRelayJobId(requestRecord.claimedJobId) ? "studio_plugin" : "live_server"
+      : "",
     error: requestRecord.error,
     createdByUsername: requestRecord.createdByUsername,
     createdAt: requestRecord.createdAt,
@@ -6858,6 +7014,7 @@ async function savePlayerDataRequest(value) {
 
 async function claimPlayerDataRequest(project, requestId, jobId, placeId) {
   const now = Date.now();
+  const delivery = isStudioPlayerDataRelayJobId(jobId) ? "studio_plugin" : null;
   const db = await getMongoDb();
   if (db) {
     const claimed = await db.collection("player_data_requests").findOneAndUpdate(
@@ -6876,6 +7033,7 @@ async function claimPlayerDataRequest(project, requestId, jobId, placeId) {
           claimedPlaceId: placeId,
           claimedAt: now,
           updatedAt: now,
+          ...(delivery ? { delivery } : {}),
         },
       },
       { returnDocument: "after", projection: { _id: 0 } },
@@ -6898,6 +7056,7 @@ async function claimPlayerDataRequest(project, requestId, jobId, placeId) {
     requestRecord.claimedPlaceId = placeId;
     requestRecord.claimedAt = now;
     requestRecord.updatedAt = now;
+    if (delivery) requestRecord.delivery = delivery;
     requests[index] = { ...requestRecord, expiresAt: requestRecord.expiresAt.toISOString() };
     await writeLocalPlayerDataRequestStore(requests);
     return requestRecord;
@@ -7488,6 +7647,11 @@ async function handleStudioPairingClaim(req, res, rawPairingId) {
     status: "approved",
     universeId: pairing.universeId,
     package: installerPackage,
+    studioRelay: {
+      credential: installSecret,
+      playerDataStoreName: pairing.playerDataStoreName,
+      playerDataKeyPrefix: pairing.playerDataKeyPrefix,
+    },
   });
 }
 

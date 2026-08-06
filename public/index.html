@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260806-2/styles.css">
+    <link rel="stylesheet" href="/assets/20260806-3/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -2046,11 +2046,11 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
             <div>
               <span class="groupEyebrow">Automatic DataStore access</span>
               <h2>Player data</h2>
-              <p>The Studio plugin configures your DataStore name and the exact string before each user ID. Published servers then load and save that key automatically.</p>
+              <p>The connected Studio plugin loads and saves your configured DataStore key directly. Keep the experience open in Studio; no live game server is required.</p>
             </div>
             <div class="playerDataBridgeBadge" id="playerDataBridgeBadge" data-state="waiting">
               <span></span>
-              <strong>Waiting for a live server</strong>
+              <strong>Waiting for Studio plugin</strong>
             </div>
           </section>
 
@@ -2058,7 +2058,7 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
             <header class="playerModerationSectionHeader">
               <div>
                 <h2>Find a player</h2>
-                <p>Username and user ID both work. For automatic direct DataStore access, the player must be offline so a live game session cannot overwrite your change.</p>
+                <p>Username and user ID both work. Keep the paired experience open in Studio with Studio API access enabled. The player must be offline so a live session cannot overwrite your change.</p>
               </div>
               <button class="button secondary compact" id="refreshPlayerDataButton" type="button">Refresh</button>
             </header>
@@ -2203,6 +2203,6 @@ RoAnalytics.RegisterPlayerDataAdapter({
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260806-2/app.js"></script>
+    <script defer src="/assets/20260806-3/app.js"></script>
   </body>
 </html>

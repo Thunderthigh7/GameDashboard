@@ -515,7 +515,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260806-2";
+const DASHBOARD_ASSET_VERSION = "20260806-3";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2076,15 +2076,17 @@ function renderPlayerData() {
   if (playerDataBridgeBadge) {
     playerDataBridgeBadge.dataset.state = connected ? "connected" : liveServerCount ? "waiting" : "offline";
     const label = connected
-      ? bridge.mode === "direct_datastore"
+      ? bridge.mode === "studio_plugin"
+        ? "Studio plugin ready"
+        : bridge.mode === "direct_datastore"
         ? "Automatic DataStore ready"
         : `${bridge.adapterServerCount} live adapter server${Number(bridge.adapterServerCount) === 1 ? "" : "s"}`
       : liveServerCount
         ? "Live server has no adapter"
-        : "No live server connected";
+        : "Studio plugin offline";
     const strong = playerDataBridgeBadge.querySelector("strong");
     if (strong) strong.textContent = label;
-    playerDataBridgeBadge.title = bridge.mode === "direct_datastore"
+    playerDataBridgeBadge.title = ["studio_plugin", "direct_datastore"].includes(bridge.mode)
       ? `${bridge.dataStoreName || "DataStore"} / ${bridge.keyPrefix || ""}{userId}`
       : "";
   }
@@ -2108,9 +2110,9 @@ function renderPlayerDataRequest(requestRecord) {
   const detail = requestRecord.error
     ? requestRecord.error
     : status === "processing"
-      ? "Running in a published Roblox server"
+      ? requestRecord.processor === "studio_plugin" ? "Running through the connected Studio plugin" : "Running in a published Roblox server"
       : status === "queued"
-        ? `Waiting via ${requestRecord.delivery === "messaging" ? "Messaging Service" : "server heartbeat"}`
+        ? requestRecord.delivery === "messaging" ? "Waiting via Messaging Service" : "Waiting for the Studio plugin or a server"
         : status === "completed"
           ? requestRecord.version ? `Version ${requestRecord.version}` : "Completed"
           : "Request expired before a server claimed it";
@@ -2126,6 +2128,9 @@ function renderPlayerDataRequest(requestRecord) {
 
 function getPlayerDataBridgeMessage(bridge = {}) {
   if (bridge.connected || Number(bridge.adapterServerCount) > 0) {
+    if (bridge.mode === "studio_plugin") {
+      return `Studio Player Data is connected for ${bridge.dataStoreName || "your DataStore"} keys ${bridge.keyPrefix || ""}{userId}. No live server is required; the target player must be offline.`;
+    }
     if (bridge.mode === "direct_datastore") {
       return `Automatic access is live for ${bridge.dataStoreName || "your DataStore"} keys ${bridge.keyPrefix || ""}{userId}. The target player must be offline.`;
     }
@@ -2134,7 +2139,7 @@ function getPlayerDataBridgeMessage(bridge = {}) {
   if (Number(bridge.liveServerCount) > 0) {
     return "RoAnalytics is live, but automatic DataStore access is not configured. Update through the Studio plugin or register a custom adapter.";
   }
-  return "Publish and join the game so a live server can process player data requests.";
+  return "Open the paired experience in Studio and keep the RoAnalytics plugin connected, or start a published server.";
 }
 
 async function requestPlayerDataRead() {
@@ -2150,7 +2155,7 @@ async function requestPlayerDataRead() {
   resetPlayerDataEditor({ preserveTarget: true });
   playerDataBusy = true;
   setPlayerDataControlsDisabled(true);
-  setPlayerDataStatus("Sending a read request to your live Roblox server...");
+  setPlayerDataStatus("Sending a read request to the connected Studio plugin...");
   try {
     const data = await request("/api/player-data/requests", {
       method: "POST",
@@ -2196,7 +2201,7 @@ async function requestPlayerDataWrite() {
   stopPlayerDataPolling();
   playerDataBusy = true;
   setPlayerDataControlsDisabled(true);
-  setPlayerDataStatus("Sending the checked update to your live Roblox server...");
+  setPlayerDataStatus("Sending the checked update to the connected Studio plugin...");
   try {
     const data = await request("/api/player-data/requests", {
       method: "POST",
@@ -2254,7 +2259,7 @@ async function pollPlayerDataRequest(requestId, operation) {
       playerDataBusy = false;
       playerDataPollTimer = null;
       if (requestRecord.status !== "completed") {
-        setPlayerDataStatus(requestRecord.error || "The request expired before a live server completed it.", "error");
+        setPlayerDataStatus(requestRecord.error || "The request expired before Studio or a live server completed it.", "error");
         setPlayerDataControlsDisabled(false);
         return;
       }

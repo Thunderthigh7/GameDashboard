@@ -26,6 +26,12 @@ assert.match(pluginSource, /Allow HTTP Requests/);
 assert.match(pluginSource, /KEY STRING BEFORE USER ID/);
 assert.match(pluginSource, /playerDataStoreName = playerDataStoreName/);
 assert.match(pluginSource, /playerDataKeyPrefix = playerDataKeyPrefix/);
+assert.match(pluginSource, /\/api\/roblox\/studio-player-data\/poll/);
+assert.match(pluginSource, /RoAnalyticsRelayCredential_/);
+assert.match(pluginSource, /DataStoreService:GetDataStore\(relayDataStoreName\)/);
+assert.match(pluginSource, /dataStore:GetAsync\(key, options\)/);
+assert.match(pluginSource, /dataStore:UpdateAsync\(key/);
+assert.match(pluginSource, /Studio Access to API Services/);
 
 const secret = `roa_${"a".repeat(48)}`;
 const installerPackage = await buildRoAnalyticsInstallerPackage({
@@ -53,11 +59,21 @@ assert.match(serverSource, /claimTokenHash: hashStudioPairingToken/);
 assert.match(serverSource, /pairing\.secretEncrypted = encryptRobloxLiveOAuthToken/);
 assert.match(serverSource, /normalizeStudioDataStoreSetting/);
 assert.match(serverSource, /playerDataStoreName: pairing\.playerDataStoreName/);
+assert.match(serverSource, /handleStudioPlayerDataPoll/);
+assert.match(serverSource, /studioRelay: \{/);
+assert.match(serverSource, /credential: installSecret/);
+assert.match(serverSource, /mode: studioRelay[\s\S]*?"studio_plugin"/);
+assert.match(serverSource, /studioPlayerDataRelaysByUniverseId/);
 assert.match(serverSource, /installSecretHashes: \[\]/);
 assert.ok(
   serverSource.indexOf('url.pathname === "/api/roblox/studio-pairings"')
     < serverSource.indexOf('url.pathname.startsWith("/api/") && !isDashboardAuthenticated(req)'),
   "Studio must claim its pairing before dashboard-session enforcement",
+);
+assert.ok(
+  serverSource.indexOf('url.pathname === "/api/roblox/studio-player-data/poll"')
+    < serverSource.indexOf('url.pathname.startsWith("/api/") && !isDashboardAuthenticated(req)'),
+  "The authenticated Studio relay must poll before dashboard-session enforcement",
 );
 
 assert.match(htmlSource, /data-dashboard-view="player-data"/);
@@ -68,6 +84,8 @@ assert.match(htmlSource, /RoAnalytics\.RegisterPlayerDataAdapter/);
 assert.match(appSource, /async function requestPlayerDataRead/);
 assert.match(appSource, /async function requestPlayerDataWrite/);
 assert.match(appSource, /function pollPlayerDataRequest/);
+assert.match(appSource, /Studio plugin ready/);
+assert.match(appSource, /No live server is required/);
 assert.match(stylesSource, /\.playerDataBridgeBadge/);
 
 assert.match(serverSource, /PLAYER_DATA_REQUEST_TTL_MS = 15 \* 60 \* 1000/);
