@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260806-5/styles.css">
+    <link rel="stylesheet" href="/assets/20260806-6/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -40,16 +40,6 @@
           <section class="navGroup" aria-labelledby="generalNavLabel">
             <h2 class="navGroupLabel" id="generalNavLabel">General</h2>
             <div class="navGroupLinks">
-              <a class="active" href="#overview" data-dashboard-view="overview">
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <path d="M3.5 10.5 12 3.5l8.5 7" />
-                    <path d="M5.5 9.2V20h13V9.2" />
-                    <path d="M9.5 20v-6h5v6" />
-                  </svg>
-                </span>
-                <span>Overview</span>
-              </a>
               <a href="#connect" data-dashboard-view="connect">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
@@ -66,6 +56,15 @@
           <section class="navGroup" aria-labelledby="analyticsNavLabel">
             <h2 class="navGroupLabel" id="analyticsNavLabel">Analytics</h2>
             <div class="navGroupLinks">
+              <a class="active" href="#overview" data-dashboard-view="overview">
+                <span class="navIconTile" aria-hidden="true">
+                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
+                    <path d="m3.5 6.5 5.5-2.5 6 2.5L20.5 4v13.5L15 20l-6-2.5L3.5 20Z" />
+                    <path d="M9 4v13.5M15 6.5V20" />
+                  </svg>
+                </span>
+                <span>Map</span>
+              </a>
               <a href="#events" data-dashboard-view="events">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
@@ -122,23 +121,8 @@
             </div>
           </section>
 
-          <section class="navGroup" aria-labelledby="accountNavLabel">
-            <h2 class="navGroupLabel" id="accountNavLabel">Account</h2>
-            <div class="navGroupLinks">
-              <a href="#usage" data-dashboard-view="usage">
-                <span class="navIconTile" aria-hidden="true">
-                  <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
-                    <path d="M4 4v16h16" />
-                    <path d="m6.5 16 4-4 3 2 5-6" />
-                  </svg>
-                </span>
-                <span>Usage</span>
-              </a>
-            </div>
-          </section>
-
-          <section class="navGroup" aria-labelledby="contentNavLabel">
-            <h2 class="navGroupLabel" id="contentNavLabel">Content</h2>
+          <section class="navGroup" aria-labelledby="betaFeaturesNavLabel">
+            <h2 class="navGroupLabel" id="betaFeaturesNavLabel">Beta Features</h2>
             <div class="navGroupLinks">
               <a href="#assets" data-dashboard-view="assets">
                 <span class="navIconTile" aria-hidden="true">
@@ -149,12 +133,6 @@
                 </span>
                 <span>Assets</span>
               </a>
-            </div>
-          </section>
-
-          <section class="navGroup" aria-labelledby="communityNavLabel">
-            <h2 class="navGroupLabel" id="communityNavLabel">Community</h2>
-            <div class="navGroupLinks">
               <a href="#groups" data-dashboard-view="groups">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
@@ -165,12 +143,6 @@
                 </span>
                 <span>Groups</span>
               </a>
-            </div>
-          </section>
-
-          <section class="navGroup" aria-labelledby="moderationNavLabel">
-            <h2 class="navGroupLabel" id="moderationNavLabel">Moderation</h2>
-            <div class="navGroupLinks">
               <a href="#moderation" data-dashboard-view="moderation" id="moderationNavLink">
                 <span class="navIconTile" aria-hidden="true">
                   <svg class="navIcon" viewBox="0 0 24 24" focusable="false">
@@ -254,7 +226,7 @@
         <header class="topbar" id="overview" hidden>
           <div>
             <div class="pageTitleRow">
-              <h1 id="pageTitle">Overview</h1>
+              <h1 id="pageTitle">Map</h1>
             </div>
             <p id="pageSubtitle">Roblox game analytics powered by live heartbeat data.</p>
           </div>
@@ -2214,6 +2186,6 @@ RoAnalytics.RegisterPlayerDataAdapter({
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260806-5/app.js"></script>
+    <script defer src="/assets/20260806-6/app.js"></script>
   </body>
 </html>

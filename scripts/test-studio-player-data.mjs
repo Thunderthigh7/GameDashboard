@@ -87,6 +87,29 @@ assert.ok(
 
 assert.match(htmlSource, /data-dashboard-view="player-data"/);
 assert.match(htmlSource, /data-view-panel="player-data"/);
+const analyticsNavIndex = htmlSource.indexOf('id="analyticsNavLabel">Analytics</h2>');
+const mapNavIndex = htmlSource.indexOf('href="#overview" data-dashboard-view="overview"', analyticsNavIndex);
+const eventsNavIndex = htmlSource.indexOf('href="#events" data-dashboard-view="events"', analyticsNavIndex);
+const betaNavIndex = htmlSource.indexOf('id="betaFeaturesNavLabel">Beta Features</h2>');
+const assetsNavIndex = htmlSource.indexOf('href="#assets" data-dashboard-view="assets"', betaNavIndex);
+const groupsNavIndex = htmlSource.indexOf('href="#groups" data-dashboard-view="groups"', betaNavIndex);
+const moderationNavIndex = htmlSource.indexOf('href="#moderation" data-dashboard-view="moderation"', betaNavIndex);
+const playerDataNavIndex = htmlSource.indexOf('href="#player-data" data-dashboard-view="player-data"', betaNavIndex);
+const adminNavIndex = htmlSource.indexOf('id="adminNavGroup"', betaNavIndex);
+assert.ok(analyticsNavIndex >= 0 && mapNavIndex > analyticsNavIndex && mapNavIndex < eventsNavIndex, "Map should be the first Analytics tab");
+assert.match(htmlSource.slice(mapNavIndex, eventsNavIndex), /<span>Map<\/span>/);
+assert.ok(
+  betaNavIndex >= 0
+    && assetsNavIndex < groupsNavIndex
+    && groupsNavIndex < moderationNavIndex
+    && moderationNavIndex < playerDataNavIndex
+    && playerDataNavIndex < adminNavIndex,
+  "Beta Features should contain Assets, Groups, Player Moderation, and Player Data before Admin",
+);
+assert.doesNotMatch(htmlSource, /href="#usage" data-dashboard-view="usage"/, "Usage should be hidden from navigation");
+assert.match(htmlSource, /id="adminNavGroup"[\s\S]*?id="adminNavLabel"[\s\S]*?<span>Admin<\/span>/, "Admin navigation should remain intact");
+assert.match(htmlSource, /id="pageTitle">Map<\/h1>/);
+assert.match(appSource, /overview: \{\s*title: "Map"/);
 assert.match(htmlSource, /id="studioInstallerPanel"/);
 assert.match(htmlSource, /id="playerDataJsonEditor"/);
 assert.match(htmlSource, /id="playerDataStoreSelect"/);

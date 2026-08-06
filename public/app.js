@@ -520,7 +520,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260806-5";
+const DASHBOARD_ASSET_VERSION = "20260806-6";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -1475,7 +1475,7 @@ function renderActiveView(options = {}) {
 
   const viewCopy = {
     overview: {
-      title: "Overview",
+      title: "Map",
       subtitle: "Roblox game analytics powered by live heartbeat data.",
     },
     events: {
