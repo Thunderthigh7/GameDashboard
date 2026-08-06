@@ -9831,7 +9831,16 @@ async function getUniverseSummaries(ownerUserId = null) {
   let projects = ownerUserId ? await getUserProjects(ownerUserId) : await readProjects();
   if (ownerUserId) {
     const owner = await findUserById(ownerUserId);
-    if (!isAdminUser(owner)) projects = projects.filter((project) => !isDemoProject(project));
+    if (!isAdminUser(owner)) {
+      projects = projects.filter((project) => !isDemoProject(project));
+      const demoProject = await getDemoUniverseForViewer();
+      if (demoProject) {
+        const demoUniverseId = String(demoProject.universeId);
+        if (!projects.some((project) => String(project.universeId) === demoUniverseId)) {
+          projects.push(serializeProject(demoProject));
+        }
+      }
+    }
   }
   const projectsByUniverseId = new Map(projects.map((project) => [String(project.universeId), project]));
   await Promise.all(projects
@@ -18850,6 +18859,13 @@ async function getProjectByUniverseId(universeId) {
   return projects.find((project) => cleanInteger(project.universeId) === cleanUniverseId) || null;
 }
 
+async function getDemoUniverseForViewer() {
+  const project = await getProjectByUniverseId(DEMO_UNIVERSE_ID);
+  if (!isDemoProject(project)) return null;
+  await ensureDemoUniverseRuntime(project);
+  return project;
+}
+
 async function getProjectByIdForOwner(projectId, ownerUserId) {
   const cleanProjectId = cleanString(projectId, 120);
   if (!cleanProjectId || !ownerUserId) return null;
@@ -18914,13 +18930,12 @@ function serializeProject(project) {
 async function canAccessUniverseFromQuery(ownerUserId, searchParams) {
   const universeId = cleanInteger(searchParams.get("universeId"));
   if (universeId <= 0) return false;
-  const project = await getProjectByUniverseIdForOwner(ownerUserId, universeId);
-  if (!project) return false;
-  if (isDemoProject(project)) {
-    if (!isAdminUser(await findUserById(ownerUserId))) return false;
-    await ensureDemoUniverseRuntime(project);
+  if (universeId === DEMO_UNIVERSE_ID) {
+    const demoProject = await getDemoUniverseForViewer();
+    return Boolean(demoProject);
   }
-  return true;
+  const project = await getProjectByUniverseIdForOwner(ownerUserId, universeId);
+  return Boolean(project);
 }
 
 async function getProjectByUniverseIdForOwner(ownerUserId, universeId) {

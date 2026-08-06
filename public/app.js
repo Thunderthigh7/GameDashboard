@@ -5367,7 +5367,7 @@ function updateDemoUniverseControl() {
   const hasDemoUniverse = knownUniverses.some((universe) => Boolean(universe?.isDemo));
   createDemoUniverseButton.hidden = !authenticatedUser?.isAdmin || hasDemoUniverse;
   if (!createDemoUniverseButton.hidden && !createDemoUniverseButton.disabled) {
-    createDemoUniverseButton.innerHTML = `<span aria-hidden="true">&#10022;</span>Create demo universe`;
+    createDemoUniverseButton.innerHTML = `<span aria-hidden="true">&#10022;</span>Create demo world`;
   }
 }
 
@@ -5398,7 +5398,7 @@ async function createDemoUniverse() {
       demoUniverseStatus.textContent = error.message;
     }
     createDemoUniverseButton.disabled = false;
-    createDemoUniverseButton.innerHTML = `<span aria-hidden="true">&#10022;</span>Create demo universe`;
+    createDemoUniverseButton.innerHTML = `<span aria-hidden="true">&#10022;</span>Create demo world`;
   }
 }
 
@@ -5697,7 +5697,7 @@ function renderOwnedGameOption(game) {
 function renderUniverseOption(universe) {
   const id = String(universe.id || "");
   const label = String(universe.name || `Universe ${id}`);
-  const suffix = universe.isDemo ? " (Admin demo)" : "";
+  const suffix = universe.isDemo ? " (Demo world)" : "";
   const selected = id === selectedUniverseId ? " selected" : "";
   return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(label + suffix)}</option>`;
 }
@@ -5719,7 +5719,7 @@ function renderUniverseDropdownOption(universe) {
   const selected = id === selectedUniverseId;
   return `
     <button class="universeDropdownOption" type="button" role="option" tabindex="-1" data-universe-option="${escapeHtml(id)}" aria-selected="${selected ? "true" : "false"}">
-      <strong>${escapeHtml(label)}${universe.isDemo ? `<span class="demoUniverseBadge">Admin demo</span>` : ""}</strong>
+      <strong>${escapeHtml(label)}${universe.isDemo ? `<span class="demoUniverseBadge">Demo</span>` : ""}</strong>
       <small>${universe.isDemo ? "Complete synthetic analytics dataset" : `Universe ${escapeHtml(id)}`}</small>
     </button>
   `;
@@ -5865,8 +5865,8 @@ function renderConnectedGame(universe) {
         </span>
         <div class="connectedGameInfo">
           <div class="connectedGameTitle">
-            <strong>${escapeHtml(name)}${isDemo ? `<span class="demoUniverseBadge">Admin demo</span>` : ""}</strong>
-            <span>${isDemo ? "Synthetic universe &middot; Private to your admin account" : `Universe ${escapeHtml(id)}`}</span>
+            <strong>${escapeHtml(name)}${isDemo ? `<span class="demoUniverseBadge">Demo</span>` : ""}</strong>
+            <span>${isDemo ? "Public demo universe · Read-only" : `Universe ${escapeHtml(id)}`}</span>
           </div>
           <span class="connectedGameConnection">${isDemo ? "Demo data ready" : "Connected"}</span>
         </div>
@@ -5918,8 +5918,8 @@ function renderSetupChecklist(selectedUniverse = null) {
   const isDemo = Boolean(universe?.isDemo);
 
   const steps = isDemo ? [
-    { title: "Connect a game", detail: "Synthetic universe attached to your admin account.", complete: true },
-    { title: "Install RoAnalytics", detail: "Not required for the admin demo.", complete: true },
+    { title: "Connect a game", detail: "Demo universe is attached to all dashboard users.", complete: true },
+    { title: "Install RoAnalytics", detail: "Not required for the public demo.", complete: true },
     { title: "Start a live server", detail: "Live activity is simulated.", complete: true },
     {
       title: "Confirm signals",

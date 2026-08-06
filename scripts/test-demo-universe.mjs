@@ -51,7 +51,11 @@ const primaryProperties = new Map([
   ["purchase_prompt_closed", "reason"],
 ]);
 for (const [eventName, propertyName] of primaryProperties) {
-  assert.equal(Object.keys(eventsByName.get(eventName)[0].properties)[0], propertyName, `${eventName} should open on its useful category`);
+  assert.equal(
+    eventsByName.get(eventName)[0].properties?.[propertyName] !== undefined,
+    true,
+    `${eventName} should include ${propertyName} as a useful category`,
+  );
 }
 
 const genericContextProperties = ["cohort", "device", "region"];
@@ -65,6 +69,19 @@ for (const event of fixture.customEvents) {
   }
 }
 
+const contextProperties = ["mapName", "gameMode", "mapId"];
+for (const eventName of requiredEvents) {
+  const event = eventsByName.get(eventName)?.[0];
+  assert.ok(event, `missing event sample for ${eventName}`);
+  for (const propertyName of contextProperties) {
+    assert.equal(
+      Object.hasOwn(event?.properties || {}, propertyName),
+      true,
+      `${eventName} should include ${propertyName}`,
+    );
+  }
+}
+
 const laserFailureShare = propertyShare("obby_failed", "obstacle", "Laser Ladder");
 const shotgunUsageShare = propertyShare("weapon_selected", "weapon", "Shotgun");
 const shotgunDeathShare = propertyShare("combat_death", "killedByWeapon", "Shotgun");
@@ -73,7 +90,7 @@ const voidEdgeDefeatShare = propertyShare("sword_duel_defeat", "defeatedBySword"
 const inventoryExitShare = propertyShare("simulator_session_ended", "reason", "Pet inventory full");
 const priceObjectionShare = propertyShare("purchase_prompt_closed", "reason", "Too expensive");
 
-assert.equal(DEMO_SEED_VERSION, 8);
+assert.equal(DEMO_SEED_VERSION, 9);
 assert.equal(eventsByName.get("session_started")?.length, fixture.counts.sessions);
 assert.ok(fixture.customEvents.length >= 4_000, "the demo should contain enough event history for useful charts");
 assertShareBetween(laserFailureShare, 0.55, 0.61, "Laser Ladder failure share");
@@ -98,7 +115,8 @@ for (const partName of ["LaserLadderLanding", "LaserHazard", "FpsCover", "SwordP
 
 assert.deepEqual(fixture.funnels.map((funnel) => funnel.name), [
   "Obby completion",
-  "FPS match completion",
+  "FPS lethal loadout",
+  "Sword duel outcomes",
   "Shop conversion",
 ]);
 
