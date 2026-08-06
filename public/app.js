@@ -720,7 +720,6 @@ function bindEvents() {
     createProject();
   });
   copyProjectSecretButton?.addEventListener("click", copyProjectSecret);
-  studioPairingList?.addEventListener("click", handleStudioPairingAction);
   selectedUniverseThumbnail?.addEventListener("error", handleSelectedUniverseThumbnailError);
   connectedGameList?.addEventListener("error", handleConnectedGameThumbnailError, true);
   connectedGameList?.addEventListener("click", (event) => {
@@ -5425,53 +5424,24 @@ async function loadStudioPairings(options = {}) {
 function renderStudioPairings(pairings) {
   if (!studioPairingList || !studioPairingStatus) return;
   const pending = pairings.filter((pairing) => pairing.status === "pending");
-  const active = pending.length ? pending : pairings.filter((pairing) => pairing.status === "approved" || pairing.status === "claimed");
+  const active = pairings.filter((pairing) => pairing.status === "approved" || pairing.status === "claimed");
   studioPairingList.innerHTML = active.length
     ? active.map((pairing) => `
       <article class="studioPairingRow" data-studio-pairing-id="${escapeHtml(pairing.id)}">
         <div>
-          <span>Studio code</span>
-          <strong>${escapeHtml(pairing.code || "---- ----")}</strong>
-          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} &middot; ` : ""}Automatic DataStore discovery &middot; ${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
+          <span>Studio install</span>
+          <strong>${pairing.status === "claimed" ? "Installed" : "Ready to install"}</strong>
+          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} &middot; ` : ""}Auto-paired from plugin &middot; ${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
         </div>
-        ${pairing.status === "pending" ? `
-          <div class="studioPairingActions">
-            <button class="button compact" type="button" data-studio-pairing-action="approve">Approve & install</button>
-            <button class="button secondary compact" type="button" data-studio-pairing-action="deny">Deny</button>
-          </div>
-        ` : `<span class="studioPairingState" data-state="${escapeHtml(pairing.status)}">${pairing.status === "claimed" ? "Installed" : "Approved"}</span>`}
+        <span class="studioPairingState" data-state="${escapeHtml(pairing.status)}">${pairing.status === "claimed" ? "Installed" : "Approved"}</span>
       </article>
     `).join("")
     : "";
   studioPairingStatus.textContent = pending.length
-    ? `${pending.length} Studio request${pending.length === 1 ? " is" : "s are"} waiting for your approval. Match the code before approving.`
+    ? `${pending.length} Studio request${pending.length === 1 ? " is" : " are"} waiting for completion in the plugin. Keep the Studio plugin open in this game.`
     : active.some((pairing) => pairing.status === "claimed")
-      ? "The plugin received and installed the current RoAnalytics package. Publish the game to activate it."
-      : "Start Pair & Install from the Studio plugin to see an approval request.";
-}
-
-async function handleStudioPairingAction(event) {
-  const button = event.target.closest("[data-studio-pairing-action]");
-  const row = button?.closest("[data-studio-pairing-id]");
-  if (!button || !row) return;
-  const action = button.dataset.studioPairingAction;
-  const code = row.querySelector("strong")?.textContent || "this code";
-  if (action === "approve" && !window.confirm(`Approve the Studio plugin showing ${code}?`)) return;
-  button.disabled = true;
-  studioPairingStatus.textContent = action === "approve" ? "Approving Studio and preparing the installer package..." : "Denying Studio pairing...";
-  try {
-    await request(`/api/studio-pairings/${encodeURIComponent(row.dataset.studioPairingId)}/${action}`, {
-      method: "POST",
-    });
-    studioPairingStatus.textContent = action === "approve"
-      ? "Approved. Studio is downloading and installing RoAnalytics now."
-      : "Studio pairing denied.";
-    await loadStudioPairings({ background: true });
-  } catch (error) {
-    handleAuthError(error);
-    if (authenticated) studioPairingStatus.textContent = error.message;
-    button.disabled = false;
-  }
+      ? "The plugin installed RoAnalytics for this universe. Publish the game to activate live analytics."
+      : "Auto-pairing is ready. Open the Studio plugin and click Connect & Install.";
 }
 
 function startStudioPairingRefresh() {
@@ -5508,7 +5478,7 @@ async function createProject() {
     loadedViews.delete("usage");
     removeScopedSessionCache("admin-users", "summary");
     loadedViews.delete("admin");
-    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Open it in Studio and use Pair & Install.";
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Open it in Studio and click Connect & Install.";
     await loadUniverses({ preferredUniverseId: universeId });
     await loadOwnedGames();
     await loadStudioPairings();
@@ -5933,8 +5903,13 @@ function renderSetupChecklist(selectedUniverse = null) {
       complete: knownUniverses.length > 0,
     },
     {
+    {
       title: "Install RoAnalytics",
-      detail: hasData ? "Roblox is sending data from the installed package." : secretVisible ? "A manual setup secret is visible. The Studio installer can fill it automatically instead." : "Open the Studio plugin, start Pair & Install, then approve the matching code here.",
+      detail: hasData
+        ? "Roblox is sending data from the installed package."
+        : secretVisible
+          ? "A manual setup secret is visible. The Studio plugin can also auto-fill it."
+          : "Open the Studio plugin and click Connect & Install. Pairing is automatic.",
       complete: hasData,
       current: Boolean(universe && !hasData),
     },

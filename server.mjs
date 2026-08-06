@@ -7710,6 +7710,7 @@ async function handleStudioPairingStart(req, res) {
 
   const universeId = cleanInteger(body?.universeId);
   const placeId = cleanInteger(body?.placeId);
+  const gameName = cleanString(body?.gameName, 120);
   const project = await getProjectByUniverseId(universeId);
   if (!project || isDemoProject(project)) {
     return sendJson(res, 404, { error: "Connect this Roblox universe on the website before pairing Studio." });
@@ -7721,6 +7722,13 @@ async function handleStudioPairingStart(req, res) {
   }
 
   const now = Date.now();
+  const installSecret = generateProjectSecret();
+  await addProjectInstallSecret(project.id, project.ownerUserId, {
+    id: crypto.randomUUID(),
+    secretHash: hashProjectSecret(installSecret),
+    label: gameName || (placeId > 0 ? `Studio place ${placeId}` : "Studio installer"),
+    createdAt: now,
+  });
   const claimToken = crypto.randomBytes(32).toString("base64url");
   const pairing = await saveStudioPairing({
     id: crypto.randomUUID(),
@@ -7730,12 +7738,12 @@ async function handleStudioPairingStart(req, res) {
     placeId,
     displayCode: createStudioPairingCode(),
     claimTokenHash: hashStudioPairingToken(claimToken),
-    status: "pending",
-    secretEncrypted: "",
+    status: "approved",
+    secretEncrypted: encryptRobloxLiveOAuthToken(installSecret),
+    approvedAt: now,
+    claimedAt: 0,
     createdAt: now,
     updatedAt: now,
-    approvedAt: 0,
-    claimedAt: 0,
     expiresAtMs: now + STUDIO_PAIRING_TTL_MS,
   });
 
@@ -7747,6 +7755,7 @@ async function handleStudioPairingStart(req, res) {
     universeId,
     universeName: project.name || `Universe ${universeId}`,
     expiresAt: pairing.expiresAtMs,
+    status: pairing.status,
   });
 }
 

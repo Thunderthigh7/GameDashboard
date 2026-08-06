@@ -16,7 +16,7 @@ local CATALOG_LIST_DELAY_SECONDS = 12
 local toolbar = plugin:CreateToolbar("RoAnalytics")
 local toggleButton = toolbar:CreateButton(
 	"RoAnalytics Installer",
-	"Pair this experience, install RoAnalytics, and connect Studio Player Data.",
+	"Connect this experience and install RoAnalytics in one click.",
 	""
 )
 
@@ -76,7 +76,7 @@ create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 2,
 	Size = UDim2.new(1, 0, 0, 54),
-	Text = "Pair once to install RoAnalytics and connect Player Data. Studio discovers your standard DataStores and player-key patterns automatically.",
+	Text = "Connect this experience and install RoAnalytics automatically. Player-data discovery is optional and stays available in the plugin.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 13,
 	TextWrapped = true,
@@ -97,7 +97,7 @@ create("TextLabel", {
 	Font = Enum.Font.GothamMedium,
 	Position = UDim2.fromOffset(12, 9),
 	Size = UDim2.new(1, -24, 0, 16),
-	Text = "PAIRING CODE",
+	Text = "INSTALL STATUS",
 	TextColor3 = Color3.fromRGB(139, 92, 246),
 	TextSize = 10,
 	TextXAlignment = Enum.TextXAlignment.Left,
@@ -120,7 +120,7 @@ local installButton = create("TextButton", {
 	Font = Enum.Font.GothamBold,
 	LayoutOrder = 4,
 	Size = UDim2.new(1, 0, 0, 40),
-	Text = "Pair & Install",
+	Text = "Connect & Install",
 	TextColor3 = Color3.fromRGB(255, 255, 255),
 	TextSize = 13,
 }, root)
@@ -131,7 +131,7 @@ local statusLabel = create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 5,
 	Size = UDim2.new(1, 0, 0, 72),
-	Text = "Start pairing. After approval, Studio will discover your DataStores and sample player-key patterns automatically.",
+	Text = "Start pairing. The website now auto-approves this request and sends the package back automatically.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 12,
 	TextWrapped = true,
@@ -624,7 +624,7 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 				and startStudioPlayerDataRelay(tostring(studioRelay.credential or ""))
 			then
 				setStatus(
-					"RoAnalytics is installed. Enable Studio Access to API Services for Player Data. For live analytics, also enable Allow HTTP Requests and publish.",
+					"RoAnalytics is installed. Enable Allow HTTP Requests and publish for live analytics. Player relay needs Studio Access to API Services.",
 					"success"
 				)
 			else
@@ -643,7 +643,7 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 		pairingActive = false
 		installButton.Active = true
 		installButton.Text = "Start New Pairing"
-		setStatus("The pairing code expired. Start a new pairing and approve it on the website.", "error")
+		setStatus("Pairing timed out. Click Connect & Install to try again.", "error")
 	end
 end
 
@@ -660,6 +660,7 @@ local function startPairing()
 		return postJson(DASHBOARD_BASE_URL .. "/api/roblox/studio-pairings", {
 			universeId = getUniverseId(),
 			placeId = game.PlaceId,
+			gameName = game.Name,
 		})
 	end)
 	if not ok then
@@ -669,9 +670,9 @@ local function startPairing()
 		setStatus("Could not start pairing: " .. tostring(result), "error")
 		return
 	end
-	codeLabel.Text = tostring(result.code or "---- ----")
-	installButton.Text = "Waiting for Approval..."
-	setStatus("On RoAnalytics, open Connect Universe and approve the request showing this exact code.", "")
+	codeLabel.Text = tostring(result.code or "Auto install")
+	installButton.Text = "Waiting for package..."
+	setStatus("RoAnalytics accepted the request. Waiting for package delivery.", "")
 	task.spawn(
 		pollPairing,
 		generation,

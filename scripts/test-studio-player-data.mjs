@@ -21,7 +21,7 @@ assert.doesNotMatch(pluginSource, /heatmap|map[-_ ]snapshot|GetDescendants\(\)|W
 assert.match(pluginSource, /ScriptEditorService:UpdateSourceAsync/);
 assert.match(pluginSource, /ChangeHistoryService:TryBeginRecording/);
 assert.match(pluginSource, /\/api\/roblox\/studio-pairings/);
-assert.match(pluginSource, /Pair & Install/);
+assert.match(pluginSource, /Connect & Install/);
 assert.match(pluginSource, /Allow HTTP Requests/);
 assert.doesNotMatch(pluginSource, /KEY STRING BEFORE USER ID|DATASTORE NAME/);
 assert.match(pluginSource, /DataStoreService:ListDataStoresAsync/);
