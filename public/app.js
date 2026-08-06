@@ -515,7 +515,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-7";
+const DASHBOARD_ASSET_VERSION = "20260806-1";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -2076,19 +2076,24 @@ function renderPlayerData() {
   if (playerDataBridgeBadge) {
     playerDataBridgeBadge.dataset.state = connected ? "connected" : liveServerCount ? "waiting" : "offline";
     const label = connected
-      ? `${bridge.adapterServerCount} live adapter server${Number(bridge.adapterServerCount) === 1 ? "" : "s"}`
+      ? bridge.mode === "direct_datastore"
+        ? "Automatic DataStore ready"
+        : `${bridge.adapterServerCount} live adapter server${Number(bridge.adapterServerCount) === 1 ? "" : "s"}`
       : liveServerCount
         ? "Live server has no adapter"
         : "No live server connected";
     const strong = playerDataBridgeBadge.querySelector("strong");
     if (strong) strong.textContent = label;
+    playerDataBridgeBadge.title = bridge.mode === "direct_datastore"
+      ? `${bridge.dataStoreName || "DataStore"} / ${bridge.keyPrefix || ""}{userId}`
+      : "";
   }
 
   if (playerDataRequestList) {
     const requests = playerDataState.requests || [];
     playerDataRequestList.innerHTML = requests.length
       ? requests.map(renderPlayerDataRequest).join("")
-      : `<div class="playerDataEmpty"><strong>No data requests yet</strong><span>Load a player to test your registered server adapter.</span></div>`;
+      : `<div class="playerDataEmpty"><strong>No data requests yet</strong><span>Load an offline player to use the DataStore configured by the Studio plugin.</span></div>`;
   }
   setPlayerDataControlsDisabled(playerDataBusy);
   updatePlayerDataEditorBytes();
@@ -2121,10 +2126,13 @@ function renderPlayerDataRequest(requestRecord) {
 
 function getPlayerDataBridgeMessage(bridge = {}) {
   if (bridge.connected || Number(bridge.adapterServerCount) > 0) {
+    if (bridge.mode === "direct_datastore") {
+      return `Automatic access is live for ${bridge.dataStoreName || "your DataStore"} keys ${bridge.keyPrefix || ""}{userId}. The target player must be offline.`;
+    }
     return "The player data adapter is live and ready.";
   }
   if (Number(bridge.liveServerCount) > 0) {
-    return "RoAnalytics is live, but RegisterPlayerDataAdapter has not been called in that server.";
+    return "RoAnalytics is live, but automatic DataStore access is not configured. Update through the Studio plugin or register a custom adapter.";
   }
   return "Publish and join the game so a live server can process player data requests.";
 }
@@ -5297,7 +5305,7 @@ function renderStudioPairings(pairings) {
         <div>
           <span>Studio code</span>
           <strong>${escapeHtml(pairing.code || "---- ----")}</strong>
-          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} · ` : ""}${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
+          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} &middot; ` : ""}${escapeHtml(pairing.playerDataStoreName || "DataStore")} / ${escapeHtml(pairing.playerDataKeyPrefix || "")}{userId} &middot; ${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
         </div>
         ${pairing.status === "pending" ? `
           <div class="studioPairingActions">

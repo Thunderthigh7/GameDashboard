@@ -23,11 +23,16 @@ assert.match(pluginSource, /ChangeHistoryService:TryBeginRecording/);
 assert.match(pluginSource, /\/api\/roblox\/studio-pairings/);
 assert.match(pluginSource, /Pair & Install/);
 assert.match(pluginSource, /Allow HTTP Requests/);
+assert.match(pluginSource, /KEY STRING BEFORE USER ID/);
+assert.match(pluginSource, /playerDataStoreName = playerDataStoreName/);
+assert.match(pluginSource, /playerDataKeyPrefix = playerDataKeyPrefix/);
 
 const secret = `roa_${"a".repeat(48)}`;
 const installerPackage = await buildRoAnalyticsInstallerPackage({
   rootDir: fileURLToPath(new URL("../RoAnalytics", import.meta.url)),
   secret,
+  playerDataStoreName: "PlayerData",
+  playerDataKeyPrefix: "Player_",
   version: "test",
 });
 assert.equal(installerPackage.name, "RoAnalytics");
@@ -37,6 +42,8 @@ assert.deepEqual(
 );
 const installedSettings = installerPackage.files.find((file) => file.path === "Config/Settings.lua")?.source || "";
 assert.match(installedSettings, new RegExp(`Settings\\.Secret = "${secret}"`));
+assert.match(installedSettings, /Settings\.PlayerDataStoreName = "PlayerData"/);
+assert.match(installedSettings, /Settings\.PlayerDataKeyPrefix = "Player_"/);
 assert.doesNotMatch(installedSettings, /Settings\.Secret = "paste-project-roblox-secret-here"/);
 
 assert.match(serverSource, /handleStudioPairingStart/);
@@ -44,6 +51,8 @@ assert.match(serverSource, /handleStudioPairingDecision/);
 assert.match(serverSource, /handleStudioPairingClaim/);
 assert.match(serverSource, /claimTokenHash: hashStudioPairingToken/);
 assert.match(serverSource, /pairing\.secretEncrypted = encryptRobloxLiveOAuthToken/);
+assert.match(serverSource, /normalizeStudioDataStoreSetting/);
+assert.match(serverSource, /playerDataStoreName: pairing\.playerDataStoreName/);
 assert.match(serverSource, /installSecretHashes: \[\]/);
 assert.ok(
   serverSource.indexOf('url.pathname === "/api/roblox/studio-pairings"')
@@ -79,7 +88,15 @@ assert.match(methodsSource, /function Methods\.RegisterPlayerDataAdapter/);
 assert.match(methodsSource, /runtimeEnvironment ~= "production"/);
 assert.match(methodsSource, /playerDataBridge = \{[\s\S]*?registered = registeredPlayerDataAdapter ~= nil/);
 assert.match(methodsSource, /applyHeartbeatPlayerData\(response\)/);
-assert.doesNotMatch(methodsSource, /DataStoreService/);
+assert.match(methodsSource, /DataStoreService:GetDataStore\(dataStoreName\)/);
+assert.match(methodsSource, /DataStoreGetOptions/);
+assert.match(methodsSource, /options\.UseCache = false/);
+assert.match(methodsSource, /dataStore:UpdateAsync/);
+assert.match(methodsSource, /currentKeyInfo:GetUserIds\(\)/);
+assert.match(methodsSource, /currentKeyInfo:GetMetadata\(\)/);
+assert.match(methodsSource, /This player is online/);
 assert.match(settingsSource, /Settings\.PlayerDataBridgeEnabled = true/);
+assert.match(settingsSource, /Settings\.PlayerDataStoreName = ""/);
+assert.match(settingsSource, /Settings\.PlayerDataKeyPrefix = ""/);
 
 console.log("Studio installer and player-data bridge tests passed.");

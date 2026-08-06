@@ -18,9 +18,9 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	false,
 	false,
 	390,
+	500,
 	330,
-	330,
-	260
+	430
 )
 local widget = plugin:CreateDockWidgetPluginGui("RoAnalyticsInstallerWidget", widgetInfo)
 widget.Title = "RoAnalytics Installer"
@@ -77,10 +77,50 @@ create("TextLabel", {
 	TextYAlignment = Enum.TextYAlignment.Top,
 }, root)
 
+local function createTextField(layoutOrder, labelText, placeholderText)
+	local field = create("Frame", {
+		BackgroundTransparency = 1,
+		LayoutOrder = layoutOrder,
+		Size = UDim2.new(1, 0, 0, 58),
+	}, root)
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		Size = UDim2.new(1, 0, 0, 17),
+		Text = labelText,
+		TextColor3 = Color3.fromRGB(203, 213, 225),
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, field)
+	local textBox = create("TextBox", {
+		BackgroundColor3 = Color3.fromRGB(24, 31, 49),
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+		Font = Enum.Font.Code,
+		PlaceholderColor3 = Color3.fromRGB(100, 116, 139),
+		PlaceholderText = placeholderText,
+		Position = UDim2.fromOffset(0, 22),
+		Size = UDim2.new(1, 0, 0, 36),
+		Text = "",
+		TextColor3 = Color3.fromRGB(226, 232, 240),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, field)
+	create("UICorner", { CornerRadius = UDim.new(0, 8) }, textBox)
+	create("UIPadding", {
+		PaddingLeft = UDim.new(0, 11),
+		PaddingRight = UDim.new(0, 11),
+	}, textBox)
+	return textBox
+end
+
+local dataStoreNameInput = createTextField(3, "DATASTORE NAME", "PlayerData")
+local dataKeyPrefixInput = createTextField(4, "KEY STRING BEFORE USER ID", "Player_")
+
 local codeCard = create("Frame", {
 	BackgroundColor3 = Color3.fromRGB(24, 31, 49),
 	BorderSizePixel = 0,
-	LayoutOrder = 3,
+	LayoutOrder = 5,
 	Size = UDim2.new(1, 0, 0, 68),
 }, root)
 create("UICorner", { CornerRadius = UDim.new(0, 9) }, codeCard)
@@ -111,7 +151,7 @@ local installButton = create("TextButton", {
 	BackgroundColor3 = Color3.fromRGB(124, 58, 237),
 	BorderSizePixel = 0,
 	Font = Enum.Font.GothamBold,
-	LayoutOrder = 4,
+	LayoutOrder = 6,
 	Size = UDim2.new(1, 0, 0, 40),
 	Text = "Pair & Install",
 	TextColor3 = Color3.fromRGB(255, 255, 255),
@@ -122,9 +162,9 @@ create("UICorner", { CornerRadius = UDim.new(0, 8) }, installButton)
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 5,
+	LayoutOrder = 7,
 	Size = UDim2.new(1, 0, 0, 72),
-	Text = "Open a published experience, then start pairing.",
+	Text = "Enter the exact DataStore name and key prefix used before each user ID, then start pairing.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 12,
 	TextWrapped = true,
@@ -133,6 +173,14 @@ local statusLabel = create("TextLabel", {
 }, root)
 
 local pairingGeneration = 0
+
+local function trim(value)
+	return string.match(tostring(value or ""), "^%s*(.-)%s*$") or ""
+end
+
+local settingsSuffix = tostring(game.GameId)
+dataStoreNameInput.Text = tostring(plugin:GetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix) or "")
+dataKeyPrefixInput.Text = tostring(plugin:GetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix) or "")
 
 local function setStatus(text, state)
 	statusLabel.Text = text
@@ -306,6 +354,29 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 end
 
 local function startPairing()
+	local playerDataStoreName = trim(dataStoreNameInput.Text)
+	local playerDataKeyPrefix = trim(dataKeyPrefixInput.Text)
+	if playerDataStoreName == "" then
+		setStatus("Enter the DataStore name that holds the complete player table.", "error")
+		dataStoreNameInput:CaptureFocus()
+		return
+	end
+	if #playerDataStoreName > 50 then
+		setStatus("The DataStore name can contain up to 50 UTF-8 bytes.", "error")
+		dataStoreNameInput:CaptureFocus()
+		return
+	end
+	if playerDataKeyPrefix == "" then
+		setStatus("Enter the exact string placed before the user ID, such as Player_.", "error")
+		dataKeyPrefixInput:CaptureFocus()
+		return
+	end
+	if #playerDataKeyPrefix > 30 then
+		setStatus("The key prefix can contain up to 30 UTF-8 bytes so the full key remains within Roblox's limit.", "error")
+		dataKeyPrefixInput:CaptureFocus()
+		return
+	end
+
 	pairingGeneration += 1
 	local generation = pairingGeneration
 	installButton.Active = false
@@ -317,6 +388,8 @@ local function startPairing()
 		return postJson(DASHBOARD_BASE_URL .. "/api/roblox/studio-pairings", {
 			universeId = getUniverseId(),
 			placeId = game.PlaceId,
+			playerDataStoreName = playerDataStoreName,
+			playerDataKeyPrefix = playerDataKeyPrefix,
 		})
 	end)
 	if not ok then
@@ -325,6 +398,8 @@ local function startPairing()
 		setStatus("Could not start pairing: " .. tostring(result), "error")
 		return
 	end
+	plugin:SetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix, playerDataStoreName)
+	plugin:SetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix, playerDataKeyPrefix)
 
 	codeLabel.Text = tostring(result.code or "---- ----")
 	installButton.Text = "Waiting for Approval..."

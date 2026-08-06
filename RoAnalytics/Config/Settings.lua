@@ -39,6 +39,9 @@ Settings.LiveActionsTopic = "roanalytics-live-actions-v1"
 Settings.MaxProcessedLiveActionIds = 250
 Settings.PlayerDataBridgeEnabled = true
 Settings.MaxPlayerDataJsonBytes = 256 * 1024
+Settings.PlayerDataStoreName = ""
+Settings.PlayerDataKeyPrefix = ""
+Settings.PlayerDataRequireOffline = true
 Settings.ShutdownFlushTimeout = 8
 
 return Settings

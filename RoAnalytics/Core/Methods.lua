@@ -1,4 +1,5 @@
 local AnalyticsService = game:GetService("AnalyticsService")
+local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
@@ -27,6 +28,9 @@ local pendingLeaveSamples = {}
 local pendingCustomEvents = {}
 local registeredLiveActions = {}
 local registeredPlayerDataAdapter = nil
+local registeredPlayerDataAdapterMode = ""
+local registeredPlayerDataStoreName = ""
+local registeredPlayerDataKeyPrefix = ""
 local processPlayerDataCommand = nil
 local processedLiveActionIds = {}
 local processedLiveActionOrder = {}
@@ -836,6 +840,81 @@ function Methods.RegisterPlayerDataAdapter(adapter)
 		read = read,
 		write = write,
 	}
+	registeredPlayerDataAdapterMode = "custom"
+	registeredPlayerDataStoreName = ""
+	registeredPlayerDataKeyPrefix = ""
+	return true
+end
+
+local function ensureConfiguredPlayerDataAdapter()
+	if registeredPlayerDataAdapter then
+		return true
+	end
+	local dataStoreName = string.match(tostring(Settings.PlayerDataStoreName or ""), "^%s*(.-)%s*$") or ""
+	local keyPrefix = string.match(tostring(Settings.PlayerDataKeyPrefix or ""), "^%s*(.-)%s*$") or ""
+	if dataStoreName == "" or keyPrefix == "" then
+		return false
+	end
+
+	local dataStore = DataStoreService:GetDataStore(dataStoreName)
+	local function getKey(userId)
+		local key = keyPrefix .. tostring(math.floor(userId))
+		if #key > 50 then
+			error("The configured player DataStore key exceeds Roblox's 50-byte limit.")
+		end
+		return key
+	end
+	local function requireOfflinePlayer(userId)
+		if Settings.PlayerDataRequireOffline ~= false and Players:GetPlayerByUserId(userId) then
+			error("This player is online. Have them leave the experience before using automatic direct DataStore access.")
+		end
+	end
+
+	registeredPlayerDataAdapter = {
+		read = function(userId)
+			requireOfflinePlayer(userId)
+			local options = Instance.new("DataStoreGetOptions")
+			options.UseCache = false
+			local key = getKey(userId)
+			local data, keyInfo = dataStore:GetAsync(key, options)
+			if data == nil then
+				error("No player data exists at key " .. key .. ". Check the DataStore name and key prefix in the plugin.")
+			end
+			if typeof(data) ~= "table" then
+				error("Automatic player-data editing requires the DataStore key to contain one JSON-compatible table.")
+			end
+			return data, if keyInfo then keyInfo.Version else ""
+		end,
+		write = function(userId, newData, context)
+			requireOfflinePlayer(userId)
+			local expectedVersion = tostring(context.expectedVersion or "")
+			local rejection = nil
+			local updatedData, updatedKeyInfo = dataStore:UpdateAsync(getKey(userId), function(currentData, currentKeyInfo)
+				if currentData == nil then
+					rejection = "That player-data key no longer exists. Reload before saving."
+					return nil
+				end
+				local currentVersion = if currentKeyInfo then tostring(currentKeyInfo.Version) else ""
+				if expectedVersion ~= "" and currentVersion ~= expectedVersion then
+					rejection = "Player data changed after it was loaded. Reload before saving."
+					return nil
+				end
+				local userIds = if currentKeyInfo then currentKeyInfo:GetUserIds() else { userId }
+				local metadata = if currentKeyInfo then currentKeyInfo:GetMetadata() else {}
+				return newData, userIds, metadata
+			end)
+			if rejection then
+				return false, rejection
+			end
+			if updatedData == nil then
+				return false, "Roblox cancelled the DataStore update. Reload and try again."
+			end
+			return if updatedKeyInfo then updatedKeyInfo.Version else ""
+		end,
+	}
+	registeredPlayerDataAdapterMode = "direct_datastore"
+	registeredPlayerDataStoreName = dataStoreName
+	registeredPlayerDataKeyPrefix = keyPrefix
 	return true
 end
 
@@ -1103,6 +1182,7 @@ processPlayerDataCommand = function(parameters)
 		expectedVersion = tostring(request.expectedVersion or ""),
 		placeId = game.PlaceId,
 		jobId = game.JobId,
+		isPlayerOnline = Players:GetPlayerByUserId(userId) ~= nil,
 	}
 	if operation == "read" then
 		local readOk, data, version = pcall(registeredPlayerDataAdapter.read, userId, context)
@@ -1310,6 +1390,10 @@ local function buildPayload()
 		playerCount = #Players:GetPlayers(),
 		playerDataBridge = {
 			registered = registeredPlayerDataAdapter ~= nil,
+			mode = registeredPlayerDataAdapterMode,
+			dataStoreName = registeredPlayerDataStoreName,
+			keyPrefix = registeredPlayerDataKeyPrefix,
+			requireOffline = Settings.PlayerDataRequireOffline ~= false,
 		},
 		players = getPlayersPayload(),
 		chatLogs = getChatLogsPayload(),
@@ -1328,6 +1412,7 @@ function Methods.SendHeartbeat()
 
 	sending = true
 
+	ensureConfiguredPlayerDataAdapter()
 	local payload = buildPayload()
 	local body = HttpService:JSONEncode(payload)
 	local dashboardSecret = getDashboardSecret()
@@ -1393,6 +1478,7 @@ function Methods.Start()
 	end
 
 	started = true
+	ensureConfiguredPlayerDataAdapter()
 
 	if Settings.LiveActionsEnabled then
 		local subscribed, subscription = pcall(function()

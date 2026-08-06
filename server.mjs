@@ -162,12 +162,14 @@ const STUDIO_PAIRING_CLAIM_GRACE_MS = 2 * 60 * 1000;
 const MAX_STUDIO_PAIRINGS_PER_UNIVERSE = 5;
 const MAX_STUDIO_PAIRING_BODY_BYTES = 8 * 1024;
 const MAX_PROJECT_INSTALL_SECRETS = 10;
+const MAX_STUDIO_DATA_STORE_NAME_BYTES = 50;
+const MAX_STUDIO_DATA_KEY_PREFIX_BYTES = 30;
 const PLAYER_DATA_REQUEST_TTL_MS = 15 * 60 * 1000;
 const MAX_PLAYER_DATA_REQUEST_BODY_BYTES = 320 * 1024;
 const MAX_PLAYER_DATA_JSON_BYTES = 256 * 1024;
 const MAX_PLAYER_DATA_RECENT_REQUESTS = 25;
 const MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT = 2;
-const ROANALYTICS_INSTALLER_VERSION = "2026.08.05.1";
+const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.1";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -6631,10 +6633,16 @@ function getPlayerDataBridgeStatus(ownerUserId, universeId) {
   const ownedServers = servers
     ? [...servers.values()].filter((presence) => presence.ownerUserId === ownerUserId)
     : [];
+  const adapterServers = ownedServers.filter((presence) => presence.playerDataBridgeRegistered);
+  const directServer = adapterServers.find((presence) => presence.playerDataBridgeMode === "direct_datastore");
   return {
     liveServerCount: ownedServers.length,
-    adapterServerCount: ownedServers.filter((presence) => presence.playerDataBridgeRegistered).length,
-    connected: ownedServers.some((presence) => presence.playerDataBridgeRegistered),
+    adapterServerCount: adapterServers.length,
+    connected: adapterServers.length > 0,
+    mode: directServer ? "direct_datastore" : adapterServers[0]?.playerDataBridgeMode || "",
+    dataStoreName: directServer?.playerDataStoreName || "",
+    keyPrefix: directServer?.playerDataKeyPrefix || "",
+    requireOffline: directServer ? directServer.playerDataRequireOffline !== false : null,
   };
 }
 
@@ -7313,6 +7321,22 @@ async function handleStudioPairingStart(req, res) {
 
   const universeId = cleanInteger(body?.universeId);
   const placeId = cleanInteger(body?.placeId);
+  let playerDataStoreName;
+  let playerDataKeyPrefix;
+  try {
+    playerDataStoreName = normalizeStudioDataStoreSetting(
+      body?.playerDataStoreName,
+      MAX_STUDIO_DATA_STORE_NAME_BYTES,
+      "DataStore name",
+    );
+    playerDataKeyPrefix = normalizeStudioDataStoreSetting(
+      body?.playerDataKeyPrefix,
+      MAX_STUDIO_DATA_KEY_PREFIX_BYTES,
+      "player key prefix",
+    );
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
   const project = await getProjectByUniverseId(universeId);
   if (!project || isDemoProject(project)) {
     return sendJson(res, 404, { error: "Connect this Roblox universe on the website before pairing Studio." });
@@ -7335,6 +7359,8 @@ async function handleStudioPairingStart(req, res) {
     claimTokenHash: hashStudioPairingToken(claimToken),
     status: "pending",
     secretEncrypted: "",
+    playerDataStoreName,
+    playerDataKeyPrefix,
     createdAt: now,
     updatedAt: now,
     approvedAt: 0,
@@ -7349,6 +7375,8 @@ async function handleStudioPairingStart(req, res) {
     code: pairing.displayCode,
     universeId,
     universeName: project.name || `Universe ${universeId}`,
+    playerDataStoreName,
+    playerDataKeyPrefix,
     expiresAt: pairing.expiresAtMs,
   });
 }
@@ -7447,6 +7475,8 @@ async function handleStudioPairingClaim(req, res, rawPairingId) {
   const installerPackage = await buildRoAnalyticsInstallerPackage({
     rootDir: path.join(__dirname, "RoAnalytics"),
     secret: installSecret,
+    playerDataStoreName: pairing.playerDataStoreName,
+    playerDataKeyPrefix: pairing.playerDataKeyPrefix,
     version: ROANALYTICS_INSTALLER_VERSION,
   });
   pairing.status = "claimed";
@@ -7466,6 +7496,18 @@ function createStudioPairingCode() {
   const bytes = crypto.randomBytes(8);
   const code = [...bytes].map((value) => alphabet[value % alphabet.length]).join("");
   return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+function normalizeStudioDataStoreSetting(value, maxBytes, label) {
+  const cleanValue = cleanString(value, maxBytes * 2).trim();
+  if (!cleanValue) throw new Error(`${label} is required before pairing.`);
+  if (/[\u0000-\u001f\u007f]/.test(cleanValue)) {
+    throw new Error(`${label} contains unsupported control characters.`);
+  }
+  if (Buffer.byteLength(cleanValue, "utf8") > maxBytes) {
+    throw new Error(`${label} can contain up to ${maxBytes} UTF-8 bytes.`);
+  }
+  return cleanValue;
 }
 
 function hashStudioPairingToken(value) {
@@ -7492,6 +7534,8 @@ function normalizeStudioPairing(value) {
     claimTokenHash: cleanString(value.claimTokenHash, 120),
     status: ["pending", "approved", "claimed", "denied"].includes(value.status) ? value.status : "pending",
     secretEncrypted: cleanString(value.secretEncrypted, 8192),
+    playerDataStoreName: cleanString(value.playerDataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES * 2),
+    playerDataKeyPrefix: cleanString(value.playerDataKeyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES * 2),
     createdAt: cleanInteger(value.createdAt) || Date.now(),
     updatedAt: cleanInteger(value.updatedAt) || Date.now(),
     approvedAt: cleanInteger(value.approvedAt),
@@ -7500,7 +7544,8 @@ function normalizeStudioPairing(value) {
     expiresAt: new Date(expiresAtMs || Date.now()),
   };
   return pairing.id && pairing.ownerUserId && pairing.projectId && pairing.universeId > 0
-    && pairing.displayCode && pairing.claimTokenHash && pairing.expiresAtMs > 0
+    && pairing.displayCode && pairing.claimTokenHash && pairing.playerDataStoreName
+    && pairing.playerDataKeyPrefix && pairing.expiresAtMs > 0
     ? pairing
     : null;
 }
@@ -7513,6 +7558,8 @@ function serializeStudioPairingForDashboard(value) {
     universeId: pairing.universeId,
     placeId: pairing.placeId,
     code: pairing.displayCode,
+    playerDataStoreName: pairing.playerDataStoreName,
+    playerDataKeyPrefix: pairing.playerDataKeyPrefix,
     status: pairing.status,
     createdAt: pairing.createdAt,
     expiresAt: pairing.expiresAtMs,
@@ -8398,6 +8445,10 @@ function normalizePresence(body) {
       receivedAt,
       playerCount: Math.max(cleanInteger(body.playerCount), cleanPlayers.length),
       playerDataBridgeRegistered: body?.playerDataBridge?.registered === true,
+      playerDataBridgeMode: cleanString(body?.playerDataBridge?.mode, 32),
+      playerDataStoreName: cleanString(body?.playerDataBridge?.dataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES * 2),
+      playerDataKeyPrefix: cleanString(body?.playerDataBridge?.keyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES * 2),
+      playerDataRequireOffline: body?.playerDataBridge?.requireOffline !== false,
       players: cleanPlayers,
       chatLogs,
       movementSamples,
@@ -17561,6 +17612,10 @@ function rememberLivePresence(presence) {
     receivedAt: cleanInteger(presence.receivedAt) || Date.now(),
     serverStartedAt: cleanInteger(presence.serverStartedAt),
     playerDataBridgeRegistered: presence.playerDataBridgeRegistered === true,
+    playerDataBridgeMode: cleanString(presence.playerDataBridgeMode, 32),
+    playerDataStoreName: cleanString(presence.playerDataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES * 2),
+    playerDataKeyPrefix: cleanString(presence.playerDataKeyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES * 2),
+    playerDataRequireOffline: presence.playerDataRequireOffline !== false,
     players: (Array.isArray(presence.players) ? presence.players : []).map((player) => ({
       userId: cleanInteger(player.userId),
       username: cleanString(player.username, 64),

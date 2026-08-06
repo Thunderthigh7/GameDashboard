@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="RoAnalytics connects to your Roblox experience to turn live movement, events, funnels, releases, chat, and map activity into actionable game analytics.">
     <title>RoAnalytics Dashboard</title>
-    <link rel="stylesheet" href="/assets/20260805-7/styles.css">
+    <link rel="stylesheet" href="/assets/20260806-1/styles.css">
   </head>
   <body class="isLocked">
     <div class="appShell">
@@ -1854,7 +1854,7 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
                 <div>
                   <span class="groupEyebrow">Studio setup</span>
                   <h3>Install RoAnalytics automatically</h3>
-                  <p>Start pairing in the Studio plugin, then approve the matching code here. The plugin inserts every server script and fills the secret automatically.</p>
+                  <p>Enter the DataStore name and exact key string before the user ID in the Studio plugin, then approve the matching code here. The plugin inserts every server script, secret, and player-data setting automatically.</p>
                 </div>
                 <a class="button secondary compact" href="/api/studio-plugin/download" download="RoAnalyticsInstaller.plugin.lua">Download plugin</a>
               </div>
@@ -1877,7 +1877,7 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
               </div>
               <ol class="setupChecklist" id="setupChecklist">
                 <li><span></span><div><strong>Connect a game</strong><p>Pick one owned public game from the list.</p></div></li>
-                <li><span></span><div><strong>Install RoAnalytics</strong><p>Pair the Studio plugin so it can insert the package and secret.</p></div></li>
+                <li><span></span><div><strong>Install RoAnalytics</strong><p>Enter your DataStore name and user-ID key prefix, then pair the plugin.</p></div></li>
                 <li><span></span><div><strong>Start a live server</strong><p>Enable Allow HTTP Requests, publish, and join the game.</p></div></li>
                 <li><span></span><div><strong>Confirm signals</strong><p>Movement, deaths, leaves, or chat should become active.</p></div></li>
               </ol>
@@ -2044,13 +2044,13 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
         <section class="viewPage playerDataPage" data-view-panel="player-data" hidden>
           <section class="playerDataHero panel">
             <div>
-              <span class="groupEyebrow">Server-authoritative data access</span>
+              <span class="groupEyebrow">Automatic DataStore access</span>
               <h2>Player data</h2>
-              <p>Load one player's current JSON through a published server, edit it, then send the checked update back through your game's registered data adapter.</p>
+              <p>The Studio plugin configures your DataStore name and the exact string before each user ID. Published servers then load and save that key automatically.</p>
             </div>
             <div class="playerDataBridgeBadge" id="playerDataBridgeBadge" data-state="waiting">
               <span></span>
-              <strong>Waiting for a live adapter</strong>
+              <strong>Waiting for a live server</strong>
             </div>
           </section>
 
@@ -2058,7 +2058,7 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
             <header class="playerModerationSectionHeader">
               <div>
                 <h2>Find a player</h2>
-                <p>Username and user ID both work. Online players are routed to their current server; offline players use any live server with your adapter.</p>
+                <p>Username and user ID both work. For automatic direct DataStore access, the player must be offline so a live game session cannot overwrite your change.</p>
               </div>
               <button class="button secondary compact" id="refreshPlayerDataButton" type="button">Refresh</button>
             </header>
@@ -2099,9 +2099,9 @@ RoAnalytics.RequestGroupRank(player, "vip_purchase")</code></pre>
 
           <section class="panel playerDataAdapterPanel">
             <header>
-              <span class="groupEyebrow">One-time game integration</span>
-              <h2>Register your data adapter</h2>
-              <p>RoAnalytics never guesses your DataStore name or bypasses ProfileStore/DataService locks. Register the read and write functions your game already trusts.</p>
+              <span class="groupEyebrow">Advanced profile systems</span>
+              <h2>Optional custom adapter</h2>
+              <p>The plugin's automatic mode works when one standard DataStore key contains the complete player table. Games using ProfileStore, session locks, multiple keys, or transformed data should override it with their trusted server API.</p>
             </header>
             <pre><code>local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
 
@@ -2113,7 +2113,7 @@ RoAnalytics.RegisterPlayerDataAdapter({
         return DataService.SetOfflineData(userId, newData, context.expectedVersion)
     end,
 })</code></pre>
-            <p>Use your framework's real server data API. Do not directly open a profile that another live server currently owns.</p>
+            <p>A custom adapter replaces automatic direct access and may safely support online players when your framework owns the active profile.</p>
           </section>
         </section>
 
@@ -2203,6 +2203,6 @@ RoAnalytics.RegisterPlayerDataAdapter({
         </section>
       </main>
     </div>
-    <script defer src="/assets/20260805-7/app.js"></script>
+    <script defer src="/assets/20260806-1/app.js"></script>
   </body>
 </html>

@@ -19,7 +19,7 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 2. Pick one of the public games owned by your Roblox account or by a group you own.
 3. Click Connect game.
 4. Download and install `roblox-plugin/RoAnalyticsInstaller.plugin.lua` in Studio.
-5. Open the experience, click **Pair & Install**, and compare the short code with Connect Universe.
+5. Open the experience, enter the DataStore name and the exact key string before the user ID (for example, `PlayerData` and `Player_`), click **Pair & Install**, and compare the short code with Connect Universe.
 6. Approve the matching request. The plugin installs the complete current package and fills its credential automatically.
 7. Enable **Allow HTTP Requests** under Experience Settings -> Security if needed, then publish.
 
@@ -160,7 +160,9 @@ The Studio installer lives in `roblox-plugin/`; see `roblox-plugin/README.md` fo
 
 The **Player Data** page can read and update one player's JSON without another Roblox OAuth scope. It sends a short-lived request to the installed package in a published server. Existing `universe-messaging-service:publish` authorization is used when available for immediate delivery; otherwise the regular authenticated heartbeat carries the request.
 
-RoAnalytics does not guess a DataStore name or directly open a live profile. Register the game-specific server adapter that already owns your session locking and validation:
+During Studio pairing, enter the DataStore name and the exact string your key places before the user ID. For example, `PlayerData` plus `Player_` makes user `123` resolve to the `Player_123` key. The plugin writes those settings into the installed package. Once a published server is live, the Player Data page can automatically read and update a complete JSON-compatible table stored under that key.
+
+Automatic access deliberately rejects online players so their active game server cannot later overwrite the dashboard edit. It also requires the complete player table to live under one standard DataStore key. Games using ProfileStore, session locks, multiple keys, or transformed data can replace automatic access by registering the game-specific server adapter that already owns those rules:
 
 ```lua
 local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
@@ -175,7 +177,7 @@ RoAnalytics.RegisterPlayerDataAdapter({
 })
 ```
 
-Replace those example calls with the real API in your game. Reads and writes only execute in published production servers. A successful read is required before a write, each read snapshot can be used once, payloads are capped at 256 KiB, and encrypted request data expires after 15 minutes. Your adapter remains responsible for preventing writes over a profile that another server owns and for rejecting stale versions.
+Replace those example calls with the real API in your game. Reads and writes only execute in published production servers. A successful read is required before a write, each read snapshot can be used once, payloads are capped at 256 KiB, and encrypted request data expires after 15 minutes. The built-in adapter uses Roblox DataStore versions to reject stale saves; a custom adapter remains responsible for its own session ownership and version rules.
 
 ## Backblaze B2 Analytics Storage
 

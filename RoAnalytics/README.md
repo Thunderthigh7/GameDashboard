@@ -132,9 +132,13 @@ Kick and ban commands from the **Player Moderation** page are built in for the d
 
 An authorized Roblox Open Cloud connection delivers the action immediately through the existing MessagingService subscription. The normal heartbeat response also contains moderation commands. Permanent bans are enforced on every future join, while a kick fallback is scoped to only the exact live server session that existed when the kick was confirmed. Every action requires a reason and is stored in the dashboard's moderation history. Dashboard users can target a live row or enter any Roblox username or user ID manually.
 
-## Player data adapter
+## Automatic player data
 
-The dashboard never reaches into a DataStore by name. Register explicit read and write functions from trusted server code so your existing DataService or ProfileStore layer keeps ownership of session locks, schema validation, and saves:
+The Studio installer asks for the DataStore name and exact key prefix used before each user ID. With `PlayerData` and `Player_`, for example, user `123` is loaded from `PlayerData` key `Player_123`. The installed package automatically provides the Player Data page with read and write access when a published production server is live.
+
+Automatic reads bypass Roblox's local read cache. Automatic writes use `UpdateAsync`, reject a stale version, and retain existing key metadata and user IDs. Direct access refuses online players so an active profile cannot overwrite the edit afterward. It expects one JSON-compatible table under a standard DataStore key.
+
+For ProfileStore, session-locked profiles, multiple keys, or transformed data, register explicit read and write functions from trusted server code. This custom adapter replaces automatic access so your existing DataService layer keeps ownership of locks, schema validation, and saves:
 
 ```lua
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -152,4 +156,4 @@ RoAnalytics.RegisterPlayerDataAdapter({
 
 Replace the example calls with your game's real server data API. `Read` must return a JSON-compatible table and may return a version as its second value. `Write` receives that value as `context.expectedVersion`; return `false, "reason"` to reject the update, or return the new version on success.
 
-Requests run only in published production servers. Online players are routed to their current server; offline players use any live server that registered the adapter. The website requires a successful read before a write, consumes each read snapshot once, encrypts temporary request data, expires it after 15 minutes, and caps JSON at 256 KiB. Do not open or overwrite a profile whose session is owned by another server.
+Requests run only in published production servers. Offline players use a live server that registered either adapter. A custom adapter may support an online player through the server that owns that profile, but it must enforce that ownership itself. The website requires a successful read before a write, consumes each read snapshot once, encrypts temporary request data, expires it after 15 minutes, and caps JSON at 256 KiB.
