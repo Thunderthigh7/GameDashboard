@@ -134,11 +134,11 @@ An authorized Roblox Open Cloud connection delivers the action immediately throu
 
 ## Automatic player data
 
-The Studio installer asks for the DataStore name and exact key prefix used before each user ID. With `PlayerData` and `Player_`, for example, user `123` is loaded from `PlayerData` key `Player_123`. While the paired experience is open, the plugin securely polls the website and performs those reads and writes directly through Studio, without a live game server. Enable **Studio Access to API Services** in the experience's Security settings.
+The Studio installer automatically enumerates standard DataStores and samples their keys. The website derives numeric-suffix patterns such as `Player_{userId}` and lets you select the correct DataStore and pattern before loading a player. While the paired experience is open, the plugin securely polls the website and performs those reads and writes directly through Studio, without a live game server. Enable **Studio Access to API Services** in the experience's Security settings.
 
-Automatic reads bypass Roblox's local read cache. Automatic writes use `UpdateAsync`, reject a stale version, and retain existing key metadata and user IDs. Direct access refuses known online players so an active profile cannot overwrite the edit afterward. Studio accesses the same backend as production, so only use the paired plugin with trusted experiences. Standard keys may contain a JSON-compatible table, array, number, string, or boolean.
+Automatic reads bypass Roblox's local read cache. Automatic writes use `UpdateAsync`, reject a stale version, and retain existing key metadata and user IDs. Direct access refuses known online players so an active profile cannot overwrite the edit afterward. Studio accesses the same backend as production, so only use the paired plugin with trusted experiences. Standard keys may contain a JSON-compatible table, array, number, string, or boolean. If a game stores an object or array as a JSON-encoded string, the website edits the decoded value and the plugin saves it back as a JSON string.
 
-When Studio is closed, the installed server package provides the same direct DataStore fallback from a published server. For custom session-locked profiles, multiple keys, or transformed data, register explicit read and write functions from trusted server code so your existing DataService layer keeps ownership of locks, schema validation, and saves:
+When Studio is closed, games with an explicitly configured direct bridge can still use the published-server path. For custom session-locked profiles, multiple keys, legacy scopes, ordered stores, or transformed data, register explicit read and write functions from trusted server code so your existing DataService layer keeps ownership of locks, schema validation, and saves:
 
 ```lua
 local ServerScriptService = game:GetService("ServerScriptService")

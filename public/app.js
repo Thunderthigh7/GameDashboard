@@ -59,6 +59,9 @@ const playerModerationCancelButton = document.querySelector("#playerModerationCa
 const playerModerationSubmitButton = document.querySelector("#playerModerationSubmitButton");
 const refreshPlayerDataButton = document.querySelector("#refreshPlayerDataButton");
 const playerDataBridgeBadge = document.querySelector("#playerDataBridgeBadge");
+const playerDataStoreSelect = document.querySelector("#playerDataStoreSelect");
+const playerDataKeyPatternSelect = document.querySelector("#playerDataKeyPatternSelect");
+const playerDataCatalogStatus = document.querySelector("#playerDataCatalogStatus");
 const playerDataTargetInput = document.querySelector("#playerDataTargetInput");
 const playerDataLoadButton = document.querySelector("#playerDataLoadButton");
 const playerDataStatus = document.querySelector("#playerDataStatus");
@@ -448,8 +451,10 @@ let playerDataRefreshTimer;
 let playerDataPollTimer;
 let playerDataPollGeneration = 0;
 let playerDataBusy = false;
-let playerDataState = { bridge: {}, requests: [], limits: {} };
+let playerDataState = { bridge: {}, catalog: { stores: [] }, requests: [], limits: {} };
 let activePlayerDataRead = null;
+let selectedPlayerDataStoreName = "";
+let selectedPlayerDataKeyPrefix = null;
 let assetLibraryRequestSequence = 0;
 let assetLibraryBusy = false;
 let assetLibrary = { authorization: {}, packs: [], limits: {} };
@@ -515,7 +520,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260806-4";
+const DASHBOARD_ASSET_VERSION = "20260806-5";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -915,7 +920,9 @@ function bindEvents() {
   playerModerationCancelButton?.addEventListener("click", closePlayerModerationDialog);
   playerModerationDialogBackdrop?.addEventListener("click", closePlayerModerationDialog);
   document.addEventListener("keydown", handlePlayerModerationDialogKeydown);
-  refreshPlayerDataButton?.addEventListener("click", () => loadPlayerData({ force: true }));
+  refreshPlayerDataButton?.addEventListener("click", requestPlayerDataCatalogRefresh);
+  playerDataStoreSelect?.addEventListener("change", handlePlayerDataStoreChange);
+  playerDataKeyPatternSelect?.addEventListener("change", handlePlayerDataKeyPatternChange);
   playerDataLoadButton?.addEventListener("click", requestPlayerDataRead);
   playerDataTargetInput?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
@@ -2055,6 +2062,7 @@ async function loadPlayerData(options = {}) {
     ) return;
     playerDataState = {
       bridge: data?.bridge || {},
+      catalog: data?.catalog || { stores: [] },
       requests: Array.isArray(data?.requests) ? data.requests.filter(Boolean) : [],
       limits: data?.limits || {},
     };
@@ -2086,19 +2094,114 @@ function renderPlayerData() {
         : "Studio plugin offline";
     const strong = playerDataBridgeBadge.querySelector("strong");
     if (strong) strong.textContent = label;
-    playerDataBridgeBadge.title = ["studio_plugin", "direct_datastore"].includes(bridge.mode)
-      ? `${bridge.dataStoreName || "DataStore"} / ${bridge.keyPrefix || ""}{userId}`
-      : "";
+    playerDataBridgeBadge.title = bridge.mode === "studio_plugin"
+      ? "Studio is connected and can process the selected discovered DataStore."
+      : bridge.mode === "direct_datastore"
+        ? `${bridge.dataStoreName || "DataStore"} / ${bridge.keyPrefix || ""}{userId}`
+        : "";
   }
+
+  renderPlayerDataCatalog();
 
   if (playerDataRequestList) {
     const requests = playerDataState.requests || [];
     playerDataRequestList.innerHTML = requests.length
       ? requests.map(renderPlayerDataRequest).join("")
-      : `<div class="playerDataEmpty"><strong>No data requests yet</strong><span>Load an offline player to use the DataStore configured by the Studio plugin.</span></div>`;
+      : `<div class="playerDataEmpty"><strong>No data requests yet</strong><span>Choose a discovered DataStore and player-key pattern, then load an offline player.</span></div>`;
   }
   setPlayerDataControlsDisabled(playerDataBusy);
   updatePlayerDataEditorBytes();
+}
+
+function renderPlayerDataCatalog() {
+  const catalog = playerDataState.catalog || {};
+  const stores = Array.isArray(catalog.stores) ? catalog.stores : [];
+  const preferredStore = stores.find((store) => (
+    store?.name === selectedPlayerDataStoreName && Array.isArray(store.patterns) && store.patterns.length
+  ));
+  const selectedStore = preferredStore
+    || stores.find((store) => Array.isArray(store?.patterns) && store.patterns.length)
+    || stores[0]
+    || null;
+  selectedPlayerDataStoreName = String(selectedStore?.name || "");
+  const patterns = Array.isArray(selectedStore?.patterns) ? selectedStore.patterns : [];
+  if (selectedPlayerDataKeyPrefix === null || !patterns.some((pattern) => String(pattern.prefix || "") === selectedPlayerDataKeyPrefix)) {
+    selectedPlayerDataKeyPrefix = patterns.length ? String(patterns[0].prefix || "") : null;
+  }
+
+  if (playerDataStoreSelect) {
+    playerDataStoreSelect.innerHTML = stores.length
+      ? stores.map((store) => {
+        const patternCount = Array.isArray(store?.patterns) ? store.patterns.length : 0;
+        return `<option value="${escapeHtml(store.name || "")}"${store.name === selectedPlayerDataStoreName ? " selected" : ""}>${escapeHtml(store.name || "Unnamed DataStore")}${patternCount ? "" : " (no player pattern yet)"}</option>`;
+      }).join("")
+      : `<option value="">No DataStores discovered</option>`;
+    playerDataStoreSelect.disabled = playerDataBusy || !stores.length;
+  }
+  if (playerDataKeyPatternSelect) {
+    playerDataKeyPatternSelect.innerHTML = patterns.length
+      ? patterns.map((pattern) => {
+        const prefix = String(pattern.prefix || "");
+        const label = `${prefix}{userId}`;
+        return `<option value="${escapeHtml(prefix)}"${prefix === selectedPlayerDataKeyPrefix ? " selected" : ""}>${escapeHtml(label)} (${Number(pattern.matchCount) || 0} sample${Number(pattern.matchCount) === 1 ? "" : "s"})</option>`;
+      }).join("")
+      : `<option value="">No numeric user-ID pattern found</option>`;
+    playerDataKeyPatternSelect.disabled = playerDataBusy || !patterns.length;
+  }
+  if (playerDataCatalogStatus) {
+    const selectedSamples = Array.isArray(selectedStore?.sampleKeys) ? selectedStore.sampleKeys.slice(0, 3) : [];
+    playerDataCatalogStatus.textContent = catalog.error
+      ? `Studio scan failed: ${catalog.error}`
+      : !stores.length
+        ? "Waiting for Studio to discover standard DataStores."
+        : catalog.complete
+          ? `${stores.length} DataStore${stores.length === 1 ? "" : "s"} scanned.${selectedSamples.length ? ` Samples: ${selectedSamples.join(", ")}` : ""}`
+          : `${stores.length} DataStore${stores.length === 1 ? "" : "s"} found. Studio is still sampling keys...`;
+    playerDataCatalogStatus.dataset.state = catalog.error ? "error" : catalog.complete ? "success" : "";
+  }
+}
+
+function handlePlayerDataStoreChange() {
+  selectedPlayerDataStoreName = String(playerDataStoreSelect?.value || "");
+  selectedPlayerDataKeyPrefix = null;
+  clearActivePlayerDataEditor();
+  renderPlayerDataCatalog();
+  setPlayerDataControlsDisabled(false);
+}
+
+function handlePlayerDataKeyPatternChange() {
+  selectedPlayerDataKeyPrefix = String(playerDataKeyPatternSelect?.value || "");
+  clearActivePlayerDataEditor();
+  setPlayerDataControlsDisabled(false);
+}
+
+function clearActivePlayerDataEditor() {
+  activePlayerDataRead = null;
+  if (playerDataEditor) playerDataEditor.hidden = true;
+  if (playerDataJsonEditor) playerDataJsonEditor.value = "";
+  if (playerDataEditorTarget) playerDataEditorTarget.textContent = "Player data";
+  if (playerDataEditorMeta) playerDataEditorMeta.textContent = "";
+  updatePlayerDataEditorBytes();
+}
+
+async function requestPlayerDataCatalogRefresh() {
+  if (!authenticated || playerDataBusy || !selectedUniverseId) return;
+  if (refreshPlayerDataButton) refreshPlayerDataButton.disabled = true;
+  setPlayerDataStatus("Asking the connected Studio plugin to rescan DataStores...");
+  try {
+    await request("/api/player-data/catalog/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ universeId: Number(selectedUniverseId) }),
+    });
+    setPlayerDataStatus("Studio scan requested. DataStore names appear first; key patterns fill in progressively.", "success");
+    await loadPlayerData({ force: true, background: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) setPlayerDataStatus(error.message, "error");
+  } finally {
+    if (refreshPlayerDataButton) refreshPlayerDataButton.disabled = false;
+  }
 }
 
 function renderPlayerDataRequest(requestRecord) {
@@ -2129,7 +2232,7 @@ function renderPlayerDataRequest(requestRecord) {
 function getPlayerDataBridgeMessage(bridge = {}) {
   if (bridge.connected || Number(bridge.adapterServerCount) > 0) {
     if (bridge.mode === "studio_plugin") {
-      return `Studio Player Data is connected for ${bridge.dataStoreName || "your DataStore"} keys ${bridge.keyPrefix || ""}{userId}. No live server is required; the target player must be offline.`;
+      return "Studio Player Data is connected. Choose a discovered DataStore and player-key pattern; no live server is required and the target player must be offline.";
     }
     if (bridge.mode === "direct_datastore") {
       return `Automatic access is live for ${bridge.dataStoreName || "your DataStore"} keys ${bridge.keyPrefix || ""}{userId}. The target player must be offline.`;
@@ -2150,9 +2253,13 @@ async function requestPlayerDataRead() {
     playerDataTargetInput?.focus();
     return;
   }
+  if (!selectedPlayerDataStoreName || selectedPlayerDataKeyPrefix === null) {
+    setPlayerDataStatus("Wait for Studio to discover a DataStore and numeric player-key pattern, then select them.", "error");
+    return;
+  }
 
   stopPlayerDataPolling();
-  resetPlayerDataEditor({ preserveTarget: true });
+  resetPlayerDataEditor({ preserveTarget: true, preserveState: true });
   playerDataBusy = true;
   setPlayerDataControlsDisabled(true);
   setPlayerDataStatus("Sending a read request to the connected Studio plugin...");
@@ -2164,6 +2271,8 @@ async function requestPlayerDataRead() {
         universeId: Number(selectedUniverseId),
         target,
         operation: "read",
+        dataStoreName: selectedPlayerDataStoreName,
+        keyPrefix: selectedPlayerDataKeyPrefix,
       }),
     });
     mergePlayerDataRequest(data.request);
@@ -2278,7 +2387,8 @@ async function pollPlayerDataRequest(requestId, operation) {
             : username;
         }
         if (playerDataEditorMeta) {
-          playerDataEditorMeta.textContent = `User ${requestRecord.userId}${requestRecord.version ? ` / version ${requestRecord.version}` : ""}`;
+          const storageLabel = requestRecord.encoding === "json_string" ? " / stored as JSON string" : "";
+          playerDataEditorMeta.textContent = `${requestRecord.dataStoreName || "DataStore"} / ${requestRecord.keyPrefix || ""}${requestRecord.userId}${requestRecord.version ? ` / version ${requestRecord.version}` : ""}${storageLabel}`;
         }
         if (playerDataJsonEditor) playerDataJsonEditor.value = JSON.stringify(requestRecord.data, null, 2);
         updatePlayerDataEditorBytes();
@@ -2316,19 +2426,27 @@ function resetPlayerDataEditor(options = {}) {
   stopPlayerDataPolling();
   playerDataBusy = false;
   activePlayerDataRead = null;
-  playerDataState = { bridge: {}, requests: [], limits: {} };
+  if (!options.preserveState) {
+    playerDataState = { bridge: {}, catalog: { stores: [] }, requests: [], limits: {} };
+    selectedPlayerDataStoreName = "";
+    selectedPlayerDataKeyPrefix = null;
+  }
   if (!options.preserveTarget && playerDataTargetInput) playerDataTargetInput.value = "";
   if (playerDataEditor) playerDataEditor.hidden = true;
   if (playerDataJsonEditor) playerDataJsonEditor.value = "";
   if (playerDataEditorTarget) playerDataEditorTarget.textContent = "Player data";
   if (playerDataEditorMeta) playerDataEditorMeta.textContent = "";
   if (playerDataRequestList) playerDataRequestList.innerHTML = "";
+  renderPlayerDataCatalog();
   setPlayerDataControlsDisabled(false);
   updatePlayerDataEditorBytes();
 }
 
 function setPlayerDataControlsDisabled(disabled) {
+  const catalogStores = Array.isArray(playerDataState.catalog?.stores) ? playerDataState.catalog.stores : [];
   if (refreshPlayerDataButton) refreshPlayerDataButton.disabled = disabled;
+  if (playerDataStoreSelect) playerDataStoreSelect.disabled = disabled || !catalogStores.length;
+  if (playerDataKeyPatternSelect) playerDataKeyPatternSelect.disabled = disabled || selectedPlayerDataKeyPrefix === null;
   if (playerDataTargetInput) playerDataTargetInput.disabled = disabled;
   if (playerDataLoadButton) playerDataLoadButton.disabled = disabled;
   if (playerDataJsonEditor) playerDataJsonEditor.disabled = disabled || !activePlayerDataRead;
@@ -5314,7 +5432,7 @@ function renderStudioPairings(pairings) {
         <div>
           <span>Studio code</span>
           <strong>${escapeHtml(pairing.code || "---- ----")}</strong>
-          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} &middot; ` : ""}${escapeHtml(pairing.playerDataStoreName || "DataStore")} / ${escapeHtml(pairing.playerDataKeyPrefix || "")}{userId} &middot; ${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
+          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} &middot; ` : ""}Automatic DataStore discovery &middot; ${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
         </div>
         ${pairing.status === "pending" ? `
           <div class="studioPairingActions">

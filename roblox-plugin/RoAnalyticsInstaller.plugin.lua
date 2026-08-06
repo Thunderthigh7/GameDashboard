@@ -9,6 +9,9 @@ local PAIRING_POLL_SECONDS = 2
 local PLAYER_DATA_RELAY_POLL_SECONDS = 2
 local PLAYER_DATA_RELAY_RETRY_SECONDS = 5
 local MAX_PLAYER_DATA_JSON_BYTES = 256 * 1024
+local MAX_CATALOG_DATA_STORES = 100
+local MAX_CATALOG_SAMPLE_KEYS = 10
+local CATALOG_LIST_DELAY_SECONDS = 12
 
 local toolbar = plugin:CreateToolbar("RoAnalytics")
 local toggleButton = toolbar:CreateButton(
@@ -22,9 +25,9 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	false,
 	false,
 	390,
-	500,
+	410,
 	330,
-	430
+	360
 )
 local widget = plugin:CreateDockWidgetPluginGui("RoAnalyticsInstallerWidget", widgetInfo)
 widget.Title = "RoAnalytics Installer"
@@ -73,7 +76,7 @@ create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 2,
 	Size = UDim2.new(1, 0, 0, 54),
-	Text = "Pair once to install RoAnalytics and connect Player Data. Keep Studio open to load and save without a live server.",
+	Text = "Pair once to install RoAnalytics and connect Player Data. Studio discovers your standard DataStores and player-key patterns automatically.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 13,
 	TextWrapped = true,
@@ -81,50 +84,10 @@ create("TextLabel", {
 	TextYAlignment = Enum.TextYAlignment.Top,
 }, root)
 
-local function createTextField(layoutOrder, labelText, placeholderText)
-	local field = create("Frame", {
-		BackgroundTransparency = 1,
-		LayoutOrder = layoutOrder,
-		Size = UDim2.new(1, 0, 0, 58),
-	}, root)
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium,
-		Size = UDim2.new(1, 0, 0, 17),
-		Text = labelText,
-		TextColor3 = Color3.fromRGB(203, 213, 225),
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, field)
-	local textBox = create("TextBox", {
-		BackgroundColor3 = Color3.fromRGB(24, 31, 49),
-		BorderSizePixel = 0,
-		ClearTextOnFocus = false,
-		Font = Enum.Font.Code,
-		PlaceholderColor3 = Color3.fromRGB(100, 116, 139),
-		PlaceholderText = placeholderText,
-		Position = UDim2.fromOffset(0, 22),
-		Size = UDim2.new(1, 0, 0, 36),
-		Text = "",
-		TextColor3 = Color3.fromRGB(226, 232, 240),
-		TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, field)
-	create("UICorner", { CornerRadius = UDim.new(0, 8) }, textBox)
-	create("UIPadding", {
-		PaddingLeft = UDim.new(0, 11),
-		PaddingRight = UDim.new(0, 11),
-	}, textBox)
-	return textBox
-end
-
-local dataStoreNameInput = createTextField(3, "DATASTORE NAME", "PlayerData")
-local dataKeyPrefixInput = createTextField(4, "KEY STRING BEFORE USER ID", "Player_")
-
 local codeCard = create("Frame", {
 	BackgroundColor3 = Color3.fromRGB(24, 31, 49),
 	BorderSizePixel = 0,
-	LayoutOrder = 5,
+	LayoutOrder = 3,
 	Size = UDim2.new(1, 0, 0, 68),
 }, root)
 create("UICorner", { CornerRadius = UDim.new(0, 9) }, codeCard)
@@ -155,7 +118,7 @@ local installButton = create("TextButton", {
 	BackgroundColor3 = Color3.fromRGB(124, 58, 237),
 	BorderSizePixel = 0,
 	Font = Enum.Font.GothamBold,
-	LayoutOrder = 6,
+	LayoutOrder = 4,
 	Size = UDim2.new(1, 0, 0, 40),
 	Text = "Pair & Install",
 	TextColor3 = Color3.fromRGB(255, 255, 255),
@@ -166,9 +129,9 @@ create("UICorner", { CornerRadius = UDim.new(0, 8) }, installButton)
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 7,
+	LayoutOrder = 5,
 	Size = UDim2.new(1, 0, 0, 72),
-	Text = "Enter the exact DataStore name and key prefix used before each user ID, then start pairing.",
+	Text = "Start pairing. After approval, Studio will discover your DataStores and sample player-key patterns automatically.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 12,
 	TextWrapped = true,
@@ -180,18 +143,15 @@ local pairingGeneration = 0
 local pairingActive = false
 local relayGeneration = 0
 local relayConnected = false
+local catalogScanActive = false
 
 local function trim(value)
 	return string.match(tostring(value or ""), "^%s*(.-)%s*$") or ""
 end
 
 local settingsSuffix = tostring(game.GameId)
-dataStoreNameInput.Text = tostring(plugin:GetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix) or "")
-dataKeyPrefixInput.Text = tostring(plugin:GetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix) or "")
 local relayCredential = tostring(plugin:GetSetting("RoAnalyticsRelayCredential_" .. settingsSuffix) or "")
 local relayId = tostring(plugin:GetSetting("RoAnalyticsRelayId_" .. settingsSuffix) or "")
-local relayDataStoreName = dataStoreNameInput.Text
-local relayDataKeyPrefix = dataKeyPrefixInput.Text
 if relayId == "" then
 	relayId = HttpService:GenerateGUID(false)
 	plugin:SetSetting("RoAnalyticsRelayId_" .. settingsSuffix, relayId)
@@ -333,16 +293,24 @@ local function getUniverseId()
 	return game.GameId
 end
 
-local function getPlayerDataKey(userId)
-	local numericUserId = tonumber(userId)
+local function getPlayerDataLocation(request)
+	local dataStoreName = trim(request.dataStoreName)
+	local keyPrefix = trim(request.keyPrefix)
+	if dataStoreName == "" or #dataStoreName > 50 then
+		error("The website did not send a valid discovered DataStore name.")
+	end
+	if #keyPrefix > 40 then
+		error("The discovered player-key prefix is too long.")
+	end
+	local numericUserId = tonumber(request.userId)
 	if not numericUserId or numericUserId <= 0 then
 		error("The website sent an invalid Roblox user ID.")
 	end
-	local key = relayDataKeyPrefix .. tostring(math.floor(numericUserId))
+	local key = keyPrefix .. tostring(math.floor(numericUserId))
 	if #key > 50 then
-		error("The configured player DataStore key exceeds Roblox's 50-byte limit.")
+		error("The discovered player DataStore key exceeds Roblox's 50-byte limit.")
 	end
-	return key
+	return dataStoreName, key
 end
 
 local function isJsonDataStoreValue(value)
@@ -350,7 +318,7 @@ local function isJsonDataStoreValue(value)
 	return valueType == "table" or valueType == "string" or valueType == "number" or valueType == "boolean"
 end
 
-local function sendStudioPlayerDataResult(pollResult, request, status, data, version, errorMessage)
+local function sendStudioPlayerDataResult(pollResult, request, status, data, version, encoding, errorMessage)
 	return postJson(DASHBOARD_BASE_URL .. "/api/roblox/player-data/results", {
 		universeId = getUniverseId(),
 		requestId = tostring(request.id or ""),
@@ -358,6 +326,7 @@ local function sendStudioPlayerDataResult(pollResult, request, status, data, ver
 		status = status,
 		data = data,
 		version = tostring(version or ""),
+		encoding = tostring(encoding or "native"),
 		error = tostring(errorMessage or ""),
 	}, {
 		["X-Dashboard-Secret"] = relayCredential,
@@ -375,10 +344,10 @@ local function processStudioPlayerDataRequest(pollResult)
 		return
 	end
 
-	setStatus("Player Data request received. Accessing " .. relayDataStoreName .. "...", "")
+	setStatus("Player Data request received. Accessing the selected DataStore...", "")
 	local operationOk, operationResult = pcall(function()
-		local dataStore = DataStoreService:GetDataStore(relayDataStoreName)
-		local key = getPlayerDataKey(request.userId)
+		local dataStoreName, key = getPlayerDataLocation(request)
+		local dataStore = DataStoreService:GetDataStore(dataStoreName)
 		if operation == "read" then
 			local options = Instance.new("DataStoreGetOptions")
 			options.UseCache = false
@@ -389,18 +358,34 @@ local function processStudioPlayerDataRequest(pollResult)
 			if not isJsonDataStoreValue(data) then
 				error("The player key must contain a JSON-compatible value.")
 			end
-			local encoded = HttpService:JSONEncode(data)
+			local resultData = data
+			local resultEncoding = "native"
+			if typeof(data) == "string" then
+				local decodedOk, decoded = pcall(function()
+					return HttpService:JSONDecode(data)
+				end)
+				if decodedOk and isJsonDataStoreValue(decoded) then
+					resultData = decoded
+					resultEncoding = "json_string"
+				end
+			end
+			local encoded = HttpService:JSONEncode(resultData)
 			if #encoded > MAX_PLAYER_DATA_JSON_BYTES then
 				error("The player data is larger than the website's 256 KiB limit.")
 			end
 			return {
-				data = data,
+				data = resultData,
+				encoding = resultEncoding,
 				version = if keyInfo then keyInfo.Version else "",
 			}
 		end
 
 		if not isJsonDataStoreValue(request.data) then
 			error("The website update did not contain a JSON-compatible value.")
+		end
+		local storedData = request.data
+		if tostring(request.dataEncoding or "") == "json_string" then
+			storedData = HttpService:JSONEncode(request.data)
 		end
 		local expectedVersion = tostring(request.expectedVersion or "")
 		local rejection = nil
@@ -416,7 +401,7 @@ local function processStudioPlayerDataRequest(pollResult)
 			end
 			local userIds = if currentKeyInfo then currentKeyInfo:GetUserIds() else { tonumber(request.userId) }
 			local metadata = if currentKeyInfo then currentKeyInfo:GetMetadata() else {}
-			return request.data, userIds, metadata
+			return storedData, userIds, metadata
 		end)
 		if rejection then
 			error(rejection)
@@ -437,6 +422,7 @@ local function processStudioPlayerDataRequest(pollResult)
 			"completed",
 			operationResult.data,
 			operationResult.version,
+			operationResult.encoding,
 			nil
 		)
 		if sent then
@@ -455,12 +441,105 @@ local function processStudioPlayerDataRequest(pollResult)
 		"failed",
 		nil,
 		nil,
+		nil,
 		failureMessage
 	)
 	if sent then
 		setStatus(failureMessage .. " Enable Studio Access to API Services under Experience Settings > Security.", "error")
 	else
 		setStatus(failureMessage .. " The error result also could not reach the website: " .. tostring(sendError), "error")
+	end
+end
+
+local function uploadStudioDataStoreCatalog(stores, complete, errorMessage)
+	return postJson(DASHBOARD_BASE_URL .. "/api/roblox/studio-player-data/catalog", {
+		universeId = getUniverseId(),
+		placeId = game.PlaceId,
+		relayId = relayId,
+		stores = stores,
+		complete = complete == true,
+		error = tostring(errorMessage or ""),
+	}, {
+		["X-Dashboard-Secret"] = relayCredential,
+	})
+end
+
+local function discoverStudioDataStores(generation)
+	if catalogScanActive or relayCredential == "" then
+		return
+	end
+	catalogScanActive = true
+	setStatus("Discovering standard DataStores and player-key patterns...", "")
+	local scanOk, scanError = pcall(function()
+		local stores = {}
+		local seenStoreNames = {}
+		local pages = DataStoreService:ListDataStoresAsync("", MAX_CATALOG_DATA_STORES)
+		while generation == relayGeneration do
+			for _, info in pages:GetCurrentPage() do
+				local name = tostring(info.DataStoreName or "")
+				if name ~= "" and not seenStoreNames[name] and #stores < MAX_CATALOG_DATA_STORES then
+					seenStoreNames[name] = true
+					table.insert(stores, { name = name, sampleKeys = {} })
+				end
+			end
+			if #stores >= MAX_CATALOG_DATA_STORES or pages.IsFinished then
+				break
+			end
+			task.wait(CATALOG_LIST_DELAY_SECONDS)
+			pages:AdvanceToNextPageAsync()
+		end
+		if generation ~= relayGeneration then
+			return
+		end
+		table.sort(stores, function(left, right)
+			return left.name < right.name
+		end)
+		uploadStudioDataStoreCatalog(stores, #stores == 0, "")
+
+		for index, store in stores do
+			if generation ~= relayGeneration then
+				return
+			end
+			if index > 1 then
+				task.wait(CATALOG_LIST_DELAY_SECONDS)
+			end
+			local keysOk, keysOrError = pcall(function()
+				local keyPages = DataStoreService:GetDataStore(store.name):ListKeysAsync(
+					"",
+					MAX_CATALOG_SAMPLE_KEYS,
+					nil,
+					true
+				)
+				local keys = {}
+				for _, keyInfo in keyPages:GetCurrentPage() do
+					if #keys >= MAX_CATALOG_SAMPLE_KEYS then
+						break
+					end
+					table.insert(keys, tostring(keyInfo.KeyName or ""))
+				end
+				return keys
+			end)
+			if keysOk then
+				store.sampleKeys = keysOrError
+				store.error = nil
+			else
+				store.error = tostring(keysOrError)
+			end
+			uploadStudioDataStoreCatalog(stores, index == #stores, "")
+		end
+	end)
+	catalogScanActive = false
+	if generation ~= relayGeneration then
+		return
+	end
+	if scanOk then
+		setStatus("DataStore discovery finished. Player Data is ready on the website.", "success")
+	else
+		pcall(uploadStudioDataStoreCatalog, {}, false, tostring(scanError))
+		setStatus(
+			"DataStore discovery failed: " .. tostring(scanError) .. " Enable Studio Access to API Services, then scan again from the website.",
+			"error"
+		)
 	end
 end
 
@@ -471,8 +550,6 @@ local function pollStudioPlayerDataRelay(generation)
 				universeId = getUniverseId(),
 				placeId = game.PlaceId,
 				relayId = relayId,
-				playerDataStoreName = relayDataStoreName,
-				playerDataKeyPrefix = relayDataKeyPrefix,
 			}, {
 				["X-Dashboard-Secret"] = relayCredential,
 			})
@@ -482,7 +559,10 @@ local function pollStudioPlayerDataRelay(generation)
 		end
 		if ok then
 			relayConnected = true
-			if not pairingActive and typeof(result.request) ~= "table" then
+			if result.refreshCatalog == true and not catalogScanActive then
+				task.spawn(discoverStudioDataStores, generation)
+			end
+			if not pairingActive and not catalogScanActive and typeof(result.request) ~= "table" then
 				setStatus(
 					"Studio Player Data is connected. Keep this experience open to load and save offline players without a live server.",
 					"success"
@@ -502,19 +582,16 @@ local function pollStudioPlayerDataRelay(generation)
 	end
 end
 
-local function startStudioPlayerDataRelay(credential, dataStoreName, keyPrefix)
+local function startStudioPlayerDataRelay(credential)
 	relayCredential = trim(credential)
-	relayDataStoreName = trim(dataStoreName)
-	relayDataKeyPrefix = trim(keyPrefix)
-	if relayCredential == "" or relayDataStoreName == "" or relayDataKeyPrefix == "" or game.GameId <= 0 then
+	if relayCredential == "" or game.GameId <= 0 then
 		return false
 	end
 	plugin:SetSetting("RoAnalyticsRelayCredential_" .. settingsSuffix, relayCredential)
-	plugin:SetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix, relayDataStoreName)
-	plugin:SetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix, relayDataKeyPrefix)
 	relayGeneration += 1
 	relayConnected = false
 	task.spawn(pollStudioPlayerDataRelay, relayGeneration)
+	task.spawn(discoverStudioDataStores, relayGeneration)
 	return true
 end
 
@@ -543,11 +620,9 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 			codeLabel.Text = "INSTALLED"
 			pairingActive = false
 			local studioRelay = result.studioRelay
-			if typeof(studioRelay) == "table" and startStudioPlayerDataRelay(
-				tostring(studioRelay.credential or ""),
-				tostring(studioRelay.playerDataStoreName or ""),
-				tostring(studioRelay.playerDataKeyPrefix or "")
-			) then
+			if typeof(studioRelay) == "table"
+				and startStudioPlayerDataRelay(tostring(studioRelay.credential or ""))
+			then
 				setStatus(
 					"RoAnalytics is installed. Enable Studio Access to API Services for Player Data. For live analytics, also enable Allow HTTP Requests and publish.",
 					"success"
@@ -573,29 +648,6 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 end
 
 local function startPairing()
-	local playerDataStoreName = trim(dataStoreNameInput.Text)
-	local playerDataKeyPrefix = trim(dataKeyPrefixInput.Text)
-	if playerDataStoreName == "" then
-		setStatus("Enter the DataStore name that holds the player value.", "error")
-		dataStoreNameInput:CaptureFocus()
-		return
-	end
-	if #playerDataStoreName > 50 then
-		setStatus("The DataStore name can contain up to 50 UTF-8 bytes.", "error")
-		dataStoreNameInput:CaptureFocus()
-		return
-	end
-	if playerDataKeyPrefix == "" then
-		setStatus("Enter the exact string placed before the user ID, such as Player_.", "error")
-		dataKeyPrefixInput:CaptureFocus()
-		return
-	end
-	if #playerDataKeyPrefix > 30 then
-		setStatus("The key prefix can contain up to 30 UTF-8 bytes so the full key remains within Roblox's limit.", "error")
-		dataKeyPrefixInput:CaptureFocus()
-		return
-	end
-
 	pairingGeneration += 1
 	local generation = pairingGeneration
 	pairingActive = true
@@ -608,8 +660,6 @@ local function startPairing()
 		return postJson(DASHBOARD_BASE_URL .. "/api/roblox/studio-pairings", {
 			universeId = getUniverseId(),
 			placeId = game.PlaceId,
-			playerDataStoreName = playerDataStoreName,
-			playerDataKeyPrefix = playerDataKeyPrefix,
 		})
 	end)
 	if not ok then
@@ -619,9 +669,6 @@ local function startPairing()
 		setStatus("Could not start pairing: " .. tostring(result), "error")
 		return
 	end
-	plugin:SetSetting("RoAnalyticsDataStoreName_" .. settingsSuffix, playerDataStoreName)
-	plugin:SetSetting("RoAnalyticsDataKeyPrefix_" .. settingsSuffix, playerDataKeyPrefix)
-
 	codeLabel.Text = tostring(result.code or "---- ----")
 	installButton.Text = "Waiting for Approval..."
 	setStatus("On RoAnalytics, open Connect Universe and approve the request showing this exact code.", "")
@@ -634,9 +681,9 @@ local function startPairing()
 	)
 end
 
-if relayCredential ~= "" and relayDataStoreName ~= "" and relayDataKeyPrefix ~= "" and game.GameId > 0 then
+if relayCredential ~= "" and game.GameId > 0 then
 	setStatus("Reconnecting Studio Player Data...", "")
-	startStudioPlayerDataRelay(relayCredential, relayDataStoreName, relayDataKeyPrefix)
+	startStudioPlayerDataRelay(relayCredential)
 end
 
 installButton.MouseButton1Click:Connect(startPairing)

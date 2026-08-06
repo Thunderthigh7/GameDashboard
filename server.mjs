@@ -163,7 +163,9 @@ const MAX_STUDIO_PAIRINGS_PER_UNIVERSE = 5;
 const MAX_STUDIO_PAIRING_BODY_BYTES = 8 * 1024;
 const MAX_PROJECT_INSTALL_SECRETS = 10;
 const MAX_STUDIO_DATA_STORE_NAME_BYTES = 50;
-const MAX_STUDIO_DATA_KEY_PREFIX_BYTES = 30;
+const MAX_STUDIO_DATA_KEY_PREFIX_BYTES = 40;
+const MAX_STUDIO_DATA_STORES = 100;
+const MAX_STUDIO_DATA_STORE_SAMPLE_KEYS = 12;
 const PLAYER_DATA_REQUEST_TTL_MS = 15 * 60 * 1000;
 const MAX_PLAYER_DATA_REQUEST_BODY_BYTES = 320 * 1024;
 const MAX_PLAYER_DATA_JSON_BYTES = 256 * 1024;
@@ -171,7 +173,7 @@ const MAX_PLAYER_DATA_RECENT_REQUESTS = 25;
 const MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT = 2;
 const STUDIO_PLAYER_DATA_RELAY_TTL_MS = 15 * 1000;
 const STUDIO_PLAYER_DATA_RELAY_POLL_SECONDS = 2;
-const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.3";
+const ROANALYTICS_INSTALLER_VERSION = "2026.08.06.4";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -623,6 +625,10 @@ const server = http.createServer(async (req, res) => {
       return handleStudioPlayerDataPoll(req, res);
     }
 
+    if (url.pathname === "/api/roblox/studio-player-data/catalog" && req.method === "POST") {
+      return handleStudioPlayerDataCatalog(req, res);
+    }
+
     const robloxPlayerDataClaimMatch = url.pathname.match(/^\/api\/roblox\/player-data\/requests\/([^/]+)\/claim$/);
     if (robloxPlayerDataClaimMatch && req.method === "POST") {
       return handleRobloxPlayerDataRequestClaim(req, res, decodeURIComponent(robloxPlayerDataClaimMatch[1]));
@@ -921,6 +927,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/player-data/requests" && req.method === "POST") {
       const user = await findUserById(auth.userId);
       return handlePlayerDataRequestCreate(req, res, auth, user);
+    }
+
+    if (url.pathname === "/api/player-data/catalog/refresh" && req.method === "POST") {
+      return handlePlayerDataCatalogRefresh(req, res, auth);
     }
 
     const playerDataRequestMatch = url.pathname.match(/^\/api\/player-data\/requests\/([^/]+)$/);
@@ -6378,8 +6388,37 @@ async function handlePlayerDataGet(req, res, auth, searchParams) {
   });
   return sendJson(res, 200, {
     bridge: getPlayerDataBridgeStatus(auth.userId, universeId),
+    catalog: normalizePlayerDataCatalog(project.playerDataCatalog),
     requests: requests.map((request) => serializePlayerDataRequest(request)),
-    limits: { maxJsonBytes: MAX_PLAYER_DATA_JSON_BYTES },
+    limits: {
+      maxJsonBytes: MAX_PLAYER_DATA_JSON_BYTES,
+      maxDataStores: MAX_STUDIO_DATA_STORES,
+      maxSampleKeysPerStore: MAX_STUDIO_DATA_STORE_SAMPLE_KEYS,
+    },
+  });
+}
+
+async function handlePlayerDataCatalogRefresh(req, res, auth) {
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+  if (!getActiveStudioPlayerDataRelays(auth.userId, universeId).length) {
+    return sendJson(res, 409, { error: "Open the paired experience in Studio before scanning DataStores." });
+  }
+  const requestedAt = Date.now();
+  await updateProjectPlayerDataCatalogRefresh(project.id, auth.userId, requestedAt);
+  return sendJson(res, 202, {
+    ok: true,
+    requestedAt,
+    catalog: normalizePlayerDataCatalog(project.playerDataCatalog),
   });
 }
 
@@ -6412,13 +6451,19 @@ async function handlePlayerDataRequestCreate(req, res, auth, dashboardUser) {
   }
   const userId = targets.userIds[0];
   const resolvedTarget = targets.resolved.find((entry) => entry.userId === userId) || {};
+  const livePlayer = findLiveModerationPlayer(auth.userId, universeId, userId);
+  const studioRelay = getActiveStudioPlayerDataRelays(auth.userId, universeId)[0];
   const requestId = crypto.randomUUID();
   let payloadEncrypted = "";
   let sourceRequestId = "";
   let expectedVersion = "";
+  let dataStoreName = "";
+  let keyPrefix = "";
+  let dataEncoding = "native";
+  let sourceRequest = null;
   if (operation === "write") {
     sourceRequestId = cleanString(body?.sourceRequestId, 120);
-    const sourceRequest = await readPlayerDataRequestById(sourceRequestId);
+    sourceRequest = await readPlayerDataRequestById(sourceRequestId);
     if (!sourceRequest
       || sourceRequest.ownerUserId !== auth.userId
       || sourceRequest.universeId !== universeId
@@ -6436,13 +6481,30 @@ async function handlePlayerDataRequestCreate(req, res, auth, dashboardUser) {
     }
     payloadEncrypted = encryptPlayerDataPayload(normalizedPayload.json);
     expectedVersion = sourceRequest.resultVersion;
+    dataStoreName = sourceRequest.dataStoreName;
+    keyPrefix = sourceRequest.keyPrefix;
+    dataEncoding = sourceRequest.resultEncoding;
+    if (isStudioPlayerDataRelayJobId(sourceRequest.claimedJobId) && livePlayer) {
+      return sendJson(res, 409, { error: "This player is online. Leave the game before saving through Studio so the live session cannot overwrite the change." });
+    }
     if (!await consumePlayerDataReadRequest(sourceRequest, requestId)) {
       return sendJson(res, 409, { error: "That loaded snapshot was already used. Reload the player before saving again." });
+    }
+  } else {
+    try {
+      ({ dataStoreName, keyPrefix } = resolvePlayerDataRequestSelection(project, body));
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message });
+    }
+    if (studioRelay && dataStoreName && livePlayer) {
+      return sendJson(res, 409, { error: "This player is online. Leave the game before loading through Studio so the live session cannot overwrite the change." });
     }
   }
 
   const now = Date.now();
-  const livePlayer = findLiveModerationPlayer(auth.userId, universeId, userId);
+  const studioRelayJobId = sourceRequest && isStudioPlayerDataRelayJobId(sourceRequest.claimedJobId)
+    ? sourceRequest.claimedJobId
+    : studioRelay && dataStoreName ? getStudioPlayerDataRelayJobId(studioRelay.relayId) : "";
   const requestRecord = await savePlayerDataRequest({
     id: requestId,
     ownerUserId: auth.userId,
@@ -6458,7 +6520,11 @@ async function handlePlayerDataRequestCreate(req, res, auth, dashboardUser) {
     sourceRequestId,
     expectedVersion,
     resultVersion: "",
-    targetJobId: cleanString(livePlayer?.jobId, 128),
+    dataStoreName,
+    keyPrefix,
+    dataEncoding,
+    resultEncoding: "native",
+    targetJobId: cleanString(studioRelayJobId || livePlayer?.jobId, 128),
     claimedJobId: "",
     claimedAt: 0,
     completedAt: 0,
@@ -6472,7 +6538,8 @@ async function handlePlayerDataRequestCreate(req, res, auth, dashboardUser) {
   });
 
   try {
-    if (await publishPlayerDataRequest(project, requestRecord)) {
+    if (!isStudioPlayerDataRelayJobId(requestRecord.targetJobId)
+      && await publishPlayerDataRequest(project, requestRecord)) {
       requestRecord.delivery = "messaging";
       requestRecord.updatedAt = Date.now();
       await savePlayerDataRequest(requestRecord);
@@ -6519,31 +6586,12 @@ async function handleStudioPlayerDataPoll(req, res) {
   const relayId = cleanString(body?.relayId, 80);
   if (!relayId) return sendJson(res, 400, { error: "The Studio relay ID is required." });
 
-  let dataStoreName;
-  let keyPrefix;
-  try {
-    dataStoreName = normalizeStudioDataStoreSetting(
-      body?.playerDataStoreName,
-      MAX_STUDIO_DATA_STORE_NAME_BYTES,
-      "DataStore name",
-    );
-    keyPrefix = normalizeStudioDataStoreSetting(
-      body?.playerDataKeyPrefix,
-      MAX_STUDIO_DATA_KEY_PREFIX_BYTES,
-      "player key prefix",
-    );
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
-
   const relayJobId = getStudioPlayerDataRelayJobId(relayId);
   rememberStudioPlayerDataRelay({
     relayId,
     ownerUserId: project.ownerUserId,
     universeId,
     placeId: cleanInteger(body?.placeId),
-    dataStoreName,
-    keyPrefix,
   });
 
   const queuedRequests = await readQueuedPlayerDataRequests(
@@ -6581,6 +6629,9 @@ async function handleStudioPlayerDataPoll(req, res) {
       id: requestRecord.id,
       operation: requestRecord.operation,
       userId: requestRecord.userId,
+      dataStoreName: requestRecord.dataStoreName,
+      keyPrefix: requestRecord.keyPrefix,
+      dataEncoding: requestRecord.dataEncoding,
       data,
       expectedVersion: requestRecord.expectedVersion,
       expiresAt: requestRecord.expiresAtMs,
@@ -6592,8 +6643,53 @@ async function handleStudioPlayerDataPoll(req, res) {
     connected: true,
     relayJobId,
     pollAfterSeconds: STUDIO_PLAYER_DATA_RELAY_POLL_SECONDS,
+    refreshCatalog: shouldRefreshPlayerDataCatalog(project),
     request,
   });
+}
+
+async function handleStudioPlayerDataCatalog(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, 128 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectFromRequestSecret(req, universeId);
+  if (!project) return sendJson(res, 401, { error: "The Studio relay credential is invalid or was revoked." });
+  const relayId = cleanString(body?.relayId, 80);
+  if (!relayId) return sendJson(res, 400, { error: "The Studio relay ID is required." });
+
+  let catalog;
+  try {
+    const incomingCatalog = normalizePlayerDataCatalog({
+      stores: body?.stores,
+      complete: body?.complete === true,
+      error: body?.error,
+      updatedAt: Date.now(),
+    });
+    const previousCatalog = normalizePlayerDataCatalog(project.playerDataCatalog);
+    if (!incomingCatalog.complete && previousCatalog.stores.length) {
+      const previousStores = new Map(previousCatalog.stores.map((store) => [store.name, store]));
+      incomingCatalog.stores = incomingCatalog.stores.length
+        ? incomingCatalog.stores.map((store) => (
+          store.sampleKeys.length ? store : previousStores.get(store.name) || store
+        ))
+        : previousCatalog.stores;
+    }
+    catalog = incomingCatalog;
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  await updateProjectPlayerDataCatalog(project.id, project.ownerUserId, catalog);
+  rememberStudioPlayerDataRelay({
+    relayId,
+    ownerUserId: project.ownerUserId,
+    universeId,
+    placeId: cleanInteger(body?.placeId),
+  });
+  return sendJson(res, 200, { ok: true, catalog });
 }
 
 async function handleRobloxPlayerDataRequestClaim(req, res, rawRequestId) {
@@ -6639,6 +6735,9 @@ async function handleRobloxPlayerDataRequestClaim(req, res, rawRequestId) {
       id: requestRecord.id,
       operation: requestRecord.operation,
       userId: requestRecord.userId,
+      dataStoreName: requestRecord.dataStoreName,
+      keyPrefix: requestRecord.keyPrefix,
+      dataEncoding: requestRecord.dataEncoding,
       data,
       expectedVersion: requestRecord.expectedVersion,
       expiresAt: requestRecord.expiresAtMs,
@@ -6668,10 +6767,13 @@ async function handleRobloxPlayerDataResult(req, res) {
 
   const succeeded = body?.status === "completed" || body?.ok === true;
   let resultDataEncrypted = "";
+  let resultEncoding = "native";
   if (succeeded && requestRecord.operation === "read") {
     let normalizedResult;
     try {
-      normalizedResult = normalizePlayerDataJson(body?.data);
+      const decodedResult = decodePlayerDataResult(body?.data, body?.encoding);
+      normalizedResult = normalizePlayerDataJson(decodedResult.value);
+      resultEncoding = decodedResult.encoding;
     } catch (error) {
       await completePlayerDataRequest(requestRecord, { status: "failed", error: error.message });
       return sendJson(res, 400, { error: error.message });
@@ -6683,6 +6785,7 @@ async function handleRobloxPlayerDataResult(req, res) {
     error: succeeded ? "" : cleanString(body?.error, 240) || "The Roblox data adapter rejected this request.",
     resultDataEncrypted,
     resultVersion: cleanString(body?.version, 160),
+    resultEncoding,
   });
   return sendJson(res, 200, { ok: true, request: serializePlayerDataRequest(completed) });
 }
@@ -6753,6 +6856,103 @@ function getPlayerDataBridgeStatus(ownerUserId, universeId) {
   };
 }
 
+function normalizePlayerDataCatalog(value) {
+  const stores = [];
+  const seenStoreNames = new Set();
+  for (const rawStore of Array.isArray(value?.stores) ? value.stores : []) {
+    if (stores.length >= MAX_STUDIO_DATA_STORES) break;
+    const name = normalizePlayerDataCatalogToken(rawStore?.name, MAX_STUDIO_DATA_STORE_NAME_BYTES, false);
+    if (!name || seenStoreNames.has(name)) continue;
+    seenStoreNames.add(name);
+    const sampleKeys = [];
+    const seenKeys = new Set();
+    for (const rawKey of Array.isArray(rawStore?.sampleKeys) ? rawStore.sampleKeys : []) {
+      if (sampleKeys.length >= MAX_STUDIO_DATA_STORE_SAMPLE_KEYS) break;
+      const key = normalizePlayerDataCatalogToken(rawKey, 50, false);
+      if (!key || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      sampleKeys.push(key);
+    }
+    const groupedPatterns = new Map();
+    for (const key of sampleKeys) {
+      const match = key.match(/^(.*?)([0-9]+)$/);
+      if (!match) continue;
+      const prefix = normalizePlayerDataCatalogToken(match[1], MAX_STUDIO_DATA_KEY_PREFIX_BYTES, true);
+      if (prefix === null) continue;
+      const pattern = groupedPatterns.get(prefix) || { prefix, matchCount: 0, sampleKeys: [] };
+      pattern.matchCount += 1;
+      pattern.sampleKeys.push(key);
+      groupedPatterns.set(prefix, pattern);
+    }
+    const patterns = [...groupedPatterns.values()]
+      .sort((a, b) => b.matchCount - a.matchCount || a.prefix.localeCompare(b.prefix));
+    stores.push({
+      name,
+      sampleKeys,
+      patterns,
+      error: cleanString(rawStore?.error, 160),
+    });
+  }
+  stores.sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    stores,
+    complete: value?.complete === true,
+    error: cleanString(value?.error, 240),
+    updatedAt: cleanInteger(value?.updatedAt),
+  };
+}
+
+function normalizePlayerDataCatalogToken(value, maxBytes, allowEmpty) {
+  const cleanValue = cleanString(value, maxBytes * 2).trim();
+  if (!cleanValue) return allowEmpty ? "" : null;
+  if (/[\u0000-\u001f\u007f]/.test(cleanValue)) return null;
+  return Buffer.byteLength(cleanValue, "utf8") <= maxBytes ? cleanValue : null;
+}
+
+function resolvePlayerDataRequestSelection(project, body) {
+  const catalog = normalizePlayerDataCatalog(project?.playerDataCatalog);
+  const hasRequestedStore = Object.prototype.hasOwnProperty.call(body || {}, "dataStoreName");
+  const requestedStoreName = hasRequestedStore
+    ? normalizePlayerDataCatalogToken(body?.dataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES, false)
+    : null;
+  const hasRequestedPrefix = Object.prototype.hasOwnProperty.call(body || {}, "keyPrefix");
+  const requestedPrefix = hasRequestedPrefix
+    ? normalizePlayerDataCatalogToken(body?.keyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES, true)
+    : null;
+  const storesWithPatterns = catalog.stores.filter((store) => store.patterns.length);
+  if (hasRequestedStore && !requestedStoreName) {
+    throw new Error("The selected DataStore is invalid.");
+  }
+  if (hasRequestedPrefix && requestedPrefix === null) {
+    throw new Error("The selected player-key pattern is invalid.");
+  }
+  if (!storesWithPatterns.length) {
+    const bridge = getPlayerDataBridgeStatus(project?.ownerUserId, project?.universeId);
+    if (bridge.mode && bridge.mode !== "studio_plugin" && bridge.mode !== "direct_datastore") {
+      return { dataStoreName: "", keyPrefix: "" };
+    }
+    if (bridge.mode === "direct_datastore" && bridge.dataStoreName) {
+      return { dataStoreName: bridge.dataStoreName, keyPrefix: bridge.keyPrefix || "" };
+    }
+    throw new Error(catalog.error || "Studio is still discovering DataStores and player-key patterns. Wait for the scan to finish, then refresh.");
+  }
+  const store = hasRequestedStore
+    ? catalog.stores.find((entry) => entry.name === requestedStoreName)
+    : storesWithPatterns[0];
+  if (!store) throw new Error("Choose a DataStore discovered by the connected Studio plugin.");
+  const pattern = hasRequestedPrefix && requestedPrefix !== null
+    ? store.patterns.find((entry) => entry.prefix === requestedPrefix)
+    : store.patterns[0];
+  if (!pattern) throw new Error("Choose a player-key pattern discovered in that DataStore.");
+  return { dataStoreName: store.name, keyPrefix: pattern.prefix };
+}
+
+function shouldRefreshPlayerDataCatalog(project) {
+  const catalog = normalizePlayerDataCatalog(project?.playerDataCatalog);
+  const requestedAt = cleanInteger(project?.playerDataCatalogRefreshRequestedAt);
+  return catalog.updatedAt <= 0 || requestedAt > catalog.updatedAt;
+}
+
 function getStudioPlayerDataRelayJobId(relayId) {
   return `studio-plugin:${cleanString(relayId, 80)}`;
 }
@@ -6812,6 +7012,25 @@ function normalizePlayerDataJson(value) {
   return { value, json, bytes };
 }
 
+function decodePlayerDataResult(value, requestedEncoding) {
+  const encoding = cleanString(requestedEncoding, 32) === "json_string" ? "json_string" : "native";
+  if (encoding === "json_string") {
+    normalizePlayerDataJson(value);
+    return { value, encoding };
+  }
+  if (typeof value === "string") {
+    try {
+      const decoded = JSON.parse(value);
+      normalizePlayerDataJson(decoded);
+      return { value: decoded, encoding: "json_string" };
+    } catch {
+      // Plain strings stay plain strings.
+    }
+  }
+  normalizePlayerDataJson(value);
+  return { value, encoding: "native" };
+}
+
 function normalizePlayerDataRequest(value) {
   if (!value || typeof value !== "object") return null;
   const expiresAtMs = cleanInteger(value.expiresAtMs) || cleanFlexibleTimestampMs(value.expiresAt);
@@ -6833,6 +7052,10 @@ function normalizePlayerDataRequest(value) {
     sourceRequestId: cleanString(value.sourceRequestId, 120),
     expectedVersion: cleanString(value.expectedVersion, 160),
     resultVersion: cleanString(value.resultVersion, 160),
+    dataStoreName: cleanString(value.dataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES * 2),
+    keyPrefix: cleanString(value.keyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES * 2),
+    dataEncoding: value.dataEncoding === "json_string" ? "json_string" : "native",
+    resultEncoding: value.resultEncoding === "json_string" ? "json_string" : "native",
     consumedAt: cleanInteger(value.consumedAt),
     consumedByRequestId: cleanString(value.consumedByRequestId, 120),
     targetJobId: cleanString(value.targetJobId, 128),
@@ -6867,8 +7090,13 @@ function serializePlayerDataRequest(value, options = {}) {
     operation: requestRecord.operation,
     status: requestRecord.status,
     version: requestRecord.resultVersion,
+    dataStoreName: requestRecord.dataStoreName,
+    keyPrefix: requestRecord.keyPrefix,
+    encoding: requestRecord.operation === "read" ? requestRecord.resultEncoding : requestRecord.dataEncoding,
     sourceRequestId: requestRecord.sourceRequestId,
-    target: requestRecord.targetJobId ? "online_server" : "available_server",
+    target: isStudioPlayerDataRelayJobId(requestRecord.targetJobId)
+      ? "studio_plugin"
+      : requestRecord.targetJobId ? "online_server" : "available_server",
     delivery: requestRecord.delivery,
     processor: requestRecord.claimedJobId
       ? isStudioPlayerDataRelayJobId(requestRecord.claimedJobId) ? "studio_plugin" : "live_server"
@@ -7071,6 +7299,7 @@ async function completePlayerDataRequest(requestRecord, result) {
     error: cleanString(result.error, 240),
     resultDataEncrypted: typeof result.resultDataEncrypted === "string" ? result.resultDataEncrypted : "",
     resultVersion: cleanString(result.resultVersion, 160),
+    resultEncoding: result.resultEncoding === "json_string" ? "json_string" : "native",
     completedAt: now,
     updatedAt: now,
   };
@@ -7481,22 +7710,6 @@ async function handleStudioPairingStart(req, res) {
 
   const universeId = cleanInteger(body?.universeId);
   const placeId = cleanInteger(body?.placeId);
-  let playerDataStoreName;
-  let playerDataKeyPrefix;
-  try {
-    playerDataStoreName = normalizeStudioDataStoreSetting(
-      body?.playerDataStoreName,
-      MAX_STUDIO_DATA_STORE_NAME_BYTES,
-      "DataStore name",
-    );
-    playerDataKeyPrefix = normalizeStudioDataStoreSetting(
-      body?.playerDataKeyPrefix,
-      MAX_STUDIO_DATA_KEY_PREFIX_BYTES,
-      "player key prefix",
-    );
-  } catch (error) {
-    return sendJson(res, 400, { error: error.message });
-  }
   const project = await getProjectByUniverseId(universeId);
   if (!project || isDemoProject(project)) {
     return sendJson(res, 404, { error: "Connect this Roblox universe on the website before pairing Studio." });
@@ -7519,8 +7732,6 @@ async function handleStudioPairingStart(req, res) {
     claimTokenHash: hashStudioPairingToken(claimToken),
     status: "pending",
     secretEncrypted: "",
-    playerDataStoreName,
-    playerDataKeyPrefix,
     createdAt: now,
     updatedAt: now,
     approvedAt: 0,
@@ -7535,8 +7746,6 @@ async function handleStudioPairingStart(req, res) {
     code: pairing.displayCode,
     universeId,
     universeName: project.name || `Universe ${universeId}`,
-    playerDataStoreName,
-    playerDataKeyPrefix,
     expiresAt: pairing.expiresAtMs,
   });
 }
@@ -7635,8 +7844,6 @@ async function handleStudioPairingClaim(req, res, rawPairingId) {
   const installerPackage = await buildRoAnalyticsInstallerPackage({
     rootDir: path.join(__dirname, "RoAnalytics"),
     secret: installSecret,
-    playerDataStoreName: pairing.playerDataStoreName,
-    playerDataKeyPrefix: pairing.playerDataKeyPrefix,
     version: ROANALYTICS_INSTALLER_VERSION,
   });
   pairing.status = "claimed";
@@ -7650,8 +7857,6 @@ async function handleStudioPairingClaim(req, res, rawPairingId) {
     package: installerPackage,
     studioRelay: {
       credential: installSecret,
-      playerDataStoreName: pairing.playerDataStoreName,
-      playerDataKeyPrefix: pairing.playerDataKeyPrefix,
     },
   });
 }
@@ -7661,18 +7866,6 @@ function createStudioPairingCode() {
   const bytes = crypto.randomBytes(8);
   const code = [...bytes].map((value) => alphabet[value % alphabet.length]).join("");
   return `${code.slice(0, 4)}-${code.slice(4)}`;
-}
-
-function normalizeStudioDataStoreSetting(value, maxBytes, label) {
-  const cleanValue = cleanString(value, maxBytes * 2).trim();
-  if (!cleanValue) throw new Error(`${label} is required before pairing.`);
-  if (/[\u0000-\u001f\u007f]/.test(cleanValue)) {
-    throw new Error(`${label} contains unsupported control characters.`);
-  }
-  if (Buffer.byteLength(cleanValue, "utf8") > maxBytes) {
-    throw new Error(`${label} can contain up to ${maxBytes} UTF-8 bytes.`);
-  }
-  return cleanValue;
 }
 
 function hashStudioPairingToken(value) {
@@ -7699,8 +7892,6 @@ function normalizeStudioPairing(value) {
     claimTokenHash: cleanString(value.claimTokenHash, 120),
     status: ["pending", "approved", "claimed", "denied"].includes(value.status) ? value.status : "pending",
     secretEncrypted: cleanString(value.secretEncrypted, 8192),
-    playerDataStoreName: cleanString(value.playerDataStoreName, MAX_STUDIO_DATA_STORE_NAME_BYTES * 2),
-    playerDataKeyPrefix: cleanString(value.playerDataKeyPrefix, MAX_STUDIO_DATA_KEY_PREFIX_BYTES * 2),
     createdAt: cleanInteger(value.createdAt) || Date.now(),
     updatedAt: cleanInteger(value.updatedAt) || Date.now(),
     approvedAt: cleanInteger(value.approvedAt),
@@ -7709,8 +7900,7 @@ function normalizeStudioPairing(value) {
     expiresAt: new Date(expiresAtMs || Date.now()),
   };
   return pairing.id && pairing.ownerUserId && pairing.projectId && pairing.universeId > 0
-    && pairing.displayCode && pairing.claimTokenHash && pairing.playerDataStoreName
-    && pairing.playerDataKeyPrefix && pairing.expiresAtMs > 0
+    && pairing.displayCode && pairing.claimTokenHash && pairing.expiresAtMs > 0
     ? pairing
     : null;
 }
@@ -7723,8 +7913,6 @@ function serializeStudioPairingForDashboard(value) {
     universeId: pairing.universeId,
     placeId: pairing.placeId,
     code: pairing.displayCode,
-    playerDataStoreName: pairing.playerDataStoreName,
-    playerDataKeyPrefix: pairing.playerDataKeyPrefix,
     status: pairing.status,
     createdAt: pairing.createdAt,
     expiresAt: pairing.expiresAtMs,
@@ -18947,6 +19135,43 @@ async function addProjectInstallSecret(projectId, ownerUserId, credential) {
   ].slice(-MAX_PROJECT_INSTALL_SECRETS);
   await writeProjects(projects);
   return cleanCredential;
+}
+
+async function updateProjectPlayerDataCatalog(projectId, ownerUserId, catalog) {
+  const normalizedCatalog = normalizePlayerDataCatalog(catalog);
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("projects").updateOne(
+      { id: projectId, ownerUserId },
+      { $set: { playerDataCatalog: normalizedCatalog } },
+    );
+    if (!result.matchedCount) throw new Error("Connected game not found.");
+    return normalizedCatalog;
+  }
+  const projects = await readProjects();
+  const project = projects.find((entry) => entry.id === projectId && entry.ownerUserId === ownerUserId);
+  if (!project) throw new Error("Connected game not found.");
+  project.playerDataCatalog = normalizedCatalog;
+  await writeProjects(projects);
+  return normalizedCatalog;
+}
+
+async function updateProjectPlayerDataCatalogRefresh(projectId, ownerUserId, requestedAt) {
+  const cleanRequestedAt = cleanInteger(requestedAt) || Date.now();
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("projects").updateOne(
+      { id: projectId, ownerUserId },
+      { $set: { playerDataCatalogRefreshRequestedAt: cleanRequestedAt } },
+    );
+    if (!result.matchedCount) throw new Error("Connected game not found.");
+    return;
+  }
+  const projects = await readProjects();
+  const project = projects.find((entry) => entry.id === projectId && entry.ownerUserId === ownerUserId);
+  if (!project) throw new Error("Connected game not found.");
+  project.playerDataCatalogRefreshRequestedAt = cleanRequestedAt;
+  await writeProjects(projects);
 }
 
 async function deleteProject(projectId, ownerUserId) {

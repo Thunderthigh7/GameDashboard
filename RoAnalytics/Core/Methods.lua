@@ -1188,6 +1188,7 @@ processPlayerDataCommand = function(parameters)
 		placeId = game.PlaceId,
 		jobId = game.JobId,
 		isPlayerOnline = Players:GetPlayerByUserId(userId) ~= nil,
+		dataEncoding = tostring(request.dataEncoding or "native"),
 	}
 	if operation == "read" then
 		local readOk, data, version = pcall(registeredPlayerDataAdapter.read, userId, context)
@@ -1214,10 +1215,21 @@ processPlayerDataCommand = function(parameters)
 		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The dashboard update did not contain a JSON-compatible value.")
 		return
 	end
+	local writeData = request.data
+	if context.dataEncoding == "json_string" then
+		local encodedOk, encodedData = pcall(function()
+			return HttpService:JSONEncode(request.data)
+		end)
+		if not encodedOk then
+			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The dashboard update could not be encoded back into its original JSON string format.")
+			return
+		end
+		writeData = encodedData
+	end
 	local writeOk, newVersion, adapterError = pcall(
 		registeredPlayerDataAdapter.write,
 		userId,
-		request.data,
+		writeData,
 		context
 	)
 	if not writeOk then

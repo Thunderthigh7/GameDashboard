@@ -19,7 +19,7 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 2. Pick one of the public games owned by your Roblox account or by a group you own.
 3. Click Connect game.
 4. Download and install `roblox-plugin/RoAnalyticsInstaller.plugin.lua` in Studio.
-5. Open the experience, enter the DataStore name and the exact key string before the user ID (for example, `PlayerData` and `Player_`), click **Pair & Install**, and compare the short code with Connect Universe.
+5. Open the experience, click **Pair & Install**, and compare the short code with Connect Universe. After approval, Studio discovers standard DataStores and player-key patterns automatically.
 6. Approve the matching request. The plugin installs the complete current package and fills its credential automatically.
 7. Enable **Allow HTTP Requests** under Experience Settings -> Security if needed, then publish.
 
@@ -160,9 +160,9 @@ The Studio installer lives in `roblox-plugin/`; see `roblox-plugin/README.md` fo
 
 The **Player Data** page can read and update one player's JSON without another Roblox OAuth scope or a live game server. After an approved install, the Studio plugin stores its revocable per-install credential locally and polls for short-lived requests while that experience remains open. A published server remains a fallback when Studio is closed; existing `universe-messaging-service:publish` authorization is used when available for immediate delivery, otherwise the regular authenticated heartbeat carries the request.
 
-During Studio pairing, enter the DataStore name and the exact string your key places before the user ID. For example, `PlayerData` plus `Player_` makes user `123` resolve to the `Player_123` key. The plugin writes those settings into the installed package and uses them for its Studio relay. Enable **Studio Access to API Services** under Experience Settings -> Security, then keep the experience open in Studio; publishing or joining a server is not required for Player Data.
+After Studio pairing, the plugin lists standard DataStores and samples keys so the website can infer numeric-suffix patterns such as `Player_{userId}`. Select the correct DataStore and pattern on the Player Data page. Enable **Studio Access to API Services** under Experience Settings -> Security, then keep the experience open in Studio; publishing or joining a server is not required for Player Data.
 
-Studio uses the same DataStore backend as production, so automatic access is deliberately limited to offline players and version-checked saves. A key can contain any JSON-compatible Roblox DataStore value, including a number such as `cash.Value`, a string, a boolean, an array, or an object. Games using custom session locks, multiple keys, or transformed data can use the published-server path by registering the game-specific server adapter that already owns those rules:
+Studio uses the same DataStore backend as production, so automatic access is deliberately limited to offline players and version-checked saves. A key can contain any JSON-compatible Roblox DataStore value, including a number such as `cash.Value`, a string, a boolean, an array, an object, or an object encoded inside a string. JSON-string storage is decoded for editing and preserved on save. Games using custom session locks, multiple keys, legacy scopes, ordered stores, or transformed data can use the published-server path by registering the game-specific server adapter that already owns those rules:
 
 ```lua
 local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)

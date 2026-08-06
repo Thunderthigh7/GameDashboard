@@ -23,14 +23,21 @@ assert.match(pluginSource, /ChangeHistoryService:TryBeginRecording/);
 assert.match(pluginSource, /\/api\/roblox\/studio-pairings/);
 assert.match(pluginSource, /Pair & Install/);
 assert.match(pluginSource, /Allow HTTP Requests/);
-assert.match(pluginSource, /KEY STRING BEFORE USER ID/);
-assert.match(pluginSource, /playerDataStoreName = playerDataStoreName/);
-assert.match(pluginSource, /playerDataKeyPrefix = playerDataKeyPrefix/);
+assert.doesNotMatch(pluginSource, /KEY STRING BEFORE USER ID|DATASTORE NAME/);
+assert.match(pluginSource, /DataStoreService:ListDataStoresAsync/);
+assert.match(pluginSource, /:ListKeysAsync\(/);
+assert.match(pluginSource, /DataStoreName/);
+assert.match(pluginSource, /KeyName/);
+assert.match(pluginSource, /\/api\/roblox\/studio-player-data\/catalog/);
 assert.match(pluginSource, /\/api\/roblox\/studio-player-data\/poll/);
 assert.match(pluginSource, /RoAnalyticsRelayCredential_/);
-assert.match(pluginSource, /DataStoreService:GetDataStore\(relayDataStoreName\)/);
+assert.match(pluginSource, /DataStoreService:GetDataStore\(dataStoreName\)/);
 assert.match(pluginSource, /dataStore:GetAsync\(key, options\)/);
 assert.match(pluginSource, /dataStore:UpdateAsync\(key/);
+assert.match(pluginSource, /request\.dataStoreName/);
+assert.match(pluginSource, /request\.keyPrefix/);
+assert.match(pluginSource, /resultEncoding = "json_string"/);
+assert.match(pluginSource, /request\.dataEncoding/);
 assert.match(pluginSource, /valueType == "number"/);
 assert.doesNotMatch(pluginSource, /must contain one JSON-compatible table/);
 assert.match(pluginSource, /Studio Access to API Services/);
@@ -39,8 +46,6 @@ const secret = `roa_${"a".repeat(48)}`;
 const installerPackage = await buildRoAnalyticsInstallerPackage({
   rootDir: fileURLToPath(new URL("../RoAnalytics", import.meta.url)),
   secret,
-  playerDataStoreName: "PlayerData",
-  playerDataKeyPrefix: "Player_",
   version: "test",
 });
 assert.equal(installerPackage.name, "RoAnalytics");
@@ -50,8 +55,8 @@ assert.deepEqual(
 );
 const installedSettings = installerPackage.files.find((file) => file.path === "Config/Settings.lua")?.source || "";
 assert.match(installedSettings, new RegExp(`Settings\\.Secret = "${secret}"`));
-assert.match(installedSettings, /Settings\.PlayerDataStoreName = "PlayerData"/);
-assert.match(installedSettings, /Settings\.PlayerDataKeyPrefix = "Player_"/);
+assert.match(installedSettings, /Settings\.PlayerDataStoreName = ""/);
+assert.match(installedSettings, /Settings\.PlayerDataKeyPrefix = ""/);
 assert.doesNotMatch(installedSettings, /Settings\.Secret = "paste-project-roblox-secret-here"/);
 
 assert.match(serverSource, /handleStudioPairingStart/);
@@ -59,9 +64,11 @@ assert.match(serverSource, /handleStudioPairingDecision/);
 assert.match(serverSource, /handleStudioPairingClaim/);
 assert.match(serverSource, /claimTokenHash: hashStudioPairingToken/);
 assert.match(serverSource, /pairing\.secretEncrypted = encryptRobloxLiveOAuthToken/);
-assert.match(serverSource, /normalizeStudioDataStoreSetting/);
-assert.match(serverSource, /playerDataStoreName: pairing\.playerDataStoreName/);
+assert.match(serverSource, /normalizePlayerDataCatalog/);
+assert.match(serverSource, /resolvePlayerDataRequestSelection/);
 assert.match(serverSource, /handleStudioPlayerDataPoll/);
+assert.match(serverSource, /handleStudioPlayerDataCatalog/);
+assert.match(serverSource, /handlePlayerDataCatalogRefresh/);
 assert.match(serverSource, /studioRelay: \{/);
 assert.match(serverSource, /credential: installSecret/);
 assert.match(serverSource, /mode: studioRelay[\s\S]*?"studio_plugin"/);
@@ -82,15 +89,22 @@ assert.match(htmlSource, /data-dashboard-view="player-data"/);
 assert.match(htmlSource, /data-view-panel="player-data"/);
 assert.match(htmlSource, /id="studioInstallerPanel"/);
 assert.match(htmlSource, /id="playerDataJsonEditor"/);
+assert.match(htmlSource, /id="playerDataStoreSelect"/);
+assert.match(htmlSource, /id="playerDataKeyPatternSelect"/);
 assert.match(htmlSource, /RoAnalytics\.RegisterPlayerDataAdapter/);
 assert.match(appSource, /async function requestPlayerDataRead/);
 assert.match(appSource, /async function requestPlayerDataWrite/);
 assert.match(appSource, /function pollPlayerDataRequest/);
+assert.match(appSource, /function renderPlayerDataCatalog/);
+assert.match(appSource, /requestPlayerDataCatalogRefresh/);
 assert.match(appSource, /Studio plugin ready/);
-assert.match(appSource, /No live server is required/);
+assert.match(appSource, /no live server is required/i);
 assert.match(appSource, /"object", "string", "number", "boolean"/);
 assert.match(serverSource, /"object", "string", "number", "boolean"/);
+assert.match(serverSource, /resultEncoding/);
+assert.match(serverSource, /dataEncoding/);
 assert.match(stylesSource, /\.playerDataBridgeBadge/);
+assert.match(stylesSource, /\.playerDataCatalogControls/);
 
 assert.match(serverSource, /PLAYER_DATA_REQUEST_TTL_MS = 15 \* 60 \* 1000/);
 assert.match(serverSource, /MAX_PLAYER_DATA_JSON_BYTES = 256 \* 1024/);
@@ -118,6 +132,8 @@ assert.match(methodsSource, /currentKeyInfo:GetUserIds\(\)/);
 assert.match(methodsSource, /currentKeyInfo:GetMetadata\(\)/);
 assert.match(methodsSource, /This player is online/);
 assert.match(methodsSource, /valueType == "number"/);
+assert.match(methodsSource, /context\.dataEncoding == "json_string"/);
+assert.match(methodsSource, /writeData = encodedData/);
 assert.match(settingsSource, /Settings\.PlayerDataBridgeEnabled = true/);
 assert.match(settingsSource, /Settings\.PlayerDataStoreName = ""/);
 assert.match(settingsSource, /Settings\.PlayerDataKeyPrefix = ""/);
