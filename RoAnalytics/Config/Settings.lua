@@ -2,6 +2,8 @@ local Settings = {}
 
 Settings.Endpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/presence"
 Settings.GroupRankEndpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/group-rank"
+Settings.PlayerDataRequestEndpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/player-data/requests"
+Settings.PlayerDataResultEndpoint = "https://game-dashboard-zaya.onrender.com/api/roblox/player-data/results"
 Settings.Secret = "paste-project-roblox-secret-here"
 
 Settings.HeartbeatInterval = 20
@@ -35,6 +37,8 @@ Settings.CollectRobloxPlayerSegments = true
 Settings.LiveActionsEnabled = true
 Settings.LiveActionsTopic = "roanalytics-live-actions-v1"
 Settings.MaxProcessedLiveActionIds = 250
+Settings.PlayerDataBridgeEnabled = true
+Settings.MaxPlayerDataJsonBytes = 256 * 1024
 Settings.ShutdownFlushTimeout = 8
 
 return Settings

@@ -18,11 +18,12 @@ The dashboard uses Roblox OAuth login for user accounts. After signing in with R
 1. Open the Connect Universe tab.
 2. Pick one of the public games owned by your Roblox account or by a group you own.
 3. Click Connect game.
-4. Copy the Roblox secret that appears once.
-5. Put that secret in `RoAnalytics/Config/Settings.lua` as `Settings.Secret`.
-6. Use the same secret in the Studio heatmap plugin when exporting a map.
+4. Download and install `roblox-plugin/RoAnalyticsInstaller.plugin.lua` in Studio.
+5. Open the experience, click **Pair & Install**, and compare the short code with Connect Universe.
+6. Approve the matching request. The plugin installs the complete current package and fills its credential automatically.
+7. Enable **Allow HTTP Requests** under Experience Settings -> Security if needed, then publish.
 
-The original secret is not shown again because only its hash is stored. Use Connect Universe -> Connected games -> Regenerate secret to replace the key for a connected game. The regenerated secret box names the exact game and universe it belongs to. Use Unlink to disconnect a game from the account and delete its stored analytics data; Roblox analytics requests using that game's secret will stop working.
+The claim token and installer credential are never shown in the browser. Pairing requests expire after ten minutes. Use Connect Universe -> Connected games -> Regenerate secret to revoke the primary secret and every plugin-installed credential for a connected game. The regenerated secret box is a manual/Rojo fallback and names the exact game and universe it belongs to. Use Unlink to disconnect a game from the account and delete its stored analytics data; Roblox analytics requests using that game's secret will stop working.
 
 Each account only sees universes it added. The old shared `PRESENCE_SECRET` still works as an admin/internal fallback, but normal Roblox games should use the per-universe secret from the website.
 
@@ -153,7 +154,28 @@ After events arrive, open **Funnels** and select **New**. A funnel can mix custo
 
 Conversion is session-based: a session enters when it reaches step one, and it only reaches later steps when matching events occur after the previous step and inside the selected conversion window. The dashboard shows entry sessions, completed sessions, overall conversion, step drop-off, unique players, and time between steps. Results use the dashboard's current From/To date filters and refresh every 15 seconds while the Funnels page is open.
 
-The Studio heatmap plugin lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps.
+The Studio installer lives in `roblox-plugin/`; see `roblox-plugin/README.md` for local plugin install steps. It only installs or updates the server package. It contains no Studio heatmap, map scan, or map upload behavior.
+
+## Player Data Bridge
+
+The **Player Data** page can read and update one player's JSON without another Roblox OAuth scope. It sends a short-lived request to the installed package in a published server. Existing `universe-messaging-service:publish` authorization is used when available for immediate delivery; otherwise the regular authenticated heartbeat carries the request.
+
+RoAnalytics does not guess a DataStore name or directly open a live profile. Register the game-specific server adapter that already owns your session locking and validation:
+
+```lua
+local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)
+
+RoAnalytics.RegisterPlayerDataAdapter({
+	Read = function(userId, context)
+		return DataService.GetOfflineData(userId)
+	end,
+	Write = function(userId, newData, context)
+		return DataService.SetOfflineData(userId, newData, context.expectedVersion)
+	end,
+})
+```
+
+Replace those example calls with the real API in your game. Reads and writes only execute in published production servers. A successful read is required before a write, each read snapshot can be used once, payloads are capped at 256 KiB, and encrypted request data expires after 15 minutes. Your adapter remains responsible for preventing writes over a profile that another server owns and for rejecting stale versions.
 
 ## Backblaze B2 Analytics Storage
 

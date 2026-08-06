@@ -26,6 +26,8 @@ local pendingDeathSamples = {}
 local pendingLeaveSamples = {}
 local pendingCustomEvents = {}
 local registeredLiveActions = {}
+local registeredPlayerDataAdapter = nil
+local processPlayerDataCommand = nil
 local processedLiveActionIds = {}
 local processedLiveActionOrder = {}
 local lastPlayerPositions = {}
@@ -778,6 +780,14 @@ local function handleLiveActionMessage(message)
 		task.spawn(applyModerationCommand, payload.parameters or {})
 		return
 	end
+	if actionKey == "roanalytics.player_data" then
+		local parameters = payload.parameters or {}
+		local targetJobId = tostring(parameters.targetJobId or "")
+		if targetJobId == "" or targetJobId == game.JobId then
+			task.spawn(processPlayerDataCommand, parameters)
+		end
+		return
+	end
 	local handler = registeredLiveActions[actionKey]
 	if not handler then
 		return
@@ -803,14 +813,30 @@ function Methods.RegisterLiveAction(actionKey, handler)
 	if not normalizedKey then
 		error("RegisterLiveAction expected a valid custom action key", 2)
 	end
-	if normalizedKey == "roanalytics.moderation" then
-		error("roanalytics.moderation is reserved for built-in player moderation", 2)
+	if normalizedKey == "roanalytics.moderation" or normalizedKey == "roanalytics.player_data" then
+		error(normalizedKey .. " is reserved for built-in RoAnalytics operations", 2)
 	end
 	if typeof(handler) ~= "function" then
 		error("RegisterLiveAction expected a handler function", 2)
 	end
 	registeredLiveActions[normalizedKey] = handler
 	return normalizedKey
+end
+
+function Methods.RegisterPlayerDataAdapter(adapter)
+	if typeof(adapter) ~= "table" then
+		error("RegisterPlayerDataAdapter expected a table", 2)
+	end
+	local read = adapter.Read or adapter.read
+	local write = adapter.Write or adapter.write
+	if typeof(read) ~= "function" or typeof(write) ~= "function" then
+		error("Player data adapters require Read and Write functions", 2)
+	end
+	registeredPlayerDataAdapter = {
+		read = read,
+		write = write,
+	}
+	return true
 end
 
 local function getPlayersPayload()
@@ -974,6 +1000,152 @@ local function getDashboardSecret()
 	return string.match(tostring(Settings.Secret or ""), "^%s*(.-)%s*$") or ""
 end
 
+local function requestPlayerDataBridge(url, body)
+	local dashboardSecret = getDashboardSecret()
+	if dashboardSecret == "" or dashboardSecret == "paste-project-roblox-secret-here" then
+		error("Set Settings.Secret before using the player data bridge.")
+	end
+	local response = HttpService:RequestAsync({
+		Url = url,
+		Method = "POST",
+		Headers = {
+			["Content-Type"] = "application/json",
+			["X-Dashboard-Secret"] = dashboardSecret,
+		},
+		Body = HttpService:JSONEncode(body),
+	})
+	local decoded = {}
+	if tostring(response.Body or "") ~= "" then
+		local decodedOk, value = pcall(function()
+			return HttpService:JSONDecode(response.Body)
+		end)
+		if decodedOk and typeof(value) == "table" then
+			decoded = value
+		end
+	end
+	if not response.Success then
+		error(tostring(decoded.error or ("Player data bridge HTTP " .. tostring(response.StatusCode))))
+	end
+	return decoded
+end
+
+local function sendPlayerDataResult(requestId, status, data, version, errorMessage)
+	local endpoint = string.match(tostring(Settings.PlayerDataResultEndpoint or ""), "^%s*(.-)%s*$") or ""
+	if endpoint == "" then
+		error("Set Settings.PlayerDataResultEndpoint before using the player data bridge.")
+	end
+	return requestPlayerDataBridge(endpoint, {
+		universeId = game.GameId,
+		placeId = game.PlaceId,
+		environment = runtimeEnvironment,
+		jobId = game.JobId,
+		requestId = requestId,
+		status = status,
+		data = data,
+		version = tostring(version or ""),
+		error = tostring(errorMessage or ""),
+	})
+end
+
+processPlayerDataCommand = function(parameters)
+	if not Settings.PlayerDataBridgeEnabled or runtimeEnvironment ~= "production" then
+		return
+	end
+	if typeof(parameters) ~= "table" then
+		return
+	end
+	local requestId = tostring(parameters.requestId or "")
+	if requestId == "" then
+		return
+	end
+	local endpoint = string.match(tostring(Settings.PlayerDataRequestEndpoint or ""), "^%s*(.-)%s*$") or ""
+	if endpoint == "" then
+		return
+	end
+
+	local claimOk, claim = pcall(function()
+		return requestPlayerDataBridge(
+			endpoint:gsub("/+$", "") .. "/" .. HttpService:UrlEncode(requestId) .. "/claim",
+			{
+				universeId = game.GameId,
+				placeId = game.PlaceId,
+				environment = runtimeEnvironment,
+				jobId = game.JobId,
+			}
+		)
+	end)
+	if not claimOk or typeof(claim) ~= "table" or claim.claimed ~= true or typeof(claim.request) ~= "table" then
+		return
+	end
+
+	local request = claim.request
+	local userId = tonumber(request.userId)
+	local operation = tostring(request.operation or "")
+	if not userId or userId <= 0 or (operation ~= "read" and operation ~= "write") then
+		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The dashboard sent an invalid player-data request.")
+		return
+	end
+	if not registeredPlayerDataAdapter then
+		pcall(
+			sendPlayerDataResult,
+			requestId,
+			"failed",
+			nil,
+			nil,
+			"RegisterPlayerDataAdapter must be configured in server code before using the database page."
+		)
+		return
+	end
+
+	local context = {
+		requestId = requestId,
+		operation = operation,
+		expectedVersion = tostring(request.expectedVersion or ""),
+		placeId = game.PlaceId,
+		jobId = game.JobId,
+	}
+	if operation == "read" then
+		local readOk, data, version = pcall(registeredPlayerDataAdapter.read, userId, context)
+		if not readOk then
+			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, tostring(data))
+			return
+		end
+		if typeof(data) ~= "table" then
+			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The player data adapter must return a table.")
+			return
+		end
+		local encodedOk, encoded = pcall(function()
+			return HttpService:JSONEncode(data)
+		end)
+		if not encodedOk or #encoded > (Settings.MaxPlayerDataJsonBytes or 262144) then
+			pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The player data response is not valid JSON or is too large.")
+			return
+		end
+		pcall(sendPlayerDataResult, requestId, "completed", data, version, nil)
+		return
+	end
+
+	if typeof(request.data) ~= "table" then
+		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, "The dashboard update did not contain a JSON table.")
+		return
+	end
+	local writeOk, newVersion, adapterError = pcall(
+		registeredPlayerDataAdapter.write,
+		userId,
+		request.data,
+		context
+	)
+	if not writeOk then
+		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, tostring(newVersion))
+		return
+	end
+	if newVersion == false then
+		pcall(sendPlayerDataResult, requestId, "failed", nil, nil, tostring(adapterError or "The player data adapter rejected the update."))
+		return
+	end
+	pcall(sendPlayerDataResult, requestId, "completed", nil, newVersion, nil)
+end
+
 local function getHeartbeatResponseError(response)
 	local fallback = "Heartbeat request failed."
 	if typeof(response) ~= "table" then
@@ -1107,6 +1279,25 @@ local function applyHeartbeatModeration(response)
 	end
 end
 
+local function applyHeartbeatPlayerData(response)
+	if typeof(response) ~= "table" or tostring(response.Body or "") == "" then
+		return
+	end
+	local decodedOk, decoded = pcall(function()
+		return HttpService:JSONDecode(response.Body)
+	end)
+	if not decodedOk or typeof(decoded) ~= "table" or typeof(decoded.playerData) ~= "table" then
+		return
+	end
+	local commands = decoded.playerData.commands
+	if typeof(commands) ~= "table" then
+		return
+	end
+	for _, command in commands do
+		task.spawn(processPlayerDataCommand, command)
+	end
+end
+
 local function buildPayload()
 	return {
 		universeId = game.GameId,
@@ -1117,6 +1308,9 @@ local function buildPayload()
 		serverStartedAt = serverStartedAt,
 		updatedAt = os.time(),
 		playerCount = #Players:GetPlayers(),
+		playerDataBridge = {
+			registered = registeredPlayerDataAdapter ~= nil,
+		},
 		players = getPlayersPayload(),
 		chatLogs = getChatLogsPayload(),
 		movementSamples = getMovementSamplesPayload(),
@@ -1165,6 +1359,7 @@ function Methods.SendHeartbeat()
 	end
 
 	applyHeartbeatModeration(response)
+	applyHeartbeatPlayerData(response)
 	clearSentChatLogs(#payload.chatLogs)
 	clearSentMovementSamples(#payload.movementSamples)
 	clearSentMovementRollups(#payload.movementRollups)

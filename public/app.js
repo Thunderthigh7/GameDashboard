@@ -57,6 +57,18 @@ const playerModerationReasonCount = document.querySelector("#playerModerationRea
 const playerModerationFormStatus = document.querySelector("#playerModerationFormStatus");
 const playerModerationCancelButton = document.querySelector("#playerModerationCancelButton");
 const playerModerationSubmitButton = document.querySelector("#playerModerationSubmitButton");
+const refreshPlayerDataButton = document.querySelector("#refreshPlayerDataButton");
+const playerDataBridgeBadge = document.querySelector("#playerDataBridgeBadge");
+const playerDataTargetInput = document.querySelector("#playerDataTargetInput");
+const playerDataLoadButton = document.querySelector("#playerDataLoadButton");
+const playerDataStatus = document.querySelector("#playerDataStatus");
+const playerDataEditor = document.querySelector("#playerDataEditor");
+const playerDataEditorTarget = document.querySelector("#playerDataEditorTarget");
+const playerDataEditorMeta = document.querySelector("#playerDataEditorMeta");
+const playerDataJsonEditor = document.querySelector("#playerDataJsonEditor");
+const playerDataByteCount = document.querySelector("#playerDataByteCount");
+const playerDataSaveButton = document.querySelector("#playerDataSaveButton");
+const playerDataRequestList = document.querySelector("#playerDataRequestList");
 const assetAuthorizationTitle = document.querySelector("#assetAuthorizationTitle");
 const assetAuthorizationCopy = document.querySelector("#assetAuthorizationCopy");
 const assetAuthorizeButton = document.querySelector("#assetAuthorizeButton");
@@ -233,6 +245,8 @@ const projectSecretValue = document.querySelector("#projectSecretValue");
 const projectSecretTarget = document.querySelector("#projectSecretTarget");
 const copyProjectSecretButton = document.querySelector("#copyProjectSecretButton");
 const connectedGameList = document.querySelector("#connectedGameList");
+const studioPairingStatus = document.querySelector("#studioPairingStatus");
+const studioPairingList = document.querySelector("#studioPairingList");
 const selectedUniverseLabel = document.querySelector("#selectedUniverseLabel");
 const selectedUniverseThumbnail = document.querySelector("#selectedUniverseThumbnail");
 const chatLogsStatus = document.querySelector("#chatLogsStatus");
@@ -429,6 +443,13 @@ let reconciliationRequestSequence = 0;
 let playerModerationRequestSequence = 0;
 let playerModerationRefreshTimer;
 let playerModerationBusy = false;
+let playerDataRequestSequence = 0;
+let playerDataRefreshTimer;
+let playerDataPollTimer;
+let playerDataPollGeneration = 0;
+let playerDataBusy = false;
+let playerDataState = { bridge: {}, requests: [], limits: {} };
+let activePlayerDataRead = null;
 let assetLibraryRequestSequence = 0;
 let assetLibraryBusy = false;
 let assetLibrary = { authorization: {}, packs: [], limits: {} };
@@ -443,6 +464,8 @@ let groupRefreshTimer;
 let groupAutomationDirty = false;
 let groupRankRuleDirty = false;
 let editingGroupRankRuleId = "";
+let studioPairingRequestSequence = 0;
+let studioPairingRefreshTimer;
 let customEventsRequestSequence = 0;
 let selectedCustomEventName = "";
 let currentEventCatalog = [];
@@ -492,7 +515,7 @@ const loadedViews = new Set();
 const inFlightGetRequests = new Map();
 const aiReportPayloadCache = new Map();
 
-const DASHBOARD_ASSET_VERSION = "20260805-6";
+const DASHBOARD_ASSET_VERSION = "20260805-7";
 const EVENT_PROPERTY_VALUE_LIMIT = 8;
 const MAX_EVENT_PROPERTY_MANAGED_VALUES = 8;
 const EVENT_PROPERTY_PRIMARY_TAB_LIMIT = 6;
@@ -559,7 +582,9 @@ const EVENT_REFRESH_MS = 15000;
 const FUNNEL_REFRESH_MS = 15000;
 const ROBLOX_LIVE_REFRESH_MS = 5000;
 const PLAYER_MODERATION_REFRESH_MS = 5000;
-const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation", "assets"]);
+const PLAYER_DATA_REFRESH_MS = 5000;
+const PLAYER_DATA_POLL_MS = 1200;
+const UNIVERSE_SCOPED_VIEWS = new Set(["events", "funnels", "ai-runs", "chat", "discord", "roblox-live", "moderation", "player-data", "assets"]);
 const ADMIN_ONLY_VIEWS = new Set(
   Array.from(
     adminNavGroup?.querySelectorAll("[data-dashboard-view]") || [],
@@ -690,6 +715,7 @@ function bindEvents() {
     createProject();
   });
   copyProjectSecretButton?.addEventListener("click", copyProjectSecret);
+  studioPairingList?.addEventListener("click", handleStudioPairingAction);
   selectedUniverseThumbnail?.addEventListener("error", handleSelectedUniverseThumbnailError);
   connectedGameList?.addEventListener("error", handleConnectedGameThumbnailError, true);
   connectedGameList?.addEventListener("click", (event) => {
@@ -889,6 +915,15 @@ function bindEvents() {
   playerModerationCancelButton?.addEventListener("click", closePlayerModerationDialog);
   playerModerationDialogBackdrop?.addEventListener("click", closePlayerModerationDialog);
   document.addEventListener("keydown", handlePlayerModerationDialogKeydown);
+  refreshPlayerDataButton?.addEventListener("click", () => loadPlayerData({ force: true }));
+  playerDataLoadButton?.addEventListener("click", requestPlayerDataRead);
+  playerDataTargetInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    requestPlayerDataRead();
+  });
+  playerDataJsonEditor?.addEventListener("input", updatePlayerDataEditorBytes);
+  playerDataSaveButton?.addEventListener("click", requestPlayerDataWrite);
   assetAuthorizeButton?.addEventListener("click", authorizeAssetPublishing);
   assetDisconnectButton?.addEventListener("click", disconnectAssetPublishing);
   assetDropZone?.addEventListener("click", () => assetFileInput?.click());
@@ -1188,6 +1223,8 @@ function abortActiveDashboardRequests() {
   adminUsersRequestSequence += 1;
   reconciliationRequestSequence += 1;
   playerModerationRequestSequence += 1;
+  playerDataRequestSequence += 1;
+  stopPlayerDataPolling();
   groupManagementRequestSequence += 1;
   customEventsRequestSequence += 1;
   funnelRequestSequence += 1;
@@ -1242,6 +1279,9 @@ function setAuthenticated(value, user = null) {
     stopFunnelRefresh();
     stopRobloxLiveRefresh();
     stopPlayerModerationRefresh();
+    stopPlayerDataRefresh();
+    stopPlayerDataPolling();
+    resetPlayerDataEditor();
     stopGroupRefresh();
     renderChatSummary();
     setChatLiveState("waiting");
@@ -1366,6 +1406,7 @@ function getViewFromHash() {
   if (window.location.hash === "#usage") return "usage";
   if (window.location.hash === "#connect") return "connect";
   if (window.location.hash === "#moderation") return "moderation";
+  if (window.location.hash === "#player-data") return "player-data";
   if (window.location.hash === "#assets") return "assets";
   if (window.location.hash === "#groups") return "groups";
   if (window.location.hash === "#admin") return "admin";
@@ -1374,7 +1415,7 @@ function getViewFromHash() {
 
 function setActiveView(view, options = {}) {
   const previousView = activeView;
-  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "groups" || view === "usage" || view === "connect" || view === "moderation" || view === "admin" ? view : "overview";
+  const requestedView = view === "events" || view === "funnels" || view === "ai-runs" || view === "chat" || view === "discord" || view === "roblox-live" || view === "assets" || view === "groups" || view === "usage" || view === "connect" || view === "moderation" || view === "player-data" || view === "admin" ? view : "overview";
   const lacksAdminAccess = ADMIN_ONLY_VIEWS.has(requestedView) && !authenticatedUser?.isAdmin;
   activeView = lacksAdminAccess ? "overview" : requestedView;
   if (lacksAdminAccess && ADMIN_ONLY_VIEWS.has(getViewFromHash())) {
@@ -1398,6 +1439,7 @@ function setActiveView(view, options = {}) {
   }
   if (activeView !== "roblox-live") closeRobloxLiveRuleEditor();
   if (activeView !== "moderation") closePlayerModerationDialog({ force: true });
+  if (activeView !== "player-data") stopPlayerDataPolling();
   if (activeView !== "assets") stopAssetOperationPolling();
   document.body.dataset.activeView = activeView;
   if (options.updateHash) {
@@ -1473,6 +1515,10 @@ function renderActiveView(options = {}) {
       title: "Player Moderation",
       subtitle: "Kick and permanently ban Roblox players with a complete reason history.",
     },
+    "player-data": {
+      title: "Player Data",
+      subtitle: "Safely inspect and update player JSON through your published server data adapter.",
+    },
     admin: {
       title: "Dashboard Users",
       subtitle: "Monitor RoAnalytics accounts and connected universes.",
@@ -1505,6 +1551,8 @@ function updateViewRefreshTimers() {
     stopFunnelRefresh();
     stopRobloxLiveRefresh();
     stopPlayerModerationRefresh();
+    stopPlayerDataRefresh();
+    stopStudioPairingRefresh();
     stopGroupRefresh();
     return;
   }
@@ -1523,6 +1571,12 @@ function updateViewRefreshTimers() {
 
   if (activeView === "moderation" && selectedUniverseId) startPlayerModerationRefresh();
   else stopPlayerModerationRefresh();
+
+  if (activeView === "player-data" && selectedUniverseId) startPlayerDataRefresh();
+  else stopPlayerDataRefresh();
+
+  if (activeView === "connect" && selectedUniverseId) startStudioPairingRefresh();
+  else stopStudioPairingRefresh();
 
   if (activeView === "groups") startGroupRefresh();
   else stopGroupRefresh();
@@ -1549,10 +1603,15 @@ function loadActiveViewData(view, options = {}) {
       loadRobloxLiveIntegration();
     } else if (view === "moderation") {
       loadPlayerModeration();
+    } else if (view === "player-data") {
+      loadPlayerData({ background: true });
     } else if (view === "assets") {
       loadAssetLibrary();
     } else if (view === "groups") {
       loadGroupManagement({ background: true });
+    } else if (view === "connect") {
+      loadOwnedGames();
+      loadStudioPairings({ background: true });
     }
     return;
   }
@@ -1574,6 +1633,8 @@ function loadActiveViewData(view, options = {}) {
     loadRobloxLiveIntegration();
   } else if (view === "moderation") {
     loadPlayerModeration();
+  } else if (view === "player-data") {
+    loadPlayerData();
   } else if (view === "assets") {
     loadAssetLibrary();
   } else if (view === "groups") {
@@ -1582,6 +1643,7 @@ function loadActiveViewData(view, options = {}) {
     loadAccountUsage();
   } else if (view === "connect") {
     loadOwnedGames();
+    loadStudioPairings();
   } else if (view === "admin" && authenticatedUser?.isAdmin) {
     loadAdminUsers();
     loadReconciliations();
@@ -1955,6 +2017,331 @@ function setPlayerModerationFormStatus(message, state = "") {
   playerModerationFormStatus.textContent = message;
   if (state) playerModerationFormStatus.dataset.state = state;
   else delete playerModerationFormStatus.dataset.state;
+}
+
+function startPlayerDataRefresh() {
+  if (playerDataRefreshTimer || document.hidden) return;
+  playerDataRefreshTimer = window.setInterval(() => {
+    if (!playerDataBusy) loadPlayerData({ background: true });
+  }, PLAYER_DATA_REFRESH_MS);
+}
+
+function stopPlayerDataRefresh() {
+  if (!playerDataRefreshTimer) return;
+  window.clearInterval(playerDataRefreshTimer);
+  playerDataRefreshTimer = null;
+}
+
+function stopPlayerDataPolling() {
+  playerDataPollGeneration += 1;
+  playerDataBusy = false;
+  if (playerDataPollTimer) {
+    window.clearTimeout(playerDataPollTimer);
+    playerDataPollTimer = null;
+  }
+}
+
+async function loadPlayerData(options = {}) {
+  if (!authenticated || !selectedUniverseId || !playerDataRequestList) return;
+  const requestSequence = ++playerDataRequestSequence;
+  if (!options.background) setPlayerDataStatus("Checking the live data bridge...");
+  try {
+    const data = await request(`/api/player-data?universeId=${encodeURIComponent(selectedUniverseId)}`, {
+      dedupe: !options.force,
+    });
+    if (
+      requestSequence !== playerDataRequestSequence
+      || activeView !== "player-data"
+    ) return;
+    playerDataState = {
+      bridge: data?.bridge || {},
+      requests: Array.isArray(data?.requests) ? data.requests.filter(Boolean) : [],
+      limits: data?.limits || {},
+    };
+    renderPlayerData();
+    if (!options.background && !activePlayerDataRead) {
+      setPlayerDataStatus(getPlayerDataBridgeMessage(playerDataState.bridge));
+    }
+  } catch (error) {
+    if (requestSequence !== playerDataRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) setPlayerDataStatus(error.message, "error");
+  }
+}
+
+function renderPlayerData() {
+  const bridge = playerDataState.bridge || {};
+  const connected = Boolean(bridge.connected || Number(bridge.adapterServerCount) > 0);
+  const liveServerCount = Number(bridge.liveServerCount) || 0;
+  if (playerDataBridgeBadge) {
+    playerDataBridgeBadge.dataset.state = connected ? "connected" : liveServerCount ? "waiting" : "offline";
+    const label = connected
+      ? `${bridge.adapterServerCount} live adapter server${Number(bridge.adapterServerCount) === 1 ? "" : "s"}`
+      : liveServerCount
+        ? "Live server has no adapter"
+        : "No live server connected";
+    const strong = playerDataBridgeBadge.querySelector("strong");
+    if (strong) strong.textContent = label;
+  }
+
+  if (playerDataRequestList) {
+    const requests = playerDataState.requests || [];
+    playerDataRequestList.innerHTML = requests.length
+      ? requests.map(renderPlayerDataRequest).join("")
+      : `<div class="playerDataEmpty"><strong>No data requests yet</strong><span>Load a player to test your registered server adapter.</span></div>`;
+  }
+  setPlayerDataControlsDisabled(playerDataBusy);
+  updatePlayerDataEditorBytes();
+}
+
+function renderPlayerDataRequest(requestRecord) {
+  const username = String(requestRecord.username || `User ${requestRecord.userId || "?"}`);
+  const displayName = String(requestRecord.displayName || "");
+  const playerLabel = displayName && displayName !== username ? `${displayName} (@${username})` : username;
+  const operation = requestRecord.operation === "write" ? "Save" : "Load";
+  const status = String(requestRecord.status || "queued");
+  const detail = requestRecord.error
+    ? requestRecord.error
+    : status === "processing"
+      ? "Running in a published Roblox server"
+      : status === "queued"
+        ? `Waiting via ${requestRecord.delivery === "messaging" ? "Messaging Service" : "server heartbeat"}`
+        : status === "completed"
+          ? requestRecord.version ? `Version ${requestRecord.version}` : "Completed"
+          : "Request expired before a server claimed it";
+  return `
+    <article class="playerDataRequestRow">
+      <div class="playerDataRequestIdentity"><strong>${escapeHtml(playerLabel)}</strong><span>User ${escapeHtml(requestRecord.userId || "-")}</span></div>
+      <span class="playerDataOperationBadge" data-operation="${escapeHtml(requestRecord.operation || "read")}">${operation}</span>
+      <div class="playerDataRequestDetail"><strong data-status="${escapeHtml(status)}">${escapeHtml(status)}</strong><span>${escapeHtml(detail)}</span></div>
+      <time datetime="${escapeHtml(new Date(requestRecord.createdAt || Date.now()).toISOString())}">${escapeHtml(formatRelativeTime(requestRecord.createdAt))}</time>
+    </article>
+  `;
+}
+
+function getPlayerDataBridgeMessage(bridge = {}) {
+  if (bridge.connected || Number(bridge.adapterServerCount) > 0) {
+    return "The player data adapter is live and ready.";
+  }
+  if (Number(bridge.liveServerCount) > 0) {
+    return "RoAnalytics is live, but RegisterPlayerDataAdapter has not been called in that server.";
+  }
+  return "Publish and join the game so a live server can process player data requests.";
+}
+
+async function requestPlayerDataRead() {
+  if (!authenticated || playerDataBusy || !selectedUniverseId) return;
+  const target = String(playerDataTargetInput?.value || "").trim();
+  if (!target) {
+    setPlayerDataStatus("Enter one Roblox username or user ID.", "error");
+    playerDataTargetInput?.focus();
+    return;
+  }
+
+  stopPlayerDataPolling();
+  resetPlayerDataEditor({ preserveTarget: true });
+  playerDataBusy = true;
+  setPlayerDataControlsDisabled(true);
+  setPlayerDataStatus("Sending a read request to your live Roblox server...");
+  try {
+    const data = await request("/api/player-data/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        universeId: Number(selectedUniverseId),
+        target,
+        operation: "read",
+      }),
+    });
+    mergePlayerDataRequest(data.request);
+    playerDataState.bridge = data.bridge || playerDataState.bridge;
+    renderPlayerData();
+    await pollPlayerDataRequest(data.request?.id, "read");
+  } catch (error) {
+    playerDataBusy = false;
+    handleAuthError(error);
+    if (authenticated) setPlayerDataStatus(error.message, "error");
+    setPlayerDataControlsDisabled(false);
+  }
+}
+
+async function requestPlayerDataWrite() {
+  if (!authenticated || playerDataBusy || !selectedUniverseId || !activePlayerDataRead) return;
+  let parsedData;
+  try {
+    parsedData = JSON.parse(String(playerDataJsonEditor?.value || ""));
+    if (!parsedData || typeof parsedData !== "object") throw new Error("Player data must be a JSON object or array.");
+  } catch (error) {
+    setPlayerDataStatus(error.message || "Enter valid JSON before saving.", "error");
+    playerDataJsonEditor?.focus();
+    return;
+  }
+  const byteCount = getUtf8ByteCount(JSON.stringify(parsedData));
+  const maxJsonBytes = Number(playerDataState.limits?.maxJsonBytes) || 256 * 1024;
+  if (byteCount > maxJsonBytes) {
+    setPlayerDataStatus(`Player JSON is ${formatBytes(byteCount)}. The limit is ${formatBytes(maxJsonBytes)}.`, "error");
+    return;
+  }
+  const playerLabel = activePlayerDataRead.displayName || activePlayerDataRead.username || `User ${activePlayerDataRead.userId}`;
+  if (!window.confirm(`Save these changes for ${playerLabel}? This updates live player data through your game adapter.`)) return;
+
+  stopPlayerDataPolling();
+  playerDataBusy = true;
+  setPlayerDataControlsDisabled(true);
+  setPlayerDataStatus("Sending the checked update to your live Roblox server...");
+  try {
+    const data = await request("/api/player-data/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        universeId: Number(selectedUniverseId),
+        target: String(activePlayerDataRead.userId),
+        operation: "write",
+        sourceRequestId: activePlayerDataRead.id,
+        expectedVersion: activePlayerDataRead.version || "",
+        data: parsedData,
+      }),
+    });
+    mergePlayerDataRequest(data.request);
+    playerDataState.bridge = data.bridge || playerDataState.bridge;
+    renderPlayerData();
+    await pollPlayerDataRequest(data.request?.id, "write");
+  } catch (error) {
+    playerDataBusy = false;
+    handleAuthError(error);
+    if (authenticated) setPlayerDataStatus(error.message, "error");
+    setPlayerDataControlsDisabled(false);
+  }
+}
+
+async function pollPlayerDataRequest(requestId, operation) {
+  const id = String(requestId || "");
+  if (!id) throw new Error("The server did not return a player-data request ID.");
+  const universeId = String(selectedUniverseId);
+  const generation = ++playerDataPollGeneration;
+
+  const poll = async () => {
+    if (
+      generation !== playerDataPollGeneration
+      || activeView !== "player-data"
+      || universeId !== String(selectedUniverseId)
+      || !authenticated
+    ) return;
+    try {
+      const data = await request(`/api/player-data/requests/${encodeURIComponent(id)}?universeId=${encodeURIComponent(universeId)}`);
+      if (generation !== playerDataPollGeneration) return;
+      const requestRecord = data.request || {};
+      mergePlayerDataRequest(requestRecord);
+      playerDataState.bridge = data.bridge || playerDataState.bridge;
+      renderPlayerData();
+
+      if (requestRecord.status === "queued" || requestRecord.status === "processing") {
+        setPlayerDataStatus(requestRecord.status === "processing"
+          ? "Your Roblox server is processing the request..."
+          : "Waiting for a published server with the data adapter...");
+        playerDataPollTimer = window.setTimeout(poll, PLAYER_DATA_POLL_MS);
+        return;
+      }
+
+      playerDataBusy = false;
+      playerDataPollTimer = null;
+      if (requestRecord.status !== "completed") {
+        setPlayerDataStatus(requestRecord.error || "The request expired before a live server completed it.", "error");
+        setPlayerDataControlsDisabled(false);
+        return;
+      }
+
+      if (operation === "read") {
+        activePlayerDataRead = requestRecord;
+        if (playerDataEditor) playerDataEditor.hidden = false;
+        if (playerDataEditorTarget) {
+          const username = requestRecord.username || `User ${requestRecord.userId}`;
+          playerDataEditorTarget.textContent = requestRecord.displayName && requestRecord.displayName !== username
+            ? `${requestRecord.displayName} (@${username})`
+            : username;
+        }
+        if (playerDataEditorMeta) {
+          playerDataEditorMeta.textContent = `User ${requestRecord.userId}${requestRecord.version ? ` / version ${requestRecord.version}` : ""}`;
+        }
+        if (playerDataJsonEditor) playerDataJsonEditor.value = JSON.stringify(requestRecord.data, null, 2);
+        updatePlayerDataEditorBytes();
+        setPlayerDataStatus("Player data loaded. Review the JSON before saving any changes.", "success");
+      } else {
+        activePlayerDataRead = null;
+        if (playerDataEditorMeta) playerDataEditorMeta.textContent = "Saved. Reload this player before making another update.";
+        setPlayerDataStatus("Player data saved through your game adapter. Reload before editing again.", "success");
+      }
+      setPlayerDataControlsDisabled(false);
+      loadPlayerData({ background: true });
+    } catch (error) {
+      if (generation !== playerDataPollGeneration) return;
+      playerDataBusy = false;
+      playerDataPollTimer = null;
+      handleAuthError(error);
+      if (authenticated) setPlayerDataStatus(error.message, "error");
+      setPlayerDataControlsDisabled(false);
+    }
+  };
+
+  await poll();
+}
+
+function mergePlayerDataRequest(requestRecord) {
+  if (!requestRecord?.id) return;
+  const requests = Array.isArray(playerDataState.requests) ? playerDataState.requests : [];
+  playerDataState.requests = [
+    requestRecord,
+    ...requests.filter((entry) => entry?.id !== requestRecord.id),
+  ].slice(0, 25);
+}
+
+function resetPlayerDataEditor(options = {}) {
+  stopPlayerDataPolling();
+  playerDataBusy = false;
+  activePlayerDataRead = null;
+  playerDataState = { bridge: {}, requests: [], limits: {} };
+  if (!options.preserveTarget && playerDataTargetInput) playerDataTargetInput.value = "";
+  if (playerDataEditor) playerDataEditor.hidden = true;
+  if (playerDataJsonEditor) playerDataJsonEditor.value = "";
+  if (playerDataEditorTarget) playerDataEditorTarget.textContent = "Player data";
+  if (playerDataEditorMeta) playerDataEditorMeta.textContent = "";
+  if (playerDataRequestList) playerDataRequestList.innerHTML = "";
+  setPlayerDataControlsDisabled(false);
+  updatePlayerDataEditorBytes();
+}
+
+function setPlayerDataControlsDisabled(disabled) {
+  if (refreshPlayerDataButton) refreshPlayerDataButton.disabled = disabled;
+  if (playerDataTargetInput) playerDataTargetInput.disabled = disabled;
+  if (playerDataLoadButton) playerDataLoadButton.disabled = disabled;
+  if (playerDataJsonEditor) playerDataJsonEditor.disabled = disabled || !activePlayerDataRead;
+  if (playerDataSaveButton) playerDataSaveButton.disabled = disabled || !activePlayerDataRead;
+}
+
+function updatePlayerDataEditorBytes() {
+  if (!playerDataByteCount) return;
+  const editorValue = String(playerDataJsonEditor?.value || "");
+  let measuredValue = editorValue;
+  try {
+    measuredValue = JSON.stringify(JSON.parse(editorValue));
+  } catch {
+    // Keep showing the literal editor size until the JSON becomes valid.
+  }
+  const bytes = getUtf8ByteCount(measuredValue);
+  const limit = Number(playerDataState.limits?.maxJsonBytes) || 256 * 1024;
+  playerDataByteCount.textContent = `${formatBytes(bytes)} / ${formatBytes(limit)}`;
+  playerDataByteCount.dataset.state = bytes > limit ? "error" : "";
+}
+
+function getUtf8ByteCount(value) {
+  return new TextEncoder().encode(String(value || "")).length;
+}
+
+function setPlayerDataStatus(message, state = "") {
+  if (!playerDataStatus) return;
+  playerDataStatus.textContent = message;
+  if (state) playerDataStatus.dataset.state = state;
+  else delete playerDataStatus.dataset.state;
 }
 
 async function loadAssetLibrary(options = {}) {
@@ -4794,6 +5181,8 @@ function applyUniverseCollection(universes, options = {}) {
 
   const didChangeUniverse = previousUniverseId !== selectedUniverseId;
   if (didChangeUniverse) {
+    playerDataRequestSequence += 1;
+    resetPlayerDataEditor();
     resetGroupRankRuleEditor();
     selectedChatLogId = "";
     currentChatLogs = [];
@@ -4878,6 +5267,89 @@ async function createDemoUniverse() {
   }
 }
 
+async function loadStudioPairings(options = {}) {
+  const requestSequence = ++studioPairingRequestSequence;
+  if (!studioPairingList || !studioPairingStatus) return;
+  if (!selectedUniverseId) {
+    studioPairingList.innerHTML = "";
+    studioPairingStatus.textContent = "Select a connected game before pairing Studio.";
+    return;
+  }
+  if (!options.background) studioPairingStatus.textContent = "Checking for Studio pairing requests...";
+  try {
+    const data = await request(`/api/studio-pairings?universeId=${encodeURIComponent(selectedUniverseId)}`);
+    if (requestSequence !== studioPairingRequestSequence) return;
+    renderStudioPairings(Array.isArray(data.pairings) ? data.pairings : []);
+  } catch (error) {
+    if (requestSequence !== studioPairingRequestSequence) return;
+    handleAuthError(error);
+    if (authenticated) studioPairingStatus.textContent = error.message;
+  }
+}
+
+function renderStudioPairings(pairings) {
+  if (!studioPairingList || !studioPairingStatus) return;
+  const pending = pairings.filter((pairing) => pairing.status === "pending");
+  const active = pending.length ? pending : pairings.filter((pairing) => pairing.status === "approved" || pairing.status === "claimed");
+  studioPairingList.innerHTML = active.length
+    ? active.map((pairing) => `
+      <article class="studioPairingRow" data-studio-pairing-id="${escapeHtml(pairing.id)}">
+        <div>
+          <span>Studio code</span>
+          <strong>${escapeHtml(pairing.code || "---- ----")}</strong>
+          <small>${pairing.placeId ? `Place ${escapeHtml(pairing.placeId)} · ` : ""}${escapeHtml(formatRelativeTime(pairing.createdAt))}</small>
+        </div>
+        ${pairing.status === "pending" ? `
+          <div class="studioPairingActions">
+            <button class="button compact" type="button" data-studio-pairing-action="approve">Approve & install</button>
+            <button class="button secondary compact" type="button" data-studio-pairing-action="deny">Deny</button>
+          </div>
+        ` : `<span class="studioPairingState" data-state="${escapeHtml(pairing.status)}">${pairing.status === "claimed" ? "Installed" : "Approved"}</span>`}
+      </article>
+    `).join("")
+    : "";
+  studioPairingStatus.textContent = pending.length
+    ? `${pending.length} Studio request${pending.length === 1 ? " is" : "s are"} waiting for your approval. Match the code before approving.`
+    : active.some((pairing) => pairing.status === "claimed")
+      ? "The plugin received and installed the current RoAnalytics package. Publish the game to activate it."
+      : "Start Pair & Install from the Studio plugin to see an approval request.";
+}
+
+async function handleStudioPairingAction(event) {
+  const button = event.target.closest("[data-studio-pairing-action]");
+  const row = button?.closest("[data-studio-pairing-id]");
+  if (!button || !row) return;
+  const action = button.dataset.studioPairingAction;
+  const code = row.querySelector("strong")?.textContent || "this code";
+  if (action === "approve" && !window.confirm(`Approve the Studio plugin showing ${code}?`)) return;
+  button.disabled = true;
+  studioPairingStatus.textContent = action === "approve" ? "Approving Studio and preparing the installer package..." : "Denying Studio pairing...";
+  try {
+    await request(`/api/studio-pairings/${encodeURIComponent(row.dataset.studioPairingId)}/${action}`, {
+      method: "POST",
+    });
+    studioPairingStatus.textContent = action === "approve"
+      ? "Approved. Studio is downloading and installing RoAnalytics now."
+      : "Studio pairing denied.";
+    await loadStudioPairings({ background: true });
+  } catch (error) {
+    handleAuthError(error);
+    if (authenticated) studioPairingStatus.textContent = error.message;
+    button.disabled = false;
+  }
+}
+
+function startStudioPairingRefresh() {
+  if (studioPairingRefreshTimer || document.hidden) return;
+  studioPairingRefreshTimer = window.setInterval(() => loadStudioPairings({ background: true }), 3000);
+}
+
+function stopStudioPairingRefresh() {
+  if (!studioPairingRefreshTimer) return;
+  window.clearInterval(studioPairingRefreshTimer);
+  studioPairingRefreshTimer = null;
+}
+
 async function createProject() {
   const universeId = ownedGameSelect?.value.trim() || "";
   if (!universeId) {
@@ -4895,15 +5367,16 @@ async function createProject() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ universeId }),
     });
-    showProjectSecret(data.secret || "", data.project);
+    closeConnectGameDialog();
     usageRequestSequence += 1;
     removeScopedSessionCache("account-usage", "current");
     loadedViews.delete("usage");
     removeScopedSessionCache("admin-users", "summary");
     loadedViews.delete("admin");
-    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Copy the Roblox secret now.";
+    if (ownedGamesStatus) ownedGamesStatus.textContent = "Game connected. Open it in Studio and use Pair & Install.";
     await loadUniverses({ preferredUniverseId: universeId });
     await loadOwnedGames();
+    await loadStudioPairings();
   } catch (error) {
     handleAuthError(error);
     if (ownedGamesStatus) ownedGamesStatus.textContent = error.message;
@@ -5309,15 +5782,13 @@ function renderSetupChecklist(selectedUniverse = null) {
   const secretVisible = Boolean(projectSecretBox && !projectSecretBox.hidden && projectSecretValue?.textContent);
   const isDemo = Boolean(universe?.isDemo);
 
-  const optionalMapDetail = "Upload map is optional.";
   const steps = isDemo ? [
     { title: "Connect a game", detail: "Synthetic universe attached to your admin account.", complete: true },
-    { title: "Install the secret", detail: "Not required for the admin demo.", complete: true },
+    { title: "Install RoAnalytics", detail: "Not required for the admin demo.", complete: true },
     { title: "Start a live server", detail: "Live activity is simulated.", complete: true },
     {
       title: "Confirm signals",
       detail: getActiveSignalText(signals),
-      optionalDetail: optionalMapDetail,
       complete: true,
     },
   ] : [
@@ -5327,20 +5798,19 @@ function renderSetupChecklist(selectedUniverse = null) {
       complete: knownUniverses.length > 0,
     },
     {
-      title: "Install the secret",
-      detail: hasData ? "Roblox is sending data with the installed secret." : secretVisible ? "Copy the visible secret into Settings.Secret now." : "Regenerate the secret if you need to copy it again.",
+      title: "Install RoAnalytics",
+      detail: hasData ? "Roblox is sending data from the installed package." : secretVisible ? "A manual setup secret is visible. The Studio installer can fill it automatically instead." : "Open the Studio plugin, start Pair & Install, then approve the matching code here.",
       complete: hasData,
       current: Boolean(universe && !hasData),
     },
     {
       title: "Start a live server",
-      detail: hasData ? `Last data ${formatRelativeTime(status.lastReceivedAt || universe?.lastSeenAt)}.` : "Join the game after installing the analytics script.",
+      detail: hasData ? `Last data ${formatRelativeTime(status.lastReceivedAt || universe?.lastSeenAt)}.` : "Enable Allow HTTP Requests, publish, and join after installing RoAnalytics.",
       complete: hasData,
     },
     {
       title: "Confirm signals",
       detail: hasAnySignal ? getActiveSignalText(signals) : "Movement should activate first; deaths, leaves, and chat activate when those events happen.",
-      optionalDetail: optionalMapDetail,
       complete: hasAnySignal,
     },
   ];
@@ -5403,6 +5873,8 @@ async function selectUniverse(value) {
   }
   eventDefinitionIsDirty = false;
   selectedUniverseId = nextUniverseId;
+  playerDataRequestSequence += 1;
+  resetPlayerDataEditor();
   resetGroupRankRuleEditor();
 
   selectedChatLogId = "";

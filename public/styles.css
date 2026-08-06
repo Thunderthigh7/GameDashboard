@@ -6186,6 +6186,440 @@ body[data-active-view="groups"] .topbarActions {
   }
 }
 
+/* Secure Studio installer and live player-data bridge */
+body[data-active-view="player-data"] .topbarActions {
+  display: none;
+}
+
+.studioInstallerPanel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 20px;
+  border-color: rgba(124, 60, 255, 0.34);
+  background:
+    radial-gradient(circle at 92% 8%, rgba(124, 60, 255, 0.13), transparent 34%),
+    var(--surface);
+}
+
+.studioInstallerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.studioInstallerHeader h3,
+.playerDataHero h2,
+.playerDataAdapterPanel h2 {
+  margin: 4px 0 6px;
+  color: var(--text);
+}
+
+.studioInstallerHeader h3 {
+  font-size: 18px;
+}
+
+.studioInstallerHeader p,
+.playerDataHero p,
+.playerDataAdapterPanel header p,
+.playerDataAdapterPanel > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.studioPairingStatus {
+  min-height: 18px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.studioPairingStatus[data-state="error"],
+.playerDataStatus[data-state="error"] {
+  color: #ff8095;
+}
+
+.studioPairingStatus[data-state="success"],
+.playerDataStatus[data-state="success"] {
+  color: #45e6bd;
+}
+
+.studioPairingList {
+  display: grid;
+  gap: 8px;
+}
+
+.studioPairingRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 62px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(7, 13, 29, 0.56);
+}
+
+.studioPairingRow > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.studioPairingRow > div:first-child strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.studioPairingRow > div:first-child span,
+.studioPairingRow > div:first-child small,
+.studioPairingEmpty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.studioPairingState {
+  border-radius: 999px;
+  background: rgba(53, 208, 131, 0.1);
+  color: #7ee2ad;
+  padding: 6px 9px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.studioPairingCode {
+  border: 1px solid rgba(139, 111, 255, 0.46);
+  border-radius: 8px;
+  background: rgba(124, 60, 255, 0.13);
+  color: #d8ccff;
+  padding: 8px 11px;
+  font: 800 16px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.14em;
+}
+
+.studioPairingActions {
+  display: flex;
+  gap: 7px;
+}
+
+.playerDataPage {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.playerDataHero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px;
+  border-color: rgba(45, 212, 191, 0.23);
+  background:
+    radial-gradient(circle at 88% 20%, rgba(45, 212, 191, 0.1), transparent 35%),
+    var(--surface);
+}
+
+.playerDataHero h2,
+.playerDataAdapterPanel h2 {
+  font-size: 19px;
+}
+
+.playerDataBridgeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(8, 15, 31, 0.72);
+  padding: 0 13px;
+}
+
+.playerDataBridgeBadge > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #71809f;
+  box-shadow: 0 0 0 4px rgba(113, 128, 159, 0.12);
+}
+
+.playerDataBridgeBadge strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.playerDataBridgeBadge[data-state="connected"] {
+  border-color: rgba(53, 208, 131, 0.34);
+  background: rgba(53, 208, 131, 0.08);
+}
+
+.playerDataBridgeBadge[data-state="connected"] > span {
+  background: var(--green);
+  box-shadow: 0 0 0 4px rgba(53, 208, 131, 0.12);
+}
+
+.playerDataBridgeBadge[data-state="connected"] strong {
+  color: #7ee2ad;
+}
+
+.playerDataBridgeBadge[data-state="waiting"] > span {
+  background: #f5b942;
+  box-shadow: 0 0 0 4px rgba(245, 185, 66, 0.12);
+}
+
+.playerDataWorkspace,
+.playerDataHistoryPanel,
+.playerDataAdapterPanel {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.playerDataLookupControls {
+  display: flex;
+  gap: 8px;
+  width: min(100%, 520px);
+  padding: 18px 20px 8px;
+}
+
+.playerDataLookupControls input {
+  min-width: 0;
+  flex: 1 1 260px;
+  height: 40px;
+  border: 1px solid rgba(82, 100, 150, 0.52);
+  border-radius: 9px;
+  outline: none;
+  background: rgba(5, 12, 29, 0.78);
+  color: var(--text);
+  padding: 0 13px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.playerDataLookupControls input:focus-visible,
+#playerDataJsonEditor:focus-visible {
+  border-color: rgba(139, 111, 255, 0.92);
+  box-shadow: 0 0 0 3px rgba(124, 60, 255, 0.14);
+}
+
+.playerDataStatus {
+  min-height: 20px;
+  margin: 0;
+  padding: 0 20px 17px;
+  font-size: 12px;
+}
+
+.playerDataEditor {
+  border-top: 1px solid var(--line);
+  background: rgba(5, 11, 25, 0.42);
+}
+
+.playerDataEditorHeader,
+.playerDataEditor footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 20px;
+}
+
+.playerDataEditorHeader > div {
+  display: grid;
+  gap: 2px;
+}
+
+.playerDataEditorHeader span,
+.playerDataEditorHeader small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.playerDataEditorHeader strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.playerDataByteCount {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.playerDataByteCount[data-state="error"] {
+  color: #ff8095;
+}
+
+#playerDataJsonEditor {
+  display: block;
+  width: calc(100% - 40px);
+  min-height: 390px;
+  margin: 0 20px;
+  resize: vertical;
+  border: 1px solid rgba(82, 100, 150, 0.52);
+  border-radius: 10px;
+  outline: none;
+  background: #050a16;
+  color: #dce5ff;
+  padding: 16px;
+  font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  tab-size: 2;
+}
+
+#playerDataJsonEditor:disabled {
+  opacity: 0.62;
+}
+
+.playerDataEditor footer {
+  align-items: flex-start;
+}
+
+.playerDataEditor footer p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.playerDataRequestList {
+  display: grid;
+}
+
+.playerDataRequestRow {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.15fr) 72px minmax(220px, 1.7fr) 100px;
+  gap: 14px;
+  align-items: center;
+  min-height: 68px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(78, 95, 143, 0.28);
+}
+
+.playerDataRequestIdentity,
+.playerDataRequestDetail {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.playerDataRequestIdentity strong,
+.playerDataRequestDetail strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playerDataRequestIdentity span,
+.playerDataRequestDetail span,
+.playerDataRequestRow time,
+.playerDataEmpty span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playerDataRequestDetail strong[data-status="completed"] {
+  color: #45e6bd;
+}
+
+.playerDataRequestDetail strong[data-status="failed"],
+.playerDataRequestDetail strong[data-status="expired"] {
+  color: #ff8095;
+}
+
+.playerDataOperationBadge {
+  justify-self: start;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.1);
+  color: #93c5fd;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.playerDataOperationBadge[data-operation="write"] {
+  border-color: rgba(245, 185, 66, 0.34);
+  background: rgba(245, 185, 66, 0.1);
+  color: #f7ca68;
+}
+
+.playerDataEmpty,
+.studioPairingEmpty {
+  display: grid;
+  gap: 4px;
+  padding: 22px 20px;
+}
+
+.playerDataEmpty strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.playerDataAdapterPanel {
+  padding: 20px;
+}
+
+.playerDataAdapterPanel pre {
+  overflow: auto;
+  margin: 17px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #050a16;
+  padding: 16px;
+  color: #dce5ff;
+  font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@media (max-width: 820px) {
+  .studioInstallerHeader,
+  .playerDataHero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .studioPairingRow,
+  .playerDataRequestRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .studioPairingActions,
+  .playerDataRequestDetail {
+    grid-column: 1 / -1;
+  }
+
+  .playerDataRequestRow time {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 560px) {
+  .studioInstallerHeader > .button,
+  .playerDataLookupControls,
+  .playerDataLookupControls .button {
+    width: 100%;
+  }
+
+  .playerDataLookupControls,
+  .playerDataEditorHeader,
+  .playerDataEditor footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #playerDataJsonEditor {
+    min-height: 320px;
+  }
+}
+
 .adminPanel {
   display: grid;
   gap: 16px;

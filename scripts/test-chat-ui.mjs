@@ -138,12 +138,12 @@ assert.doesNotMatch(
 assert.match(indexSource, /id="setupProgressText">0 \/ 4 complete</);
 assert.match(
   indexSource,
-  /id="setupChecklist"[\s\S]*?>Connect a game<[\s\S]*?>Install the secret<[\s\S]*?>Start a live server<[\s\S]*?>Confirm signals<[\s\S]*?\(Upload map is optional\.\)/,
-  "First-run setup should show four required steps with map upload as optional",
+  /id="setupChecklist"[\s\S]*?>Connect a game<[\s\S]*?>Install RoAnalytics<[\s\S]*?>Start a live server<[\s\S]*?>Confirm signals</,
+  "First-run setup should show the four automatic-installer steps",
 );
 assert.doesNotMatch(
   indexSource.match(/id="setupChecklist"[\s\S]*?<\/ol>/)?.[0] || "",
-  />Sign in with Roblox<|>Upload map</,
+  />Sign in with Roblox<|>Upload map|>Install the secret</,
 );
 for (const selector of ["setupChecklistCard", "connectedGamesManager"]) {
   const block = styleSource.match(new RegExp(`\\.${selector}\\s*\\{([\\s\\S]*?)\\}`))?.[1] || "";

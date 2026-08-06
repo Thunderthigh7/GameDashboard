@@ -131,3 +131,25 @@ Keep handlers idempotent when practical because MessagingService delivery is bes
 Kick and ban commands from the **Player Moderation** page are built in for the dashboard user who owns the connected universe. Do not register a handler for `roanalytics.moderation`.
 
 An authorized Roblox Open Cloud connection delivers the action immediately through the existing MessagingService subscription. The normal heartbeat response also contains moderation commands. Permanent bans are enforced on every future join, while a kick fallback is scoped to only the exact live server session that existed when the kick was confirmed. Every action requires a reason and is stored in the dashboard's moderation history. Dashboard users can target a live row or enter any Roblox username or user ID manually.
+
+## Player data adapter
+
+The dashboard never reaches into a DataStore by name. Register explicit read and write functions from trusted server code so your existing DataService or ProfileStore layer keeps ownership of session locks, schema validation, and saves:
+
+```lua
+local ServerScriptService = game:GetService("ServerScriptService")
+local RoAnalytics = require(ServerScriptService.RoAnalytics.API)
+
+RoAnalytics.RegisterPlayerDataAdapter({
+	Read = function(userId, context)
+		return DataService.GetOfflineData(userId)
+	end,
+	Write = function(userId, newData, context)
+		return DataService.SetOfflineData(userId, newData, context.expectedVersion)
+	end,
+})
+```
+
+Replace the example calls with your game's real server data API. `Read` must return a JSON-compatible table and may return a version as its second value. `Write` receives that value as `context.expectedVersion`; return `false, "reason"` to reject the update, or return the new version on success.
+
+Requests run only in published production servers. Online players are routed to their current server; offline players use any live server that registered the adapter. The website requires a successful read before a write, consumes each read snapshot once, encrypts temporary request data, expires it after 15 minutes, and caps JSON at 256 KiB. Do not open or overwrite a profile whose session is owned by another server.

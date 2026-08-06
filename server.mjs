@@ -64,6 +64,7 @@ import {
 } from "./lib/project-secrets.mjs";
 import { matchesPlayerKickSession } from "./lib/player-moderation.mjs";
 import { buildReleaseComparison } from "./lib/release-comparisons.mjs";
+import { buildRoAnalyticsInstallerPackage } from "./lib/roanalytics-installer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -80,6 +81,8 @@ const customEventDeletionStorePath = path.join(__dirname, "data", "custom-event-
 const discordIntegrationStorePath = path.join(__dirname, "data", "discord-integrations.json");
 const robloxLiveIntegrationStorePath = path.join(__dirname, "data", "roblox-live-integrations.json");
 const playerModerationStorePath = path.join(__dirname, "data", "player-moderation.json");
+const studioPairingStorePath = path.join(__dirname, "data", "studio-pairings.json");
+const playerDataRequestStorePath = path.join(__dirname, "data", "player-data-requests.json");
 const assetLibraryStorePath = path.join(__dirname, "data", "asset-library.json");
 const assetDraftDirectory = path.join(__dirname, "data", "asset-drafts");
 const groupManagementStorePath = path.join(__dirname, "data", "group-management.json");
@@ -153,6 +156,18 @@ const PLAYER_MODERATION_KICK_WINDOW_MS = 2 * 60 * 1000;
 const MAX_PLAYER_MODERATION_HISTORY = 1000;
 const MAX_PLAYER_MODERATION_RESPONSE_HISTORY = 250;
 const PLAYER_MODERATION_ACTION_KEY = "roanalytics.moderation";
+const PLAYER_DATA_ACTION_KEY = "roanalytics.player_data";
+const STUDIO_PAIRING_TTL_MS = 10 * 60 * 1000;
+const STUDIO_PAIRING_CLAIM_GRACE_MS = 2 * 60 * 1000;
+const MAX_STUDIO_PAIRINGS_PER_UNIVERSE = 5;
+const MAX_STUDIO_PAIRING_BODY_BYTES = 8 * 1024;
+const MAX_PROJECT_INSTALL_SECRETS = 10;
+const PLAYER_DATA_REQUEST_TTL_MS = 15 * 60 * 1000;
+const MAX_PLAYER_DATA_REQUEST_BODY_BYTES = 320 * 1024;
+const MAX_PLAYER_DATA_JSON_BYTES = 256 * 1024;
+const MAX_PLAYER_DATA_RECENT_REQUESTS = 25;
+const MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT = 2;
+const ROANALYTICS_INSTALLER_VERSION = "2026.08.05.1";
 const MAX_MOVEMENT_SAMPLES_PER_PAYLOAD = 500;
 const MAX_MOVEMENT_SAMPLES_PER_UNIVERSE = 10_000;
 const MAX_MOVEMENT_SAMPLES_RESPONSE = 5000;
@@ -496,6 +511,8 @@ let localCustomEventDeletionStoreLock = Promise.resolve();
 let localDiscordIntegrationStoreLock = Promise.resolve();
 let localRobloxLiveIntegrationStoreLock = Promise.resolve();
 let localPlayerModerationStoreLock = Promise.resolve();
+let localStudioPairingStoreLock = Promise.resolve();
+let localPlayerDataRequestStoreLock = Promise.resolve();
 let localAssetLibraryStoreLock = Promise.resolve();
 let localGroupManagementStoreLock = Promise.resolve();
 const discordSendHistoryByUser = new Map();
@@ -508,6 +525,7 @@ const robloxLiveTokenRefreshLocks = new Map();
 const assetOAuthTokenRefreshLocks = new Map();
 const groupOAuthTokenRefreshLocks = new Map();
 const groupRankRuleMutationLocks = new Map();
+const playerDataRequestMutationLocks = new Map();
 const assetPackMutationLocks = new Map();
 const eventDefinitionMutationLocksByScope = new Map();
 const RESPONSE_ACCEPTS_GZIP = Symbol("responseAcceptsGzip");
@@ -587,6 +605,24 @@ const server = http.createServer(async (req, res) => {
       return handleRobloxGroupRankRequest(req, res);
     }
 
+    if (url.pathname === "/api/roblox/studio-pairings" && req.method === "POST") {
+      return handleStudioPairingStart(req, res);
+    }
+
+    const studioPairingClaimMatch = url.pathname.match(/^\/api\/roblox\/studio-pairings\/([^/]+)\/claim$/);
+    if (studioPairingClaimMatch && req.method === "POST") {
+      return handleStudioPairingClaim(req, res, decodeURIComponent(studioPairingClaimMatch[1]));
+    }
+
+    const robloxPlayerDataClaimMatch = url.pathname.match(/^\/api\/roblox\/player-data\/requests\/([^/]+)\/claim$/);
+    if (robloxPlayerDataClaimMatch && req.method === "POST") {
+      return handleRobloxPlayerDataRequestClaim(req, res, decodeURIComponent(robloxPlayerDataClaimMatch[1]));
+    }
+
+    if (url.pathname === "/api/roblox/player-data/results" && req.method === "POST") {
+      return handleRobloxPlayerDataResult(req, res);
+    }
+
     if (url.pathname === "/api/roblox/map-snapshot" && req.method === "POST") {
       return handleMapSnapshotUpload(req, res);
     }
@@ -640,6 +676,10 @@ const server = http.createServer(async (req, res) => {
       return handleProjectCreate(req, res, auth);
     }
 
+    if (url.pathname === "/api/studio-plugin/download" && req.method === "GET") {
+      return handleStudioPluginDownload(res);
+    }
+
     const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (projectMatch && req.method === "DELETE") {
       return handleProjectUnlink(req, res, auth, projectMatch[1]);
@@ -648,6 +688,21 @@ const server = http.createServer(async (req, res) => {
     const projectSecretMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/secret$/);
     if (projectSecretMatch && req.method === "POST") {
       return handleProjectSecretRegenerate(req, res, auth, projectSecretMatch[1]);
+    }
+
+    if (url.pathname === "/api/studio-pairings" && req.method === "GET") {
+      return handleStudioPairingList(req, res, auth, url.searchParams);
+    }
+
+    const studioPairingApprovalMatch = url.pathname.match(/^\/api\/studio-pairings\/([^/]+)\/(approve|deny)$/);
+    if (studioPairingApprovalMatch && req.method === "POST") {
+      return handleStudioPairingDecision(
+        req,
+        res,
+        auth,
+        decodeURIComponent(studioPairingApprovalMatch[1]),
+        studioPairingApprovalMatch[2],
+      );
     }
 
     if (url.pathname === "/api/roblox/oauth/start" && req.method === "GET") {
@@ -848,6 +903,26 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/player-moderation/actions" && req.method === "POST") {
       const user = await findUserById(auth.userId);
       return handlePlayerModerationAction(req, res, auth, user);
+    }
+
+    if (url.pathname === "/api/player-data" && req.method === "GET") {
+      return handlePlayerDataGet(req, res, auth, url.searchParams);
+    }
+
+    if (url.pathname === "/api/player-data/requests" && req.method === "POST") {
+      const user = await findUserById(auth.userId);
+      return handlePlayerDataRequestCreate(req, res, auth, user);
+    }
+
+    const playerDataRequestMatch = url.pathname.match(/^\/api\/player-data\/requests\/([^/]+)$/);
+    if (playerDataRequestMatch && req.method === "GET") {
+      return handlePlayerDataRequestGet(
+        req,
+        res,
+        auth,
+        decodeURIComponent(playerDataRequestMatch[1]),
+        url.searchParams,
+      );
     }
 
     if (url.pathname === "/api/admin/demo-universe" && req.method === "POST") {
@@ -1570,6 +1645,13 @@ async function ensureMongoCoreIndexes(db) {
     db.collection("player_moderation_actions").createIndex({ ownerUserId: 1, universeId: 1, createdAt: -1 }),
     db.collection("player_bans").createIndex({ ownerUserId: 1, universeId: 1, userId: 1 }, { unique: true }),
     db.collection("player_bans").createIndex({ ownerUserId: 1, universeId: 1, active: 1, updatedAt: -1 }),
+    db.collection("studio_pairings").createIndex({ id: 1 }, { unique: true }),
+    db.collection("studio_pairings").createIndex({ ownerUserId: 1, universeId: 1, status: 1, createdAt: -1 }),
+    db.collection("studio_pairings").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection("player_data_requests").createIndex({ id: 1 }, { unique: true }),
+    db.collection("player_data_requests").createIndex({ ownerUserId: 1, universeId: 1, createdAt: -1 }),
+    db.collection("player_data_requests").createIndex({ universeId: 1, status: 1, targetJobId: 1, createdAt: 1 }),
+    db.collection("player_data_requests").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
 }
 
@@ -4794,6 +4876,40 @@ function decryptRobloxLiveOAuthToken(value) {
   ]).toString("utf8");
 }
 
+function getPlayerDataEncryptionKey() {
+  return crypto.createHash("sha256")
+    .update(`${DASHBOARD_PASSWORD}\0${PRESENCE_SECRET}\0player-data-bridge-v1`)
+    .digest();
+}
+
+function encryptPlayerDataPayload(value) {
+  const payload = typeof value === "string" ? value : "";
+  if (!payload || Buffer.byteLength(payload, "utf8") > MAX_PLAYER_DATA_JSON_BYTES) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getPlayerDataEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function decryptPlayerDataPayload(value) {
+  const encryptedValue = typeof value === "string" ? value : "";
+  if (!encryptedValue || encryptedValue.length > MAX_PLAYER_DATA_JSON_BYTES * 2) return "";
+  const [version, ivValue, tagValue, cipherValue] = encryptedValue.split(".");
+  if (version !== "v1" || !ivValue || !tagValue || !cipherValue) return "";
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    getPlayerDataEncryptionKey(),
+    Buffer.from(ivValue, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(cipherValue, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+  return Buffer.byteLength(decrypted, "utf8") <= MAX_PLAYER_DATA_JSON_BYTES ? decrypted : "";
+}
+
 function hasRobloxLiveAuthorization(integration) {
   try {
     return Boolean(
@@ -6242,6 +6358,613 @@ async function publishPlayerModerationAction(project, action) {
   return true;
 }
 
+async function handlePlayerDataGet(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+  const requests = await readPlayerDataRequests(auth.userId, universeId, {
+    limit: MAX_PLAYER_DATA_RECENT_REQUESTS,
+  });
+  return sendJson(res, 200, {
+    bridge: getPlayerDataBridgeStatus(auth.userId, universeId),
+    requests: requests.map((request) => serializePlayerDataRequest(request)),
+    limits: { maxJsonBytes: MAX_PLAYER_DATA_JSON_BYTES },
+  });
+}
+
+async function handlePlayerDataRequestCreate(req, res, auth, dashboardUser) {
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_PLAYER_DATA_REQUEST_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+  const operation = cleanString(body?.operation, 16).toLowerCase();
+  if (!['read', 'write'].includes(operation)) {
+    return sendJson(res, 400, { error: "Choose a read or write player-data operation." });
+  }
+
+  let targets;
+  try {
+    targets = await resolveUserTargets(body?.target || body?.userId);
+  } catch (error) {
+    return sendJson(res, 502, { error: error.message || "Could not resolve that Roblox player." });
+  }
+  if (targets.userIds.length !== 1) {
+    return sendJson(res, 404, { error: "Enter one valid Roblox username or user ID." });
+  }
+  const userId = targets.userIds[0];
+  const resolvedTarget = targets.resolved.find((entry) => entry.userId === userId) || {};
+  const requestId = crypto.randomUUID();
+  let payloadEncrypted = "";
+  let sourceRequestId = "";
+  let expectedVersion = "";
+  if (operation === "write") {
+    sourceRequestId = cleanString(body?.sourceRequestId, 120);
+    const sourceRequest = await readPlayerDataRequestById(sourceRequestId);
+    if (!sourceRequest
+      || sourceRequest.ownerUserId !== auth.userId
+      || sourceRequest.universeId !== universeId
+      || sourceRequest.userId !== userId
+      || sourceRequest.operation !== "read"
+      || sourceRequest.status !== "completed"
+      || sourceRequest.expiresAtMs <= Date.now()) {
+      return sendJson(res, 409, { error: "Load this player's current data before saving changes." });
+    }
+    let normalizedPayload;
+    try {
+      normalizedPayload = normalizePlayerDataJson(body?.data);
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message });
+    }
+    payloadEncrypted = encryptPlayerDataPayload(normalizedPayload.json);
+    expectedVersion = sourceRequest.resultVersion;
+    if (!await consumePlayerDataReadRequest(sourceRequest, requestId)) {
+      return sendJson(res, 409, { error: "That loaded snapshot was already used. Reload the player before saving again." });
+    }
+  }
+
+  const now = Date.now();
+  const livePlayer = findLiveModerationPlayer(auth.userId, universeId, userId);
+  const requestRecord = await savePlayerDataRequest({
+    id: requestId,
+    ownerUserId: auth.userId,
+    projectId: project.id,
+    universeId,
+    userId,
+    username: cleanString(resolvedTarget.username || body?.username || livePlayer?.username, 64) || `User ${userId}`,
+    displayName: cleanString(resolvedTarget.displayName || body?.displayName || livePlayer?.displayName, 64),
+    operation,
+    status: "queued",
+    payloadEncrypted,
+    resultDataEncrypted: "",
+    sourceRequestId,
+    expectedVersion,
+    resultVersion: "",
+    targetJobId: cleanString(livePlayer?.jobId, 128),
+    claimedJobId: "",
+    claimedAt: 0,
+    completedAt: 0,
+    error: "",
+    delivery: "heartbeat",
+    createdByUserId: cleanString(dashboardUser?.id, 120),
+    createdByUsername: getDashboardUserLabel(dashboardUser),
+    createdAt: now,
+    updatedAt: now,
+    expiresAtMs: now + PLAYER_DATA_REQUEST_TTL_MS,
+  });
+
+  try {
+    if (await publishPlayerDataRequest(project, requestRecord)) {
+      requestRecord.delivery = "messaging";
+      requestRecord.updatedAt = Date.now();
+      await savePlayerDataRequest(requestRecord);
+    }
+  } catch (error) {
+    console.warn("Player-data request will wait for heartbeat:", error.message || error);
+  }
+
+  return sendJson(res, 202, {
+    ok: true,
+    request: serializePlayerDataRequest(requestRecord),
+    bridge: getPlayerDataBridgeStatus(auth.userId, universeId),
+  });
+}
+
+async function handlePlayerDataRequestGet(req, res, auth, rawRequestId, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+  const requestRecord = await readPlayerDataRequestById(cleanString(rawRequestId, 120));
+  if (!requestRecord || requestRecord.ownerUserId !== auth.userId || requestRecord.universeId !== universeId) {
+    return sendJson(res, 404, { error: "Player-data request not found." });
+  }
+  return sendJson(res, 200, {
+    request: serializePlayerDataRequest(requestRecord, { includeData: true }),
+    bridge: getPlayerDataBridgeStatus(auth.userId, universeId),
+  });
+}
+
+async function handleRobloxPlayerDataRequestClaim(req, res, rawRequestId) {
+  let body;
+  try {
+    body = await readJsonBody(req, 16 * 1024);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectFromRequestSecret(req, universeId);
+  if (!project) return sendJson(res, 401, { error: "Invalid dashboard secret" });
+  if (cleanString(body?.environment, 24).toLowerCase() !== "production") {
+    return sendJson(res, 403, { error: "Player data can only be accessed from published production servers." });
+  }
+  const jobId = cleanString(body?.jobId, 128);
+  if (!jobId) return sendJson(res, 400, { error: "A live Roblox server job ID is required." });
+
+  const requestRecord = await claimPlayerDataRequest(
+    project,
+    cleanString(rawRequestId, 120),
+    jobId,
+    cleanInteger(body?.placeId),
+  );
+  if (!requestRecord) return sendJson(res, 200, { ok: true, claimed: false });
+
+  let data;
+  if (requestRecord.operation === "write") {
+    try {
+      data = JSON.parse(decryptPlayerDataPayload(requestRecord.payloadEncrypted));
+    } catch {
+      await completePlayerDataRequest(requestRecord, {
+        status: "failed",
+        error: "The encrypted player-data update could not be decoded.",
+      });
+      return sendJson(res, 500, { error: "The player-data update could not be decoded." });
+    }
+  }
+  return sendJson(res, 200, {
+    ok: true,
+    claimed: true,
+    request: {
+      id: requestRecord.id,
+      operation: requestRecord.operation,
+      userId: requestRecord.userId,
+      data,
+      expectedVersion: requestRecord.expectedVersion,
+      expiresAt: requestRecord.expiresAtMs,
+    },
+  });
+}
+
+async function handleRobloxPlayerDataResult(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_PLAYER_DATA_REQUEST_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+  const universeId = cleanInteger(body?.universeId);
+  const project = await getProjectFromRequestSecret(req, universeId);
+  if (!project) return sendJson(res, 401, { error: "Invalid dashboard secret" });
+  const requestRecord = await readPlayerDataRequestById(cleanString(body?.requestId, 120));
+  const jobId = cleanString(body?.jobId, 128);
+  if (!requestRecord
+    || requestRecord.ownerUserId !== project.ownerUserId
+    || requestRecord.universeId !== universeId
+    || requestRecord.status !== "processing"
+    || requestRecord.claimedJobId !== jobId) {
+    return sendJson(res, 409, { error: "That player-data request is not assigned to this server." });
+  }
+
+  const succeeded = body?.status === "completed" || body?.ok === true;
+  let resultDataEncrypted = "";
+  if (succeeded && requestRecord.operation === "read") {
+    let normalizedResult;
+    try {
+      normalizedResult = normalizePlayerDataJson(body?.data);
+    } catch (error) {
+      await completePlayerDataRequest(requestRecord, { status: "failed", error: error.message });
+      return sendJson(res, 400, { error: error.message });
+    }
+    resultDataEncrypted = encryptPlayerDataPayload(normalizedResult.json);
+  }
+  const completed = await completePlayerDataRequest(requestRecord, {
+    status: succeeded ? "completed" : "failed",
+    error: succeeded ? "" : cleanString(body?.error, 240) || "The Roblox data adapter rejected this request.",
+    resultDataEncrypted,
+    resultVersion: cleanString(body?.version, 160),
+  });
+  return sendJson(res, 200, { ok: true, request: serializePlayerDataRequest(completed) });
+}
+
+async function publishPlayerDataRequest(project, requestRecord) {
+  const integration = await readRobloxLiveIntegration(project.ownerUserId, project.universeId);
+  if (!hasRobloxLiveAuthorization(integration)) return false;
+  const retryAfterMs = claimRobloxLiveSendSlot(project.ownerUserId);
+  if (retryAfterMs > 0) return false;
+  const built = buildRobloxLiveActionMessage({
+    deliveryId: requestRecord.id,
+    universeId: project.universeId,
+    ruleId: requestRecord.id,
+    actionKey: PLAYER_DATA_ACTION_KEY,
+    parameters: {
+      requestId: requestRecord.id,
+      targetJobId: requestRecord.targetJobId || "",
+    },
+    sentAt: Date.now(),
+    expiresInSeconds: 120,
+    trigger: "player_data",
+  });
+  const accessToken = await getRobloxLiveAccessToken(integration);
+  await publishRobloxUniverseMessage({
+    accessToken,
+    universeId: project.universeId,
+    topic: ROBLOX_LIVE_ACTION_TOPIC,
+    message: built.message,
+  });
+  return true;
+}
+
+async function getHeartbeatPlayerDataCommands(presence, project) {
+  if (presence.environment !== "production" || presence.playerDataBridgeRegistered !== true) return [];
+  const requests = await readQueuedPlayerDataRequests(
+    project.ownerUserId,
+    project.universeId,
+    presence.jobId,
+    MAX_PLAYER_DATA_COMMANDS_PER_HEARTBEAT,
+  );
+  return requests.map((requestRecord) => ({ requestId: requestRecord.id }));
+}
+
+function getPlayerDataBridgeStatus(ownerUserId, universeId) {
+  pruneLivePresence(universeId);
+  const servers = livePresenceByUniverseId.get(cleanInteger(universeId));
+  const ownedServers = servers
+    ? [...servers.values()].filter((presence) => presence.ownerUserId === ownerUserId)
+    : [];
+  return {
+    liveServerCount: ownedServers.length,
+    adapterServerCount: ownedServers.filter((presence) => presence.playerDataBridgeRegistered).length,
+    connected: ownedServers.some((presence) => presence.playerDataBridgeRegistered),
+  };
+}
+
+function normalizePlayerDataJson(value) {
+  if (!value || typeof value !== "object") {
+    throw new Error("Player data must be a JSON object or array.");
+  }
+  const json = JSON.stringify(value);
+  const bytes = Buffer.byteLength(json, "utf8");
+  if (bytes > MAX_PLAYER_DATA_JSON_BYTES) {
+    throw new Error(`Player data can contain up to ${MAX_PLAYER_DATA_JSON_BYTES.toLocaleString("en-US")} JSON bytes.`);
+  }
+  return { value, json, bytes };
+}
+
+function normalizePlayerDataRequest(value) {
+  if (!value || typeof value !== "object") return null;
+  const expiresAtMs = cleanInteger(value.expiresAtMs) || cleanFlexibleTimestampMs(value.expiresAt);
+  const status = ["queued", "processing", "completed", "failed", "expired"].includes(value.status)
+    ? value.status
+    : "queued";
+  const requestRecord = {
+    id: cleanString(value.id, 120),
+    ownerUserId: cleanString(value.ownerUserId, 120),
+    projectId: cleanString(value.projectId, 120),
+    universeId: cleanInteger(value.universeId),
+    userId: cleanInteger(value.userId),
+    username: cleanString(value.username, 64),
+    displayName: cleanString(value.displayName, 64),
+    operation: value.operation === "write" ? "write" : "read",
+    status: expiresAtMs <= Date.now() && ["queued", "processing"].includes(status) ? "expired" : status,
+    payloadEncrypted: typeof value.payloadEncrypted === "string" ? value.payloadEncrypted : "",
+    resultDataEncrypted: typeof value.resultDataEncrypted === "string" ? value.resultDataEncrypted : "",
+    sourceRequestId: cleanString(value.sourceRequestId, 120),
+    expectedVersion: cleanString(value.expectedVersion, 160),
+    resultVersion: cleanString(value.resultVersion, 160),
+    consumedAt: cleanInteger(value.consumedAt),
+    consumedByRequestId: cleanString(value.consumedByRequestId, 120),
+    targetJobId: cleanString(value.targetJobId, 128),
+    claimedJobId: cleanString(value.claimedJobId, 128),
+    claimedPlaceId: cleanInteger(value.claimedPlaceId),
+    claimedAt: cleanInteger(value.claimedAt),
+    completedAt: cleanInteger(value.completedAt),
+    error: cleanString(value.error, 240),
+    delivery: value.delivery === "messaging" ? "messaging" : "heartbeat",
+    createdByUserId: cleanString(value.createdByUserId, 120),
+    createdByUsername: cleanString(value.createdByUsername, 80),
+    createdAt: cleanInteger(value.createdAt) || Date.now(),
+    updatedAt: cleanInteger(value.updatedAt) || Date.now(),
+    expiresAtMs,
+    expiresAt: new Date(expiresAtMs || Date.now()),
+  };
+  return requestRecord.id && requestRecord.ownerUserId && requestRecord.projectId
+    && requestRecord.universeId > 0 && requestRecord.userId > 0 && requestRecord.expiresAtMs > 0
+    ? requestRecord
+    : null;
+}
+
+function serializePlayerDataRequest(value, options = {}) {
+  const requestRecord = normalizePlayerDataRequest(value);
+  if (!requestRecord) return null;
+  const serialized = {
+    id: requestRecord.id,
+    universeId: requestRecord.universeId,
+    userId: requestRecord.userId,
+    username: requestRecord.username || `User ${requestRecord.userId}`,
+    displayName: requestRecord.displayName,
+    operation: requestRecord.operation,
+    status: requestRecord.status,
+    version: requestRecord.resultVersion,
+    sourceRequestId: requestRecord.sourceRequestId,
+    target: requestRecord.targetJobId ? "online_server" : "available_server",
+    delivery: requestRecord.delivery,
+    error: requestRecord.error,
+    createdByUsername: requestRecord.createdByUsername,
+    createdAt: requestRecord.createdAt,
+    updatedAt: requestRecord.updatedAt,
+    completedAt: requestRecord.completedAt,
+    expiresAt: requestRecord.expiresAtMs,
+  };
+  if (options.includeData && requestRecord.status === "completed" && requestRecord.operation === "read") {
+    try {
+      serialized.data = JSON.parse(decryptPlayerDataPayload(requestRecord.resultDataEncrypted));
+    } catch {
+      serialized.status = "failed";
+      serialized.error = "The encrypted player-data response could not be decoded.";
+    }
+  }
+  return serialized;
+}
+
+async function readPlayerDataRequestById(requestId) {
+  const id = cleanString(requestId, 120);
+  if (!id) return null;
+  const db = await getMongoDb();
+  if (db) {
+    return normalizePlayerDataRequest(await db.collection("player_data_requests").findOne(
+      { id },
+      { projection: { _id: 0 } },
+    ));
+  }
+  return normalizePlayerDataRequest((await readLocalPlayerDataRequestStore()).find((entry) => entry.id === id));
+}
+
+async function consumePlayerDataReadRequest(sourceRequest, writeRequestId) {
+  const now = Date.now();
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("player_data_requests").updateOne(
+      {
+        id: sourceRequest.id,
+        ownerUserId: sourceRequest.ownerUserId,
+        universeId: sourceRequest.universeId,
+        userId: sourceRequest.userId,
+        operation: "read",
+        status: "completed",
+        expiresAt: { $gt: new Date(now) },
+        $or: [
+          { consumedAt: { $exists: false } },
+          { consumedAt: 0 },
+        ],
+      },
+      {
+        $set: {
+          consumedAt: now,
+          consumedByRequestId: cleanString(writeRequestId, 120),
+          updatedAt: now,
+        },
+      },
+    );
+    return result.modifiedCount === 1;
+  }
+
+  return withLocalPlayerDataRequestStoreLock(async () => {
+    const requests = await readLocalPlayerDataRequestStore();
+    const index = requests.findIndex((entry) => entry.id === sourceRequest.id);
+    if (index === -1) return false;
+    const current = normalizePlayerDataRequest(requests[index]);
+    if (!current
+      || current.status !== "completed"
+      || current.operation !== "read"
+      || current.expiresAtMs <= now
+      || current.consumedAt > 0) return false;
+    requests[index] = {
+      ...current,
+      consumedAt: now,
+      consumedByRequestId: cleanString(writeRequestId, 120),
+      updatedAt: now,
+    };
+    await writeLocalPlayerDataRequestStore(requests);
+    return true;
+  });
+}
+
+async function readPlayerDataRequests(ownerUserId, universeId, options = {}) {
+  const limit = Math.min(MAX_PLAYER_DATA_RECENT_REQUESTS, Math.max(1, cleanInteger(options.limit) || 10));
+  const db = await getMongoDb();
+  const values = db
+    ? await db.collection("player_data_requests").find({
+      ownerUserId,
+      universeId: cleanInteger(universeId),
+    }).project({ _id: 0 }).sort({ createdAt: -1 }).limit(limit).toArray()
+    : (await readLocalPlayerDataRequestStore()).filter((entry) => (
+      entry.ownerUserId === ownerUserId && cleanInteger(entry.universeId) === cleanInteger(universeId)
+    )).sort((a, b) => cleanInteger(b.createdAt) - cleanInteger(a.createdAt)).slice(0, limit);
+  return values.map(normalizePlayerDataRequest).filter(Boolean);
+}
+
+async function readQueuedPlayerDataRequests(ownerUserId, universeId, jobId, limit) {
+  const now = new Date();
+  const db = await getMongoDb();
+  const query = {
+    ownerUserId,
+    universeId: cleanInteger(universeId),
+    status: "queued",
+    expiresAt: { $gt: now },
+    $or: [{ targetJobId: "" }, { targetJobId: cleanString(jobId, 128) }, { targetJobId: { $exists: false } }],
+  };
+  const values = db
+    ? await db.collection("player_data_requests").find(query).project({ _id: 0 }).sort({ createdAt: 1 }).limit(limit).toArray()
+    : (await readLocalPlayerDataRequestStore()).filter((entry) => {
+      const requestRecord = normalizePlayerDataRequest(entry);
+      return requestRecord
+        && requestRecord.ownerUserId === ownerUserId
+        && requestRecord.universeId === cleanInteger(universeId)
+        && requestRecord.status === "queued"
+        && (!requestRecord.targetJobId || requestRecord.targetJobId === cleanString(jobId, 128));
+    }).sort((a, b) => cleanInteger(a.createdAt) - cleanInteger(b.createdAt)).slice(0, limit);
+  return values.map(normalizePlayerDataRequest).filter(Boolean);
+}
+
+async function savePlayerDataRequest(value) {
+  const requestRecord = normalizePlayerDataRequest(value);
+  if (!requestRecord) throw new Error("Cannot save an invalid player-data request.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("player_data_requests").replaceOne({ id: requestRecord.id }, requestRecord, { upsert: true });
+    return requestRecord;
+  }
+  await withLocalPlayerDataRequestStoreLock(async () => {
+    const requests = await readLocalPlayerDataRequestStore();
+    const index = requests.findIndex((entry) => entry.id === requestRecord.id);
+    const stored = { ...requestRecord, expiresAt: requestRecord.expiresAt.toISOString() };
+    if (index >= 0) requests[index] = stored;
+    else requests.push(stored);
+    await writeLocalPlayerDataRequestStore(requests
+      .filter((entry) => cleanFlexibleTimestampMs(entry.expiresAtMs || entry.expiresAt) > Date.now())
+      .sort((a, b) => cleanInteger(b.createdAt) - cleanInteger(a.createdAt))
+      .slice(0, 500));
+  });
+  return requestRecord;
+}
+
+async function claimPlayerDataRequest(project, requestId, jobId, placeId) {
+  const now = Date.now();
+  const db = await getMongoDb();
+  if (db) {
+    const claimed = await db.collection("player_data_requests").findOneAndUpdate(
+      {
+        id: requestId,
+        ownerUserId: project.ownerUserId,
+        universeId: cleanInteger(project.universeId),
+        status: "queued",
+        expiresAt: { $gt: new Date(now) },
+        $or: [{ targetJobId: "" }, { targetJobId: jobId }, { targetJobId: { $exists: false } }],
+      },
+      {
+        $set: {
+          status: "processing",
+          claimedJobId: jobId,
+          claimedPlaceId: placeId,
+          claimedAt: now,
+          updatedAt: now,
+        },
+      },
+      { returnDocument: "after", projection: { _id: 0 } },
+    );
+    if (claimed) return normalizePlayerDataRequest(claimed);
+    const existing = await readPlayerDataRequestById(requestId);
+    return existing?.status === "processing" && existing.claimedJobId === jobId ? existing : null;
+  }
+
+  return withLocalPlayerDataRequestStoreLock(async () => {
+    const requests = await readLocalPlayerDataRequestStore();
+    const index = requests.findIndex((entry) => entry.id === requestId);
+    const requestRecord = normalizePlayerDataRequest(requests[index]);
+    if (!requestRecord || requestRecord.ownerUserId !== project.ownerUserId
+      || requestRecord.universeId !== cleanInteger(project.universeId)) return null;
+    if (requestRecord.status === "processing" && requestRecord.claimedJobId === jobId) return requestRecord;
+    if (requestRecord.status !== "queued" || (requestRecord.targetJobId && requestRecord.targetJobId !== jobId)) return null;
+    requestRecord.status = "processing";
+    requestRecord.claimedJobId = jobId;
+    requestRecord.claimedPlaceId = placeId;
+    requestRecord.claimedAt = now;
+    requestRecord.updatedAt = now;
+    requests[index] = { ...requestRecord, expiresAt: requestRecord.expiresAt.toISOString() };
+    await writeLocalPlayerDataRequestStore(requests);
+    return requestRecord;
+  });
+}
+
+async function completePlayerDataRequest(requestRecord, result) {
+  const now = Date.now();
+  const fields = {
+    status: result.status === "completed" ? "completed" : "failed",
+    error: cleanString(result.error, 240),
+    resultDataEncrypted: typeof result.resultDataEncrypted === "string" ? result.resultDataEncrypted : "",
+    resultVersion: cleanString(result.resultVersion, 160),
+    completedAt: now,
+    updatedAt: now,
+  };
+  const db = await getMongoDb();
+  if (db) {
+    const completed = await db.collection("player_data_requests").findOneAndUpdate(
+      { id: requestRecord.id, status: "processing", claimedJobId: requestRecord.claimedJobId },
+      { $set: fields },
+      { returnDocument: "after", projection: { _id: 0 } },
+    );
+    return normalizePlayerDataRequest(completed || { ...requestRecord, ...fields });
+  }
+  return withPlayerDataRequestMutationLock(requestRecord.id, async () => {
+    const current = await readPlayerDataRequestById(requestRecord.id);
+    if (!current || current.status !== "processing" || current.claimedJobId !== requestRecord.claimedJobId) return current;
+    return savePlayerDataRequest({ ...current, ...fields });
+  });
+}
+
+async function withPlayerDataRequestMutationLock(requestId, operation) {
+  const key = cleanString(requestId, 120);
+  const previous = playerDataRequestMutationLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  playerDataRequestMutationLocks.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (playerDataRequestMutationLocks.get(key) === queued) playerDataRequestMutationLocks.delete(key);
+  }
+}
+
+async function readLocalPlayerDataRequestStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(playerDataRequestStorePath, "utf8"));
+    return Array.isArray(payload.requests) ? payload.requests : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalPlayerDataRequestStore(requests) {
+  await fs.mkdir(path.dirname(playerDataRequestStorePath), { recursive: true });
+  await fs.writeFile(playerDataRequestStorePath, JSON.stringify({ requests }, null, 2));
+}
+
+async function withLocalPlayerDataRequestStoreLock(operation) {
+  const previous = localPlayerDataRequestStoreLock;
+  let release;
+  localPlayerDataRequestStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
 async function handleAdminUserPlanUpdate(req, res, adminUser) {
   let body;
   try {
@@ -6542,7 +7265,6 @@ async function handleProjectCreate(req, res, auth) {
   return sendJson(res, 201, {
     ok: true,
     project: serializeProject(project),
-    secret: projectSecret,
   });
 }
 
@@ -6568,6 +7290,312 @@ async function handleProjectSecretRegenerate(req, res, auth, projectId) {
     regeneratedAt: updatedAt,
     secret: projectSecret,
   });
+}
+
+async function handleStudioPluginDownload(res) {
+  const source = await fs.readFile(path.join(__dirname, "roblox-plugin", "RoAnalyticsInstaller.plugin.lua"), "utf8");
+  res.writeHead(200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Content-Disposition": 'attachment; filename="RoAnalyticsInstaller.plugin.lua"',
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.end(source);
+}
+
+async function handleStudioPairingStart(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_STUDIO_PAIRING_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const universeId = cleanInteger(body?.universeId);
+  const placeId = cleanInteger(body?.placeId);
+  const project = await getProjectByUniverseId(universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 404, { error: "Connect this Roblox universe on the website before pairing Studio." });
+  }
+
+  const activePairings = await readStudioPairings(project.ownerUserId, universeId, { activeOnly: true });
+  if (activePairings.length >= MAX_STUDIO_PAIRINGS_PER_UNIVERSE) {
+    return sendJson(res, 429, { error: "Too many Studio pairing attempts are active. Wait ten minutes and try again." });
+  }
+
+  const now = Date.now();
+  const claimToken = crypto.randomBytes(32).toString("base64url");
+  const pairing = await saveStudioPairing({
+    id: crypto.randomUUID(),
+    ownerUserId: project.ownerUserId,
+    projectId: project.id,
+    universeId,
+    placeId,
+    displayCode: createStudioPairingCode(),
+    claimTokenHash: hashStudioPairingToken(claimToken),
+    status: "pending",
+    secretEncrypted: "",
+    createdAt: now,
+    updatedAt: now,
+    approvedAt: 0,
+    claimedAt: 0,
+    expiresAtMs: now + STUDIO_PAIRING_TTL_MS,
+  });
+
+  return sendJson(res, 201, {
+    ok: true,
+    pairingId: pairing.id,
+    claimToken,
+    code: pairing.displayCode,
+    universeId,
+    universeName: project.name || `Universe ${universeId}`,
+    expiresAt: pairing.expiresAtMs,
+  });
+}
+
+async function handleStudioPairingList(req, res, auth, searchParams) {
+  const universeId = cleanInteger(searchParams.get("universeId"));
+  const project = await getProjectByUniverseIdForOwner(auth.userId, universeId);
+  if (!project || isDemoProject(project)) {
+    return sendJson(res, 403, { error: "Select a connected Roblox universe." });
+  }
+  const pairings = await readStudioPairings(auth.userId, universeId, { activeOnly: true });
+  return sendJson(res, 200, {
+    pairings: pairings.map(serializeStudioPairingForDashboard),
+    expiresInSeconds: Math.floor(STUDIO_PAIRING_TTL_MS / 1000),
+  });
+}
+
+async function handleStudioPairingDecision(req, res, auth, rawPairingId, decision) {
+  const pairingId = cleanString(rawPairingId, 120);
+  const pairing = await readStudioPairingById(pairingId);
+  if (!pairing || pairing.ownerUserId !== auth.userId) {
+    return sendJson(res, 404, { error: "That Studio pairing request is unavailable." });
+  }
+  if (pairing.expiresAtMs <= Date.now()) {
+    return sendJson(res, 410, { error: "That Studio pairing code expired. Start again from the plugin." });
+  }
+  if (pairing.status !== "pending") {
+    return sendJson(res, 409, { error: `That Studio pairing request is already ${pairing.status}.` });
+  }
+
+  const project = await getProjectByIdForOwner(pairing.projectId, auth.userId);
+  if (!project || cleanInteger(project.universeId) !== pairing.universeId) {
+    return sendJson(res, 404, { error: "The connected game for this pairing no longer exists." });
+  }
+
+  pairing.updatedAt = Date.now();
+  if (decision === "deny") {
+    pairing.status = "denied";
+    await saveStudioPairing(pairing);
+    return sendJson(res, 200, { ok: true, pairing: serializeStudioPairingForDashboard(pairing) });
+  }
+
+  const installSecret = generateProjectSecret();
+  await addProjectInstallSecret(project.id, auth.userId, {
+    id: pairing.id,
+    secretHash: hashProjectSecret(installSecret),
+    label: pairing.placeId > 0 ? `Studio place ${pairing.placeId}` : "Studio installer",
+    createdAt: pairing.updatedAt,
+  });
+  pairing.status = "approved";
+  pairing.approvedAt = pairing.updatedAt;
+  pairing.secretEncrypted = encryptRobloxLiveOAuthToken(installSecret);
+  pairing.expiresAtMs = Math.max(pairing.expiresAtMs, pairing.updatedAt + STUDIO_PAIRING_CLAIM_GRACE_MS);
+  await saveStudioPairing(pairing);
+  return sendJson(res, 200, { ok: true, pairing: serializeStudioPairingForDashboard(pairing) });
+}
+
+async function handleStudioPairingClaim(req, res, rawPairingId) {
+  let body;
+  try {
+    body = await readJsonBody(req, MAX_STUDIO_PAIRING_BODY_BYTES);
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message });
+  }
+
+  const pairing = await readStudioPairingById(cleanString(rawPairingId, 120));
+  if (!pairing || !verifyStudioPairingToken(body?.claimToken, pairing.claimTokenHash)) {
+    return sendJson(res, 404, { error: "Studio pairing request not found." });
+  }
+  if (pairing.expiresAtMs <= Date.now()) {
+    return sendJson(res, 410, { error: "Studio pairing expired. Start a new pairing from the plugin." });
+  }
+  if (pairing.status === "pending") {
+    return sendJson(res, 202, {
+      ok: true,
+      status: "pending",
+      code: pairing.displayCode,
+      expiresAt: pairing.expiresAtMs,
+    });
+  }
+  if (pairing.status === "denied") {
+    return sendJson(res, 403, { error: "The website owner denied this Studio pairing request." });
+  }
+  if (pairing.status !== "approved" && pairing.status !== "claimed") {
+    return sendJson(res, 409, { error: "Studio pairing is not ready." });
+  }
+
+  let installSecret = "";
+  try {
+    installSecret = decryptRobloxLiveOAuthToken(pairing.secretEncrypted);
+  } catch {
+    installSecret = "";
+  }
+  if (!installSecret) return sendJson(res, 410, { error: "Studio install package expired. Start a new pairing." });
+
+  const installerPackage = await buildRoAnalyticsInstallerPackage({
+    rootDir: path.join(__dirname, "RoAnalytics"),
+    secret: installSecret,
+    version: ROANALYTICS_INSTALLER_VERSION,
+  });
+  pairing.status = "claimed";
+  pairing.claimedAt = pairing.claimedAt || Date.now();
+  pairing.updatedAt = Date.now();
+  await saveStudioPairing(pairing);
+  return sendJson(res, 200, {
+    ok: true,
+    status: "approved",
+    universeId: pairing.universeId,
+    package: installerPackage,
+  });
+}
+
+function createStudioPairingCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(8);
+  const code = [...bytes].map((value) => alphabet[value % alphabet.length]).join("");
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+function hashStudioPairingToken(value) {
+  return crypto.createHash("sha256").update(cleanString(value, 256)).digest("base64url");
+}
+
+function verifyStudioPairingToken(value, expectedHash) {
+  const candidate = Buffer.from(hashStudioPairingToken(value));
+  const expected = Buffer.from(cleanString(expectedHash, 120));
+  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+}
+
+function normalizeStudioPairing(value) {
+  if (!value || typeof value !== "object") return null;
+  const expiresAtMs = cleanInteger(value.expiresAtMs)
+    || cleanFlexibleTimestampMs(value.expiresAt);
+  const pairing = {
+    id: cleanString(value.id, 120),
+    ownerUserId: cleanString(value.ownerUserId, 120),
+    projectId: cleanString(value.projectId, 120),
+    universeId: cleanInteger(value.universeId),
+    placeId: cleanInteger(value.placeId),
+    displayCode: cleanString(value.displayCode, 16),
+    claimTokenHash: cleanString(value.claimTokenHash, 120),
+    status: ["pending", "approved", "claimed", "denied"].includes(value.status) ? value.status : "pending",
+    secretEncrypted: cleanString(value.secretEncrypted, 8192),
+    createdAt: cleanInteger(value.createdAt) || Date.now(),
+    updatedAt: cleanInteger(value.updatedAt) || Date.now(),
+    approvedAt: cleanInteger(value.approvedAt),
+    claimedAt: cleanInteger(value.claimedAt),
+    expiresAtMs,
+    expiresAt: new Date(expiresAtMs || Date.now()),
+  };
+  return pairing.id && pairing.ownerUserId && pairing.projectId && pairing.universeId > 0
+    && pairing.displayCode && pairing.claimTokenHash && pairing.expiresAtMs > 0
+    ? pairing
+    : null;
+}
+
+function serializeStudioPairingForDashboard(value) {
+  const pairing = normalizeStudioPairing(value);
+  if (!pairing) return null;
+  return {
+    id: pairing.id,
+    universeId: pairing.universeId,
+    placeId: pairing.placeId,
+    code: pairing.displayCode,
+    status: pairing.status,
+    createdAt: pairing.createdAt,
+    expiresAt: pairing.expiresAtMs,
+  };
+}
+
+async function readStudioPairingById(pairingId) {
+  const id = cleanString(pairingId, 120);
+  if (!id) return null;
+  const db = await getMongoDb();
+  if (db) {
+    return normalizeStudioPairing(await db.collection("studio_pairings").findOne(
+      { id },
+      { projection: { _id: 0 } },
+    ));
+  }
+  return normalizeStudioPairing((await readLocalStudioPairingStore()).find((entry) => entry.id === id));
+}
+
+async function readStudioPairings(ownerUserId, universeId, options = {}) {
+  const now = Date.now();
+  const db = await getMongoDb();
+  const values = db
+    ? await db.collection("studio_pairings").find({
+      ownerUserId,
+      universeId: cleanInteger(universeId),
+      ...(options.activeOnly ? { expiresAt: { $gt: new Date(now) }, status: { $in: ["pending", "approved", "claimed"] } } : {}),
+    }).project({ _id: 0 }).sort({ createdAt: -1 }).limit(MAX_STUDIO_PAIRINGS_PER_UNIVERSE * 2).toArray()
+    : (await readLocalStudioPairingStore()).filter((entry) => (
+      entry.ownerUserId === ownerUserId
+      && cleanInteger(entry.universeId) === cleanInteger(universeId)
+      && (!options.activeOnly || (cleanFlexibleTimestampMs(entry.expiresAtMs || entry.expiresAt) > now
+        && ["pending", "approved", "claimed"].includes(entry.status)))
+    ));
+  return values.map(normalizeStudioPairing).filter(Boolean).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+async function saveStudioPairing(value) {
+  const pairing = normalizeStudioPairing(value);
+  if (!pairing) throw new Error("Cannot save an invalid Studio pairing.");
+  const db = await getMongoDb();
+  if (db) {
+    await db.collection("studio_pairings").replaceOne({ id: pairing.id }, pairing, { upsert: true });
+    return pairing;
+  }
+  await withLocalStudioPairingStoreLock(async () => {
+    const pairings = await readLocalStudioPairingStore();
+    const index = pairings.findIndex((entry) => entry.id === pairing.id);
+    const stored = { ...pairing, expiresAt: pairing.expiresAt.toISOString() };
+    if (index >= 0) pairings[index] = stored;
+    else pairings.push(stored);
+    await writeLocalStudioPairingStore(pairings.filter((entry) => (
+      cleanFlexibleTimestampMs(entry.expiresAtMs || entry.expiresAt) > Date.now()
+    )));
+  });
+  return pairing;
+}
+
+async function readLocalStudioPairingStore() {
+  try {
+    const payload = JSON.parse(await fs.readFile(studioPairingStorePath, "utf8"));
+    return Array.isArray(payload.pairings) ? payload.pairings : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeLocalStudioPairingStore(pairings) {
+  await fs.mkdir(path.dirname(studioPairingStorePath), { recursive: true });
+  await fs.writeFile(studioPairingStorePath, JSON.stringify({ pairings }, null, 2));
+}
+
+async function withLocalStudioPairingStoreLock(operation) {
+  const previous = localStudioPairingStoreLock;
+  let release;
+  localStudioPairingStoreLock = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
 }
 
 async function handleProjectUnlink(req, res, auth, projectId) {
@@ -6988,10 +8016,10 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
     return sendRobloxOAuthResult(res, {
       ok: true,
       title: "Universe connected",
-      message: "Copy this Roblox secret now. It is shown once.",
-      secret: projectSecret,
+      message: "Return to Connect Universe, then pair the Studio installer to install RoAnalytics automatically.",
       universeId,
       universeName: project.name,
+      backHref: "/#connect",
     });
   } catch (error) {
     if (error.code === 11000) {
@@ -7108,6 +8136,9 @@ async function handlePresenceHeartbeat(req, res) {
   const moderationCommands = project
     ? await getHeartbeatModerationCommands(presence.value, project)
     : [];
+  const playerDataCommands = project
+    ? await getHeartbeatPlayerDataCommands(presence.value, project)
+    : [];
 
   return sendJson(res, 200, {
     ok: true,
@@ -7134,6 +8165,9 @@ async function handlePresenceHeartbeat(req, res) {
     savedCustomEventCount,
     moderation: {
       commands: moderationCommands,
+    },
+    playerData: {
+      commands: playerDataCommands,
     },
   });
 }
@@ -7363,6 +8397,7 @@ function normalizePresence(body) {
       updatedAt,
       receivedAt,
       playerCount: Math.max(cleanInteger(body.playerCount), cleanPlayers.length),
+      playerDataBridgeRegistered: body?.playerDataBridge?.registered === true,
       players: cleanPlayers,
       chatLogs,
       movementSamples,
@@ -16525,6 +17560,7 @@ function rememberLivePresence(presence) {
     jobId,
     receivedAt: cleanInteger(presence.receivedAt) || Date.now(),
     serverStartedAt: cleanInteger(presence.serverStartedAt),
+    playerDataBridgeRegistered: presence.playerDataBridgeRegistered === true,
     players: (Array.isArray(presence.players) ? presence.players : []).map((player) => ({
       userId: cleanInteger(player.userId),
       username: cleanString(player.username, 64),
@@ -17518,15 +18554,21 @@ async function getProjectFromRequestSecret(req, universeId) {
       { universeId: cleanUniverseId },
       { projection: { _id: 0 } },
     );
-    return project && !project.ingestDisabled && verifyProjectSecret(secret, project.secretHash) ? project : null;
+    return project && !project.ingestDisabled && verifyAnyProjectSecret(secret, project) ? project : null;
   }
 
   const projects = await readProjects();
   return projects.find((project) => (
     cleanInteger(project.universeId) === cleanUniverseId
     && !project.ingestDisabled
-    && verifyProjectSecret(secret, project.secretHash)
+    && verifyAnyProjectSecret(secret, project)
   )) || null;
+}
+
+function verifyAnyProjectSecret(secret, project) {
+  if (verifyProjectSecret(secret, project?.secretHash)) return true;
+  return (Array.isArray(project?.installSecretHashes) ? project.installSecretHashes : [])
+    .some((entry) => verifyProjectSecret(secret, entry?.secretHash || entry?.hash));
 }
 
 async function getConnectedUniverseIds() {
@@ -17624,7 +18666,7 @@ async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotat
   if (db) {
     const result = await db.collection("projects").updateOne(
       { id: projectId, ownerUserId },
-      { $set: { secretHash, secretRotatedAt: rotatedAt } }
+      { $set: { secretHash, secretRotatedAt: rotatedAt, installSecretHashes: [] } }
     );
     if (!result.matchedCount) {
       const error = new Error("Project not found");
@@ -17644,7 +18686,47 @@ async function updateProjectSecretHash(projectId, ownerUserId, secretHash, rotat
 
   project.secretHash = secretHash;
   project.secretRotatedAt = rotatedAt;
+  project.installSecretHashes = [];
   await writeProjects(projects);
+}
+
+async function addProjectInstallSecret(projectId, ownerUserId, credential) {
+  const cleanCredential = {
+    id: cleanString(credential?.id, 120),
+    secretHash: cleanString(credential?.secretHash, 120),
+    label: cleanString(credential?.label, 120) || "Studio installer",
+    createdAt: cleanInteger(credential?.createdAt) || Date.now(),
+  };
+  if (!cleanCredential.id || !cleanCredential.secretHash) {
+    throw new Error("Studio install credential is invalid.");
+  }
+
+  const db = await getMongoDb();
+  if (db) {
+    const result = await db.collection("projects").updateOne(
+      { id: projectId, ownerUserId },
+      {
+        $push: {
+          installSecretHashes: {
+            $each: [cleanCredential],
+            $slice: -MAX_PROJECT_INSTALL_SECRETS,
+          },
+        },
+      },
+    );
+    if (!result.matchedCount) throw new Error("Connected game not found.");
+    return cleanCredential;
+  }
+
+  const projects = await readProjects();
+  const project = projects.find((entry) => entry.id === projectId && entry.ownerUserId === ownerUserId);
+  if (!project) throw new Error("Connected game not found.");
+  project.installSecretHashes = [
+    ...(Array.isArray(project.installSecretHashes) ? project.installSecretHashes : []),
+    cleanCredential,
+  ].slice(-MAX_PROJECT_INSTALL_SECRETS);
+  await writeProjects(projects);
+  return cleanCredential;
 }
 
 async function deleteProject(projectId, ownerUserId) {
@@ -17754,6 +18836,8 @@ async function deleteMongoUniverseData(universeId) {
     "funnels",
     "discord_integrations",
     "roblox_live_integrations",
+    "studio_pairings",
+    "player_data_requests",
     "map_snapshots",
     "map_snapshot_chunks",
   ]) {
@@ -17808,6 +18892,18 @@ async function deleteLocalUniverseData(universeId) {
   for (const scopeKey of [...robloxLiveIntegrationCache.keys()]) {
     if (scopeKey.endsWith(`:${universeId}`)) robloxLiveIntegrationCache.delete(scopeKey);
   }
+  const deletedStudioPairings = await withLocalStudioPairingStoreLock(async () => {
+    const pairings = await readLocalStudioPairingStore();
+    const nextPairings = pairings.filter((pairing) => cleanInteger(pairing.universeId) !== universeId);
+    if (nextPairings.length !== pairings.length) await writeLocalStudioPairingStore(nextPairings);
+    return pairings.length - nextPairings.length;
+  });
+  const deletedPlayerDataRequests = await withLocalPlayerDataRequestStoreLock(async () => {
+    const requests = await readLocalPlayerDataRequestStore();
+    const nextRequests = requests.filter((requestRecord) => cleanInteger(requestRecord.universeId) !== universeId);
+    if (nextRequests.length !== requests.length) await writeLocalPlayerDataRequestStore(nextRequests);
+    return requests.length - nextRequests.length;
+  });
   return {
     mapSnapshot,
     funnels: deletedFunnels,
@@ -17815,6 +18911,8 @@ async function deleteLocalUniverseData(universeId) {
     customEventDeletions: deletedCustomEventDeletions,
     discordIntegrations: deletedDiscordIntegrations,
     robloxLiveIntegrations: deletedRobloxLiveIntegrations,
+    studioPairings: deletedStudioPairings,
+    playerDataRequests: deletedPlayerDataRequests,
   };
 }
 

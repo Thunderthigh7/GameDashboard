@@ -22,6 +22,10 @@ function RoAnalytics.RegisterLiveAction(actionKey, handler)
 	return Methods.RegisterLiveAction(actionKey, handler)
 end
 
+function RoAnalytics.RegisterPlayerDataAdapter(adapter)
+	return Methods.RegisterPlayerDataAdapter(adapter)
+end
+
 function RoAnalytics.Start()
 	Methods.Start()
 end
