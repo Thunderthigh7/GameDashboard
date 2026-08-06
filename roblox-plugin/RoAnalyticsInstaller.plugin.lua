@@ -76,7 +76,7 @@ create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 2,
 	Size = UDim2.new(1, 0, 0, 54),
-	Text = "Connect this experience and install RoAnalytics automatically. Player-data discovery is optional and stays available in the plugin.",
+	Text = "Connect this experience and install RoAnalytics automatically.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 13,
 	TextWrapped = true,
@@ -84,41 +84,11 @@ create("TextLabel", {
 	TextYAlignment = Enum.TextYAlignment.Top,
 }, root)
 
-local codeCard = create("Frame", {
-	BackgroundColor3 = Color3.fromRGB(24, 31, 49),
-	BorderSizePixel = 0,
-	LayoutOrder = 3,
-	Size = UDim2.new(1, 0, 0, 68),
-}, root)
-create("UICorner", { CornerRadius = UDim.new(0, 9) }, codeCard)
-
-create("TextLabel", {
-	BackgroundTransparency = 1,
-	Font = Enum.Font.GothamMedium,
-	Position = UDim2.fromOffset(12, 9),
-	Size = UDim2.new(1, -24, 0, 16),
-	Text = "INSTALL STATUS",
-	TextColor3 = Color3.fromRGB(139, 92, 246),
-	TextSize = 10,
-	TextXAlignment = Enum.TextXAlignment.Left,
-}, codeCard)
-
-local codeLabel = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Font = Enum.Font.Code,
-	Position = UDim2.fromOffset(12, 26),
-	Size = UDim2.new(1, -24, 0, 32),
-	Text = "---- ----",
-	TextColor3 = Color3.fromRGB(226, 232, 240),
-	TextSize = 23,
-	TextXAlignment = Enum.TextXAlignment.Left,
-}, codeCard)
-
 local installButton = create("TextButton", {
 	BackgroundColor3 = Color3.fromRGB(124, 58, 237),
 	BorderSizePixel = 0,
 	Font = Enum.Font.GothamBold,
-	LayoutOrder = 4,
+	LayoutOrder = 3,
 	Size = UDim2.new(1, 0, 0, 40),
 	Text = "Connect & Install",
 	TextColor3 = Color3.fromRGB(255, 255, 255),
@@ -129,7 +99,7 @@ create("UICorner", { CornerRadius = UDim.new(0, 8) }, installButton)
 local statusLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	LayoutOrder = 5,
+	LayoutOrder = 4,
 	Size = UDim2.new(1, 0, 0, 72),
 	Text = "Start pairing. The website now auto-approves this request and sends the package back automatically.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
@@ -612,14 +582,13 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 			local installed, installError = pcall(installPackage, result.package)
 			installButton.Active = true
 			installButton.Text = "Update RoAnalytics"
-			if not installed then
-				pairingActive = false
-				setStatus("Install failed: " .. tostring(installError), "error")
-				return
-			end
-			codeLabel.Text = "INSTALLED"
+		if not installed then
 			pairingActive = false
-			local studioRelay = result.studioRelay
+			setStatus("Install failed: " .. tostring(installError), "error")
+			return
+		end
+		pairingActive = false
+		local studioRelay = result.studioRelay
 			if typeof(studioRelay) == "table"
 				and startStudioPlayerDataRelay(tostring(studioRelay.credential or ""))
 			then
@@ -653,7 +622,6 @@ local function startPairing()
 	pairingActive = true
 	installButton.Active = false
 	installButton.Text = "Starting..."
-	codeLabel.Text = "---- ----"
 	setStatus("Contacting the RoAnalytics website...", "")
 
 	local ok, result = pcall(function()
@@ -670,7 +638,6 @@ local function startPairing()
 		setStatus("Could not start pairing: " .. tostring(result), "error")
 		return
 	end
-	codeLabel.Text = tostring(result.code or "Auto install")
 	installButton.Text = "Waiting for package..."
 	setStatus("RoAnalytics accepted the request. Waiting for package delivery.", "")
 	task.spawn(

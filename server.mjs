@@ -7751,7 +7751,6 @@ async function handleStudioPairingStart(req, res) {
     ok: true,
     pairingId: pairing.id,
     claimToken,
-    code: pairing.displayCode,
     universeId,
     universeName: project.name || `Universe ${universeId}`,
     expiresAt: pairing.expiresAtMs,
@@ -7831,7 +7830,6 @@ async function handleStudioPairingClaim(req, res, rawPairingId) {
     return sendJson(res, 202, {
       ok: true,
       status: "pending",
-      code: pairing.displayCode,
       expiresAt: pairing.expiresAtMs,
     });
   }
@@ -7921,7 +7919,6 @@ function serializeStudioPairingForDashboard(value) {
     id: pairing.id,
     universeId: pairing.universeId,
     placeId: pairing.placeId,
-    code: pairing.displayCode,
     status: pairing.status,
     createdAt: pairing.createdAt,
     expiresAt: pairing.expiresAtMs,
