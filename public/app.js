@@ -5903,7 +5903,6 @@ function renderSetupChecklist(selectedUniverse = null) {
       complete: knownUniverses.length > 0,
     },
     {
-    {
       title: "Install RoAnalytics",
       detail: hasData
         ? "Roblox is sending data from the installed package."
