@@ -85,3 +85,6 @@
 .landingAutomationExamplePart{min-width:0}
 .landingAutomationExamplePart .landingAutomationExampleLabel{color:#6f7d9c}
 @media(max-width:520px){.landingAutomationIntro{padding:12px 15px 0}.landingAutomationExample{grid-template-columns:1fr;gap:7px}.landingAutomationKind{margin-bottom:2px}.landingAutomationExample>.landingAutomationArrow{display:block;justify-content:start;transform:rotate(90deg)}.landingAutomationExampleAction{grid-column:auto}.landingAutomationExamplePart{grid-column:auto}}
+
+/* Center the compact mobile navigation across the viewport. */
+@media(max-width:520px){.landingNavLinks{position:absolute;left:50%;justify-self:auto;transform:translateX(-50%)}}
