@@ -34,3 +34,5 @@
 .landingPreviewInsight small{display:block;margin-top:3px;color:#6de0a7;font-size:8px;font-weight:800}
 .landingPreviewInsight.automation small{color:#bea0ff}
 @media(max-width:520px){.landingPreviewMain{padding:10px}.landingPreviewStats{gap:0}.landingPreviewStat{padding:2px 8px}.landingMapPreview{min-height:230px}.landingPreviewInsights{grid-template-columns:1fr;gap:8px}.landingPreviewInsight+.landingPreviewInsight{border-top:1px solid rgba(91,109,160,.22);border-left:0;padding-top:8px;padding-left:2px}}
+
+.landingLiveBadge{border:0;padding:0;background:transparent}
