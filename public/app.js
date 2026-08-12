@@ -596,7 +596,8 @@ const ADMIN_ONLY_VIEWS = new Set(
     (link) => link.dataset.dashboardView,
   ).filter(Boolean),
 );
-// Legacy storage keys are retained so the rebrand does not discard saved user preferences.\nconst SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
+// Legacy storage keys are retained so the rebrand does not discard saved user preferences.
+const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
 const DASHBOARD_SESSION_CACHE_PREFIX = "roanalytics.dashboard.v2";

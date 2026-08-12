@@ -155,7 +155,8 @@ const PLAYER_MODERATION_LIVE_WINDOW_MS = 65 * 1000;
 const PLAYER_MODERATION_KICK_WINDOW_MS = 2 * 60 * 1000;
 const MAX_PLAYER_MODERATION_HISTORY = 1000;
 const MAX_PLAYER_MODERATION_RESPONSE_HISTORY = 250;
-// Legacy protocol identifiers stay stable so already-published game servers remain compatible.\nconst PLAYER_MODERATION_ACTION_KEY = "roanalytics.moderation";
+// Legacy protocol identifiers stay stable so already-published game servers remain compatible.
+const PLAYER_MODERATION_ACTION_KEY = "roanalytics.moderation";
 const PLAYER_DATA_ACTION_KEY = "roanalytics.player_data";
 const STUDIO_PAIRING_TTL_MS = 10 * 60 * 1000;
 const STUDIO_PAIRING_CLAIM_GRACE_MS = 2 * 60 * 1000;
