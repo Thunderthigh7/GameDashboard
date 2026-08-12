@@ -14,3 +14,23 @@
     @media(max-width:720px){.landingNav{grid-template-columns:auto 1fr auto;gap:10px;min-height:66px;padding:12px 14px}.landingBrand{gap:8px}.landingBrand strong{font-size:13px;letter-spacing:-.02em}.landingNavLinks{justify-self:center;gap:12px}.landingNavLinks a{font-size:11px}.landingNavLogin{min-height:40px;padding:0 12px;font-size:11px}.landingNavLoginFull{display:none}.landingNavLoginShort{display:inline}.landingContent{padding-top:66px}.landingHero{width:calc(100% - 28px);min-height:auto;padding:64px 0}.landingHero h1{font-size:clamp(42px,12vw,58px)}.landingHeroCopy>p{font-size:16px}.landingPreviewWorkspace{grid-template-columns:1fr}.landingPreviewRail{display:grid;grid-template-columns:repeat(2,1fr)}.landingPreviewCard.automation{margin:0}.landingWhySection,.howItWorksSection,.landingPricingSection{width:calc(100% - 28px);padding:72px 0}.landingWhyCards{grid-template-columns:1fr}.landingWhyCard{min-height:0}.landingPricingLayout{grid-template-columns:1fr;gap:35px;text-align:center}.landingPricingCopy p{margin-right:auto;margin-left:auto}.landingPricingCopy .landingEyebrow{justify-content:center}.landingPricingCard{width:min(440px,100%);margin:0 auto}.landingFinalCta{align-items:flex-start;flex-direction:column;width:calc(100% - 28px);padding:38px}.landingFooter{width:calc(100% - 28px)}}
     @media(max-width:520px){.landingNavLinks a:first-child{display:none}.landingHero{padding-top:50px}.landingHeroActions{display:grid}.landingHeroActions>*{width:100%}.landingTrustList{display:grid;justify-content:start;width:max-content;max-width:100%;margin-right:auto;margin-left:auto}.landingPreviewBody{grid-template-columns:42px minmax(0,1fr)}.landingPreviewSidebar{padding-inline:5px}.landingPreviewSidebar span{width:28px;height:28px}.landingPreviewMain{padding:10px}.landingPreviewStats{gap:6px}.landingPreviewStat{padding:8px}.landingPreviewStat strong{font-size:14px}.landingMapPreview{min-height:230px}.landingPreviewRail{grid-template-columns:1fr}.landingSectionHeading{margin-bottom:30px}.landingSectionHeading h2{font-size:34px}.howItWorksSteps{grid-template-columns:1fr}.howItWorksStep{min-height:0}.howStepMeta{margin-top:24px}.landingFinalCta{padding:32px 24px}.landingFinalButton{width:100%}.landingFooter{align-items:flex-start;flex-direction:column;gap:16px}}
     @media(prefers-reduced-motion:reduce){.landingWhyCard,.landingSecondaryAction span{transition:none}}
+
+/* Keep the product preview focused: one canvas, with supporting data presented inline. */
+.landingPreviewBody{display:block;min-height:0}
+.landingPreviewSidebar{display:none}
+.landingPreviewMain{display:grid;gap:10px;padding:13px 14px 14px}
+.landingPreviewStats{display:grid;grid-template-columns:repeat(3,1fr);overflow:visible;border:0;border-radius:0;background:transparent}
+.landingPreviewStat{border:0;border-right:1px solid rgba(91,109,160,.22);padding:2px 12px;background:transparent}
+.landingPreviewStat:first-child{padding-left:2px}
+.landingPreviewStat:last-child{border-right:0}
+.landingPreviewWorkspace{display:grid;grid-template-columns:1fr;gap:0}
+.landingMapPreview{min-height:285px;border-radius:10px}
+.landingPreviewRail{display:none}
+.landingPreviewInsights{display:grid;grid-template-columns:1fr 1fr;gap:0;padding-top:10px}
+.landingPreviewInsight{min-width:0;padding:1px 14px 1px 2px}
+.landingPreviewInsight+.landingPreviewInsight{border-left:1px solid rgba(91,109,160,.22);padding-right:2px;padding-left:14px}
+.landingPreviewInsight span{color:#8794b0;font-size:8px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.landingPreviewInsight strong{display:block;margin-top:4px;color:#e4e8f4;font-size:10px;line-height:1.35}
+.landingPreviewInsight small{display:block;margin-top:3px;color:#6de0a7;font-size:8px;font-weight:800}
+.landingPreviewInsight.automation small{color:#bea0ff}
+@media(max-width:520px){.landingPreviewMain{padding:10px}.landingPreviewStats{gap:0}.landingPreviewStat{padding:2px 8px}.landingMapPreview{min-height:230px}.landingPreviewInsights{grid-template-columns:1fr;gap:8px}.landingPreviewInsight+.landingPreviewInsight{border-top:1px solid rgba(91,109,160,.22);border-left:0;padding-top:8px;padding-left:2px}}
