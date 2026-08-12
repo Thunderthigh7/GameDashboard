@@ -36,3 +36,13 @@
 @media(max-width:520px){.landingPreviewMain{padding:10px}.landingPreviewStats{gap:0}.landingPreviewStat{padding:2px 8px}.landingMapPreview{min-height:230px}.landingPreviewInsights{grid-template-columns:1fr;gap:8px}.landingPreviewInsight+.landingPreviewInsight{border-top:1px solid rgba(91,109,160,.22);border-left:0;padding-top:8px;padding-left:2px}}
 
 .landingLiveBadge{border:0;padding:0;background:transparent}
+
+/* Final simplified landing preview treatment. */
+.landingMapPreview{border:0;border-radius:0;background:transparent}
+.landingMapPreview:before,.landingMapPreview:after{border-color:rgba(118,94,197,.2);background:rgba(19,28,58,.46)}
+.landingPreviewInsights{padding-top:16px}
+.landingPreviewInsight{padding-right:20px}
+.landingPreviewInsight+.landingPreviewInsight{padding-left:20px}
+.landingPreviewInsight span{font-size:10px}
+.landingPreviewInsight strong{margin-top:6px;font-size:14px;line-height:1.4}
+.landingPreviewInsight small{margin-top:5px;font-size:10px}
