@@ -596,7 +596,7 @@ const ADMIN_ONLY_VIEWS = new Set(
     (link) => link.dataset.dashboardView,
   ).filter(Boolean),
 );
-const SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
+// Legacy storage keys are retained so the rebrand does not discard saved user preferences.\nconst SIDEBAR_WIDTH_STORAGE_KEY = "roanalytics.sidebarWidth";
 const SIDEBAR_WIDTH_MIN = 208;
 const SIDEBAR_WIDTH_MAX = 360;
 const DASHBOARD_SESSION_CACHE_PREFIX = "roanalytics.dashboard.v2";
@@ -1475,7 +1475,7 @@ function renderActiveView(options = {}) {
   const viewCopy = {
     overview: {
       title: "Map",
-      subtitle: "Roblox game analytics powered by live heartbeat data.",
+      subtitle: "Explore player activity across your game.",
     },
     events: {
       title: "Events",
@@ -1527,7 +1527,7 @@ function renderActiveView(options = {}) {
     },
     admin: {
       title: "Dashboard Users",
-      subtitle: "Monitor RoAnalytics accounts and connected universes.",
+      subtitle: "Monitor RoSignal accounts and connected universes.",
     },
   };
   const activeViewCopy = viewCopy[activeView] || viewCopy.overview;
@@ -2239,9 +2239,9 @@ function getPlayerDataBridgeMessage(bridge = {}) {
     return "The player data adapter is live and ready.";
   }
   if (Number(bridge.liveServerCount) > 0) {
-    return "RoAnalytics is live, but automatic DataStore access is not configured. Update through the Studio plugin or register a custom adapter.";
+    return "RoSignal is live, but automatic DataStore access is not configured. Update through the Studio plugin or register a custom adapter.";
   }
-  return "Open the paired experience in Studio and keep the RoAnalytics plugin connected, or start a published server.";
+  return "Open the paired experience in Studio and keep the RoSignal plugin connected, or start a published server.";
 }
 
 async function requestPlayerDataRead() {
@@ -3237,7 +3237,7 @@ function renderGroupRankCode() {
   if (!groupRankCode) return;
   const candidate = String(groupRankEventKey?.value || "").trim().toLowerCase();
   const eventKey = /^[a-z][a-z0-9_.:-]{0,63}$/.test(candidate) ? candidate : "vip_purchase";
-  groupRankCode.textContent = `local RoAnalytics = require(game.ServerScriptService.RoAnalytics.API)\n\nRoAnalytics.RequestGroupRank(player, "${eventKey}")`;
+  groupRankCode.textContent = `local RoSignal = require(game.ServerScriptService.RoAnalytics.API)\n\nRoSignal.RequestGroupRank(player, "${eventKey}")`;
 }
 
 async function copyGroupRankCode() {
@@ -5440,7 +5440,7 @@ function renderStudioPairings(pairings) {
   studioPairingStatus.textContent = pending.length
     ? `${pending.length} Studio request${pending.length === 1 ? " is" : " are"} waiting for completion in the plugin. Keep the Studio plugin open in this game.`
     : active.some((pairing) => pairing.status === "claimed")
-      ? "The plugin installed RoAnalytics for this universe. Publish the game to activate live analytics."
+      ? "The plugin installed RoSignal for this universe. Publish the game to activate live analytics."
       : "Auto-pairing is ready. Open the Studio plugin and click Connect & Install.";
 }
 
@@ -5889,7 +5889,7 @@ function renderSetupChecklist(selectedUniverse = null) {
 
   const steps = isDemo ? [
     { title: "Connect a game", detail: "Demo universe is attached to all dashboard users.", complete: true },
-    { title: "Install RoAnalytics", detail: "Not required for the public demo.", complete: true },
+    { title: "Install RoSignal", detail: "Not required for the public demo.", complete: true },
     { title: "Start a live server", detail: "Live activity is simulated.", complete: true },
     {
       title: "Confirm signals",
@@ -5903,7 +5903,7 @@ function renderSetupChecklist(selectedUniverse = null) {
       complete: knownUniverses.length > 0,
     },
     {
-      title: "Install RoAnalytics",
+      title: "Install RoSignal",
       detail: hasData
         ? "Roblox is sending data from the installed package."
         : secretVisible
@@ -5914,7 +5914,7 @@ function renderSetupChecklist(selectedUniverse = null) {
     },
     {
       title: "Start a live server",
-      detail: hasData ? `Last data ${formatRelativeTime(status.lastReceivedAt || universe?.lastSeenAt)}.` : "Enable Allow HTTP Requests, publish, and join after installing RoAnalytics.",
+      detail: hasData ? `Last data ${formatRelativeTime(status.lastReceivedAt || universe?.lastSeenAt)}.` : "Enable Allow HTTP Requests, publish, and join after installing RoSignal.",
       complete: hasData,
     },
     {
@@ -6824,9 +6824,9 @@ function buildEventDefinitionLuauTemplate() {
   const infoTable = propertyLines ? `{\n${propertyLines}\n}` : "{}";
   return [
     'local ServerScriptService = game:GetService("ServerScriptService")',
-    "local RoAnalytics = require(ServerScriptService.RoAnalytics.API)",
+    "local RoSignal = require(ServerScriptService.RoAnalytics.API)",
     "",
-    `RoAnalytics.Log(${formatLuauString(getEventDefinitionPreviewName())}, ${infoTable}, player)`,
+    `RoSignal.Log(${formatLuauString(getEventDefinitionPreviewName())}, ${infoTable}, player)`,
   ].join("\n");
 }
 
@@ -10509,7 +10509,7 @@ function appendAiChatMessage(role, message) {
     article.innerHTML = `
       <span aria-hidden="true"></span>
       <div>
-        <strong>RoAnalytics AI <small>${escapeHtml(formatDateTime(Date.now()))}</small></strong>
+        <strong>RoSignal AI <small>${escapeHtml(formatDateTime(Date.now()))}</small></strong>
         <p>${escapeHtml(limitAiChatMessage(message))}</p>
       </div>
     `;
@@ -11336,7 +11336,7 @@ async function performJsonRequest(url, method, options) {
   } finally {
     const durationMs = Math.round(performance.now() - startedAt);
     if (durationMs >= 2000) {
-      console.warn(`[RoAnalytics] Slow request (${durationMs} ms): ${method} ${url}`);
+      console.warn(`[RoSignal] Slow request (${durationMs} ms): ${method} ${url}`);
     }
   }
 }

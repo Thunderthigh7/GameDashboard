@@ -155,7 +155,7 @@ const PLAYER_MODERATION_LIVE_WINDOW_MS = 65 * 1000;
 const PLAYER_MODERATION_KICK_WINDOW_MS = 2 * 60 * 1000;
 const MAX_PLAYER_MODERATION_HISTORY = 1000;
 const MAX_PLAYER_MODERATION_RESPONSE_HISTORY = 250;
-const PLAYER_MODERATION_ACTION_KEY = "roanalytics.moderation";
+// Legacy protocol identifiers stay stable so already-published game servers remain compatible.\nconst PLAYER_MODERATION_ACTION_KEY = "roanalytics.moderation";
 const PLAYER_DATA_ACTION_KEY = "roanalytics.player_data";
 const STUDIO_PAIRING_TTL_MS = 10 * 60 * 1000;
 const STUDIO_PAIRING_CLAIM_GRACE_MS = 2 * 60 * 1000;
@@ -349,7 +349,7 @@ const PLAN_CONFIG = {
     key: "free",
     name: "Free",
     priceUsd: 0,
-    description: "Try RoAnalytics on one game with conservative monthly limits.",
+    description: "Try RoSignal on one game with conservative monthly limits.",
     highlights: ["1 connected game", "Basic analytics", "Manual AI testing"],
     limits: {
       connectedGames: cleanEnvInteger("PLAN_FREE_CONNECTED_GAMES", 1),
@@ -1341,7 +1341,7 @@ function getHealthStatus() {
 
   return {
     ok: true,
-    app: "RoAnalytics",
+    app: "RoSignal",
     now: Date.now(),
     storage: {
       mode: storageMode,
@@ -5228,7 +5228,7 @@ async function handleDiscordConnectionTest(req, res, auth) {
       webhookUrl,
       alert: {
         title: "Discord alerts connected",
-        description: "RoAnalytics can now send automatic analytics alerts to this channel.",
+        description: "RoSignal can now send automatic analytics alerts to this channel.",
         color: 0x52dfa1,
         fields: [
           { name: "Universe", value: project.name || `Universe ${universeId}` },
@@ -7693,7 +7693,7 @@ async function handleStudioPluginDownload(res) {
   const source = await fs.readFile(path.join(__dirname, "roblox-plugin", "RoAnalyticsInstaller.plugin.lua"), "utf8");
   res.writeHead(200, {
     "Content-Type": "text/plain; charset=utf-8",
-    "Content-Disposition": 'attachment; filename="RoAnalyticsInstaller.plugin.lua"',
+    "Content-Disposition": 'attachment; filename="RoSignalInstaller.plugin.lua"',
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   });
@@ -8422,7 +8422,7 @@ async function handleRobloxOAuthCallback(req, res, auth, searchParams) {
     return sendRobloxOAuthResult(res, {
       ok: true,
       title: "Universe connected",
-      message: "Return to Connect Universe, then pair the Studio installer to install RoAnalytics automatically.",
+      message: "Return to Connect Universe, then pair the Studio installer to install RoSignal automatically.",
       universeId,
       universeName: project.name,
       backHref: "/#connect",
@@ -8466,7 +8466,7 @@ async function handlePresenceHeartbeat(req, res) {
     return sendJson(res, 401, {
       error: connectedProject
         ? "The Roblox secret does not match this connected universe."
-        : "This Roblox universe is not connected to RoAnalytics.",
+        : "This Roblox universe is not connected to RoSignal.",
       code: connectedProject ? "PROJECT_SECRET_MISMATCH" : "UNIVERSE_NOT_CONNECTED",
       universeId: presence.value.universeId,
     });
@@ -14637,7 +14637,7 @@ async function prepareAiChatRequest(rawFilters = {}, usageContext = {}, options 
           {
             type: "input_text",
             text: [
-              "You are RoAnalytics AI, a Roblox analytics assistant inside a dashboard.",
+              "You are RoSignal AI, a Roblox analytics assistant inside a dashboard.",
               "Answer only from the provided dashboard data context.",
               "Be concise, direct, and useful for a Roblox game owner.",
               "If the data is missing or too thin, say that clearly and suggest the exact tracking/action needed.",
