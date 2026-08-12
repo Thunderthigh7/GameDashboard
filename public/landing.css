@@ -75,3 +75,13 @@
 .landingAutomationExampleStatus{display:flex;align-items:center;gap:6px;color:#9aa7c2;font-size:9px;font-weight:850;white-space:nowrap}
 .landingAutomationExampleStatus:before{width:6px;height:6px;border-radius:50%;background:#9270ef;content:""}
 @media(max-width:520px){.landingAutomationWorkflow{padding:17px 15px 18px}.landingAutomationFlow{grid-template-columns:1fr;gap:10px}.landingAutomationFlow>.landingAutomationArrow{justify-content:start;transform:rotate(90deg)}.landingAutomationStep strong{font-size:16px}.landingAutomationExample{grid-template-columns:1fr auto;gap:8px}.landingAutomationExample>.landingAutomationArrow{display:none}.landingAutomationExampleAction{grid-column:1/2}.landingAutomationExampleStatus{grid-column:2;grid-row:1/3}}
+
+/* Make the automation showcase read as a set of possibilities. */
+.landingAutomationIntro{margin:0;padding:13px 22px 0;color:#8f9bb7;font-size:11px;line-height:1.5}
+.landingAutomationWorkflow{padding-top:12px}
+.landingAutomationExamples{border-top:0}
+.landingAutomationExample{grid-template-columns:86px minmax(0,1fr) 24px 60px minmax(0,1fr);padding:16px 0}
+.landingAutomationKind{color:#b99cff;font-size:9px;font-weight:950;letter-spacing:.11em;text-transform:uppercase}
+.landingAutomationExamplePart{min-width:0}
+.landingAutomationExamplePart .landingAutomationExampleLabel{color:#6f7d9c}
+@media(max-width:520px){.landingAutomationIntro{padding:12px 15px 0}.landingAutomationExample{grid-template-columns:1fr;gap:7px}.landingAutomationKind{margin-bottom:2px}.landingAutomationExample>.landingAutomationArrow{display:block;justify-content:start;transform:rotate(90deg)}.landingAutomationExampleAction{grid-column:auto}.landingAutomationExamplePart{grid-column:auto}}
