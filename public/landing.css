@@ -80,7 +80,7 @@
 .landingAutomationIntro{margin:0;padding:13px 22px 0;color:#8f9bb7;font-size:11px;line-height:1.5}
 .landingAutomationWorkflow{padding-top:12px}
 .landingAutomationExamples{border-top:0}
-.landingAutomationExample{grid-template-columns:86px minmax(0,1fr) 24px 60px minmax(0,1fr);padding:16px 0}
+.landingAutomationExample{grid-template-columns:86px minmax(0,.72fr) 24px minmax(0,1.28fr);padding:16px 0}
 .landingAutomationKind{color:#b99cff;font-size:9px;font-weight:950;letter-spacing:.11em;text-transform:uppercase}
 .landingAutomationExamplePart{min-width:0}
 .landingAutomationExamplePart .landingAutomationExampleLabel{color:#6f7d9c}
