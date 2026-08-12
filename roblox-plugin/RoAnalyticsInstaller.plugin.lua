@@ -13,10 +13,10 @@ local MAX_CATALOG_DATA_STORES = 100
 local MAX_CATALOG_SAMPLE_KEYS = 10
 local CATALOG_LIST_DELAY_SECONDS = 12
 
-local toolbar = plugin:CreateToolbar("RoAnalytics")
+local toolbar = plugin:CreateToolbar("RoSignal")
 local toggleButton = toolbar:CreateButton(
-	"RoAnalytics Installer",
-	"Connect this experience and install RoAnalytics in one click.",
+	"RoSignal Installer",
+	"Connect this experience and install RoSignal in one click.",
 	""
 )
 
@@ -30,7 +30,7 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	360
 )
 local widget = plugin:CreateDockWidgetPluginGui("RoAnalyticsInstallerWidget", widgetInfo)
-widget.Title = "RoAnalytics Installer"
+widget.Title = "RoSignal Installer"
 
 local function create(className, properties, parent)
 	local instance = Instance.new(className)
@@ -65,7 +65,7 @@ create("TextLabel", {
 	Font = Enum.Font.GothamBold,
 	LayoutOrder = 1,
 	Size = UDim2.new(1, 0, 0, 26),
-	Text = "Install RoAnalytics",
+	Text = "Install RoSignal",
 	TextColor3 = Color3.fromRGB(248, 250, 252),
 	TextSize = 20,
 	TextXAlignment = Enum.TextXAlignment.Left,
@@ -76,7 +76,7 @@ create("TextLabel", {
 	Font = Enum.Font.Gotham,
 	LayoutOrder = 2,
 	Size = UDim2.new(1, 0, 0, 54),
-	Text = "Connect this experience and install RoAnalytics automatically.",
+	Text = "Connect this experience and install RoSignal automatically.",
 	TextColor3 = Color3.fromRGB(148, 163, 184),
 	TextSize = 13,
 	TextWrapped = true,
@@ -216,9 +216,9 @@ end
 
 local function installPackage(package)
 	if typeof(package) ~= "table" or package.name ~= "RoAnalytics" or typeof(package.files) ~= "table" then
-		error("The website returned an invalid RoAnalytics package.")
+		error("The website returned an invalid RoSignal package.")
 	end
-	local recording = ChangeHistoryService:TryBeginRecording("Install RoAnalytics")
+	local recording = ChangeHistoryService:TryBeginRecording("Install RoSignal")
 	if not recording then
 		error("Studio could not start an undo recording. Try again after the current plugin operation finishes.")
 	end
@@ -581,7 +581,7 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 			setStatus("Approval received. Installing the current server package...", "")
 			local installed, installError = pcall(installPackage, result.package)
 			installButton.Active = true
-			installButton.Text = "Update RoAnalytics"
+			installButton.Text = "Update RoSignal"
 		if not installed then
 			pairingActive = false
 			setStatus("Install failed: " .. tostring(installError), "error")
@@ -593,11 +593,11 @@ local function pollPairing(generation, pairingId, claimToken, expiresAt)
 				and startStudioPlayerDataRelay(tostring(studioRelay.credential or ""))
 			then
 				setStatus(
-					"RoAnalytics is installed. Enable Allow HTTP Requests and publish for live analytics. Player relay needs Studio Access to API Services.",
+					"RoSignal is installed. Enable Allow HTTP Requests and publish for live analytics. Player relay needs Studio Access to API Services.",
 					"success"
 				)
 			else
-				setStatus("RoAnalytics installed, but the Studio Player Data credential was missing. Pair again.", "error")
+				setStatus("RoSignal installed, but the Studio Player Data credential was missing. Pair again.", "error")
 			end
 			return
 		elseif not ok then
@@ -622,7 +622,7 @@ local function startPairing()
 	pairingActive = true
 	installButton.Active = false
 	installButton.Text = "Starting..."
-	setStatus("Contacting the RoAnalytics website...", "")
+	setStatus("Contacting the RoSignal website...", "")
 
 	local ok, result = pcall(function()
 		return postJson(DASHBOARD_BASE_URL .. "/api/roblox/studio-pairings", {
@@ -639,7 +639,7 @@ local function startPairing()
 		return
 	end
 	installButton.Text = "Waiting for package..."
-	setStatus("RoAnalytics accepted the request. Waiting for package delivery.", "")
+	setStatus("RoSignal accepted the request. Waiting for package delivery.", "")
 	task.spawn(
 		pollPairing,
 		generation,

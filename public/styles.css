@@ -254,10 +254,8 @@ body.isResizingLayout {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background:
-    radial-gradient(circle at 30% 30%, #8d7cf9 0 28%, transparent 29%),
-    radial-gradient(circle at 72% 28%, #6d42e8 0 26%, transparent 27%),
-    radial-gradient(circle at 48% 76%, #9ba7ff 0 32%, transparent 33%);
+  background: url("/rosignal-mark.svg") center / contain no-repeat;
+  box-shadow: 0 8px 24px rgba(109, 76, 255, 0.22);
 }
 
 .brand strong {

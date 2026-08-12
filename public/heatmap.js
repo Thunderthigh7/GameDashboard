@@ -1877,7 +1877,7 @@ async function fetchJson(url, options = {}) {
   } finally {
     const durationMs = Math.round(performance.now() - startedAt);
     if (durationMs >= 2000) {
-      console.warn(`[RoAnalytics] Slow request (${durationMs} ms): GET ${url}`);
+      console.warn(`[RoSignal] Slow request (${durationMs} ms): GET ${url}`);
     }
   }
 }
