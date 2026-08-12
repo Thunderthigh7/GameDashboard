@@ -46,3 +46,8 @@
 .landingPreviewInsight span{font-size:10px}
 .landingPreviewInsight strong{margin-top:6px;font-size:14px;line-height:1.4}
 .landingPreviewInsight small{margin-top:5px;font-size:10px}
+
+/* Stack preview insights on one clear left edge. */
+.landingPreviewInsights{grid-template-columns:1fr;gap:12px}
+.landingPreviewInsight{padding-right:2px;padding-left:2px}
+.landingPreviewInsight+.landingPreviewInsight{border-top:1px solid rgba(91,109,160,.22);border-left:0;padding-top:12px;padding-right:2px;padding-left:2px}
