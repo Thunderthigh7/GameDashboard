@@ -6,11 +6,16 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
   slot.replaceWith(element);
 };
 
+(function refreshVersionedStyles() {
+  const landing = document.querySelector('link[href^="/landing.css"]');
+  if (landing) landing.href = '/landing.css?v=20260813-1';
+})();
+
 (function loadProductFlowStyles() {
   if (document.querySelector('link[data-rosignal-product-flow]')) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = '/components/product-flow.css?v=20260813-1';
+  link.href = '/components/product-flow.css?v=20260813-2';
   link.dataset.rosignalProductFlow = 'true';
   document.head.append(link);
 })();
@@ -97,8 +102,9 @@ function clearSetupReason() {
   notice.hidden = true;
 }
 
-function openSetupFor(view) {
-  showSetupReason(view);
+function openSetupFor(view, options = {}) {
+  if (options.silent) clearSetupReason();
+  else showSetupReason(view);
   document.querySelector('[data-dashboard-view="connect"]')?.click();
 }
 
@@ -129,7 +135,7 @@ function openSetupFor(view) {
     const view = (window.location.hash || '#overview').replace(/^#/, '') || 'overview';
     if (view !== 'overview' && !gameRequiredViews.has(view)) return;
     routed = true;
-    openSetupFor(view === 'overview' ? '' : view);
+    openSetupFor(view, { silent: view === 'overview' });
   });
 })();
 
