@@ -1,32 +1,47 @@
 import fs from "node:fs/promises";
 
-const configUrl = new URL("./view-extraction-config.json", import.meta.url);
 const indexUrl = new URL("../public/index.html", import.meta.url);
-const config = JSON.parse(await fs.readFile(configUrl, "utf8"));
+const componentsUrl = new URL("../public/components/", import.meta.url);
 let html = await fs.readFile(indexUrl, "utf8");
-
-const slotMarkup = `        <div data-component-slot="${config.slotName}"></div>`;
-const scriptTag = `    <script defer src="${config.scriptSrc}"></script>`;
-
-if (!html.includes(slotMarkup)) {
-  const start = html.indexOf(config.startMarker);
-  const end = html.indexOf(config.endMarker, start);
-  if (start < 0 || end <= start) throw new Error("Configured view boundary not found");
-  if (html.indexOf(config.startMarker, start + config.startMarker.length) >= 0) throw new Error("Configured start boundary is not unique");
-  html = `${html.slice(0, start)}${slotMarkup}${html.slice(end)}`;
+const componentNames = (await fs.readdir(componentsUrl))
+  .filter((name) => name.endsWith("-view-template.js"));
+const candidates = componentNames.filter((name) => !html.includes(`/components/${name}`));
+if (candidates.length !== 1) {
+  throw new Error(`Expected exactly one unreferenced view component, found ${candidates.length}`);
 }
 
-if (!html.includes(scriptTag)) {
-  const afterTag = `    <script defer src="${config.afterScript}"></script>`;
-  if (!html.includes(afterTag)) throw new Error("Configured script insertion point not found");
-  html = html.replace(afterTag, `${afterTag}\n${scriptTag}`);
-}
+const componentName = candidates[0];
+const component = await fs.readFile(new URL(`../public/components/${componentName}`, import.meta.url), "utf8");
+const viewName = component.match(/data-view-panel="([^"]+)"/)?.[1] || "";
+const slotName = component.match(/mountHTML\('([^']+)'/)?.[1] || "";
+if (!viewName || !slotName) throw new Error("Could not infer component view and slot names");
 
-const slotPattern = new RegExp(`data-component-slot="${config.slotName}"`, "g");
-const panelPattern = new RegExp(`data-view-panel="${config.viewName}"`, "g");
-const scriptPattern = new RegExp(config.scriptSrc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-if ((html.match(slotPattern) || []).length !== 1) throw new Error("Slot invariant failed");
-if ((html.match(panelPattern) || []).length !== 0) throw new Error("Inline panel remains");
-if ((html.match(scriptPattern) || []).length !== 1) throw new Error("Script invariant failed");
+const panelToken = `data-view-panel="${viewName}"`;
+const tokenIndex = html.indexOf(panelToken);
+if (tokenIndex < 0 || html.indexOf(panelToken, tokenIndex + panelToken.length) >= 0) {
+  throw new Error("Expected exactly one inline view panel");
+}
+const start = html.lastIndexOf('        <section class="viewPage', tokenIndex);
+if (start < 0) throw new Error("Could not find inline view start");
+
+const nextSection = html.indexOf('\n\n        <section class="viewPage', start + 1);
+const nextSlot = html.indexOf('\n\n        <div data-component-slot=', start + 1);
+const boundaries = [nextSection, nextSlot].filter((value) => value >= 0);
+if (!boundaries.length) throw new Error("Could not find the next dashboard view boundary");
+const end = Math.min(...boundaries);
+
+const slotMarkup = `        <div data-component-slot="${slotName}"></div>`;
+html = `${html.slice(0, start)}${slotMarkup}${html.slice(end)}`;
+
+const scriptSrc = `/components/${componentName}`;
+const scriptTag = `    <script defer src="${scriptSrc}"></script>`;
+const appTag = '    <script defer src="/assets/20260812-2/app.js"></script>';
+if (!html.includes(appTag)) throw new Error("Could not find app.js insertion point");
+html = html.replace(appTag, `${scriptTag}\n${appTag}`);
+
+if ((html.match(new RegExp(`data-component-slot="${slotName}"`, "g")) || []).length !== 1) throw new Error("Slot invariant failed");
+if ((html.match(new RegExp(`data-view-panel="${viewName}"`, "g")) || []).length !== 0) throw new Error("Inline panel remains");
+if ((html.match(new RegExp(scriptSrc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length !== 1) throw new Error("Script invariant failed");
 
 await fs.writeFile(indexUrl, html);
+console.log(`Extracted ${viewName} into ${componentName}.`);
