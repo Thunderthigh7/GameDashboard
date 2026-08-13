@@ -1,6 +1,11 @@
 body[data-active-view="connect"] .topbar,
 body[data-active-view="player-data"] .topbar{display:none}
 
+.sideNav a[data-setup-required="true"]{position:relative;color:color-mix(in srgb,var(--nav-text) 62%,transparent)}
+.sideNav a[data-setup-required="true"]::after{content:"Setup";flex:0 0 auto;margin-left:8px;border:1px solid rgba(139,92,246,.2);border-radius:999px;background:rgba(139,92,246,.07);color:#9f8bd0;padding:3px 6px;font-size:8px;font-weight:760;letter-spacing:.04em;text-transform:uppercase}
+.sideNav a[data-setup-required="true"] .navIconTile{opacity:.62}
+.sideNav a[data-setup-required="true"]:hover{color:var(--nav-text)}
+
 .connectRouteNotice{grid-column:1/-1;margin:0;border:1px solid rgba(139,92,246,.28);border-radius:9px;background:rgba(139,92,246,.08);color:#c4b5fd;padding:10px 12px;font-size:12px;font-weight:650;line-height:1.45}
 .connectRouteNotice[hidden]{display:none}
 .connectNextSteps{grid-column:1/-1;min-width:0;padding:20px;border-color:var(--page-line);border-radius:12px;background:var(--page-surface);box-shadow:0 1px 2px rgba(0,0,0,.16)}
