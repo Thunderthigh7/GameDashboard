@@ -6,6 +6,15 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
   slot.replaceWith(element);
 };
 
+(function loadProductFlowStyles() {
+  if (document.querySelector('link[data-rosignal-product-flow]')) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = '/components/product-flow.css?v=20260813-1';
+  link.dataset.rosignalProductFlow = 'true';
+  document.head.append(link);
+})();
+
 (function organizeDashboardNavigation() {
   const nav = document.querySelector('.sideNav');
   if (!nav) return;
