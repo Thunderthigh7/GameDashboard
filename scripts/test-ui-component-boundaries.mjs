@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 
 const index = await fs.readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const connect = await fs.readFile(new URL("../public/components/connect-view-template.js", import.meta.url), "utf8");
+const assets = await fs.readFile(new URL("../public/components/assets-view-template.js", import.meta.url), "utf8");
 const runtime = await fs.readFile(new URL("../public/components/component-runtime.js", import.meta.url), "utf8");
 const flowStyles = await fs.readFile(new URL("../public/components/product-flow.css", import.meta.url), "utf8");
 
@@ -11,19 +12,27 @@ const expect = (condition, message) => { if (!condition) failures.push(message);
 expect((index.match(/data-component-slot="connect-view"/g) || []).length === 1, "index should contain one Connect component slot");
 expect(!index.includes('data-view-panel="connect"'), "Connect view should not remain duplicated in index.html");
 expect(connect.includes('data-view-panel="connect"'), "Connect component should own the Connect view panel");
-
 for (const id of ["connectNewGameButton", "connectedGameList", "studioPairingStatus", "studioPairingList", "setupChecklist", "setupProgressTrack", "connectRouteNotice", "connectGameDialog", "projectForm", "ownedGameSelect", "copyProjectSecretButton"]) {
   expect(connect.includes(`id="${id}"`), `Connect component is missing #${id}`);
+}
+
+expect((index.match(/data-component-slot="assets-view"/g) || []).length === 1, "index should contain one Assets component slot");
+expect(!index.includes('data-view-panel="assets"'), "Assets view should not remain duplicated in index.html");
+expect(assets.includes('data-view-panel="assets"'), "Assets component should own the Assets view panel");
+for (const id of ["assetAuthorization", "assetAuthorizationTitle", "assetAuthorizeButton", "assetFileInput", "assetDropZone", "assetBatchEditor", "assetStagingList", "assetPackList", "assetPackDetail", "assetLibraryStatus"]) {
+  expect(assets.includes(`id="${id}"`), `Assets component is missing #${id}`);
 }
 
 const componentRuntimeIndex = index.indexOf('/components/component-runtime.js');
 const templateRuntimeIndex = index.indexOf('/components/template-runtime.js');
 const connectTemplateIndex = index.indexOf('/components/connect-view-template.js');
+const assetsTemplateIndex = index.indexOf('/components/assets-view-template.js');
 const appIndex = index.indexOf('/assets/20260812-2/app.js');
 expect(componentRuntimeIndex >= 0, "component runtime script is missing");
 expect(templateRuntimeIndex > componentRuntimeIndex, "template runtime should load after component runtime");
 expect(connectTemplateIndex > templateRuntimeIndex, "Connect template should load after template runtime");
-expect(appIndex > connectTemplateIndex, "app.js must load after mounted components");
+expect(assetsTemplateIndex > connectTemplateIndex, "Assets template should load after Connect template");
+expect(appIndex > assetsTemplateIndex, "app.js must load after mounted components");
 
 expect(runtime.includes("const PRODUCT_VIEWS = Object.freeze"), "product view registry should be the flow source of truth");
 expect(runtime.includes("const NAV_SECTIONS = Object.freeze"), "navigation sections should be declared centrally");
