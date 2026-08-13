@@ -1,5 +1,51 @@
 window.RoSignalComponents = window.RoSignalComponents || {};
 
+const PRODUCT_VIEWS = Object.freeze({
+  connect: { label: 'Setup', section: 'setup', requiresGame: false },
+  overview: { label: 'Map', section: 'analyze', requiresGame: true },
+  events: { label: 'Events', section: 'analyze', requiresGame: true },
+  funnels: { label: 'Funnels', section: 'analyze', requiresGame: true },
+  chat: { label: 'Chats', section: 'analyze', requiresGame: true },
+  'player-data': {
+    label: 'Player Data',
+    section: 'operate',
+    requiresGame: true,
+    subtitle: 'Read and update player data through your connected Studio or server bridge.',
+  },
+  moderation: {
+    label: 'Moderation',
+    section: 'operate',
+    requiresGame: true,
+    subtitle: 'Manage live players, bans, and moderation history.',
+  },
+  assets: { label: 'Assets', section: 'operate', requiresGame: true },
+  groups: { label: 'Groups', section: 'operate', requiresGame: false },
+  discord: {
+    label: 'Alerts',
+    section: 'automate',
+    requiresGame: true,
+    subtitle: 'Send Discord alerts when tracked conditions happen.',
+  },
+  'roblox-live': {
+    label: 'Live Actions',
+    section: 'automate',
+    requiresGame: true,
+    subtitle: 'Trigger Roblox server actions from schedules or game conditions.',
+  },
+  'ai-runs': { label: 'AI Features', section: 'admin', requiresGame: true },
+  admin: { label: 'Dashboard Users', section: 'admin', requiresGame: false },
+  usage: { label: 'Usage', section: 'account', requiresGame: false },
+});
+
+const NAV_SECTIONS = Object.freeze([
+  { labelId: 'generalNavLabel', label: 'Setup', views: ['connect'] },
+  { labelId: 'analyticsNavLabel', label: 'Analyze', views: ['overview', 'events', 'funnels', 'chat'] },
+  { labelId: 'betaFeaturesNavLabel', label: 'Operate', views: ['player-data', 'moderation', 'assets', 'groups'] },
+  { labelId: 'integrationsNavLabel', label: 'Automate', views: ['discord', 'roblox-live'] },
+]);
+
+window.RoSignalComponents.productViews = PRODUCT_VIEWS;
+
 window.RoSignalComponents.mount = function mount(slotName, element) {
   const slot = document.querySelector('[data-component-slot="' + slotName + '"]');
   if (!slot) throw new Error('Missing component slot: ' + slotName);
@@ -24,73 +70,38 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
   const nav = document.querySelector('.sideNav');
   if (!nav) return;
 
-  const setupGroup = document.querySelector('#generalNavLabel')?.closest('.navGroup');
-  const analyzeGroup = document.querySelector('#analyticsNavLabel')?.closest('.navGroup');
-  const automateGroup = document.querySelector('#integrationsNavLabel')?.closest('.navGroup');
-  const operateGroup = document.querySelector('#betaFeaturesNavLabel')?.closest('.navGroup');
-  const adminGroup = document.querySelector('#adminNavGroup');
-
-  if (document.querySelector('#generalNavLabel')) document.querySelector('#generalNavLabel').textContent = 'Setup';
-  if (document.querySelector('#analyticsNavLabel')) document.querySelector('#analyticsNavLabel').textContent = 'Analyze';
-  if (document.querySelector('#integrationsNavLabel')) document.querySelector('#integrationsNavLabel').textContent = 'Automate';
-  if (document.querySelector('#betaFeaturesNavLabel')) document.querySelector('#betaFeaturesNavLabel').textContent = 'Operate';
-
-  const labels = {
-    connect: 'Setup',
-    discord: 'Alerts',
-    'roblox-live': 'Live Actions',
-    moderation: 'Moderation',
-    'player-data': 'Player Data',
-  };
-  for (const [view, label] of Object.entries(labels)) {
+  for (const [view, config] of Object.entries(PRODUCT_VIEWS)) {
     const link = nav.querySelector('[data-dashboard-view="' + view + '"]');
     const text = link?.querySelector('span:last-child');
-    if (text) text.textContent = label;
+    if (text) text.textContent = config.label;
   }
 
-  const operateLinks = operateGroup?.querySelector('.navGroupLinks');
-  if (operateLinks) {
-    for (const view of ['player-data', 'moderation', 'assets', 'groups']) {
-      const link = operateLinks.querySelector('[data-dashboard-view="' + view + '"]');
-      if (link) operateLinks.append(link);
+  for (const section of NAV_SECTIONS) {
+    const label = document.querySelector('#' + section.labelId);
+    const group = label?.closest('.navGroup');
+    const links = group?.querySelector('.navGroupLinks');
+    if (!group || !links) continue;
+
+    label.textContent = section.label;
+    for (const view of section.views) {
+      const link = links.querySelector('[data-dashboard-view="' + view + '"]');
+      if (link) links.append(link);
     }
+    nav.append(group);
   }
 
-  for (const group of [setupGroup, analyzeGroup, operateGroup, automateGroup, adminGroup]) {
-    if (group) nav.append(group);
-  }
+  const adminGroup = document.querySelector('#adminNavGroup');
+  if (adminGroup) nav.append(adminGroup);
 })();
 
-const gameRequiredViews = new Set([
-  'overview',
-  'events',
-  'funnels',
-  'ai-runs',
-  'chat',
-  'discord',
-  'roblox-live',
-  'moderation',
-  'player-data',
-  'assets',
-]);
-
-const productViewLabels = {
-  overview: 'Map',
-  events: 'Events',
-  funnels: 'Funnels',
-  'ai-runs': 'AI Features',
-  chat: 'Chats',
-  discord: 'Alerts',
-  'roblox-live': 'Live Actions',
-  moderation: 'Moderation',
-  'player-data': 'Player Data',
-  assets: 'Assets',
-};
+function viewRequiresGame(view) {
+  return Boolean(PRODUCT_VIEWS[view]?.requiresGame);
+}
 
 function showSetupReason(view) {
   const notice = document.querySelector('#connectRouteNotice');
   if (!notice) return;
-  const label = productViewLabels[view] || 'that tool';
+  const label = PRODUCT_VIEWS[view]?.label || 'that tool';
   notice.textContent = `Connect a game first to open ${label}.`;
   notice.hidden = false;
 }
@@ -112,7 +123,7 @@ function openSetupFor(view, options = {}) {
   document.addEventListener('click', (event) => {
     const link = event.target.closest?.('[data-dashboard-view]');
     const view = link?.dataset.dashboardView || '';
-    if (!gameRequiredViews.has(view)) return;
+    if (!viewRequiresGame(view)) return;
     if (!window.isDashboardAuthenticated?.()) return;
     if (String(window.getSelectedUniverseId?.() || '')) return;
 
@@ -133,26 +144,19 @@ function openSetupFor(view, options = {}) {
     if (String(event.detail?.universeId || '')) return;
 
     const view = (window.location.hash || '#overview').replace(/^#/, '') || 'overview';
-    if (view !== 'overview' && !gameRequiredViews.has(view)) return;
+    if (view !== 'overview' && !viewRequiresGame(view)) return;
     routed = true;
     openSetupFor(view, { silent: view === 'overview' });
   });
 })();
 
 (function improveViewCopy() {
-  const copy = {
-    discord: ['Alerts', 'Send Discord alerts when tracked conditions happen.'],
-    'roblox-live': ['Live Actions', 'Trigger Roblox server actions from schedules or game conditions.'],
-    moderation: ['Moderation', 'Manage live players, bans, and moderation history.'],
-    'player-data': ['Player Data', 'Read and update player data through your connected Studio or server bridge.'],
-  };
-
   window.addEventListener('dashboard:viewChanged', (event) => {
-    const next = copy[event.detail?.view];
-    if (!next) return;
+    const config = PRODUCT_VIEWS[event.detail?.view];
+    if (!config?.subtitle) return;
     const title = document.querySelector('#pageTitle');
     const subtitle = document.querySelector('#pageSubtitle');
-    if (title) title.textContent = next[0];
-    if (subtitle) subtitle.textContent = next[1];
+    if (title) title.textContent = config.label;
+    if (subtitle) subtitle.textContent = config.subtitle;
   });
 })();
