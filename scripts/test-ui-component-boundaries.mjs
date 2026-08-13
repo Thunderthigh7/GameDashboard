@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 const index = await fs.readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const connect = await fs.readFile(new URL("../public/components/connect-view-template.js", import.meta.url), "utf8");
 const runtime = await fs.readFile(new URL("../public/components/component-runtime.js", import.meta.url), "utf8");
+const flowStyles = await fs.readFile(new URL("../public/components/product-flow.css", import.meta.url), "utf8");
 
 const failures = [];
 const expect = (condition, message) => {
@@ -20,6 +21,7 @@ for (const id of [
   "studioPairingList",
   "setupChecklist",
   "setupProgressTrack",
+  "connectRouteNotice",
   "connectGameDialog",
   "projectForm",
   "ownedGameSelect",
@@ -38,11 +40,20 @@ expect(connectTemplateIndex > templateRuntimeIndex, "Connect template should loa
 expect(appIndex > connectTemplateIndex, "app.js must load after mounted component templates");
 
 expect(runtime.includes("dashboard:analyticsReady"), "product flow should react to analytics readiness");
+expect(runtime.includes("const gameRequiredViews = new Set"), "game-scoped navigation guard should be defined");
+expect(runtime.includes("event.stopImmediatePropagation()"), "game-scoped navigation should stop invalid empty-state navigation");
 expect(runtime.includes("['player-data', 'moderation', 'assets', 'groups']"), "Operate navigation order should remain explicit");
+expect(runtime.includes("discord: 'Alerts'"), "Discord navigation should use the task label Alerts");
+expect(runtime.includes("'roblox-live': 'Live Actions'"), "Roblox navigation should use the task label Live Actions");
+
 expect(connect.includes('data-dashboard-view="overview"'), "Connect should offer Map as a guided next step");
 expect(connect.includes('data-dashboard-view="events"'), "Connect should offer Events as a guided next step");
 expect(connect.includes('data-dashboard-view="funnels"'), "Connect should offer Funnels as a guided next step");
 expect(connect.includes('data-dashboard-view="player-data"'), "Connect should offer Player Data as a guided next step");
+
+expect(flowStyles.includes('body[data-active-view="connect"] .topbar'), "Setup should suppress the duplicate global topbar");
+expect(flowStyles.includes('body[data-active-view="player-data"] .topbar'), "Player Data should suppress the duplicate global topbar");
+expect(flowStyles.includes('.connectRouteNotice'), "Setup redirect reason should have dedicated styling");
 
 if (failures.length) {
   console.error("UI component boundary checks failed:");
