@@ -56,16 +56,97 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
   }
 })();
 
+const gameRequiredViews = new Set([
+  'overview',
+  'events',
+  'funnels',
+  'ai-runs',
+  'chat',
+  'discord',
+  'roblox-live',
+  'moderation',
+  'player-data',
+  'assets',
+]);
+
+const productViewLabels = {
+  overview: 'Map',
+  events: 'Events',
+  funnels: 'Funnels',
+  'ai-runs': 'AI Features',
+  chat: 'Chats',
+  discord: 'Alerts',
+  'roblox-live': 'Live Actions',
+  moderation: 'Moderation',
+  'player-data': 'Player Data',
+  assets: 'Assets',
+};
+
+function showSetupReason(view) {
+  const notice = document.querySelector('#connectRouteNotice');
+  if (!notice) return;
+  const label = productViewLabels[view] || 'that tool';
+  notice.textContent = `Connect a game first to open ${label}.`;
+  notice.hidden = false;
+}
+
+function clearSetupReason() {
+  const notice = document.querySelector('#connectRouteNotice');
+  if (!notice) return;
+  notice.textContent = '';
+  notice.hidden = true;
+}
+
+function openSetupFor(view) {
+  showSetupReason(view);
+  document.querySelector('[data-dashboard-view="connect"]')?.click();
+}
+
+(function guardGameScopedNavigation() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('[data-dashboard-view]');
+    const view = link?.dataset.dashboardView || '';
+    if (!gameRequiredViews.has(view)) return;
+    if (!window.isDashboardAuthenticated?.()) return;
+    if (String(window.getSelectedUniverseId?.() || '')) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openSetupFor(view);
+  }, true);
+
+  window.addEventListener('dashboard:universeChanged', (event) => {
+    if (String(event.detail?.universeId || '')) clearSetupReason();
+  });
+})();
+
 (function routeFirstTimeSetup() {
   let routed = false;
   window.addEventListener('dashboard:analyticsReady', (event) => {
     if (routed || !window.isDashboardAuthenticated?.()) return;
     if (String(event.detail?.universeId || '')) return;
-    const hash = window.location.hash || '#overview';
-    if (hash !== '#overview' && hash !== '') return;
-    const connectLink = document.querySelector('[data-dashboard-view="connect"]');
-    if (!connectLink) return;
+
+    const view = (window.location.hash || '#overview').replace(/^#/, '') || 'overview';
+    if (view !== 'overview' && !gameRequiredViews.has(view)) return;
     routed = true;
-    connectLink.click();
+    openSetupFor(view === 'overview' ? '' : view);
+  });
+})();
+
+(function improveViewCopy() {
+  const copy = {
+    discord: ['Alerts', 'Send Discord alerts when tracked conditions happen.'],
+    'roblox-live': ['Live Actions', 'Trigger Roblox server actions from schedules or game conditions.'],
+    moderation: ['Moderation', 'Manage live players, bans, and moderation history.'],
+    'player-data': ['Player Data', 'Read and update player data through your connected Studio or server bridge.'],
+  };
+
+  window.addEventListener('dashboard:viewChanged', (event) => {
+    const next = copy[event.detail?.view];
+    if (!next) return;
+    const title = document.querySelector('#pageTitle');
+    const subtitle = document.querySelector('#pageSubtitle');
+    if (title) title.textContent = next[0];
+    if (subtitle) subtitle.textContent = next[1];
   });
 })();
