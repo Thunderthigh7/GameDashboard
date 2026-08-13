@@ -61,7 +61,7 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
   if (document.querySelector('link[data-rosignal-product-flow]')) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = '/components/product-flow.css?v=20260813-2';
+  link.href = '/components/product-flow.css?v=20260813-3';
   link.dataset.rosignalProductFlow = 'true';
   document.head.append(link);
 })();
@@ -96,6 +96,24 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
 
 function viewRequiresGame(view) {
   return Boolean(PRODUCT_VIEWS[view]?.requiresGame);
+}
+
+function syncGameAvailability(universeId) {
+  const hasGame = Boolean(String(universeId || ''));
+  const nav = document.querySelector('.sideNav');
+  if (!nav) return;
+
+  for (const link of nav.querySelectorAll('[data-dashboard-view]')) {
+    const view = link.dataset.dashboardView || '';
+    if (!viewRequiresGame(view)) continue;
+    if (hasGame) {
+      delete link.dataset.setupRequired;
+      link.removeAttribute('title');
+    } else {
+      link.dataset.setupRequired = 'true';
+      link.title = 'Connect a game first';
+    }
+  }
 }
 
 function showSetupReason(view) {
@@ -133,15 +151,19 @@ function openSetupFor(view, options = {}) {
   }, true);
 
   window.addEventListener('dashboard:universeChanged', (event) => {
-    if (String(event.detail?.universeId || '')) clearSetupReason();
+    const universeId = String(event.detail?.universeId || '');
+    syncGameAvailability(universeId);
+    if (universeId) clearSetupReason();
   });
 })();
 
 (function routeFirstTimeSetup() {
   let routed = false;
   window.addEventListener('dashboard:analyticsReady', (event) => {
+    const universeId = String(event.detail?.universeId || '');
+    syncGameAvailability(universeId);
     if (routed || !window.isDashboardAuthenticated?.()) return;
-    if (String(event.detail?.universeId || '')) return;
+    if (universeId) return;
 
     const view = (window.location.hash || '#overview').replace(/^#/, '') || 'overview';
     if (view !== 'overview' && !viewRequiresGame(view)) return;
