@@ -1,3 +1,6 @@
+body[data-active-view="connect"] .topbar,
+body[data-active-view="player-data"] .topbar{display:none}
+
 .connectNextSteps{grid-column:1/-1;min-width:0;padding:20px;border-color:var(--page-line);border-radius:12px;background:var(--page-surface);box-shadow:0 1px 2px rgba(0,0,0,.16)}
 .connectNextSteps>header{display:grid;gap:5px;max-width:720px}
 .connectNextSteps h3{margin:0;color:var(--page-text);font-size:18px;font-weight:720;letter-spacing:-.018em}
