@@ -1,0 +1,806 @@
+/*
+ * RoSignal UI refresh
+ * A restrained product-dashboard layer: neutral surfaces, one clear accent,
+ * consistent radii/controls, and responsive layouts without touching app logic.
+ */
+
+:root {
+  --bg: #090a0d;
+  --surface: #101115;
+  --surface-strong: #15161b;
+  --surface-soft: #0d0e12;
+  --sidebar: #0b0c0f;
+  --line: rgba(255, 255, 255, 0.075);
+  --line-strong: rgba(255, 255, 255, 0.13);
+  --text: #f5f5f6;
+  --muted: #9698a3;
+  --nav-text: #b5b7c2;
+  --placeholder: #727581;
+  --purple: #8b5cf6;
+  --purple-soft: rgba(139, 92, 246, 0.12);
+  --control-bg: #121318;
+  --field-bg: #0e0f13;
+  --card-bg: #101115;
+  --overlay-bg: rgba(15, 16, 20, 0.96);
+  --sidebar-width: 232px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --overlay-shadow: 0 18px 45px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="light"] {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-soft: #fafafa;
+  --sidebar: #fbfbfc;
+  --line: rgba(24, 24, 27, 0.09);
+  --line-strong: rgba(24, 24, 27, 0.16);
+  --text: #18181b;
+  --muted: #71717a;
+  --nav-text: #52525b;
+  --placeholder: #a1a1aa;
+  --purple-soft: rgba(124, 58, 237, 0.08);
+  --control-bg: #ffffff;
+  --field-bg: #ffffff;
+  --card-bg: #ffffff;
+  --overlay-bg: rgba(255, 255, 255, 0.98);
+  --shadow: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --overlay-shadow: 0 18px 45px rgba(24, 24, 27, 0.12);
+}
+
+body:not(.isLocked) {
+  background: var(--bg);
+  background-image: none;
+}
+
+.appShell,
+.dashboardMain,
+.dashboardGrid,
+.dashboardContentColumn,
+.overviewHeroGrid,
+.viewPage,
+.eventsLayout,
+.eventDetailColumn,
+.funnelWorkspace,
+.funnelDetailColumn,
+.funnelAnalyticsView {
+  min-width: 0;
+}
+
+.sidebar {
+  padding: 16px 12px 12px;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+  box-shadow: none;
+}
+
+.brand {
+  gap: 9px;
+  padding: 2px 8px 14px;
+}
+
+.brandMark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.brand strong {
+  font-size: 17px;
+  letter-spacing: -0.015em;
+}
+
+.sidebarUniverseSelector {
+  margin: 0 0 14px;
+}
+
+.sidebarUniverseSelector .universeSelectorButton {
+  grid-template-columns: 34px minmax(0, 1fr) 12px;
+  min-height: 50px;
+  gap: 9px;
+  border-color: var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 7px 9px;
+  box-shadow: none;
+}
+
+.sidebarUniverseSelector .gameThumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+}
+
+.universeSelectorButton:hover:not(:disabled),
+.universeSelectorButton:focus-visible,
+.universeSelectorButton[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  background: var(--surface-strong);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.08);
+}
+
+.universeDropdownMenu,
+.authControls.sidebarAccountDropdown,
+.eventMorePopover,
+.funnelMorePopover,
+.eventIntervalMenu,
+.funnelTimelineStepMenu {
+  border-color: var(--line-strong);
+  border-radius: 10px;
+  background: var(--overlay-bg);
+  box-shadow: var(--overlay-shadow);
+  backdrop-filter: blur(14px);
+}
+
+.sideNav {
+  gap: 15px;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.navGroup,
+.navGroupLinks {
+  gap: 3px;
+}
+
+.navGroupLabel {
+  gap: 8px;
+  padding: 0 9px 5px;
+  color: var(--placeholder);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.09em;
+}
+
+.navGroupLabel::after {
+  display: none;
+}
+
+.sideNav a {
+  position: relative;
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: var(--nav-text);
+  font-size: 13px;
+  font-weight: 620;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sideNav a:hover {
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+}
+
+.navIconTile {
+  width: 29px;
+  height: 29px;
+  margin-right: 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #8f929f;
+  box-shadow: none;
+}
+
+.navIcon {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.8;
+}
+
+.sideNav a.active {
+  border: 0;
+  background: rgba(139, 92, 246, 0.11);
+  color: #eee9ff;
+  box-shadow: none;
+}
+
+.sideNav a.active::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: #8b5cf6;
+  content: "";
+}
+
+.sideNav a.active .navIconTile {
+  border: 0;
+  background: transparent;
+  color: #a78bfa;
+  box-shadow: none;
+}
+
+.sideNav a.active .navIcon {
+  filter: none;
+}
+
+.sidebarFooter {
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.account.sidebarAccount {
+  gap: 9px;
+  min-height: 46px;
+  border-radius: 8px;
+  padding: 4px 7px;
+}
+
+.account.sidebarAccount:hover,
+.account.sidebarAccount:focus-visible,
+.account.sidebarAccount[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebarAccountAvatar {
+  width: 34px;
+  height: 34px;
+  border-color: var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-strong);
+  font-size: 13px;
+}
+
+.sidebarAccountName {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboardMain {
+  padding: 20px clamp(18px, 2.4vw, 34px) 36px;
+}
+
+.topbar {
+  gap: 14px 20px;
+  margin-bottom: 18px;
+}
+
+.topbar > div:first-child {
+  min-width: 0;
+}
+
+.pageTitleRow {
+  gap: 12px;
+}
+
+.topbar h1 {
+  font-size: clamp(22px, 2vw, 27px);
+  font-weight: 760;
+  letter-spacing: -0.03em;
+}
+
+.topbar p {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.topbarActions,
+.topbarFilters,
+.topbarButtonGroup {
+  gap: 10px;
+}
+
+.panel,
+.notice,
+.dataCard,
+.chatQuestionPanel,
+.chatRecentPanel,
+.funnelTimelinePanel,
+.funnelInlineMetrics > div,
+.eventNumericSummaryGrid > div {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: none;
+}
+
+.panel,
+.notice {
+  border-radius: 12px;
+}
+
+.panel {
+  padding: 16px;
+}
+
+.button,
+.dateButton,
+.aiButton,
+.account,
+.miniButton,
+.eventEditButton,
+.eventMoreButton,
+.eventIntervalSelect,
+.funnelManageColorsButton,
+.funnelTimelineStepPicker > button {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.button {
+  min-height: 40px;
+  border-color: transparent;
+  background: #7c3aed;
+  font-weight: 720;
+  box-shadow: none;
+}
+
+.button:hover:not(:disabled),
+.button:focus-visible {
+  background: #8b5cf6;
+  transform: none;
+}
+
+.button.secondary {
+  border-color: var(--line-strong);
+  background: var(--control-bg);
+  color: var(--text);
+}
+
+.button.secondary:hover:not(:disabled),
+.button.secondary:focus-visible {
+  border-color: rgba(139, 92, 246, 0.42);
+  background: var(--surface-strong);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.72);
+  outline-offset: 2px;
+}
+
+/* Overview / Map */
+.dashboardGrid,
+.dashboardContentColumn,
+.overviewHeroGrid {
+  gap: 16px;
+}
+
+.movementHeatmap.mapPanel {
+  overflow: hidden;
+  border-radius: 13px;
+  background: var(--surface);
+}
+
+.heatmapToolbar {
+  border-bottom-color: var(--line);
+  background: var(--surface);
+}
+
+.heatmapPresets .miniButton,
+.heatmapEventButton,
+.heatmapFunnelButton {
+  border-color: var(--line);
+  background: var(--control-bg);
+  box-shadow: none;
+}
+
+.heatmapPresets .miniButton:hover,
+.heatmapEventButton:hover:not(:disabled),
+.heatmapFunnelButton:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-strong);
+}
+
+.heatmapPresets .miniButton.active,
+.heatmapPresets .miniButton[aria-pressed="true"] {
+  border-color: rgba(139, 92, 246, 0.42);
+  background: rgba(139, 92, 246, 0.12);
+  color: #ddd3ff;
+  box-shadow: none;
+}
+
+.heatmapOverlay,
+.mapPartCountBox,
+.mapAreaBreakdown,
+.mapViewDock,
+.mapCameraToggle {
+  border-color: var(--line-strong);
+  background: rgba(13, 14, 18, 0.88);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+}
+
+/* Events */
+.eventsLayout {
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.eventCatalogPanel,
+.funnelCatalogPanel {
+  padding-right: 0;
+}
+
+.eventExitButton,
+.eventNewButton {
+  border-radius: 8px;
+}
+
+.eventCatalogItem,
+.funnelCatalogItem {
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding-inline: 10px;
+  font-size: 12.5px;
+}
+
+.eventCatalogItem:hover:not(:disabled),
+.funnelCatalogItem:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.eventCatalogItem.active,
+.funnelCatalogItem.active {
+  border-color: transparent;
+  background: rgba(139, 92, 246, 0.12);
+  color: #efeaff;
+  box-shadow: none;
+}
+
+.eventBreakdownSection,
+.eventRecentCard,
+.eventDefinitionBuilder,
+.funnelBuilder {
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.eventDefinitionBuilder,
+.funnelBuilder {
+  width: min(100%, 1040px);
+}
+
+.eventPropertyGrid {
+  gap: 12px;
+}
+
+.eventPropertyBreakdown,
+.eventPropertyCard,
+.eventNumericSummaryGrid > div {
+  border-radius: 10px;
+}
+
+.eventNumericSummaryGrid > div {
+  background: var(--surface-soft);
+}
+
+.recentEventTable,
+.recentEventList,
+.recentEventTableHeader,
+.recentEventItem {
+  min-width: 0;
+  width: 100%;
+}
+
+.recentEventTable {
+  overflow-x: auto;
+}
+
+.recentEventTableHeader,
+.recentEventItem {
+  min-width: 620px;
+}
+
+/* Funnels */
+.funnelWorkspace {
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.funnelInlineMetrics {
+  gap: 12px;
+}
+
+.funnelInlineMetrics > div {
+  min-height: 92px;
+  border-radius: 11px;
+  padding: 13px 14px;
+}
+
+.funnelInlineMetrics strong {
+  font-size: clamp(23px, 2.2vw, 29px);
+}
+
+.funnelTimelinePanel {
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.funnelStepBar {
+  border-color: rgba(139, 92, 246, 0.35);
+  background: #7c3aed;
+  box-shadow: none;
+}
+
+.funnelBuilder,
+.eventDefinitionBuilder {
+  background: var(--surface);
+}
+
+.funnelStepRow,
+.eventDefinitionPropertyRow {
+  background: var(--surface-soft);
+}
+
+/* Chat: keep tables readable without forcing the page wider than the viewport */
+.chatMetricGrid {
+  gap: 12px;
+}
+
+.chatMetricCard,
+.chatQuestionPanel,
+.chatRecentPanel {
+  border-radius: 12px;
+}
+
+.chatQuestionTableHeader,
+.chatQuestionRow,
+.chatQuestionPlaceholder {
+  grid-template-columns: 36px minmax(180px, 1fr) minmax(76px, 94px) minmax(76px, 94px);
+  column-gap: 12px;
+}
+
+.chatLogTableHeader,
+.chatLogItem {
+  grid-template-columns: minmax(130px, 0.55fr) minmax(200px, 2fr) minmax(82px, 100px);
+  column-gap: 14px;
+}
+
+/* Consistent page-width behavior on common laptop sizes. */
+@media (max-width: 1360px) {
+  :root {
+    --sidebar-width: 220px;
+  }
+
+  .sidebar {
+    padding-inline: 10px;
+  }
+
+  .dashboardMain {
+    padding-inline: 22px;
+  }
+
+  .topbarActions {
+    flex-basis: 900px;
+  }
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --sidebar-width: 206px;
+  }
+
+  .sideNav a {
+    min-height: 38px;
+  }
+
+  .navIconTile {
+    width: 27px;
+    height: 27px;
+  }
+
+  .dashboardMain {
+    padding: 18px;
+  }
+
+  .topbar,
+  .topbarActions,
+  .topbarFilters {
+    align-items: stretch;
+  }
+
+  .topbarActions,
+  .topbarFilters {
+    width: 100%;
+  }
+
+  .topbarFilters {
+    flex-wrap: wrap;
+  }
+
+  .topbarFilters .dateFilterCluster {
+    flex-basis: 440px;
+  }
+
+  .eventsLayout,
+  .funnelWorkspace {
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .funnelInlineMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eventDefinitionBuilderBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventCodePreview {
+    position: static;
+  }
+}
+
+@media (max-width: 820px) {
+  body[data-active-view="events"]:not(.isLocked) .dashboardMain,
+  body[data-active-view="funnels"]:not(.isLocked) .dashboardMain {
+    display: block;
+    padding: 14px;
+  }
+
+  body[data-active-view="events"]:not(.isLocked) .topbar,
+  body[data-active-view="funnels"]:not(.isLocked) .topbar {
+    display: flex;
+  }
+
+  body[data-active-view="events"]:not(.isLocked) .topbar > div:first-child,
+  body[data-active-view="funnels"]:not(.isLocked) .topbar > div:first-child {
+    display: block;
+  }
+
+  .eventsLayout,
+  .funnelWorkspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventCatalogPanel,
+  .funnelCatalogPanel {
+    position: static;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .eventCatalog,
+  .funnelCatalog {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(150px, 210px);
+    grid-template-columns: none;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    padding: 0 0 6px;
+    scrollbar-width: thin;
+  }
+
+  .eventCatalogHeader,
+  .funnelCatalogHeader {
+    margin-top: 2px;
+  }
+
+  .eventCatalogItem,
+  .funnelCatalogItem {
+    width: 100%;
+  }
+
+  .eventDefinitionBuilder,
+  .funnelBuilder {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 680px) {
+  .dashboardMain {
+    padding: 12px;
+  }
+
+  .topbar {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .topbar h1 {
+    font-size: 22px;
+  }
+
+  .panel {
+    padding: 13px;
+  }
+
+  .topbarActions,
+  .topbarFilters,
+  .topbarFilters .dateFilterCluster,
+  .dateRangeControl {
+    width: 100%;
+    max-width: none;
+  }
+
+  .chatQuestionTableHeader,
+  .chatLogTableHeader {
+    display: none;
+  }
+
+  .chatQuestionRow,
+  .chatQuestionPlaceholder {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 8px 10px;
+  }
+
+  .chatQuestionRow > :nth-child(n + 3),
+  .chatQuestionPlaceholder > :nth-child(n + 3) {
+    grid-column: 2;
+  }
+
+  .chatLogItem {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 10px;
+  }
+
+  .chatLogItem > :nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .chatLogItem > time,
+  .chatLogItem > :last-child {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .recentEventTableHeader {
+    display: none;
+  }
+
+  .recentEventItem {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+    min-width: 0;
+    padding: 10px 4px;
+  }
+
+  .funnelInlineMetrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .funnelBuilderFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eventDefinitionBuilderHeader,
+  .funnelBuilderHeader {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 460px) {
+  .dashboardMain {
+    padding: 10px;
+  }
+
+  .panel {
+    border-radius: 10px;
+  }
+
+  .topbarActions,
+  .topbarFilters,
+  .topbarButtonGroup {
+    gap: 8px;
+  }
+
+  .dateRangeControl {
+    grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
+  }
+
+  .eventDefinitionBuilder,
+  .funnelBuilder {
+    padding: 12px;
+  }
+}

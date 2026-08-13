@@ -570,85 +570,7 @@
           </div>
         </section>
 
-        <section class="viewPage aiRunsPage" data-view-panel="ai-runs" hidden>
-          <div class="aiFeaturesTopGrid">
-            <article class="panel aiRunControls">
-              <div class="sectionHeader">
-                <div>
-                  <h2>AI Runs</h2>
-                  <p>Automation and saved analysis history.</p>
-                </div>
-              </div>
-              <button class="aiButton aiRunButton" id="runChatInsightsButton" type="button">AI Insights</button>
-              <p class="status aiRunStatus">AI can analyze movement, deaths, leaves, and chat when samples are available.</p>
-              <div class="aiAutomationControls">
-                <label class="toggleControl" for="aiAutomationToggle">
-                  <input id="aiAutomationToggle" type="checkbox" checked />
-                  <span>Auto hourly</span>
-                </label>
-                <span class="status compactStatus" id="aiAutomationStatus">Checking automation...</span>
-              </div>
-              <div class="aiReportHistory">
-                <label for="aiReportSelect">Saved runs</label>
-                <select id="aiReportSelect" disabled>
-                  <option value="">Latest saved report</option>
-                </select>
-              </div>
-            </article>
-
-            <article class="panel chatInsights chatBotPanel aiFeaturesChatPanel">
-              <div class="chatBotHeader">
-                <div>
-                  <h2>AI Chat</h2>
-                  <p><span></span>Live</p>
-                </div>
-              </div>
-              <p class="status" id="chatInsightsStatus">Checking analytics data...</p>
-              <div class="chatBotMessages" id="aiChatMessages">
-                <article class="botMessage assistantMessage">
-                  <span aria-hidden="true"></span>
-                  <div>
-                    <strong>RoSignal AI <small>Ready</small></strong>
-                    <p>Welcome. Ask me anything about player behavior, traffic patterns, or game insights.</p>
-                  </div>
-                </article>
-                <div class="typingDots" id="aiChatTyping" aria-hidden="true" hidden><span></span><span></span><span></span></div>
-              </div>
-              <div class="chatComposer">
-                <input id="aiChatInput" type="text" value="" maxlength="800" placeholder="Ask anything about your data..." aria-label="Ask anything about your data">
-                <button id="aiChatSendButton" type="button" aria-label="Send chat prompt"></button>
-              </div>
-              <small>AI responses may not always be accurate.</small>
-              <span class="insightMode" id="chatInsightsMode">Not analyzed</span>
-            </article>
-          </div>
-
-          <article class="panel chatQuestionPanel aiRunsQuestionPanel">
-            <header class="chatSectionHeader">
-              <div>
-                <h2>Top player questions</h2>
-                <p>Similar player questions grouped from the latest analysis.</p>
-              </div>
-            </header>
-            <div class="chatQuestionTableHeader" aria-hidden="true">
-              <span>#</span>
-              <span>Question</span>
-              <span>Messages</span>
-              <span>Players</span>
-            </div>
-            <div class="commonQuestionList" id="commonQuestionList" aria-live="polite">
-              <div class="chatQuestionEmpty" role="status">
-                <strong>No analyzed questions yet</strong>
-                <span>Player questions will appear here after an AI analysis.</span>
-              </div>
-              <div class="chatQuestionPlaceholder" aria-hidden="true"><span>1</span><i></i><i></i><i></i></div>
-              <div class="chatQuestionPlaceholder" aria-hidden="true"><span>2</span><i></i><i></i><i></i></div>
-              <div class="chatQuestionPlaceholder" aria-hidden="true"><span>3</span><i></i><i></i><i></i></div>
-              <div class="chatQuestionPlaceholder" aria-hidden="true"><span>4</span><i></i><i></i><i></i></div>
-              <div class="chatQuestionPlaceholder" aria-hidden="true"><span>5</span><i></i><i></i><i></i></div>
-            </div>
-          </article>
-        </section>
+        <div data-component-slot="ai-features-view"></div>
 
         <section class="viewPage eventsPage" data-view-panel="events" hidden>
           <div class="eventsLayout">
@@ -995,64 +917,7 @@
             </div>
         </section>
 
-        <section class="viewPage chatAnalysisPage" data-view-panel="chat" hidden>
-          <section class="chatMetricGrid" aria-label="Chat summary">
-            <article class="chatMetricCard">
-              <span class="chatMetricIcon chatMessageIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M5.5 5.5h13a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3v-3h-1A2.5 2.5 0 0 1 3 15V8a2.5 2.5 0 0 1 2.5-2.5Z" /><path d="M7.5 10h9M7.5 13.5h6" /></svg>
-              </span>
-              <div>
-                <span>Messages</span>
-                <strong id="chatMessageCount">0</strong>
-              </div>
-            </article>
-            <article class="chatMetricCard">
-              <span class="chatMetricIcon chatPlayersIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 19c.3-4 2.3-6 5.5-6s5.2 2 5.5 6M14 14c3.5-.5 5.7 1.2 6.2 5" /></svg>
-              </span>
-              <div>
-                <span>Players chatting</span>
-                <strong id="chatPlayerCount">0</strong>
-              </div>
-            </article>
-          </section>
-
-          <article class="panel chatRecentPanel">
-            <header class="chatSectionHeader">
-              <div>
-                <h2>Recent chat</h2>
-                <p>Latest messages received from Roblox.</p>
-              </div>
-              <span class="chatLiveBadge" id="chatLiveBadge"><i aria-hidden="true"></i><b>Waiting</b></span>
-            </header>
-            <p class="srOnly" id="chatLogsStatus" aria-live="polite">Waiting for chat logs...</p>
-            <div class="chatLogTableHeader" aria-hidden="true">
-              <span>Player</span>
-              <span>Message</span>
-              <span>Time</span>
-            </div>
-            <div class="chatLogList" id="chatLogList">
-              <div class="chatRecentEmpty" role="status">
-                <span class="chatRecentEmptyIcon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="M5.5 5.5h13a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3v-3h-1A2.5 2.5 0 0 1 3 15V8a2.5 2.5 0 0 1 2.5-2.5Z" /></svg>
-                </span>
-                <strong>No chat messages yet</strong>
-                <span>New Roblox chat will appear here automatically.</span>
-              </div>
-            </div>
-            <footer class="chatPagination" id="chatPagination" aria-label="Chat message pages" hidden>
-              <button type="button" id="chatPreviousPageButton" aria-label="Previous chat messages">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12.5 4.5-5 5.5 5 5.5" /></svg>
-                <span>Previous</span>
-              </button>
-              <strong id="chatPageStatus">1–25 of 25</strong>
-              <button type="button" id="chatNextPageButton" aria-label="Next chat messages">
-                <span>Next</span>
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7.5 4.5 5 5.5-5 5.5" /></svg>
-              </button>
-            </footer>
-          </article>
-        </section>
+        <div data-component-slot="chat-view"></div>
 
         <section class="viewPage discordPage" data-view-panel="discord" hidden>
           <div class="discordWorkspace">
@@ -1416,78 +1281,7 @@
           </div>
         </section>
 
-        <section class="viewPage assetsPage" data-view-panel="assets" hidden>
-          <section class="assetAuthorization panel" id="assetAuthorization">
-            <div>
-              <span class="assetEyebrow">Roblox publishing</span>
-              <h2 id="assetAuthorizationTitle">Connect Roblox to publish assets</h2>
-              <p id="assetAuthorizationCopy">Saved batches work immediately. Authorize Roblox when you are ready to publish them.</p>
-            </div>
-            <div class="assetAuthorizationActions">
-              <button class="button compact" id="assetAuthorizeButton" type="button">Authorize Roblox</button>
-              <button class="button secondary compact" id="assetDisconnectButton" type="button" hidden>Disconnect</button>
-            </div>
-          </section>
-
-          <div class="assetWorkspace">
-            <section class="panel assetUploadPanel">
-              <header class="assetSectionHeader">
-                <div>
-                  <span class="assetEyebrow">New saved batch</span>
-                  <h2>Bulk upload</h2>
-                  <p>Drop a folder or select up to 100 supported Roblox asset files.</p>
-                </div>
-              </header>
-
-              <input id="assetFileInput" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tga,.mp3,.ogg,.wav,.flac,.fbx,.gltf,.glb,.rbxm,.rbxmx,.mp4,.mov" hidden>
-              <button class="assetDropZone" id="assetDropZone" type="button">
-                <span class="assetDropIcon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="M12 16V4M7.5 8.5 12 4l4.5 4.5M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
-                </span>
-                <strong>Drop files or a folder here</strong>
-                <span>Images, audio, models, animations, and video up to 20 MB each</span>
-              </button>
-
-              <div class="assetBatchEditor" id="assetBatchEditor" hidden>
-                <div class="assetBatchToolbar">
-                  <label class="assetBatchNameField" for="assetBatchName">
-                    <span>Batch name</span>
-                    <input id="assetBatchName" type="text" maxlength="80" placeholder="Summer update assets">
-                  </label>
-                  <div class="assetBatchSummary" id="assetBatchSummary">0 files</div>
-                </div>
-                <div class="assetStagingList" id="assetStagingList"></div>
-                <div class="assetBatchActions">
-                  <button class="button secondary compact" id="assetClearBatchButton" type="button">Clear</button>
-                  <button class="button compact" id="assetSaveBatchButton" type="button">Save batch</button>
-                </div>
-              </div>
-              <p class="assetStatus" id="assetUploadStatus" aria-live="polite"></p>
-            </section>
-
-            <section class="panel assetLibraryPanel">
-              <header class="assetSectionHeader assetLibraryHeader">
-                <div>
-                  <span class="assetEyebrow">Reusable library</span>
-                  <h2>Saved batches</h2>
-                  <p>Return later or publish the whole saved batch together.</p>
-                </div>
-                <button class="button secondary compact" id="assetRefreshButton" type="button">Refresh</button>
-              </header>
-
-              <div class="assetLibraryLayout">
-                <div class="assetPackList" id="assetPackList"></div>
-                <div class="assetPackDetail" id="assetPackDetail">
-                  <div class="assetEmptyState">
-                    <strong>No saved batch selected</strong>
-                    <span>Create a bulk upload batch to keep its files and publishing history together.</span>
-                  </div>
-                </div>
-              </div>
-              <p class="assetStatus" id="assetLibraryStatus" aria-live="polite"></p>
-            </section>
-          </div>
-        </section>
+        <div data-component-slot="assets-view"></div>
 
         <section class="viewPage groupsPage" data-view-panel="groups" hidden>
           <section class="groupAuthorization panel" id="groupAuthorization">
@@ -1673,106 +1467,7 @@ RoSignal.RequestGroupRank(player, "vip_purchase")</code></pre>
           </section>
         </section>
 
-        <section class="viewPage" data-view-panel="connect" hidden>
-          <section class="connectUniversePanel">
-            <div class="connectUniverseHeader">
-              <div>
-                <h2>Connect Universe</h2>
-                <p>Connect and manage the Roblox games sending data to RoSignal.</p>
-              </div>
-              <div class="connectUniverseHeaderActions">
-                <button class="button secondary compact createDemoUniverseButton" id="createDemoUniverseButton" type="button" hidden>
-                  <span aria-hidden="true">&#10022;</span>
-                  Create demo universe
-                </button>
-                <button class="button compact connectNewGameButton" id="connectNewGameButton" type="button">
-                  <span aria-hidden="true">+</span>
-                  Connect new game
-                </button>
-                <p class="status demoUniverseStatus" id="demoUniverseStatus" aria-live="polite" hidden></p>
-              </div>
-            </div>
-            <section class="connectedGamesManager">
-              <div class="connectedGameList" id="connectedGameList"></div>
-            </section>
-            <article class="panel studioInstallerPanel" id="studioInstallerPanel">
-              <div class="studioInstallerHeader">
-                <div>
-                  <span class="groupEyebrow">Studio setup</span>
-                  <h3>Install RoSignal automatically</h3>
-                  <p>Open the Studio plugin and click Connect &amp; Install. Pairing and credential handoff happen automatically.</p>
-                </div>
-                <a class="button secondary compact" href="/api/studio-plugin/download" download="RoSignalInstaller.plugin.lua">Download plugin</a>
-              </div>
-              <p class="status studioPairingStatus" id="studioPairingStatus" aria-live="polite">Auto-pairing from Studio is available.</p>
-              <div class="studioPairingList" id="studioPairingList"></div>
-            </article>
-            <article class="setupChecklistCard" id="setupChecklistCard">
-              <div class="setupChecklistHeader">
-                <div class="setupChecklistIntro">
-                  <h3>First-run setup</h3>
-                  <p>Complete these steps to finish connecting your game.</p>
-                </div>
-                <div class="setupChecklistProgress">
-                  <span id="setupProgressText">0 / 4 complete</span>
-                  <div class="setupProgressTrack" id="setupProgressTrack" role="progressbar" aria-label="First-run setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <span id="setupProgressBar"></span>
-                  </div>
-                  <strong id="setupProgressPercent">0%</strong>
-                </div>
-              </div>
-              <ol class="setupChecklist" id="setupChecklist">
-                <li><span></span><div><strong>Connect a game</strong><p>Pick one owned public game from the list.</p></div></li>
-                <li><span></span><div><strong>Install RoSignal</strong><p>Open Studio and click Connect &amp; Install. No code entry is required.</p></div></li>
-                <li><span></span><div><strong>Start a live server</strong><p>Enable Allow HTTP Requests, publish, and join the game.</p></div></li>
-                <li><span></span><div><strong>Confirm signals</strong><p>Movement, deaths, leaves, or chat should become active.</p></div></li>
-              </ol>
-            </article>
-
-            <div class="discordRuleDialog connectGameDialog" id="connectGameDialog" hidden>
-              <button class="discordRuleDialogBackdrop" id="connectGameDialogBackdrop" type="button" aria-label="Close connect game"></button>
-              <section class="discordRuleDialogCard connectGameDialogCard" role="dialog" aria-modal="true" aria-labelledby="connectGameDialogTitle">
-                <header>
-                  <button class="discordWebhookBuilderBackButton discordRuleBackButton" id="connectGameDialogCloseButton" type="button" aria-label="Back to connected games">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
-                  </button>
-                  <div>
-                    <span>Roblox universe</span>
-                    <h2 id="connectGameDialogTitle">Connect game</h2>
-                  </div>
-                </header>
-                <div class="connectGameDialogBody">
-                  <div class="connectGameFormSection" id="connectGameFormSection">
-                    <p>Select one of the Roblox games owned by your account.</p>
-                    <form class="projectForm connectUniverseForm" id="projectForm">
-                      <div class="fieldGroup">
-                        <label for="ownedGameSelect">Game</label>
-                        <select id="ownedGameSelect" disabled>
-                          <option value="">Loading owned games...</option>
-                        </select>
-                      </div>
-                      <button class="button compact" id="createProjectButton" type="submit">Connect game</button>
-                    </form>
-                    <div class="connectUniverseActions">
-                      <button class="button secondary compact refreshGamesButton" id="refreshOwnedGamesButton" type="button">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.1 9A7 7 0 0 0 6.4 6.4L4 9M5.9 15A7 7 0 0 0 17.6 17.6L20 15"/></svg>
-                        Refresh games
-                      </button>
-                      <p class="status" id="ownedGamesStatus">Loading Roblox games...</p>
-                    </div>
-                  </div>
-                  <div class="projectSecretBox" id="projectSecretBox" hidden>
-                    <strong>Manual or Rojo fallback</strong>
-                    <span id="projectSecretTarget"></span>
-                    <p>The Studio installer fills this automatically. Only paste this into <code>Settings.Secret</code> when installing manually or through Rojo.</p>
-                    <code id="projectSecretValue"></code>
-                    <button class="button compact" id="copyProjectSecretButton" type="button">Copy secret</button>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </section>
-        </section>
+        <div data-component-slot="connect-view"></div>
 
         <section class="viewPage playerModerationPage" data-view-panel="moderation" hidden>
           <div class="playerModerationStats" aria-label="Player moderation summary">
@@ -2060,6 +1755,12 @@ RoSignal.RegisterPlayerDataAdapter({
         </section>
       </main>
     </div>
+    <script defer src="/components/component-runtime.js"></script>
+    <script defer src="/components/template-runtime.js"></script>
+    <script defer src="/components/connect-view-template.js"></script>
+    <script defer src="/components/assets-view-template.js"></script>
+    <script defer src="/components/chat-view-template.js"></script>
+    <script defer src="/components/ai-features-view-template.js"></script>
     <script defer src="/assets/20260812-2/app.js"></script>
   </body>
 </html>

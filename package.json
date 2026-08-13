@@ -10,6 +10,7 @@
     "rollups": "node scripts/process-rollups.mjs",
     "b2-maintenance": "node scripts/maintain-b2-analytics.mjs",
     "ai-report": "node scripts/run-ai-report.mjs",
+    "test:ui": "node scripts/test-ui-component-boundaries.mjs",
     "test:demo": "node scripts/test-demo-universe.mjs",
     "test:event-definitions": "node scripts/test-event-definitions.mjs",
     "test:events": "node scripts/test-event-property-chart.mjs",

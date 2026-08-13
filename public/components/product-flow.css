@@ -1,0 +1,24 @@
+body[data-active-view="connect"] .topbar,
+body[data-active-view="player-data"] .topbar{display:none}
+
+.sideNav a[data-setup-required="true"]{position:relative;color:color-mix(in srgb,var(--nav-text) 62%,transparent)}
+.sideNav a[data-setup-required="true"]::after{content:"Setup";flex:0 0 auto;margin-left:8px;border:1px solid rgba(139,92,246,.2);border-radius:999px;background:rgba(139,92,246,.07);color:#9f8bd0;padding:3px 6px;font-size:8px;font-weight:760;letter-spacing:.04em;text-transform:uppercase}
+.sideNav a[data-setup-required="true"] .navIconTile{opacity:.62}
+.sideNav a[data-setup-required="true"]:hover{color:var(--nav-text)}
+
+.connectRouteNotice{grid-column:1/-1;margin:0;border:1px solid rgba(139,92,246,.28);border-radius:9px;background:rgba(139,92,246,.08);color:#c4b5fd;padding:10px 12px;font-size:12px;font-weight:650;line-height:1.45}
+.connectRouteNotice[hidden]{display:none}
+.connectNextSteps{grid-column:1/-1;min-width:0;padding:20px;border-color:var(--page-line);border-radius:12px;background:var(--page-surface);box-shadow:0 1px 2px rgba(0,0,0,.16)}
+.connectNextSteps>header{display:grid;gap:5px;max-width:720px}
+.connectNextSteps h3{margin:0;color:var(--page-text);font-size:18px;font-weight:720;letter-spacing:-.018em}
+.connectNextSteps>header p{margin:0;color:var(--page-muted);font-size:12.5px;line-height:1.5}
+.connectNextGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+.connectNextGrid a{display:grid;grid-template-rows:auto 1fr auto;gap:8px;min-width:0;min-height:146px;border:1px solid var(--page-line);border-radius:10px;background:#0d0e12;color:inherit;padding:15px;text-decoration:none;transition:border-color 140ms ease,background 140ms ease,transform 140ms ease}
+.connectNextGrid a:hover,.connectNextGrid a:focus-visible{border-color:rgba(139,92,246,.48);background:#111217;outline:none;transform:translateY(-1px)}
+.connectNextGrid strong{color:var(--page-text);font-size:13px;font-weight:720;line-height:1.35}
+.connectNextGrid span{color:var(--page-muted);font-size:11.5px;line-height:1.5}
+.connectNextGrid em{color:#a78bfa;font-size:11px;font-style:normal;font-weight:720}
+.sideNav .navGroupLabel{transition:color 140ms ease}
+@media(max-width:1040px){.connectNextGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.connectNextSteps,.connectRouteNotice{grid-column:auto}}
+@media(max-width:560px){.connectNextSteps{padding:14px}.connectNextGrid{grid-template-columns:minmax(0,1fr)}.connectNextGrid a{min-height:118px}}
