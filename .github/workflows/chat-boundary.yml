@@ -1,0 +1,18 @@
+name: Chat boundary
+
+on:
+  pull_request:
+    paths:
+      - "public/components/chat-view-template.js"
+      - "public/index.html"
+      - "scripts/test-chat-view-boundary.mjs"
+
+jobs:
+  chat-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/test-chat-view-boundary.mjs
