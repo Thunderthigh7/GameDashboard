@@ -5,8 +5,9 @@ window.RoSignalComponents.templates.connectView = `
   <section class="connectUniversePanel">
     <div class="connectUniverseHeader">
       <div>
-        <h2>Connect Universe</h2>
-        <p>Connect and manage the Roblox games sending data to RoSignal.</p>
+        <span class="groupEyebrow">Setup</span>
+        <h2>Connect your game</h2>
+        <p>Choose your Roblox experience, connect Studio, then move straight into the tools you need.</p>
       </div>
       <div class="connectUniverseHeaderActions">
         <button class="button secondary compact createDemoUniverseButton" id="createDemoUniverseButton" type="button" hidden>
@@ -28,9 +29,9 @@ window.RoSignalComponents.templates.connectView = `
     <article class="panel studioInstallerPanel" id="studioInstallerPanel">
       <div class="studioInstallerHeader">
         <div>
-          <span class="groupEyebrow">Studio setup</span>
-          <h3>Install RoSignal automatically</h3>
-          <p>Open the Studio plugin and click Connect &amp; Install. Pairing and credential handoff happen automatically.</p>
+          <span class="groupEyebrow">Studio connection</span>
+          <h3>Connect RoSignal in Studio</h3>
+          <p>Install the plugin once, open your experience, then use Connect &amp; Install. Pairing and credential handoff are automatic.</p>
         </div>
         <a class="button secondary compact" href="/api/studio-plugin/download" download="RoSignalInstaller.plugin.lua">Download plugin</a>
       </div>
@@ -41,8 +42,8 @@ window.RoSignalComponents.templates.connectView = `
     <article class="setupChecklistCard" id="setupChecklistCard">
       <div class="setupChecklistHeader">
         <div class="setupChecklistIntro">
-          <h3>First-run setup</h3>
-          <p>Complete these steps to finish connecting your game.</p>
+          <h3>Connection progress</h3>
+          <p>Finish these once. RoSignal will keep checking them for you.</p>
         </div>
         <div class="setupChecklistProgress">
           <span id="setupProgressText">0 / 4 complete</span>
@@ -53,11 +54,25 @@ window.RoSignalComponents.templates.connectView = `
         </div>
       </div>
       <ol class="setupChecklist" id="setupChecklist">
-        <li><span></span><div><strong>Connect a game</strong><p>Pick one owned public game from the list.</p></div></li>
-        <li><span></span><div><strong>Install RoSignal</strong><p>Open Studio and click Connect &amp; Install. No code entry is required.</p></div></li>
-        <li><span></span><div><strong>Start a live server</strong><p>Enable Allow HTTP Requests, publish, and join the game.</p></div></li>
-        <li><span></span><div><strong>Confirm signals</strong><p>Movement, deaths, leaves, or chat should become active.</p></div></li>
+        <li><span></span><div><strong>Connect a game</strong><p>Pick one owned public game from Roblox.</p></div></li>
+        <li><span></span><div><strong>Connect Studio</strong><p>Open the plugin and use Connect &amp; Install.</p></div></li>
+        <li><span></span><div><strong>Publish and play</strong><p>Enable HTTP requests, publish, and join the game.</p></div></li>
+        <li><span></span><div><strong>Confirm signals</strong><p>RoSignal detects movement, events, or other incoming data.</p></div></li>
       </ol>
+    </article>
+
+    <article class="panel connectNextSteps">
+      <header>
+        <span class="groupEyebrow">After setup</span>
+        <h3>Choose what you want to do next</h3>
+        <p>You do not need to learn the whole dashboard. Start with the job you are trying to do.</p>
+      </header>
+      <nav class="connectNextGrid" aria-label="RoSignal next steps">
+        <a href="#overview" data-dashboard-view="overview"><strong>See player behavior</strong><span>Open the map and inspect where players move, die, leave, and trigger events.</span><em>Map →</em></a>
+        <a href="#events" data-dashboard-view="events"><strong>Track something specific</strong><span>Define an event and immediately start breaking down the properties you log.</span><em>Events →</em></a>
+        <a href="#funnels" data-dashboard-view="funnels"><strong>Measure a player journey</strong><span>Turn your tracked events into an ordered conversion funnel.</span><em>Funnels →</em></a>
+        <a href="#player-data" data-dashboard-view="player-data"><strong>Work with a player</strong><span>Inspect or update player data through your connected Studio or server bridge.</span><em>Player Data →</em></a>
+      </nav>
     </article>
 
     <div class="discordRuleDialog connectGameDialog" id="connectGameDialog" hidden>
