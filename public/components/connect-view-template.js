@@ -22,6 +22,8 @@ window.RoSignalComponents.templates.connectView = `
       </div>
     </div>
 
+    <p class="connectRouteNotice" id="connectRouteNotice" role="status" hidden></p>
+
     <section class="connectedGamesManager">
       <div class="connectedGameList" id="connectedGameList"></div>
     </section>
