@@ -39,12 +39,16 @@ expect(templateRuntimeIndex > componentRuntimeIndex, "template runtime should lo
 expect(connectTemplateIndex > templateRuntimeIndex, "Connect template should load after template runtime");
 expect(appIndex > connectTemplateIndex, "app.js must load after mounted component templates");
 
+expect(runtime.includes("const PRODUCT_VIEWS = Object.freeze"), "product view registry should be the flow source of truth");
+expect(runtime.includes("const NAV_SECTIONS = Object.freeze"), "navigation sections should be declared centrally");
 expect(runtime.includes("dashboard:analyticsReady"), "product flow should react to analytics readiness");
-expect(runtime.includes("const gameRequiredViews = new Set"), "game-scoped navigation guard should be defined");
+expect(runtime.includes("function viewRequiresGame"), "game-scoped navigation should derive from the view registry");
 expect(runtime.includes("event.stopImmediatePropagation()"), "game-scoped navigation should stop invalid empty-state navigation");
-expect(runtime.includes("['player-data', 'moderation', 'assets', 'groups']"), "Operate navigation order should remain explicit");
-expect(runtime.includes("discord: 'Alerts'"), "Discord navigation should use the task label Alerts");
-expect(runtime.includes("'roblox-live': 'Live Actions'"), "Roblox navigation should use the task label Live Actions");
+expect(runtime.includes("views: ['player-data', 'moderation', 'assets', 'groups']"), "Operate navigation order should remain explicit");
+expect(runtime.includes("label: 'Alerts'"), "Discord navigation should use the task label Alerts");
+expect(runtime.includes("label: 'Live Actions'"), "Roblox navigation should use the task label Live Actions");
+expect(runtime.includes("product-flow.css?v=20260813-2"), "product flow CSS should use the current immutable cache version");
+expect(runtime.includes("landing.css?v=20260813-1"), "landing CSS should be refreshed to the current cache version");
 
 expect(connect.includes('data-dashboard-view="overview"'), "Connect should offer Map as a guided next step");
 expect(connect.includes('data-dashboard-view="events"'), "Connect should offer Events as a guided next step");
