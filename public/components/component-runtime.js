@@ -30,6 +30,19 @@ window.RoSignalComponents.mount = function mount(slotName, element) {
   if (document.querySelector('#integrationsNavLabel')) document.querySelector('#integrationsNavLabel').textContent = 'Automate';
   if (document.querySelector('#betaFeaturesNavLabel')) document.querySelector('#betaFeaturesNavLabel').textContent = 'Operate';
 
+  const labels = {
+    connect: 'Setup',
+    discord: 'Alerts',
+    'roblox-live': 'Live Actions',
+    moderation: 'Moderation',
+    'player-data': 'Player Data',
+  };
+  for (const [view, label] of Object.entries(labels)) {
+    const link = nav.querySelector('[data-dashboard-view="' + view + '"]');
+    const text = link?.querySelector('span:last-child');
+    if (text) text.textContent = label;
+  }
+
   const operateLinks = operateGroup?.querySelector('.navGroupLinks');
   if (operateLinks) {
     for (const view of ['player-data', 'moderation', 'assets', 'groups']) {
